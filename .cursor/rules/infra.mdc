@@ -1,0 +1,164 @@
+---
+description: Infrastructure rules for Docker, CI/CD, Azure resources, and deployment
+globs:
+  - ".github/**/*.yml"
+  - "Dockerfile"
+  - "docker-compose.yml"
+  - "scripts/**/*.ps1"
+alwaysApply: true
+---
+
+# Infrastructure Rules
+
+Infrastructure files must be reproducible and pinned. Validate Docker/Sail and CI configurations in reviews.
+
+## Docker/Sail
+
+- **AI Preference**: AI Assistant must use direct `composer` and `php` commands, not `sail`.
+- **Local Development**: Laravel Sail is **discouraged** for this project (for both humans and AI). Prefer direct Docker commands or local PHP/MySQL.
+- **Coverage/Tests**: Use the dedicated `php-test` Docker service or native `php`/`composer` commands.
+- **Laravel Sail version**: ^1.41 (installed but avoided)
+- **Docker Compose version**: 3.8+
+- **Multi-stage builds**: Required
+- **No root user**: Run containers as non-root user
+
+Prefer direct Composer commands for AI operations. Use multi-stage Dockerfile builds.
+
+## GitHub Actions
+
+- **Pin action versions**: Required
+- **Don't use**: Commit SHAs for actions
+- **Cache dependencies**: Composer and npm
+- **Parallel jobs**: Enable where possible
+- **Matrix strategies**: For multi-version testing
+
+Pin all GitHub Action versions. Cache Composer and npm dependencies.
+
+## CI Workflow
+
+- **Stages**: lint, test, build (in that order)
+- **Fail fast**: Stop on first error
+- **Coverage reports**: Required
+- **Artifacts**: Coverage and build artifacts
+
+CI workflows should run lint, test, and build stages. Fail fast on errors.
+
+## Docker Compose
+
+- **Named services**: Required
+- **Explicit networks**: Required
+- **Named volumes**: Required
+- **Env files**: Provide `.env.example`
+
+Use named services, networks, and volumes. Provide `.env.example` for required variables.
+
+## Nginx
+
+- **Version pinned**: Required
+- **Security headers**: Required
+- **Gzip enabled**: Required
+
+Pin Nginx version. Include security headers. Enable gzip compression.
+
+## Version Pinning
+
+- **Docker images**: Specific tags
+- **Composer deps**: Pinned minor versions
+- **npm deps**: Pinned minor versions
+
+Pin Docker image tags, Composer packages (minor), and npm packages (minor) for reproducibility.
+
+## General Rules
+
+- **TODO comments**: Not warned (infra files may have TODOs)
+- **Pinned versions**: Required
+- **No root in containers**: Required
+
+Infrastructure files must be reproducible and pinned.
+
+## Resource Naming Conventions (Azure)
+
+- **Resource groups**
+  - Pattern: `rg-<scope>`
+  - Examples: `rg-cleargate`, `rg-shared-core`, `rg-aiva-app`.
+
+- **Region suffix**
+  - Region-specific resources MUST end with `-<region>`, e.g. `-eus` (East US).
+
+- **Container Apps & Environments**
+  - Environment: `cae-<project>-<env>-<region>`
+    - Examples: `cae-aiva-nonprod-eus`, `cae-aiva-prod-eus`.
+  - App: `ca-<project>-<env>-<region>`
+    - Examples: `ca-aiva-preprod-eus`, `ca-aiva-stg-eus`, `ca-aiva-prod-eus`.
+
+- **Key Vault**
+  - Pattern: `kv-<project>-<env>-<region>`
+    - Examples: `kv-aiva-dev-eus`, `kv-aiva-prod-eus`. (Note: `kv-aiva-dev-eus` is shared for non-prod).
+
+- **MySQL Flexible Server**
+  - Pattern: `mysql-<project|shared>-<region>-<nn>`
+    - Examples: `mysql-aiva-dev-eus-01`, `mysql-aiva-prod-eus-01`.
+
+- **Log Analytics**
+  - Pattern: `log-<project>-<region>`
+    - Examples: `log-aiva-eus`.
+
+- **Private endpoints & identities**
+  - Private endpoint: `pep-<target>-<region>` (e.g., `pep-kv-eus`, `pep-mysql-aiva-dev-eus`).
+  - User-assigned identity: `uami-<scope>-<region>` (e.g., `uami-ca-aiva-dev`).
+  - Networking: `vnet-<scope>-<region>`, `vpngw-<scope>-<region>`.
+
+## DNS & Hostname Conventions
+
+- **Prod**: `*.aiva.tigertech.io` -> `ca-aiva-prod-eus` ingress.
+- **Staging**: `*.aiva-stg.tigertech.io` -> `ca-aiva-stg-eus` ingress.
+- **Preprod**: `*.aiva-preprod.tigertech.io` -> `ca-aiva-preprod-eus` ingress.
+
+- **Tenant routing**:
+  - Tenant key is always the first label: `{tenant}.aiva[-stg|-preprod].tigertech.io`.
+  - Laravel multi-tenancy resolves tenant from the Host header’s first label.
+
+## CI/CD Environment Mapping
+
+- `feature/*` and `hotfix/*`:
+  - CI only by default.
+  - Eligible for manual staging deploy via `deploy-staging` workflow.
+  - Target: `ca-aiva-stg-eus` (staging environment).
+
+- `dev`:
+  - Must only receive changes via PR from `feature/*` or `hotfix/*`.
+  - Successful push to `dev` triggers automatic deploy to preprod:
+    - Target: `ca-aiva-preprod-eus` in `cae-aiva-nonprod-eus`.
+
+- `main`:
+  - Must only receive changes via PR from `dev`.
+  - Production deployments are triggered by SemVer tags `v*` on `main`.
+  - Deployments use GitHub environment `Production` with required reviewer approval.
+
+## Database Access & Multi-tenancy
+
+- CI/CD workflows must never create or drop tenant databases directly.
+- MySQL servers:
+  - `mysql-aiva-dev-eus-01` for preprod/staging tenants.
+  - `mysql-aiva-prod-eus-01` for prod tenants.
+- Tenant-specific databases (e.g., `tenant_acme`, `tenant_acme_dev`, `tenant_acme_stage`) are created and migrated by application provisioning/migration tooling.
+- ACA apps are granted:
+  - Network access (VNet + private endpoint) to the correct server.
+  - Credentials via Key Vault (read-only for runtime, elevated only for provisioning jobs if needed).
+
+## Container Build & Deployment
+
+- All app deployments use ACR images built by GitHub Actions from the corresponding branch/tag.
+- Dockerfiles must:
+  - Use pinned base images.
+  - Be multi-stage (build + runtime).
+  - Run the app as a non-root user.
+- ACA apps must be deployed via GitHub Actions only; manual portal edits are not allowed for image or config except for emergencies (and must be documented).
+
+## Secrets & Key Vault
+
+- Per-environment Key Vaults: `kv-aiva-dev-eus` (non-prod), `kv-aiva-prod-eus` (prod).
+- All DB credentials, API keys, and app secrets are stored in Key Vault; GitHub secrets only hold:
+  - Azure service principal credentials.
+  - ACR credentials (if not using managed identity).
+- Container Apps use managed identities and Key Vault references for runtime configuration.

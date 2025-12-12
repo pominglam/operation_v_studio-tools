@@ -1,0 +1,96 @@
+---
+description: Service layer: business orchestration, no HTTP concerns
+globs:
+  - "app/Services/**"
+  - "app/Providers/**"
+  - "app/DTOs/**"
+alwaysApply: false
+---
+
+# Service Rules
+
+> Applicability: Triggers for service classes, service providers (bindings), and DTOs used by services.
+
+## Architecture
+
+Services coordinate validators, repositories, and external APIs. No HTTP layer logic allowed.
+
+## Constraints
+
+- **Max function length**: 60 lines
+- **Max file lines**: 400
+- **Require**: Interfaces for external calls
+- **Forbid**: HTTP layer logic
+- **Allow**: Integration with packages
+- **Prefer**: Reliable libraries
+- **Require**: Return types
+- **Exception handling**: Typed exceptions
+- See "Data Transfer" and "Transactions" sections below for details
+
+## Service boundaries and responsibilities
+
+- Services encapsulate business use-cases and orchestrate repositories and external providers
+- Do not reference HTTP layer (no `Request`, no `Response`, no controller concerns)
+- Accept validated inputs (from Form Requests) or typed DTOs
+- Return DTOs or domain models; avoid returning raw arrays
+
+## Composition (services calling services)
+
+- Prefer composing smaller services over large god-services
+- If a service uses another service, keep dependency direction acyclic and explicit via constructor injection
+- Extract shared orchestration into a dedicated service instead of duplicating logic
+
+## Transaction boundaries
+
+- Start/commit transactions in the service that orchestrates multiple repository writes
+- Keep transactions as small as possible; avoid network calls inside a transaction
+- Delegate single-write operations to repositories without starting transactions
+
+## Testing guidance
+
+- Unit test services by mocking repositories and external interfaces
+- Add integration tests where repository/database interaction is critical
+- Prefer typed, custom exceptions for business errors and assert on them in tests
+
+## Example (orchestration)
+
+```php
+final class CheckoutService
+{
+    public function __construct(
+        private readonly OrderRepository $orders,
+        private readonly InventoryService $inventory,
+        private readonly PaymentGateway $payments,
+    ) {}
+
+    public function checkout(CheckoutDTO $dto): Order
+    {
+        return DB::transaction(function () use ($dto) {
+            $this->inventory->reserve($dto->itemId, $dto->quantity);
+            $order = $this->orders->create($dto);
+            $this->payments->charge($order->total_amount, $dto->paymentToken);
+            return $order;
+        });
+    }
+}
+```
+
+## Anti-patterns to avoid
+
+- God service with dozens of methods; split by use-case/domain
+- Catch-all `Exception` without meaningful handling
+- Reaching into controller/request objects from services
+
+## Data Transfer
+
+Use DTOs (Data Transfer Objects) for data transfer between layers. Prefer immutable DTOs.
+
+## Error Handling
+
+Use typed exceptions for error handling. Don't catch generic exceptions unless necessary.
+
+## Transactions
+
+Handle transactions at the service level when coordinating multiple repository calls.
+
+Services coordinate business logic while maintaining clean separation from HTTP and data access layers.

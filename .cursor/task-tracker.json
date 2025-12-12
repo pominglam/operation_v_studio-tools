@@ -1,0 +1,40 @@
+{
+    "tasks": {
+        "rule_compliance_audit": {
+            "last_completed": "2025-01-15",
+            "interval_days": 30,
+            "description": "Review rule compliance across all epic plans. Check cursor-plans/RULE_COMPLIANCE_CHECKLIST.md and ensure all epic plans address applicable rules from .cursor/rules/*.mdc",
+            "checklist_location": "cursor-plans/aiva-dashboard/RULE_COMPLIANCE_CHECKLIST.md"
+        },
+        "dependency_updates_review": {
+            "last_completed": null,
+            "interval_days": 14,
+            "description": "Review and update dependencies"
+        },
+        "code_quality_review": {
+            "last_completed": null,
+            "interval_days": 30,
+            "description": "Review code quality metrics and improvements"
+        },
+        "security_audit": {
+            "last_completed": null,
+            "interval_days": 90,
+            "description": "Security audit and vulnerability check"
+        },
+        "performance_review": {
+            "last_completed": null,
+            "interval_days": 60,
+            "description": "Performance review and optimization check"
+        },
+        "documentation_updates": {
+            "last_completed": null,
+            "interval_days": 30,
+            "description": "Update project documentation"
+        },
+        "schema_documentation_sync": {
+            "last_completed": null,
+            "interval_days": 14,
+            "description": "Sync database schema documentation with migrations"
+        }
+    }
+}

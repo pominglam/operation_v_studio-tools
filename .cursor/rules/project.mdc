@@ -1,0 +1,335 @@
+---
+description: Global project-wide guidelines and best practices
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Project-Wide Rules
+
+## Planning & Requirements
+
+When creating or updating epic plans, feature specifications, or technical requirements:
+
+1. **Systematic Rule Review**: Must cross-reference ALL rule files (`.cursor/rules/*.mdc`) to ensure compliance
+2. **Rule Mapping**: Map each applicable rule to relevant epics/features
+3. **Completeness Check**: Verify that all rules are addressed in plans before finalizing
+4. **Missing Requirements**: Identify and document any gaps between rules and plans
+
+**Required steps for planning:**
+- Read all rule files: `project.mdc`, `architecture.mdc`, `controllers.mdc`, `services.mdc`, `dal.mdc`, `frontend.mdc`, `design_system_rules.mdc`, `testing.mdc`, `versioning.mdc`, `typesafety.mdc`, `console.mdc`, `formatting.mdc`, `infra.mdc`
+- Check each epic/feature against relevant rules
+- Document which rules apply and how they're addressed
+- Update plans to include missing rule requirements
+- Reference `cursor-plans/aiva-dashboard/RULE_COMPLIANCE_CHECKLIST.md` for compliance verification
+
+**Maintenance:**
+- Rule compliance audits are tracked in `.cursor/task-tracker.json` (task: `rule_compliance_audit`)
+- Review checklist monthly (every 30 days) or when rules change
+- Update epic plans if gaps are found during audits
+- Version history is tracked in the checklist file itself (Version History table)
+
+## Code Reusability
+
+For non-business-specific functionality, prioritize in this order:
+1. **Framework features first** - Use Laravel's built-in functionality when available
+2. **Composer packages** - Evaluate reputable Composer packages for functionality not provided by the framework
+3. **Custom code** - Only write custom code when framework and packages don't meet requirements
+
+Examples:
+- Prefer Laravel's built-in features (e.g., `Str::uuid()`, `Hash::make()`, `Storage` facade) over packages
+- Prefer `ramsey/uuid` over hand-rolled UUIDs (only if Laravel doesn't provide it)
+- Prefer `brick/money` for monetary calculations instead of floats (when Laravel doesn't have built-in money handling)
+- Prefer `league/flysystem` adapters for storage abstraction (Laravel uses this internally, but consider direct package if needed)
+
+## Completion Review
+
+- Always review changes against the user's request
+- If gaps remain, iterate (up to 3 times) before finishing
+- Maximum iterations: 10
+
+## Multi-Angle Review
+
+Review changes from multiple angles:
+- **Correctness**: Does it work as intended?
+- **Completeness**: Are all requirements met?
+- **Consistency**: Does it align with existing patterns?
+
+Iterate until satisfied (respect max iterations config).
+
+## Communication Guidelines
+
+- Apply rules intelligently based on context
+- Ask when unsure rather than assuming
+- Prefer numbered lists for clarity
+- Double-check responses for accuracy before sending
+
+### Not Implemented Listing Policy
+
+Stay extremely focused on delivering what's in the specs. Every other good idea needs to be suggested for approval before implementation.
+
+**Suggestion workflow:**
+- **During planning phase**: Suggest all additional ideas and improvements for approval
+- **During implementation**: Work focused on approved items only; do not interrupt with new suggestions
+- **After implementation**: Optionally provide any new suggestions that emerged during implementation
+
+Group items into:
+1. **Requirements**: Items explicitly stated in the spec
+2. **Highly Recommended**: Common-sense best practices strongly advisable
+3. **Other Recommended**: Nice-to-have items that add value
+
+Do not add extras beyond what's explicitly required. Suggest any additional ideas during planning and let the user decide whether to include them.
+
+## SDK Preference
+
+Prefer official or reliable SDKs over direct HTTP. Fall back to HTTP only if SDK is unavailable or non-functional.
+
+## Environment & Configuration
+
+### .env File Handling
+
+- `.env` can be updated for local runs
+- Must never be committed
+- Use `.env.example` for templates
+
+### Database
+
+- **Preferred**: MySQL 8.4.x
+- **Enforce in**: dev, test, CI, prod
+- Use MySQL 8.4.x consistently across all environments for parity
+
+### Multi-Tenancy Routing
+
+When multi-tenancy is required for a webapp, use the following URL format:
+
+- **Format**: `https://{project-name}.{dns}/{tenant-name}/{webapp-path}`
+- **Example**: `https://aiva.tigertech.io/acme-corp/dashboard` or `https://aiva.tigertech.io/acme-corp/campaigns`
+
+**Requirements**:
+- Tenant name must be the first path segment after the domain
+- Tenant identification via URL path segment (not subdomain or header)
+- All routes must be tenant-aware and scoped to the tenant from the URL
+- Tenant middleware extracts tenant name from URL and sets tenant context
+- Frontend routing must include tenant name in all routes
+
+## CLI & Shell Environment
+
+- **Shell**: PowerShell (Core/Desktop) is the required shell environment.
+- **Commands**: All shell commands must be PowerShell-compatible. Do not use Bash/Unix-specific syntax (e.g., `export`, `&&` vs `;`, `cp`, `ls -la` if distinct from PS aliases).
+- **Git Pagers**: When running git commands that may invoke a pager (e.g., `git log`, `git diff`, `git show`), ALWAYS append `--no-pager` to avoid hanging the process (e.g., `git --no-pager log`).
+
+## Development Rules
+
+### Versioning Contracts
+
+- API versioning required
+- CLI output must be stable
+- Error shapes must be consistent
+
+### External Integrations
+
+- Timeouts required for all external calls
+- Retries with backoff and jitter
+- Circuit breaker patterns
+- Provider abstraction via interfaces
+
+#### External API Logging
+
+Applies to both **outbound** (us calling external APIs) and **inbound** (external APIs/3rd parties calling us) external API traffic.
+
+- **Log both success and failures**: Log all external API calls (before and after)
+- **Timestamps**: 
+  - `created_at`: Right before making/receiving the API hit
+  - `updated_at`: Right after receiving/sending the API response
+- **Log fields**: URL, HTTP method, status code, duration (response time)
+- **Log levels**:
+  - Success: `info`
+  - Warning: `warning`
+  - Error: `error`
+- **Security**:
+  - Mask sensitive data in headers (Authorization, API keys, tokens)
+  - Mask sensitive data in request/response bodies
+  - Mask sensitive data in query parameters (especially tokens)
+  - Keep full request/response bodies but with sensitive data masked
+- **Organization**:
+  - Use separate log channel: `external_api` (or similar)
+  - Include correlation/trace IDs for linking related logs
+  - Provide web UI to view logs as part of system health page/menu with:
+    - Basic filtering capabilities
+    - Paging for large result sets
+    - Human-readable request/response display (formatted JSON, etc.)
+    - Collapse/expand functionality for request/response bodies
+- **Retention**:
+  - Log full request/response bodies (with sensitive data masked)
+  - Cron job to flush request/response content after 60 days
+
+### Configuration & Secrets
+
+- Validate environment variables on boot
+- Never log secrets
+- Track `.env.example` with all required vars
+- Use typed config casts
+
+### Caching & Performance
+
+- Define cache keys with TTLs and invalidation strategy
+- Cache metrics for monitoring
+- Set performance budgets
+- Ensure idempotency for writes
+
+### Observability & Security
+
+- Use structured logging with trace IDs
+- No sensitive data in logs
+- Metrics and alerts in place
+- Dependency audits in CI
+- System health page: Most, if not all features requiring external systems (including infrastructure systems such as DBMS) should be part of the system health page
+
+### Database Migrations
+
+- Consistent DBMS: MySQL 8.4.x
+- Reversible, small migrations
+- Document schema guidelines
+- Seeders and factories available
+
+### Documentation
+
+- **General project requirements**: Store project overview, vision, and general requirements in `docs/project-overview.md` (or similar)
+- **Feature requirements**: Store feature requirements in `docs/requirements/{feature-name}.md` (one file per feature/epic)
+- Keep requirements current
+- ADRs for key decisions
+- Changelog required
+- Local testing guides available
+
+### CI/CD
+
+- Parallel tests
+- Cache dependencies
+- Lint/format gate
+- Coverage artifacts
+
+### Local-CI Parity
+
+Ensure local test runs match CI:
+- PHP 8.4.x
+- MySQL 8.4.x
+- Node.js 20.x LTS
+- Same PHP extensions (pdo_mysql)
+- Use same Docker image or equivalent local setup
+
+**Pre-PR Local Checklist (Mandatory):**
+Before opening a PR, you MUST run the following commands (PowerShell) to ensure parity with CI:
+1.  **Backend**: `php vendor/bin/pint`; `php vendor/bin/phpstan analyse --memory-limit=1G`
+2.  **Frontend**: `npx prettier --write "resources/js/**/*"`; `npm run lint`; `npm run build`
+3.  **Tests**: `php artisan test`; `npm run test:coverage`
+4.  **Docs/Infra**: `npx prettier --write .` (if touching config/docs)
+5.  **Reference**: See `docs/local-ci-parity.md` for the complete guide.
+
+### Maintenance & Audit Task Tracking
+
+- Track periodic tasks in `.cursor/task-tracker.json` (or similar tracking file)
+- Record last completion date for each task
+- Periodically check for overdue tasks and suggest/remind when tasks are due
+- Common tasks to track:
+  - Rule compliance audit
+  - Dependency updates review
+  - Code quality review
+  - Security audit
+  - Performance review
+  - Documentation updates
+  - Schema documentation sync
+
+## Git Repository Hygiene
+
+- **Required**: `.gitattributes` file must exist for EOL normalization
+- Normalize line endings:
+  - PHP, YAML, MD, MDC, JSON, XML, .env.example: LF
+  - Batch files: CRLF
+- Do not set executable bits on text files
+- Recommend `core.filemode=false` on cross-platform teams
+- **Setup**: Create `.gitattributes` during initial project scaffolding
+
+## Git Branching Strategy
+
+### Branches
+
+- **main**:
+  - Must remain "super clean" at all times
+  - Merging: `dev` branch merges into `main` only when 100% ready to go live
+  - Deployment: Deploys to `prod`
+- **dev**:
+  - Should be kept as clean as possible
+  - Merging: All `feature/*` and `hotfix/*` branches merge into `dev`
+  - Deployment: Deploys to `preprod`
+- **feature/***:
+  - Purpose: Used for developing new features
+  - Merging: Merges into `dev` after successful testing and review
+  - Deployment: Deploys to `staging`
+- **hotfix/***:
+  - Purpose: Used for urgent fixes or patches
+  - Merging: Merges into `dev` after validation
+  - Deployment: Deploys to `staging`
+
+### Environments
+
+- **prod**: Live system accessed by end users; always reflects `main` branch
+- **preprod** (on demand): Final testing before production; used by CI/CD or for verification before merging to `main`
+- **staging** (on demand): Test specific branches ready for UAT; after validation, branch merges into `dev`
+- **local**: Developer's local setup for active development and debugging
+
+### Git Safety Rules for Cursor
+
+- Before any commit or push, verify current branch name matches pattern: `feature/*` or `hotfix/*`
+- Never commit or push directly from protected branches: `dev`, `main`
+- If current branch is `dev` or `main`, refuse to commit/push and ask to create a feature/hotfix branch first
+- Always ensure branch name follows pattern before auto-committing or auto-pushing
+- Auto-commit/push is allowed on `feature/*` and `hotfix/*` branches
+- Auto-commit/push is blocked on `dev` and `main` branches
+- If asked to push to `dev`/`main`, refuse and ask for explicit approval phrase: "approve push"
+- Never force-push without explicit approval phrase: "approve force"
+
+## Feature Flow (TDD)
+
+Always follow TDD-first flow per feature:
+
+1. Specs doc
+2. Create tests (TDD approach)
+3. Implement
+4. Debug until tests pass
+5. Review changes against specs/rules; clean up; debug until all tests pass
+6. When feature is ready: Verify if container is up before spinning it up; verify if seed data exists before seeding or reseeding; then spin up container with seed data for review
+7. **Browser Testing**: Before requesting user review, load the application in Cursor browser and verify:
+   - Application loads correctly at the expected URL
+   - UI renders properly
+   - Key user interactions work (clicks, form submissions, navigation)
+   - No console errors or critical issues visible
+   - Features function as expected from a user perspective
+   - Fix any issues found before presenting for review
+8. Product review (by user)
+9. Commit after approval
+
+**Note**: Do not commit implementation before the user reviews and approves. Always test in Cursor browser before requesting review.
+
+Aliases: `imp`
+
+## Timezone Handling
+
+- **Server settings**: All server-side timezone settings (PHP `date.timezone`, database timezone) must be set to Eastern Time (America/Toronto - EST/EDT)
+- **Web UI**: Display dates in the client's local timezone
+- **API**: Emit ISO-8601 timestamps for correct client-side timezone rendering
+
+---
+
+See other rule files for layer-specific and technology-specific rules.
+
+## Separation of Concerns & DI
+
+- Controllers handle HTTP only; services handle business logic; repositories handle persistence
+- Use constructor injection for dependencies; depend on interfaces for external providers
+- Extract shared logic to services or helpers when:
+  - Method exceeds its single responsibility
+  - Logic is reused across controllers/services
+  - Unit testing the logic in isolation is valuable
+
+Minimal helper guidance:
+- Keep helpers pure and stateless; avoid coupling to framework globals where possible

@@ -1,0 +1,143 @@
+---
+description: Frontend rules for Vue 3.4.x, TypeScript 5.7.x, Tailwind CSS 4.0.x, Vite 6.x, Pinia 2.1.x
+globs:
+  - "**/*.vue"
+  - "**/*.ts"
+  - "**/*.tsx"
+  - "**/resources/js/**"
+  - "**/src/components/**"
+  - "**/vite.config.*"
+  - "**/tsconfig.json"
+  - "**/tailwind.config.*"
+  - "**/postcss.config.*"
+alwaysApply: false
+---
+
+# Frontend Rules
+
+> Applicability: Triggers for Vue/TS source files and frontend tooling configs (Vite, TSConfig, Tailwind, PostCSS).
+
+## Vue 3 Composition API
+
+- Use `<script setup>` syntax for new Vue components
+- Prefer Composition API over Options API
+- Leverage Vue 3.4.x features
+
+## TypeScript
+
+- Enable TypeScript strict mode
+- Require explicit types for function parameters and return values
+- Use type aliases for complex object shapes
+- Avoid `any` type except for escape hatches (with justification)
+
+## Composables (extracting reusable logic)
+
+- Extract cross-component logic into composables (e.g., `useFetch`, `usePagination`)
+- Keep composables pure and parameterized; avoid hidden globals
+- Return typed state and functions; document inputs/outputs
+
+## Component organization
+
+- Split components when:
+  - Template or script grows beyond 200ΓÇô300 lines
+  - A sub-area can be reused or tested in isolation
+  - Multiple responsibilities emerge (rendering vs data orchestration)
+- Co-locate component, test, and style files
+
+## Props vs Emits
+
+- Props: data in; validate and type props
+- Emits: events out; declare `defineEmits` with typed payloads
+- Avoid two-way binding except for `v-model` patterns
+
+## Vue Component Structure
+
+- **Order**: script, template, style (in that order)
+- Use single-file components (`.vue`)
+- Component naming: PascalCase
+- Props validation required for public components
+
+Example:
+
+```vue
+<script setup lang="ts">
+// Component logic
+</script>
+
+<template>
+  <!-- Component template -->
+</template>
+
+<style scoped>
+/* Component styles */
+</style>
+```
+
+## Pinia Stores
+
+- Use setup syntax with TypeScript
+- Stores are not namespaced (Vue 3/Pinia pattern)
+- Prefer stores over prop drilling for shared state
+- Type-safe store definitions
+- Organize stores by domain (e.g., `useUserStore`, `useCartStore`)
+- Keep stores thin; move complex logic to composables/services when reusable
+
+## Vue Router
+
+- Use type-safe route definitions
+- Lazy-load route components for code splitting
+- Type route meta data
+
+## Navigation
+
+- New web UI pages/sections should be added to the navbar by default
+- Only exclude from navbar if explicitly specified
+
+## Tailwind CSS 4.0.x
+
+- Use CSS-first configuration (`@theme` syntax)
+- Prefer utility classes over custom CSS
+- Responsive design: mobile-first approach
+- Class ordering: layout, spacing, sizing, typography, colors, effects, transitions
+
+## Vite 6.x
+
+- Leverage code splitting
+- Enable tree shaking
+- Use `import.meta.env` for environment variables (not `process.env`)
+
+## Axios 1.7.x
+
+- Configure interceptors for authentication
+- Centralize error handling
+- Base URL from environment variables
+
+## Code Quality
+
+- **Max component length**: 400 lines
+- **Max function length**: 60 lines
+- **TODO comments**: Warn on TODO comments
+- **Console.log**: Disallow in production code
+
+### Good vs Bad
+
+Good:
+
+```vue
+<script setup lang="ts">
+const props = defineProps<{ id: string }>();
+const emit = defineEmits<{ (e: 'save', payload: { id: string }): void }>();
+const { data, loading } = useItem(props.id);
+function onSave() { emit('save', { id: props.id }); }
+</script>
+```
+
+Bad:
+
+```vue
+<script setup>
+// no types, mixed responsibilities, side-effects in template helpers
+</script>
+```
+
+Frontend rules apply to Vue 3, TypeScript, and Tailwind CSS code. Always use strict TypeScript and Composition API.

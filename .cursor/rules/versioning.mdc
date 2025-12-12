@@ -1,0 +1,99 @@
+---
+description: Dependency version pinning for environment parity
+globs:
+  - "**/composer.json"
+  - "**/package.json"
+  - "**/package-lock.json"
+  - "**/Dockerfile"
+  - "**/docker-compose.yml"
+  - "**/.github/workflows/**"
+  - "**/.nvmrc"
+  - "**/.node-version"
+alwaysApply: true
+---
+
+# Versioning Rules
+
+## Required Versions
+
+### PHP
+- **Version**: ^8.4 (pinned minor)
+- **Docker image**: `php:8.4-fpm`
+- **Validation**: Check in CI
+
+### Laravel
+- **Version**: ^12.0 (pinned minor)
+- **Conventions**: Follow Laravel 12 best practices
+
+### MySQL
+- **Version**: 8.4.x (pinned minor)
+- **Docker image**: `mysql:8.4`
+
+### Node.js
+- **Version**: 20.x LTS
+- **Docker image**: `node:20-alpine`
+- **Required files**: `.nvmrc` must exist and specify `20` (or specific minor like `20.11.0`)
+- **Validation**: Specify in `.nvmrc` and `package.json` engines field
+- **CI**: Validate Node version matches `.nvmrc` in CI pipelines
+
+### Vue Ecosystem
+- **Vue**: ^3.4 (pinned minor)
+- **Vue Router**: ^4.4 (pinned minor)
+- **Pinia**: ^2.1 (pinned minor)
+
+### TypeScript & Build Tools
+- **TypeScript**: ^5.7 (pinned minor)
+- **Vite**: ^6.0 (pinned minor)
+
+### Tailwind CSS
+- **Version**: ^4.0 (pinned minor)
+- **Configuration**: Use CSS-first approach
+
+### Testing Frameworks
+- **Pest**: ^3.0
+- **Vitest**: ^2.0
+- **@vue/test-utils**: ^2.0
+- **Playwright**: ^1.0 (preferred) or **Cypress**: ^13.0
+
+## Version Pinning Strategy
+
+- **Composer**: Prefer exact minor (^12.0)
+- **npm**: Use caret for minor versions
+- **Docker**: Use specific image tags
+- **GitHub Actions**: Pin action versions (not commit SHAs)
+
+## Validation
+
+- Check versions in CI
+- Fail build on version mismatches
+- Report outdated dependencies
+
+## Application Release Versioning (SemVer)
+
+Use Semantic Versioning (SemVer) for application releases: `MAJOR.MINOR.PATCH`
+
+### Version Format
+
+- **Format**: `v1.2.3` (e.g., `v1.0.0`, `v2.1.5`)
+- **MAJOR**: Breaking/incompatible changes
+- **MINOR**: New features, backward compatible
+- **PATCH**: Bug fixes, backward compatible
+
+### Git Tagging
+
+- **Tag format**: `v1.2.3` (always prefixed with `v`)
+- **Pre-release suffixes**: `-alpha.1`, `-beta.1`, `-rc.1` (e.g., `v2.0.0-beta.1`)
+- **When to bump**:
+  - PATCH: Bug fixes, patches
+  - MINOR: New features, enhancements (backward compatible)
+  - MAJOR: Breaking changes, major refactors
+
+### Examples
+
+- `v1.0.0` - Initial release
+- `v1.0.1` - Bug fix release
+- `v1.1.0` - New feature release
+- `v2.0.0` - Major breaking change
+- `v2.0.0-beta.1` - Pre-release beta
+
+Version rules apply always. Pin minor versions for environment parity. Validate in CI/CD pipelines.

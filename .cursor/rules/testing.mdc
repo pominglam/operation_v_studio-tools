@@ -1,0 +1,121 @@
+---
+description: Comprehensive testing rules for Pest (PHP), Vitest (JS/TS), Playwright/Cypress (E2E)
+globs:
+  - "tests/**"
+  - "**/*.spec.ts"
+  - "**/*.test.ts"
+  - "**/*.test.js"
+  - "**/*.spec.js"
+  - "**/tests/**"
+  - "**/e2e/**"
+  - "**/playwright/**"
+  - "**/cypress/**"
+  - "**/cypress.config.*"
+  - "**/playwright.config.*"
+  - "**/vitest.config.*"
+alwaysApply: false
+---
+
+# Testing Rules
+
+> Applicability: Triggers for PHP/JS test files and their tooling configs (Vitest, Playwright, Cypress). Use with `tests.mdc` for legacy PHP-specific rules.
+
+## PHP Testing (Pest 3.x)
+
+- **Framework**: Pest 3.x
+- **Organization**: Hybrid feature-first with layer subfolders
+- **Max test method length**: 120 lines
+- **Prefer**: Unit tests over feature tests for pure logic
+- **Mocking**: Mock external HTTP calls
+- **Disallow**: Real network calls in tests
+- **TDD**: Enforced
+- **Disallow**: Incomplete tests
+- **Coverage**: 100% target (exceptions must be justified)
+- **Local Coverage**: Use dedicated Docker test runner (`scripts/test-backend-coverage.ps1`); do NOT use Sail or host PHP.
+
+### Database Alignment
+
+- **DBMS**: MySQL 8.4.x (match production)
+- **Notes**: Use MySQL 8.4.x for tests to match production. Update from MariaDB per stack requirements.
+
+## JavaScript/TypeScript Testing (Vitest 2.x)
+
+- **Framework**: Vitest 2.x
+- **Vue Test Utils**: 2.x
+- **Setup files**: Required
+- **Coverage reporters**: text, html, lcov
+- **Mocking**: Axios, Router
+- **Component testing**: Enabled
+
+Use Vitest 2.x with @vue/test-utils 2.x for Vue component testing. Mock external dependencies.
+
+## E2E Testing
+
+- **Frameworks**: Playwright 1.x (preferred) or Cypress 13.x
+- **Pattern**: Page object pattern
+- **No database setup**: In tests themselves
+- **Test data**: Use factories
+- **CI Parity**:
+  - Run `npm run test:e2e -- --grep @smoke` locally before PRs.
+  - See `docs/local-ci-parity.md` for full local setup (MySQL 8.4, host entries).
+
+Use Playwright 1.x (preferred) or Cypress 13.x for E2E. Follow page object pattern. Use factories for test data.
+
+### Playwright Smoke Suite (`@smoke`)
+
+- **Purpose**: Provide a fast, high-signal subset of E2E tests that runs on every PR (via `--grep @smoke`) while keeping runtime under ~5–10 minutes.
+- **Tag tests with `@smoke` when they are**:
+  - Business‑critical, happy‑path flows (e.g. tenant/superadmin authentication, main dashboards, essential admin CRUD).
+  - Stable and deterministic (no flaky timing or external network dependencies).
+  - Short-running (typically a few seconds each; collectively budgeted for the PR E2E job).
+- **Do not tag with `@smoke` when tests are**:
+  - Long, multi‑step or cross‑system flows (full journeys, cross‑tenant isolation, etc.).
+  - Dependent on fragile data setup or environment state.
+  - Frequently skipped (`test.skip`) or otherwise known to be flaky/unstable.
+- **How to apply `@smoke`**:
+  - Prefer tagging individual tests by adding `@smoke` in the `test()` title, e.g. `test('@smoke Successful tenant login', ...)`.
+  - Only tag a whole `test.describe()` block if **all** contained tests meet the smoke criteria.
+  - During review of new Playwright tests, explicitly decide whether they should be `@smoke` under these rules.
+
+## Test Organization
+
+- **Structure**: Feature-first with unit subfolders
+- **Naming**: describe/it/expect structure
+- **Fixtures location**: `tests/fixtures`
+- **Factories location**: `database/factories`
+
+Organize tests by feature with unit subfolders. Keep fixtures and factories separate.
+
+## Test Data
+
+- **Prefer**: Factories over seeders
+- **Seeding**: Selective
+- **Fixtures**: JSON/YAML
+- **Disallow**: Hardcoded database IDs
+
+## Multi-Angle Review
+
+Review tests from multiple angles:
+- **Positive paths**: Happy path scenarios
+- **Negative paths**: Error conditions
+- **Edge cases**: Boundary conditions
+
+Enabled with max 5 iterations.
+
+## Contract Tests
+
+- **Require**: For public interfaces
+- **Schema or snapshot**: Yes
+- **API contracts**: OpenAPI schema
+
+Require contract tests for public interfaces. Use OpenAPI schema for API contracts.
+
+## New Feature Requirements (TDD Guardrails)
+
+- **Mandatory**: For all new features, you must implement:
+  - At least one **happy-path test**.
+  - At least one **failure-case test** (validation, error handling, or permission denial).
+- **Timing**: Tests must be implemented and passing **before** requesting review or merging.
+- **AI Generated Code**: All AI-generated logic must be explicitly covered by tests to ensure reliability.
+
+Testing rules apply to all test files. TDD is mandatory for new features. 100% coverage target for units/features.

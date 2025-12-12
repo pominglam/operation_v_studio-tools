@@ -1,0 +1,59 @@
+---
+description: PHP test structure and boundaries (legacy - see testing.mdc for comprehensive rules)
+globs:
+  - "tests/**"
+alwaysApply: false
+---
+
+# PHP Test Rules (Legacy)
+
+> **Note**: For comprehensive testing rules covering Pest, Vitest, and E2E, see `testing.mdc`.
+
+> Applicability: Triggers for PHP tests under `tests/**`. Use together with `testing.mdc` for JS/E2E rules.
+
+## Organization
+
+- **Structure**: Hybrid feature-first with layer subfolders
+- **Pattern**: Group tests by feature (e.g., card-validation) with unit subfolders per layer (services/resources/bin-lookup)
+- **Cross-cutting infra**: Keep by layer
+- **Placement**: Co-locate unit tests with the code they cover; keep dedicated top-level suites for integration and E2E tests
+
+## Code Quality
+
+- **Max test method length**: 120 lines
+- **Prefer**: Unit tests over feature tests for pure logic
+- **TODO comments**: Not warned
+- **Disallow**: Incomplete tests
+
+## Testing Practices
+
+- **Mock external HTTP calls**: Required
+- **Disallow real network calls**: Required
+- **Enforce TDD**: Required
+
+## Multi-Angle Review
+
+After writing a unit test, review it multiple times (max 5) from distinct angles:
+- **Positive paths**: Happy path scenarios
+- **Negative paths**: Error conditions
+- **Edge cases**: Boundary conditions
+
+Ensure assertions, setups/mocks, and boundaries are accurate.
+
+## Coverage
+
+- **Target**: 100% coverage on units/features
+- **Exceptions**: Must be justified in code review
+
+## Contract Tests
+
+- **Require**: For public interfaces
+- **Schema or snapshot**: Yes
+
+## Database Alignment
+
+- **Enforce same DBMS**: Yes
+- **Preferred**: MySQL 8.4.x
+- **Notes**: Tests should run against MySQL 8.4.x (same as production stack) to avoid drift. Update from MariaDB per stack requirements.
+
+Tests should be deterministic; prefer mocking external integrations.

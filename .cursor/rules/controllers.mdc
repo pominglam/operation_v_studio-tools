@@ -1,0 +1,112 @@
+---
+description: API controllers: request handling only, no business logic
+globs:
+  - "app/Http/Controllers/**"
+  - "routes/**/*.php"
+  - "app/Http/Requests/**"
+alwaysApply: false
+---
+
+# Controller Rules
+
+> Applicability: Triggers for controller classes, route files referencing controllers, and form requests used by controllers.
+
+## Architecture
+
+Controllers should delegate to services and return HTTP responses only.
+
+## Constraints
+
+- **Max function length**: 40 lines
+- **Max file lines**: 300
+- **Forbid**: Business logic in controllers
+- **Forbid**: Direct database calls
+- **Prefer**: Form requests for validation
+- **Require**: Return types
+- **Use**: Laravel Resource classes for API responses
+- **Error handling**: Try/catch should delegate to service layer
+
+## What counts as business logic (and what does not)
+
+- Business logic examples (move to services):
+  - Cross-entity orchestration (e.g., create order, reserve inventory, charge card)
+  - Transactions and retries
+  - Non-trivial branching or calculations
+  - Integration with external providers (through interfaces)
+- Acceptable controller logic:
+  - Request validation via Form Requests
+  - Simple parameter parsing and routing concerns
+  - Selecting the appropriate service method
+  - Mapping service results to HTTP resources/status codes
+
+## Method organization (keep controllers thin)
+
+Recommended order inside controller files:
+1. Route-handling public methods (short, delegate to services)
+2. Authorization methods (`authorizeResource` / policies)
+3. Private helper methods for trivial HTTP concerns only (avoid business logic)
+
+- One action = one responsibility; keep methods under ~40 lines
+- Avoid injecting repositories directly; depend on services instead
+
+## Good vs Bad
+
+Bad (business logic in controller):
+
+```php
+public function store(StoreOrderRequest $request): JsonResponse
+{
+    // BAD: mixing validation, DB, and external calls
+    DB::transaction(function () use ($request) {
+        $order = Order::create($request->validated());
+        $inventory = Inventory::lockForUpdate()->find($order->item_id);
+        if ($inventory->quantity < $order->qty) {
+            throw new \\RuntimeException('Out of stock');
+        }
+        $inventory->decrement('quantity', $order->qty);
+        $gateway = new StripeGateway();
+        $gateway->charge($order->total_amount);
+    });
+    return response()->json(['status' => 'ok']);
+}
+```
+
+Good (delegate to service):
+
+```php
+public function store(StoreOrderRequest $request): JsonResponse
+{
+    $result = $this->orderService->create($request->validated());
+    return response()->json(OrderResource::make($result), 201);
+}
+```
+
+## Type Safety
+
+- **Strict types**: Preferred (declare(strict_types=1))
+- **Return types**: Required
+
+## Example
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Requests\MyRequest;
+use App\Http\Resources\MyResource;
+use App\Services\MyService;
+
+class MyController extends Controller
+{
+    public function __invoke(MyRequest $request): MyResource
+    {
+        $result = app(MyService::class)->handle($request->validated());
+        return MyResource::make($result);
+    }
+}
+```
+
+Controllers should remain thin and delegate all business logic to services.

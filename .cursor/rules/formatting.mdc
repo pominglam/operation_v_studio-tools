@@ -1,0 +1,69 @@
+---
+description: Code formatting standards: Laravel Pint (PHP), Prettier (JS/TS/Vue), Tailwind class ordering
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Formatting Rules
+
+## PHP Formatting (Laravel Pint)
+
+- **Tool**: Laravel Pint
+- **Preset**: Laravel
+- **Standard**: PSR-12
+- **Run on save**: Optional
+- **Run in CI**: Required
+- **Local Command**: `php vendor/bin/pint` (fix) or `php vendor/bin/pint --test` (check)
+
+Use Laravel Pint with PSR-12 standard for PHP formatting.
+
+## JavaScript/TypeScript/Vue Formatting (Prettier)
+
+- **Tool**: Prettier
+- **Config file**: `.prettierrc.json`
+- **Ignore file**: `.prettierignore`
+- **Vue support**: Enabled
+- **Tailwind plugin**: Enabled
+- **Run on save**: Yes
+- **Run in CI**: Required
+- **Local Command**: `npx prettier --write "resources/js/**/*"`
+
+Use Prettier for JS/TS/Vue formatting. Include Tailwind class ordering plugin.
+
+## Tailwind Class Ordering
+
+- **Plugin**: `@tailwindcss/prettier-plugin`
+- **Order**: layout, spacing, sizing, typography, colors, effects, transitions
+- Group related utilities together
+
+Use Tailwind Prettier plugin for consistent class ordering.
+
+## EditorConfig
+
+- **File required**: Yes
+- **Charset**: UTF-8
+- **Line endings**: LF
+- **Indent style**: Space
+- **Indent sizes**:
+  - Default/PHP: 4 spaces
+  - JS/TS/Vue: 2 spaces
+  - YAML/YML: 2 spaces
+  - JSON: 2 spaces
+- **Insert final newline**: Yes
+- **Trim trailing whitespace**: Yes
+
+Maintain `.editorconfig` for cross-editor consistency.
+
+## File Line Endings
+
+- **Unix/Windows**: LF (enforced via `.gitattributes`)
+- **Exception**: Batch files use CRLF
+
+Enforce LF line endings on all platforms via `.gitattributes`:
+- PHP: LF
+- JS/TS/Vue: LF
+- YAML: LF
+- Batch: CRLF
+
+Formatting rules apply always. Format on save for development; enforce in CI/CD pipelines.

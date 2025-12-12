@@ -1,0 +1,50 @@
+---
+description: Simple architecture principles for layered Laravel/Vue app
+globs:
+  - "app/**"
+alwaysApply: true
+---
+
+# Architecture Principles (Simple)
+
+Keep the architecture straightforward and maintainable with clear boundaries and minimal layers.
+
+All business logic lives in services.
+
+## Layers and Responsibilities
+
+- Controllers: HTTP concerns only (routing, validation via Form Requests, mapping to resources)
+- Services: Business orchestration and transactions; compose repositories and providers
+- Repositories (DAL): Persistence and query logic; no business rules
+
+## Dependency Direction
+
+- Controller ΓåÆ Service ΓåÆ Repository ΓåÆ Database
+- Depend on interfaces for external providers; bind implementations in service providers
+- Avoid circular dependencies; prefer constructor injection
+
+## Simplicity & Refactoring
+
+- Start simple; avoid premature abstraction
+- Refactor when real needs emerge (reuse, complexity, testing)
+
+## When to Create a New Layer or Extract Logic
+
+- Extract to a service when controller logic grows or is reused
+- Extract to a repository when queries grow complex or shared
+- Extract to a composable/helper when frontend or service logic is reusable and pure
+
+## Code Organization
+
+- Group by domain/feature where practical (e.g., Orders, Billing)
+- Co-locate DTOs, services, repositories within their domain
+- Keep files small and focused; prefer many small units over large god-classes
+
+## Testing
+
+- Unit test services with mocked repositories/providers
+- Integration test DAL with database
+- Contract test public interfaces (APIs) against schemas
+
+Keep it simple: thin controllers, cohesive services, focused repositories.
+

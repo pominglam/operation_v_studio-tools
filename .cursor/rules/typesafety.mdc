@@ -1,0 +1,104 @@
+---
+description: Type safety enforcement: PHPStan/Psalm for PHP, TypeScript strict mode
+globs:
+  - "**/*.php"
+  - "**/*.ts"
+  - "**/*.tsx"
+  - "**/app/**"
+  - "**/tests/**"
+alwaysApply: true
+---
+
+# Type Safety Rules
+
+## PHP Static Analysis
+
+- **Tool**: PHPStan level 8 (or Psalm in strict mode)
+- **New code**: Must pass static analysis
+- **Legacy code**: Can use baselines, but should be gradually improved
+- **CI Parity**: Run `php vendor/bin/phpstan analyse --memory-limit=1G` locally before PR.
+
+## PHP Type Declarations
+
+- Require return types for all functions
+- Require parameter types
+- Prefer `declare(strict_types=1)` in new files
+- Use typed class properties (PHP 8.4)
+- Use explicit nullable notation (`?Type` or `Type|null`)
+
+Laravel-specific examples:
+
+```php
+final class Order extends Model
+{
+    /** @return BelongsTo<User, Order> */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /** @return HasMany<OrderItem> */
+    public function items(): HasMany
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+}
+```
+
+## TypeScript Strictness
+
+Enable all strict mode flags:
+- `strict`: true
+- `noImplicitAny`: true
+- `strictNullChecks`: true
+- `noUnsafeAny`: true
+- `exactOptionalPropertyTypes`: true
+
+**Pre-PR Requirement**:
+- Keep `tsconfig.json` strict flags enabled.
+- Run `npm run lint` and `npm run test:coverage` locally to catch type/test issues early.
+
+Require explicit types; avoid `any` type except for escape hatches with justification.
+
+Nullable vs optional:
+- Optional property: `foo?: string` (may be missing)
+- Nullable property: `foo: string | null` (present but may be null)
+
+DTO examples:
+
+```ts
+export interface CheckoutDTO {
+  userId: number;
+  itemId: number;
+  quantity: number;
+  note?: string; // optional
+}
+
+export interface OrderDTO {
+  id: number;
+  totalAmount: number;
+  couponCode: string | null; // nullable
+}
+```
+
+## DTO Type Safety
+
+- Use strongly-typed DTOs for API boundaries
+- Prefer immutable DTOs
+- Validate data matches type definitions
+
+## API Type Contracts
+
+- Maintain OpenAPI schema for API contracts
+- Use typed request/response objects
+- Validate requests match types
+
+## Laravel Type Hints
+
+- Type hint Eloquent relationships
+- Use PHPStan docblocks for model attributes until PHP 8.4 typed properties are standard
+- Type hint form request validation
+
+## Application
+
+Type safety rules apply always for new code. Legacy code can use baselines but should be gradually improved.

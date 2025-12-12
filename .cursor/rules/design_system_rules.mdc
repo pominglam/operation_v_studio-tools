@@ -1,0 +1,258 @@
+# AiVA Dashboard Design System Rules
+
+This document captures how the current AiVA Dashboard implementation is wired so that Figma-driven updates (via the Model Context Protocol tools) can stay consistent with the codebase.
+
+## Context Snapshot
+
+- Primary mockups: [AiVA SaaS Dashboard Design](https://www.figma.com/make/IkF3MDpjCaZBohFOmgmri2/AiVA-SaaS-Dashboard-Design?node-id=0-1&t=GHbiYV5YToi0SwTM-1)
+- React-based reference build lives in `docs/design/code/AiVA SaaS Dashboard Design` and should be consulted whenever the Vue app needs fidelity updates.
+
+```3:15:docs/design/code/README.md
+This directory contains the **AiVA SaaS Dashboard Design** - a React-based clickable prototype that serves as a reference for frontend implementation.
+```
+
+---
+
+## 1. Token Definitions
+
+**Location & format**
+
+- All design tokens are CSS custom properties defined once in `resources/css/app.css`. They were ported from the design system’s `globals.css` and are injected globally because `app.ts` imports the stylesheet before Vue mounts.
+- Token categories include typography, color system, spacing/radii, glassmorphism presets, and background layers.
+
+```7:100:resources/css/app.css
+:root {
+    --font-size: 16px;
+    --typography-header-size: 16px;
+    --typography-metrics-weight: 600;
+    --color-text-primary: rgba(255, 255, 255, 0.9);
+    --color-accent-positive: #4ef081;
+    --color-glass-fill: rgba(255, 255, 255, 0.04);
+    /* ...additional tokens for badges, cards, shadows, and backgrounds... */
+}
+```
+
+**Usage guidelines**
+
+- Prefer CSS variables for anything that maps 1:1 with Figma tokens (colors, typography, radii) and layer Tailwind utilities for layout.
+- Tailwind v4 is used without theme extensions (`tailwind.config.js`). If a new Figma token needs Tailwind utility access, either rely on `var(--token-name)` directly or extend Tailwind’s theme once.
+- There is no token build/transform pipeline yet—any updates must be edited manually in `app.css`.
+
+---
+
+## 2. Component Library
+
+**Structure**
+
+- Shared primitives live in `resources/js/components`, while route-level UIs stay under `resources/js/pages`.
+- Every component is a Vue 3 Single File Component using `<script setup lang="ts">` with Pinia stores for state.
+- Navigation, forms, and tables are implemented directly in the page components; there is no Storybook or doc site.
+
+```38:74:resources/js/components/admin/AdminNav.vue
+<nav class="bg-white shadow-sm border-b border-gray-200 mb-6" aria-label="Superadmin navigation">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex flex-col gap-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex flex-wrap items-center gap-4 sm:gap-8">
+                <router-link v-for="link in navLinks" :key="link.name" :to="{ name: link.name }">
+                    <!-- ... -->
+```
+
+**Implementation notes**
+
+- Reusable logic belongs in Pinia stores under `resources/js/stores`. Components read from stores during `setup()`; keep asynchronous fetching out of templates to avoid inconsistent hydration.
+- When porting React reference components, match the structure under `resources/js/pages/...` to keep router lazy-loading intact.
+
+---
+
+## 3. Frameworks & Libraries
+
+**Frontend stack**
+
+- Vue 3 + TypeScript (`resources/js/app.ts`), Pinia for state, Vue Router for navigation, Axios for API access, Tailwind CSS v4 for styling.
+- Vite handles bundling, alias resolution (`@ -> resources/js`), SSR manifest emission, and dev server HMR on port 5173.
+- Testing uses Vitest + Vue Test Utils; Playwright covers e2e flows.
+
+```6:47:package.json
+"scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:e2e": "playwright test"
+},
+"dependencies": {
+    "axios": "^1.13.2",
+    "pinia": "^2.1.0",
+    "vue": "^3.4.0",
+    "vue-router": "^4.4.0"
+},
+"devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "tailwindcss": "^4.0.0",
+    "vitest": "^2.0.0"
+}
+```
+
+```1:26:vite.config.ts
+export default defineConfig({
+    plugins: [vue()],
+    resolve: {
+        alias: {
+            '@': resolve(__dirname, './resources/js'),
+        },
+    },
+    build: {
+        outDir: 'public/build',
+        emptyOutDir: true,
+        manifest: 'manifest.json',
+        rollupOptions: {
+            input: 'resources/js/app.ts',
+        },
+    },
+    server: { host: '0.0.0.0', port: 5173 },
+});
+```
+
+---
+
+## 4. Asset Management
+
+- Laravel’s Blade entrypoint (`resources/views/app.blade.php`) uses `@vite` to load the compiled app, so any new assets bundled by Vite (fonts, images) must be imported from Vue/TS code.
+- Static files that should bypass bundling belong in `public/`; Vite copies hashed assets referenced via `import`.
+- No CDN configuration is present; assets are served by Laravel directly. Optimization relies on Vite’s default Rollup minification and manifest splitting.
+
+```1:12:resources/views/app.blade.php
+<!DOCTYPE html>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    @vite(['resources/js/app.ts'])
+</head>
+<body>
+    <div id="app"></div>
+</body>
+</html>
+```
+
+---
+
+## 5. Icon System
+
+- There is no shared icon library yet. Components inline raw SVG paths (Heroicons-inspired) and tint them with `currentColor`.
+- When importing Figma icons, convert them to inline SVGs or create a dedicated icon component folder so the same pattern can be reused.
+
+```2:23:resources/js/components/TenantSwitcher.vue
+<button class="flex items-center space-x-2 px-4 py-2 ...">
+    <span>{{ currentTenantName }}</span>
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+    </svg>
+</button>
+```
+
+**Naming guidance**
+
+- Follow `PascalCase` when creating new icon components (e.g., `ChevronDownIcon.vue`) and drop them in `resources/js/components/icons` once created. Reference them via `<ChevronDownIcon class="w-4 h-4 text-gray-500" />` to keep color control external.
+
+---
+
+## 6. Styling Approach
+
+- Tailwind utility classes drive layout, spacing, and typographic scale; CSS variables handle theme values.
+- Global resets (html/body sizing) and root tokens load via `resources/css/app.css`.
+- Responsive behavior leverages Tailwind breakpoints (`sm:`, `lg:`) directly inside Vue templates, matching how the React reference uses `@media`.
+
+```2:58:resources/js/pages/admin/auth/LoginPage.vue
+<div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md w-full space-y-8">
+        <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            Superadmin Login
+        </h2>
+        <!-- ... -->
+        <button
+            class="group relative w-full flex justify-center py-2 px-4 ... focus:ring-indigo-500 focus:ring-offset-2"
+        >
+            <!-- ... -->
+        </button>
+    </div>
+</div>
+```
+
+**Responsive playbook**
+
+- Figma’s mobile/desktop breakpoints map directly to Tailwind’s `sm`/`lg`. Use CSS tokens for consistent padding/radius so glassmorphism depth stays aligned with the prototype.
+- For glass panels, compose `background-color: var(--glassfx-v2-fill)` and `border: var(--glassfx-v2-border)` inside either a component-level `<style scoped>` block or inline `style` bindings if a utility is unavailable.
+
+---
+
+## 7. Project Structure
+
+- Canonical structure is documented in `README-FRONTEND.md` (excerpt below). Match this layout when adding pages that correspond to Figma screens so router lazy-loaded chunks remain predictable.
+
+```110:139:README-FRONTEND.md
+resources/js/
+├── app.ts                    # Application entry point
+├── App.vue                   # Root component
+├── lib/
+│   └── axios.ts             # Axios configuration
+├── stores/
+│   ├── auth.ts              # Authentication store
+│   ├── tenant.ts            # Tenant store
+│   └── superadmin.ts        # Superadmin store
+├── router/
+│   └── index.ts             # Vue Router configuration
+├── pages/
+│   ├── auth/
+│   │   └── LoginPage.vue
+│   ├── admin/
+│   │   ├── auth/
+│   │   │   └── LoginPage.vue
+│   │   └── tenants/
+│   │       ├── TenantsListPage.vue
+│   │       ├── TenantCreatePage.vue
+│   │       └── TenantEditPage.vue
+├── components/
+│   └── TenantSwitcher.vue
+└── types/
+    └── api.ts
+```
+
+**Feature organization tips**
+
+- Place tenant-facing features under `resources/js/pages` at the root, and admin-only tooling under `resources/js/pages/admin`.
+- Keep API contracts inside `resources/js/types` so MCP-driven updates know where to look for typing changes.
+
+---
+
+## MCP + Figma Integration Workflow
+
+1. **Inspect design references**  
+   - Use the provided Figma link to grab node IDs for the relevant screen.  
+   - Optionally, run the React prototype in `docs/design/code/AiVA SaaS Dashboard Design` to see responsive interactions before translating them into Vue.
+
+2. **Pull structured context via MCP**  
+   - `mcp_Figma_get_design_context` is the preferred tool; pass the `nodeId` from the Figma URL plus the file key extracted from the same link. Request assets if you need downloadable icons or illustrations.
+   - If you need variable definitions (colors, spacing) straight from Figma, call `mcp_Figma_get_variable_defs` for the node to compare against the CSS tokens above.
+
+3. **Map tokens to implementation**  
+   - Colors/typography → `resources/css/app.css` variables.  
+   - Spacing/radii → Tailwind utilities first; fall back to CSS variables if the design uses non-standard values.  
+   - Component structure → mirror the hierarchy outlined in `README-FRONTEND.md` so router-based code splitting stays stable.
+
+4. **Reconcile assets/icons**  
+   - Export icons via MCP (or copy SVG source) and add them as inline Vue components; follow the naming convention described in section 5.
+
+5. **Document deviations**  
+   - If Figma introduces a new token that cannot be expressed today, append it to the `:root` block and update this rules file with the mapping so future MCP calls remain aware of the new token.
+
+---
+
+## Quick Checklist for New UI Work
+
+- [ ] Confirm the target Figma node and grab measurements/assets via MCP.
+- [ ] Update or add CSS tokens in `resources/css/app.css` when new semantic values are introduced.
+- [ ] Keep new shared UI in `resources/js/components`; reserve `resources/js/pages` for router-level views.
+- [ ] Use Tailwind utilities plus `var(--token)` values to stay faithful to GlassFX styling.
+- [ ] Inline SVG icons or create dedicated icon components—no external icon font usage yet.
+- [ ] Run `npm run build && php artisan test` (or relevant frontend tests) before shipping to ensure Vite manifest and routers remain healthy.

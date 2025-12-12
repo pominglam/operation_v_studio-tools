@@ -1,0 +1,97 @@
+---
+description: Workspace-wide rules summary and design code reference - always applied
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Workspace Rules Summary
+
+This workspace uses layered rule files located in `.cursor/rules/`. All rules in this directory are automatically applied based on their configuration.
+
+## Automatic Application
+
+Rules are automatically applied based on their configuration:
+- **Always Apply**: `project.mdc`, `formatting.mdc`, `typesafety.mdc`, `versioning.mdc`, `infra.mdc`, `architecture.mdc`, `workspace.mdc`
+- **Targeted**: Rules matching specific file patterns (controllers, services, DAL, frontend, tests)
+
+## Key Rules Summary
+
+### Stack Versions (CRITICAL - Must Match)
+- PHP: 8.4.x
+- Laravel: 12.x
+- MySQL: 8.4.x
+- Node.js: 20.x LTS
+- Vue: 3.4.x, TypeScript: 5.7.x, Vite: 6.x, Tailwind: 4.0.x
+- Pest: 3.x, Vitest: 2.x
+
+### Workflow Rules
+- **TDD First**: Specs ΓåÆ Tests ΓåÆ Implement ΓåÆ Review ΓåÆ Commit (after approval)
+- **Never commit to `dev`/`main`**: Always use `feature/*` or `hotfix/*` branches
+- **Multi-angle review**: Correctness, Completeness, Consistency
+- **Max iterations**: 10 (respect limit)
+
+### Layer Boundaries
+- **Controllers**: Max 40 lines/method, no business logic, use Form Requests
+- **Services**: Max 60 lines/method, use DTOs, no HTTP layer
+- **DAL**: Repository pattern, transactions for multi-write
+- **Console**: Delegate to services, max 80 lines/method
+
+### Code Quality
+- Prefer SDKs over direct HTTP
+- Use Composer packages for non-business logic
+- PHPStan level 8+ or Psalm strict
+- TypeScript strict mode
+- Laravel Pint (PSR-12) for PHP
+- Prettier for JS/TS/Vue
+
+### Testing
+- 100% coverage target
+- MySQL 8.4.x for tests
+- Mock external calls
+- TDD approach
+
+## Full Rules
+
+See `.cursor/rules/` for complete rule definitions:
+- `README.md` - Rule organization and strategy
+- `QUICK_REFERENCE.md` - Quick lookup guide
+- `RULES_SUMMARY.md` - Detailed categorized rules
+- Individual `.mdc` files for specific domains
+
+## For AI Assistant
+
+**MANDATORY: Rule Verification Required Before Any Changes**
+
+**CLI & Tooling Requirements:**
+- **PowerShell Only**: Use PowerShell syntax for all terminal commands. Do not use Bash or Unix-specific commands.
+- **Git No-Pager**: Always append `--no-pager` to git commands that might trigger a pager (e.g., `git --no-pager log`, `git --no-pager diff`).
+- **Composer vs Sail**: Prefer direct `composer` commands (e.g., `composer test`) over Sail. Do not use `sail` or `./vendor/bin/sail` unless explicitly requested.
+
+Before making ANY changes, planning, or implementing features, you MUST:
+1. **Read all applicable rule files** from `.cursor/rules/` based on the files/context you're working with
+2. **Check rule file globs** to identify which rules apply to your target files
+3. **Read `project.mdc` first** (always applies - `alwaysApply: true`)
+4. **Read targeted rules** matching your file patterns (e.g., `controllers.mdc` for controllers, `services.mdc` for services, `testing.mdc` for tests)
+5. **Create a mental checklist** of applicable rules and verify compliance before proceeding
+6. **Verify rule requirements** are met before marking any task as complete
+
+**This verification step is REQUIRED and must happen BEFORE editing code, writing tests, or planning features.**
+
+When working in this workspace:
+1. **Always check** `.cursor/rules/project.mdc` (always applies)
+2. **Check targeted rules** based on files being edited (match globs to file paths)
+3. **Verify stack versions** match requirements
+4. **Follow TDD workflow** for features
+5. **Respect git safety rules** (never commit to dev/main)
+6. **Review changes** from multiple angles before completion
+7. **Cross-reference all changes** against applicable rules before finalizing
+
+## Design Code Reference
+
+**Frontend Work Reference**: The code in `/docs/design/code` is always for frontend work reference. It contains a React-based clickable prototype that demonstrates the UX look and feel. When implementing frontend features:
+- Use `/docs/design/code` as a visual and UX reference
+- Follow the design patterns, component structure, and user flows shown in the prototype
+- Adapt React components to Vue.js equivalents in `resources/js`
+- Maintain the visual design (colors, spacing, animations) while connecting to Laravel backend APIs
+- See `/docs/design/code/FEATURES.md` for a complete list of screens and features

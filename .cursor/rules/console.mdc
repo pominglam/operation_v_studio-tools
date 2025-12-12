@@ -1,0 +1,69 @@
+---
+description: Console commands and scheduled tasks
+globs:
+  - "app/Console/Commands/**"
+  - "routes/console.php"
+  - "app/Console/Kernel.php"
+alwaysApply: false
+---
+
+# Console Command Rules
+
+> Applicability: Triggers for console commands, the console kernel (scheduling), and console routes.
+
+## Architecture
+
+Commands should delegate to services and remain thin. No business logic in commands.
+
+## Constraints
+
+- **Max function length**: 80 lines
+- **Forbid**: Business logic
+- **Prefer**: Service invocation
+- **Signatures**: Use kebab-case
+- **Progress bars**: For long operations
+- **Output**: Styled output
+- **Exit codes**: Use exit code constants
+
+## Command Structure
+
+Commands should be simple wrappers that:
+1. Parse input
+2. Validate arguments/options
+3. Invoke appropriate service
+4. Format and display output
+
+## Example
+
+```php
+<?php
+
+namespace App\Console\Commands;
+
+use App\Services\MyService;
+
+class MyCommand extends Command
+{
+    protected $signature = 'my:command {argument}';
+    protected $description = 'Command description';
+
+    public function handle(MyService $service): int
+    {
+        $this->info('Starting...');
+        
+        $progressBar = $this->output->createProgressBar(100);
+        
+        try {
+            $result = $service->process($this->argument('argument'));
+            $progressBar->finish();
+            $this->info("\nCompleted!");
+            return Command::SUCCESS;
+        } catch (\Exception $e) {
+            $this->error($e->getMessage());
+            return Command::FAILURE;
+        }
+    }
+}
+```
+
+Commands should delegate to services and remain thin. Use kebab-case signatures. Show progress for long operations. Use proper exit codes.

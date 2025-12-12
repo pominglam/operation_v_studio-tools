@@ -1,0 +1,170 @@
+---
+description: Data access layer: Eloquent models and repositories
+globs:
+  - "app/DAL/**"
+  - "app/Models/**"
+  - "database/migrations/**"
+  - "database/seeders/**"
+  - "database/factories/**"
+alwaysApply: false
+---
+
+# Data Access Layer Rules
+
+> Applicability: Triggers for models, repositories, migrations, and test data sources (seeders/factories).
+
+## Architecture
+
+DAL should encapsulate persistence details and avoid business rules.
+
+## Constraints
+
+- **Max function length**: 60 lines
+- **Forbid**: HTTP layer logic
+- **Prefer**: Repository pattern
+- **Require**: Transactions for multi-write operations
+- **Use**: Eloquent scopes for queries
+- **Type hint**: Relationships
+- **Migrations**: Must be reversible
+- **Index**: Foreign keys
+- **Use**: Typed properties (PHP 8.4)
+
+## Repository Pattern
+
+Prefer repository pattern over direct model usage for complex queries and to abstract data access.
+
+Example interface and implementation:
+
+```php
+interface OrderRepository
+{
+    public function create(CheckoutDTO $dto): Order;
+    public function findById(int $id): ?Order;
+}
+
+final class EloquentOrderRepository implements OrderRepository
+{
+    public function create(CheckoutDTO $dto): Order
+    {
+        return Order::create([
+            'user_id' => $dto->userId,
+            'total_amount' => $dto->totalAmount,
+        ]);
+    }
+
+    public function findById(int $id): ?Order
+    {
+        return Order::query()->with(['items'])->find($id);
+    }
+}
+```
+
+When to use repositories vs direct Eloquent:
+
+- Use repositories when queries are reused across multiple services or are complex
+- Use direct Eloquent for simple, localized queries inside DAL-only helpers
+
+## Eloquent Best Practices
+
+- Use Eloquent scopes for reusable query logic
+- Type hint all relationships
+- Leverage PHP 8.4 typed properties in models
+- Use joins to get related data efficiently
+- Eager load relationships to avoid N+1 (use `with()` or scopes)
+- Prefer `exists()`/`count()` over fetching full models when only presence/size is needed
+
+## Schema Design (MySQL 8.4)
+
+### Naming Conventions
+
+- **Tables**: Plural, snake_case (e.g., `orders`, `order_items`)
+- **Columns**: snake_case (e.g., `user_id`, `created_at`)
+- **Indexes**: Descriptive names prefixed with `idx_` (e.g., `idx_orders_user_id`, `idx_orders_status_created`)
+- **Foreign keys**: Descriptive names prefixed with `fk_` (e.g., `fk_orders_user_id`)
+- **Unique constraints**: Descriptive names prefixed with `unique_` (e.g., `unique_users_email`)
+
+### Primary Keys
+
+- **Never use composite primary keys**
+- Always add an auto-increment primary key column named `id` (`BIGINT UNSIGNED`)
+- Always use UUIDs for primary keys (expose UUIDs publicly, keep auto-increment `id` internal)
+- If unique combination of columns is needed, add a unique index/constraint instead
+
+### Foreign Keys
+
+- Always define foreign key constraints with `onDelete()` and `onUpdate()` actions
+- **Never use CASCADE** - handle deletions programmatically in services
+- Use `RESTRICT`/`NO ACTION` for onDelete and onUpdate (prevent accidental changes)
+- Always index foreign key columns (enforced by MySQL 8.4+)
+
+### Indexes
+
+- Index foreign keys (automatic in MySQL 8.4+)
+- Index columns used in WHERE, JOIN, ORDER BY clauses frequently
+- Consider composite indexes for multi-column queries (left-to-right order matters)
+- Avoid over-indexing (every index slows writes)
+- Use unique indexes for columns that must be unique
+
+### Data Types
+
+- **Integers**: Use smallest appropriate size (`TINYINT`, `SMALLINT`, `INT`, `BIGINT`)
+- **Strings**: Use `VARCHAR` with appropriate length; avoid `TEXT` unless needed
+- **Booleans**: Use `TINYINT(1)` or `BOOLEAN` (Laravel maps to boolean)
+- **Timestamps**: Use `TIMESTAMP` or `DATETIME` (MySQL 8.4 timezone-aware)
+- **Decimals**: Use `DECIMAL(p,s)` for money/precise calculations (not `FLOAT`/`DOUBLE`)
+- **JSON**: Use `JSON` type for structured data (MySQL 8.4+ has good JSON support)
+
+### Nullability
+
+- Avoid `NULL` unless the value is truly optional
+- Use `NOT NULL` with default values when possible
+- `NULL` should mean "unknown" or "not applicable", not "empty" or "zero"
+
+### Timestamps
+
+- Include `created_at` and `updated_at` timestamps (Laravel handles automatically)
+- Use `TIMESTAMP` or `DATETIME` (both work with Laravel)
+- See Soft Deletes section for `deleted_at` timestamp
+
+### Soft Deletes
+
+- **Always use `deleted_at` column** (nullable `TIMESTAMP`) when soft deletes are needed
+- Consider if soft delete is needed for each table (user will specify when required)
+- Add index on `deleted_at` if frequently querying non-deleted records
+- **Do not add audit trail tables without explicit directive**; suggest when audit trail makes sense
+
+### Normalization
+
+- Follow 3NF (Third Normal Form) by default
+- Denormalize only when proven necessary for performance
+- Document denormalization decisions (why, what data duplicated)
+
+### Schema Documentation
+
+- Keep database schema (tables, columns) documented in a technical spec doc for the project
+
+### Constraints
+
+- Use `UNIQUE` constraints for columns that must be unique (not just application-level)
+- Use `CHECK` constraints for simple validations (MySQL 8.4+ supports CHECK)
+- Use `DEFAULT` values appropriately
+- Foreign key constraints enforce referential integrity
+
+## Migrations
+
+- Make all migrations reversible (up/down methods)
+- Index all foreign keys
+- Keep migrations small and focused
+- Name constraints and indexes explicitly for clarity
+- Use appropriate column types and lengths; add nullable only when needed
+- Include basic data validation constraints where applicable
+
+## Seeders
+
+- Follow hierarchical seeding: seed parent records before child records
+- Ensure seed data relationships make sense when linked together (e.g., orders belong to existing users, order items belong to existing orders)
+- Seed in dependency order: base entities first, then dependent entities
+- Create coherent datasets where relationships form logical hierarchies
+- Use factories within seeders to maintain consistency
+
+DAL encapsulates persistence details and avoids business rules.
