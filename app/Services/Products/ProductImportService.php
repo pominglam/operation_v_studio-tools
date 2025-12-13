@@ -44,7 +44,9 @@ final class ProductImportService
                 throw new InvalidProductImportFileException('CSV is empty.');
             }
 
-            $map = $this->buildHeaderMap($header);
+            $schema = $this->buildHeaderSchema($header);
+            $map = $schema['map'];
+            $schemaName = $schema['schema'];
 
             $rows = [];
             while (($data = fgetcsv($handle)) !== false) {
@@ -52,21 +54,39 @@ final class ProductImportService
                     continue;
                 }
 
+                if ($this->isSummaryStart($data)) {
+                    break;
+                }
+
                 $sku = $this->stringAt($data, $map['SKU']);
                 if ($sku === '') {
                     throw new InvalidProductImportFileException('Missing SKU value.');
                 }
 
-                $rows[] = new ProductImportRowDTO(
-                    sku: $sku,
-                    barcode: $this->nullableStringAt($data, $map['BARCODE']),
-                    description: $this->stringAt($data, $map['PRODUCT DESCRIPTION']),
-                    type: $this->nullableStringAt($data, $map['TYPE']),
-                    price: $this->nullableMoneyAt($data, $map['PRICE']),
-                    orderQty: $this->nullableIntAt($data, $map['ORDER']),
-                    filledQty: $this->nullableIntAt($data, $map['FILLED']),
-                    extended: $this->nullableMoneyAt($data, $map['EXTENDED']),
-                );
+                if ($schemaName === 'catalog') {
+                    $rows[] = new ProductImportRowDTO(
+                        sku: $sku,
+                        barcode: $this->nullableStringAt($data, $map['BARCODE']),
+                        description: $this->stringAt($data, $map['PRODUCT DESCRIPTION']),
+                        type: $this->nullableStringAt($data, $map['TYPE']),
+                        price: $this->nullableMoneyAt($data, $map['PRICE']),
+                        orderQty: $this->nullableIntAt($data, $map['ORDER']),
+                        filledQty: $this->nullableIntAt($data, $map['FILLED']),
+                        extended: $this->nullableMoneyAt($data, $map['EXTENDED']),
+                    );
+                } else {
+                    $name = $this->stringAt($data, $map['PRODUCT NAME']);
+                    $rows[] = new ProductImportRowDTO(
+                        sku: $sku,
+                        barcode: $this->nullableStringAt($data, $map['BARCODE']),
+                        description: $name,
+                        type: $this->deriveTypeFromName($name),
+                        price: $this->nullableMoneyAt($data, $map['UNIT PRICE']),
+                        orderQty: $this->nullableIntAt($data, $map['QTY ORDERED']),
+                        filledQty: $this->nullableIntAt($data, $map['QTY FILLED']),
+                        extended: $this->nullableMoneyAt($data, $map['LINE SUBTOTAL (BEFORE TAX)']),
+                    );
+                }
             }
 
             return $rows;
@@ -77,9 +97,9 @@ final class ProductImportService
 
     /**
      * @param array<int, string> $header
-     * @return array<string, int>
+     * @return array{schema: 'catalog'|'order_details', map: array<string, int>}
      */
-    private function buildHeaderMap(array $header): array
+    private function buildHeaderSchema(array $header): array
     {
         $normalized = [];
 
@@ -90,7 +110,7 @@ final class ProductImportService
             }
         }
 
-        $required = [
+        $catalogRequired = [
             'SKU',
             'BARCODE',
             'PRODUCT DESCRIPTION',
@@ -101,13 +121,38 @@ final class ProductImportService
             'EXTENDED',
         ];
 
-        foreach ($required as $col) {
+        $orderDetailsRequired = [
+            'SKU',
+            'BARCODE',
+            'PRODUCT NAME',
+            'QTY ORDERED',
+            'QTY FILLED',
+            'UNIT PRICE',
+            'LINE SUBTOTAL (BEFORE TAX)',
+        ];
+
+        if ($this->hasAllColumns($normalized, $catalogRequired)) {
+            return [
+                'schema' => 'catalog',
+                'map' => $normalized,
+            ];
+        }
+
+        if ($this->hasAllColumns($normalized, $orderDetailsRequired)) {
+            return [
+                'schema' => 'order_details',
+                'map' => $normalized,
+            ];
+        }
+
+        // Preserve existing error message semantics: report the first missing column from the catalog format.
+        foreach ($catalogRequired as $col) {
             if (! array_key_exists($col, $normalized)) {
                 throw new InvalidProductImportFileException("Missing required column: {$col}");
             }
         }
 
-        return $normalized;
+        throw new InvalidProductImportFileException('Missing required columns.');
     }
 
     private function normalizeHeader(string $value): string
@@ -116,6 +161,50 @@ final class ProductImportService
         $value = preg_replace('/\s+/', ' ', $value) ?? '';
 
         return mb_strtoupper($value);
+    }
+
+    /**
+     * @param array<string, int> $map
+     * @param array<int, string> $required
+     */
+    private function hasAllColumns(array $map, array $required): bool
+    {
+        foreach ($required as $col) {
+            if (! array_key_exists($col, $map)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param array<int, string> $row
+     */
+    private function isSummaryStart(array $row): bool
+    {
+        $first = trim((string) ($row[0] ?? ''));
+        if ($first === '') {
+            return false;
+        }
+
+        $first = mb_strtoupper($first);
+
+        return in_array($first, ['SUMMARY', 'TOTALS', 'SHIPPING NOTES'], true);
+    }
+
+    private function deriveTypeFromName(string $name): ?string
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return null;
+        }
+
+        if (preg_match('/^(HGUC|HGBF|HGCE|HGAC|HG|MG|RG|SDW?|SD|30MM)\b/i', $name, $m) === 1) {
+            return mb_strtoupper((string) $m[1]);
+        }
+
+        return null;
     }
 
     /**

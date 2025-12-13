@@ -7,6 +7,7 @@ namespace App\DAL\Products;
 use App\DTOs\Products\ProductImportRowDTO;
 use App\Models\Product;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Str;
 
 final class EloquentProductRepository implements ProductRepository
@@ -47,6 +48,40 @@ final class EloquentProductRepository implements ProductRepository
         return Product::query()
             ->orderBy('sku')
             ->paginate(perPage: $perPage);
+    }
+
+    public function create(Product $product): Product
+    {
+        return $this->save($product);
+    }
+
+    public function findByUuidOrFail(string $uuid): Product
+    {
+        /** @var Product|null $product */
+        $product = Product::query()->where('uuid', $uuid)->first();
+        if ($product === null) {
+            throw (new ModelNotFoundException())->setModel(Product::class, [$uuid]);
+        }
+
+        return $product;
+    }
+
+    public function save(Product $product): Product
+    {
+        $product->save();
+
+        return $product;
+    }
+
+    public function deleteByUuids(array $uuids): int
+    {
+        if ($uuids === []) {
+            return 0;
+        }
+
+        return Product::query()
+            ->whereIn('uuid', $uuids)
+            ->delete();
     }
 
     public function flushAll(): void

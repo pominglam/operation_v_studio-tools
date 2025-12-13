@@ -1,0 +1,55 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: pricing-tool-mysql
+    environment:
+      TZ: America/Toronto
+      MYSQL_DATABASE: pricing_tool
+      MYSQL_USER: pricing_tool
+      MYSQL_PASSWORD: pricing_tool
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - pricing_tool_net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  php:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: pricing-tool-php
+    environment:
+      TZ: America/Toronto
+      # Vite is running on the host (local Node). Container must point to host.docker.internal.
+      VITE_DEV_SERVER_URL: http://host.docker.internal:5173
+      # If you use the local inline queue fallback, local env is required.
+      PRICE_RESEARCH_LOCAL_INLINE_FALLBACK: "true"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - .:/var/www/html
+    working_dir: /var/www/html
+    user: "0:0"
+    ports:
+      - "8020:8080"
+    networks:
+      - pricing_tool_net
+    command: ["php", "-S", "0.0.0.0:8080", "-t", "public"]
+
+volumes:
+  mysql_data:
+    name: pricing-tool-mysql-data
+
+networks:
+  pricing_tool_net:
+    name: pricing-tool-net
+
+

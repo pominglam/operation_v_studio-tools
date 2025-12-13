@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 /**
@@ -18,6 +19,7 @@ use Illuminate\Support\Str;
  * @property int|null $order_qty
  * @property int|null $filled_qty
  * @property string|null $extended
+ * @property \Illuminate\Support\Carbon|null $price_researched_at
  */
 final class Product extends Model
 {
@@ -40,6 +42,7 @@ final class Product extends Model
         'order_qty' => 'integer',
         'filled_qty' => 'integer',
         'extended' => 'decimal:2',
+        'price_researched_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -49,6 +52,12 @@ final class Product extends Model
                 $product->uuid = (string) Str::uuid();
             }
         });
+    }
+
+    /** @return HasMany<ProductPriceQuote> */
+    public function priceQuotes(): HasMany
+    {
+        return $this->hasMany(ProductPriceQuote::class);
     }
 }
 

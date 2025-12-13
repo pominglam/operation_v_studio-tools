@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Monolog\Handler\NullHandler;
 use Monolog\Handler\StreamHandler;
 use Monolog\Handler\SyslogUdpHandler;
@@ -70,6 +72,14 @@ return [
             'path' => storage_path('logs/laravel.log'),
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
+        'external_api' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/external_api.log'),
+            'level' => env('EXTERNAL_API_LOG_LEVEL', 'info'),
+            'days' => env('EXTERNAL_API_LOG_DAYS', 14),
             'replace_placeholders' => true,
         ],
 
