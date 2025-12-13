@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\PriceResearchProductsIndexRequest;
 use App\Http\Resources\Api\V1\ProductPriceResearchResource;
 use App\Services\PriceResearch\PriceResearchQueryService;
-use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 final class PriceResearchProductsController extends Controller
@@ -17,13 +17,38 @@ final class PriceResearchProductsController extends Controller
     ) {
     }
 
-    public function __invoke(Request $request): AnonymousResourceCollection
+    public function __invoke(PriceResearchProductsIndexRequest $request): AnonymousResourceCollection
     {
-        $perPage = (int) $request->integer('per_page', 25);
+        $perPage = (int) ($request->validated('per_page') ?? 25);
         $perPage = max(1, min($perPage, 100));
 
+        /** @var string|null $search */
+        $search = $request->validated('search');
+        /** @var string|null $sortBy */
+        $sortBy = $request->validated('sort_by');
+        /** @var string $sortDir */
+        $sortDir = $request->validated('sort_dir') ?? 'desc';
+
+        /** @var array<int, string> $freshness */
+        $freshness = $request->validated('freshness') ?? [];
+        /** @var array<int, string> $quoteSites */
+        $quoteSites = $request->validated('quote_sites') ?? [];
+        /** @var array<int, string> $quoteStatuses */
+        $quoteStatuses = $request->validated('quote_statuses') ?? [];
+        /** @var array<int, string> $quoteAvailabilities */
+        $quoteAvailabilities = $request->validated('quote_availabilities') ?? [];
+
         return ProductPriceResearchResource::collection(
-            $this->query->paginateProductsWithQuotes($perPage),
+            $this->query->paginateProductsWithQuotes(
+                perPage: $perPage,
+                search: $search,
+                sortBy: $sortBy,
+                sortDir: $sortDir,
+                freshness: $freshness,
+                quoteSites: $quoteSites,
+                quoteStatuses: $quoteStatuses,
+                quoteAvailabilities: $quoteAvailabilities,
+            ),
         );
     }
 }

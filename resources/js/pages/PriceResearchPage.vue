@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { api } from '../lib/api';
 import { formatLocalDateTime } from '../lib/datetime';
+import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
+import PaginationControls from '../components/ui/PaginationControls.vue';
 
 type Quote = {
   site_key: string;
@@ -23,11 +25,18 @@ type ProductResearch = {
   description: string;
   price_researched_at: string | null;
   expired: boolean;
+  cost: string | null;
   quotes: Quote[];
 };
 
 type Paginated<T> = {
   data: T[];
+  meta: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
 };
 
 const loading = ref(false);
@@ -59,6 +68,33 @@ const isRunActive = computed<boolean>(() => {
 
 const isBusy = computed<boolean>(() => loading.value || running.value || isRunActive.value);
 
+type ResearchSortKey = 'sku' | 'description' | 'price_researched_at' | 'cost';
+
+const search = ref('');
+const perPage = ref(50);
+const page = ref(1);
+const sortBy = ref<ResearchSortKey>('price_researched_at');
+const sortDir = ref<'asc' | 'desc'>('desc');
+
+const freshnessOptions: MultiSelectOption[] = [
+  { value: 'fresh', label: 'Fresh' },
+  { value: 'expired', label: 'Expired' },
+];
+const freshness = ref<string[]>([]);
+
+const quoteStatusOptions: MultiSelectOption[] = [
+  { value: 'found', label: 'Found' },
+  { value: 'not_found', label: 'Not found' },
+  { value: 'error', label: 'Error' },
+];
+const quoteStatuses = ref<string[]>([]);
+
+const quoteAvailabilityOptions: MultiSelectOption[] = [
+  { value: 'in_stock', label: 'In stock' },
+  { value: 'sold_out', label: 'Sold out' },
+];
+const quoteAvailabilities = ref<string[]>([]);
+
 const sites = [
   { key: 'gundam_hangar', name: 'Gundam Hangar' },
   { key: 'panda_hobby', name: 'Panda Hobby' },
@@ -69,8 +105,63 @@ const sites = [
   { key: 'hobby_sense', name: 'Hobby Sense' },
 ];
 
+const quoteSiteOptions: MultiSelectOption[] = sites.map((s) => ({ value: s.key, label: s.name }));
+const quoteSites = ref<string[]>([]);
+
+const meta = ref<Paginated<ProductResearch>['meta'] | null>(null);
+const total = computed<number>(() => meta.value?.total ?? 0);
+const currentPage = computed<number>(() => meta.value?.current_page ?? page.value);
+const lastPage = computed<number>(() => meta.value?.last_page ?? 1);
+
 function quoteFor(product: ProductResearch, siteKey: string): Quote | null {
   return product.quotes.find((q) => q.site_key === siteKey) ?? null;
+}
+
+function parseMoney(value: string | null): number | null {
+  if (!value) return null;
+  const cleaned = value.replace(/[^0-9.-]/g, '');
+  if (!cleaned) return null;
+  const n = Number.parseFloat(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatMoney(value: number | null): string | null {
+  if (value === null) return null;
+  return value.toFixed(2);
+}
+
+function averagePriceOnline(p: ProductResearch): string | null {
+  const nums = p.quotes
+    .filter((q) => q.status === 'found')
+    .map((q) => parseMoney(q.price))
+    .filter((n): n is number => n !== null);
+
+  if (nums.length === 0) return null;
+  const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+  return formatMoney(avg);
+}
+
+function costTimes(p: ProductResearch, factor: number): string | null {
+  const n = parseMoney(p.cost);
+  if (n === null) return null;
+  return formatMoney(n * factor);
+}
+
+function buildProductsUrl(): string {
+  const params = new URLSearchParams();
+  params.set('per_page', String(perPage.value));
+  params.set('page', String(page.value));
+  params.set('sort_by', sortBy.value);
+  params.set('sort_dir', sortDir.value);
+  const s = search.value.trim();
+  if (s) params.set('search', s);
+
+  for (const v of freshness.value) params.append('freshness[]', v);
+  for (const v of quoteSites.value) params.append('quote_sites[]', v);
+  for (const v of quoteStatuses.value) params.append('quote_statuses[]', v);
+  for (const v of quoteAvailabilities.value) params.append('quote_availabilities[]', v);
+
+  return `/api/v1/price-research/products?${params.toString()}`;
 }
 
 async function load(): Promise<void> {
@@ -83,10 +174,11 @@ async function load(): Promise<void> {
     const ctrl = new AbortController();
     const t = window.setTimeout(() => ctrl.abort(), 15000);
     try {
-      const r = await fetch('/api/v1/price-research/products?per_page=50', { signal: ctrl.signal });
+      const r = await fetch(buildProductsUrl(), { signal: ctrl.signal });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const json = (await r.json()) as Paginated<ProductResearch>;
       items.value = json.data;
+      meta.value = json.meta;
     } finally {
       window.clearTimeout(t);
     }
@@ -186,6 +278,32 @@ onMounted(() => {
 onBeforeUnmount(() => {
   destroyed.value = true;
 });
+
+function onSortChange(next: ResearchSortKey): void {
+  if (sortBy.value === next) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc';
+    return;
+  }
+  sortBy.value = next;
+  sortDir.value = next === 'price_researched_at' ? 'desc' : 'asc';
+}
+
+function sortIndicator(key: ResearchSortKey): string {
+  if (sortBy.value !== key) return '';
+  return sortDir.value === 'asc' ? ' ▲' : ' ▼';
+}
+
+function onPageChange(next: number): void {
+  page.value = Math.max(1, next);
+}
+
+let searchTimer: number | null = null;
+watch([search, perPage, freshness, quoteSites, quoteStatuses, quoteAvailabilities, sortBy, sortDir], () => {
+  page.value = 1;
+  if (searchTimer) window.clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(() => void load(), 250);
+});
+watch(page, () => void load());
 </script>
 
 <template>
@@ -251,6 +369,46 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <div class="rounded-lg border border-slate-200 bg-white p-4">
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-6 md:items-end">
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Search</label>
+          <input
+            v-model="search"
+            class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+            type="text"
+            placeholder="Search SKU / barcode / description…"
+          />
+        </div>
+
+        <MultiSelectFilter v-model="freshness" label="Status" :options="freshnessOptions" placeholder="Fresh + Expired" />
+        <MultiSelectFilter v-model="quoteSites" label="Site" :options="quoteSiteOptions" placeholder="All sites" />
+        <MultiSelectFilter v-model="quoteStatuses" label="Quote status" :options="quoteStatusOptions" placeholder="All" />
+        <MultiSelectFilter
+          v-model="quoteAvailabilities"
+          label="Availability"
+          :options="quoteAvailabilityOptions"
+          placeholder="All"
+        />
+      </div>
+
+      <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-6 md:items-end">
+        <div class="md:col-span-2 text-sm text-slate-600">
+          Showing <span class="font-medium text-slate-900">{{ items.length }}</span> of
+          <span class="font-medium text-slate-900">{{ total }}</span>
+        </div>
+        <div class="md:col-span-2"></div>
+        <div class="md:col-span-2">
+          <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Per page</label>
+          <select v-model.number="perPage" class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm">
+            <option :value="25">25</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
     <div class="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <div v-if="loading" class="px-4 py-3 text-sm text-slate-600">Loading…</div>
 
@@ -258,16 +416,33 @@ onBeforeUnmount(() => {
         <table class="min-w-full divide-y divide-slate-200 text-sm">
           <thead class="bg-slate-50">
             <tr class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
-              <th class="px-4 py-3">SKU</th>
-              <th class="px-4 py-3">Description</th>
-              <th class="px-4 py-3">Last updated</th>
+              <th class="px-4 py-3">
+                <button type="button" class="hover:underline" @click="onSortChange('sku')">SKU{{ sortIndicator('sku') }}</button>
+              </th>
+              <th class="px-4 py-3">
+                <button type="button" class="hover:underline" @click="onSortChange('description')">
+                  Description{{ sortIndicator('description') }}
+                </button>
+              </th>
+              <th class="px-4 py-3">
+                <button type="button" class="hover:underline" @click="onSortChange('price_researched_at')">
+                  Last updated{{ sortIndicator('price_researched_at') }}
+                </button>
+              </th>
               <th class="px-4 py-3">Status</th>
+              <th class="px-4 py-3 text-right">
+                <button type="button" class="hover:underline" @click="onSortChange('cost')">
+                  Cost to buy{{ sortIndicator('cost') }}
+                </button>
+              </th>
+              <th class="px-4 py-3 text-right">Average price online</th>
+              <th class="px-4 py-3 text-right">1.5x</th>
               <th v-for="s in sites" :key="s.key" class="px-4 py-3 text-right">{{ s.name }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
             <tr v-if="items.length === 0">
-              <td class="px-4 py-4 text-slate-600" :colspan="4 + sites.length">No products found.</td>
+              <td class="px-4 py-4 text-slate-600" :colspan="7 + sites.length">No products found.</td>
             </tr>
 
             <tr v-for="p in items" :key="p.id" class="hover:bg-slate-50">
@@ -282,6 +457,15 @@ onBeforeUnmount(() => {
                   {{ p.expired ? 'Expired' : 'Fresh' }}
                 </span>
               </td>
+              <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                <span class="font-medium text-slate-900">{{ p.cost ?? '—' }}</span>
+              </td>
+              <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                <span class="font-medium text-slate-900">{{ averagePriceOnline(p) ?? '—' }}</span>
+              </td>
+              <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                <span class="font-medium text-slate-900">{{ costTimes(p, 1.5) ?? '—' }}</span>
+              </td>
 
               <td v-for="s in sites" :key="s.key" class="px-4 py-3 text-right tabular-nums text-slate-700">
                 <template v-if="quoteFor(p, s.key)">
@@ -295,20 +479,33 @@ onBeforeUnmount(() => {
                       </span>
                     <a
                       v-if="quoteFor(p, s.key)!.product_url"
-                      class="font-medium text-slate-900 underline"
+                      class="font-medium underline"
+                      :class="quoteFor(p, s.key)!.availability === 'sold_out' ? 'text-rose-700' : 'text-slate-900'"
                       :href="quoteFor(p, s.key)!.product_url!"
                       target="_blank"
                       rel="noreferrer"
                     >
                       {{ quoteFor(p, s.key)!.price ?? '—' }}
                     </a>
-                    <span v-else class="font-medium text-slate-900">{{ quoteFor(p, s.key)!.price ?? '—' }}</span>
+                    <span
+                      v-else
+                      class="font-medium"
+                      :class="quoteFor(p, s.key)!.availability === 'sold_out' ? 'text-rose-700' : 'text-slate-900'"
+                    >
+                      {{ quoteFor(p, s.key)!.price ?? '—' }}
+                    </span>
                     </div>
-                    <div v-if="quoteFor(p, s.key)!.availability" class="mt-0.5 text-[11px] text-slate-500">
+                    <div
+                      v-if="quoteFor(p, s.key)!.availability"
+                      class="mt-0.5 text-[11px]"
+                      :class="quoteFor(p, s.key)!.availability === 'sold_out' ? 'text-rose-700' : 'text-slate-500'"
+                    >
                       {{ quoteFor(p, s.key)!.availability === 'in_stock' ? 'In stock' : 'Sold out' }}
                     </div>
                   </template>
-                  <template v-else-if="quoteFor(p, s.key)!.status === 'not_found'">Not found</template>
+                  <template v-else-if="quoteFor(p, s.key)!.status === 'not_found'">
+                    <span class="text-slate-400">Not found</span>
+                  </template>
                   <template v-else>Error</template>
                 </template>
                 <template v-else>—</template>
@@ -318,6 +515,8 @@ onBeforeUnmount(() => {
         </table>
       </div>
     </div>
+
+    <PaginationControls :current-page="currentPage" :last-page="lastPage" :total="total" :on-change="onPageChange" />
   </section>
 </template>
 

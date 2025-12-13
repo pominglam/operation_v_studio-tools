@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\ProductsIndexRequest;
 use App\Http\Requests\Api\V1\StoreProductRequest;
 use App\Http\Requests\Api\V1\UpdateProductRequest;
 use App\Http\Resources\Api\V1\ProductResource;
@@ -12,7 +13,6 @@ use App\Services\Products\Exceptions\DuplicateSkuException;
 use App\Services\Products\ProductCreateService;
 use App\Services\Products\ProductUpdateService;
 use App\Services\Products\ProductsQueryService;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -25,13 +25,25 @@ final class ProductsController extends Controller
     ) {
     }
 
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(ProductsIndexRequest $request): AnonymousResourceCollection
     {
-        $perPage = (int) $request->integer('per_page', 25);
+        $perPage = (int) ($request->validated('per_page') ?? 25);
         $perPage = max(1, min($perPage, 100));
 
+        /** @var string|null $search */
+        $search = $request->validated('search');
+
+        /** @var array<int, string> $types */
+        $types = $request->validated('types') ?? [];
+
+        /** @var string|null $sortBy */
+        $sortBy = $request->validated('sort_by');
+
+        /** @var string $sortDir */
+        $sortDir = $request->validated('sort_dir') ?? 'asc';
+
         return ProductResource::collection(
-            $this->products->paginate($perPage),
+            $this->products->paginate($perPage, $search, $types, $sortBy, $sortDir),
         );
     }
 

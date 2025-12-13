@@ -24,9 +24,22 @@ export type UpdateProductPayload = {
   extended: string | null;
 };
 
+export type ProductSortKey =
+  | 'sku'
+  | 'barcode'
+  | 'description'
+  | 'type'
+  | 'price'
+  | 'order'
+  | 'filled'
+  | 'extended';
+
 const props = defineProps<{
   loading: boolean;
   products: ProductRow[];
+  sortBy: ProductSortKey;
+  sortDir: 'asc' | 'desc';
+  onSortChange: (sortBy: ProductSortKey) => void;
   onRefresh: () => Promise<void>;
   onBulkDelete: (ids: string[]) => Promise<number>;
   onUpdate: (id: string, payload: UpdateProductPayload) => Promise<void>;
@@ -43,6 +56,29 @@ const saving = ref(false);
 const rowError = ref<string | null>(null);
 
 const allSelected = computed(() => props.products.length > 0 && selected.value.size === props.products.length);
+
+function sortLabel(key: ProductSortKey): string {
+  const map: Record<ProductSortKey, string> = {
+    sku: 'SKU',
+    barcode: 'Barcode',
+    description: 'Description',
+    type: 'Type',
+    price: 'Price',
+    order: 'Order',
+    filled: 'Filled',
+    extended: 'Extended',
+  };
+  return map[key];
+}
+
+function sortIndicator(key: ProductSortKey): string {
+  if (props.sortBy !== key) return '';
+  return props.sortDir === 'asc' ? ' ▲' : ' ▼';
+}
+
+function sortHeaderClass(key: ProductSortKey): string {
+  return props.sortBy === key ? 'text-slate-900' : 'text-slate-600';
+}
 
 function syncSelection(): void {
   const allowed = new Set(props.products.map((p) => p.id));
@@ -201,14 +237,56 @@ async function saveEdit(): Promise<void> {
                 @change="toggleAll(($event.target as HTMLInputElement).checked)"
               />
             </th>
-            <th class="px-4 py-3">SKU</th>
-            <th class="px-4 py-3">Barcode</th>
-            <th class="px-4 py-3">Description</th>
-            <th class="px-4 py-3">Type</th>
-            <th class="px-4 py-3 text-right">Price</th>
-            <th class="px-4 py-3 text-right">Order</th>
-            <th class="px-4 py-3 text-right">Filled</th>
-            <th class="px-4 py-3 text-right">Extended</th>
+            <th class="px-4 py-3">
+              <button type="button" class="hover:underline" :class="sortHeaderClass('sku')" @click="onSortChange('sku')">
+                {{ sortLabel('sku') }}{{ sortIndicator('sku') }}
+              </button>
+            </th>
+            <th class="px-4 py-3">
+              <button type="button" class="hover:underline" :class="sortHeaderClass('barcode')" @click="onSortChange('barcode')">
+                {{ sortLabel('barcode') }}{{ sortIndicator('barcode') }}
+              </button>
+            </th>
+            <th class="px-4 py-3">
+              <button
+                type="button"
+                class="hover:underline"
+                :class="sortHeaderClass('description')"
+                @click="onSortChange('description')"
+              >
+                {{ sortLabel('description') }}{{ sortIndicator('description') }}
+              </button>
+            </th>
+            <th class="px-4 py-3">
+              <button type="button" class="hover:underline" :class="sortHeaderClass('type')" @click="onSortChange('type')">
+                {{ sortLabel('type') }}{{ sortIndicator('type') }}
+              </button>
+            </th>
+            <th class="px-4 py-3 text-right">
+              <button type="button" class="hover:underline" :class="sortHeaderClass('price')" @click="onSortChange('price')">
+                {{ sortLabel('price') }}{{ sortIndicator('price') }}
+              </button>
+            </th>
+            <th class="px-4 py-3 text-right">
+              <button type="button" class="hover:underline" :class="sortHeaderClass('order')" @click="onSortChange('order')">
+                {{ sortLabel('order') }}{{ sortIndicator('order') }}
+              </button>
+            </th>
+            <th class="px-4 py-3 text-right">
+              <button type="button" class="hover:underline" :class="sortHeaderClass('filled')" @click="onSortChange('filled')">
+                {{ sortLabel('filled') }}{{ sortIndicator('filled') }}
+              </button>
+            </th>
+            <th class="px-4 py-3 text-right">
+              <button
+                type="button"
+                class="hover:underline"
+                :class="sortHeaderClass('extended')"
+                @click="onSortChange('extended')"
+              >
+                {{ sortLabel('extended') }}{{ sortIndicator('extended') }}
+              </button>
+            </th>
             <th class="px-4 py-3 text-right">Actions</th>
           </tr>
         </thead>

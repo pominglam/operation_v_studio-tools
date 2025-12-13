@@ -43,11 +43,63 @@ final class EloquentProductRepository implements ProductRepository
         return count($rows);
     }
 
-    public function paginate(int $perPage): LengthAwarePaginator
+    /**
+     * @param array<int, string> $types
+     */
+    public function paginate(int $perPage, ?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator
     {
-        return Product::query()
-            ->orderBy('sku')
-            ->paginate(perPage: $perPage);
+        $sortDir = strtolower($sortDir) === 'desc' ? 'desc' : 'asc';
+        $sortBy = $sortBy !== null ? trim($sortBy) : null;
+
+        $sortMap = [
+            'sku' => 'sku',
+            'barcode' => 'barcode',
+            'description' => 'description',
+            'type' => 'type',
+            'price' => 'price',
+            'order' => 'order_qty',
+            'filled' => 'filled_qty',
+            'extended' => 'extended',
+            'updated_at' => 'updated_at',
+            'created_at' => 'created_at',
+        ];
+
+        $sortColumn = $sortBy !== null && array_key_exists($sortBy, $sortMap) ? $sortMap[$sortBy] : 'sku';
+
+        $q = Product::query();
+
+        $search = $search !== null ? trim($search) : null;
+        if ($search !== null && $search !== '') {
+            $q->where(function ($sub) use ($search): void {
+                $sub->where('sku', 'like', "%{$search}%")
+                    ->orWhere('barcode', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        $types = array_values(array_filter(array_map('trim', $types), static fn (string $t): bool => $t !== ''));
+        if ($types !== []) {
+            $q->whereIn('type', $types);
+        }
+
+        return $q->orderBy($sortColumn, $sortDir)->paginate(perPage: $perPage);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function distinctTypes(): array
+    {
+        /** @var array<int, string|null> $types */
+        $types = Product::query()
+            ->select('type')
+            ->whereNotNull('type')
+            ->distinct()
+            ->orderBy('type')
+            ->pluck('type')
+            ->all();
+
+        return array_values(array_filter($types, static fn (?string $t): bool => $t !== null && trim($t) !== ''));
     }
 
     public function create(Product $product): Product

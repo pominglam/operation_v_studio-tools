@@ -15,7 +15,15 @@ interface ProductRepository
      */
     public function upsertImportedRows(array $rows): int;
 
-    public function paginate(int $perPage): LengthAwarePaginator;
+    /**
+     * @param array<int, string> $types
+     */
+    public function paginate(int $perPage, ?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator;
+
+    /**
+     * @return array<int, string>
+     */
+    public function distinctTypes(): array;
 
     public function create(Product $product): Product;
 

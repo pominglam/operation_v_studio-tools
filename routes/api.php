@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\V1\ProductImportController;
+use App\Http\Controllers\Api\V1\ProductFilterOptionsController;
 use App\Http\Controllers\Api\V1\ProductBulkDeleteController;
 use App\Http\Controllers\Api\V1\ProductMaintenanceController;
 use App\Http\Controllers\Api\V1\ProductsController;
@@ -14,6 +15,7 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')
     ->group(function (): void {
         Route::get('/products', [ProductsController::class, 'index']);
+        Route::get('/products/filter-options', ProductFilterOptionsController::class);
         Route::post('/products', [ProductsController::class, 'store']);
         Route::patch('/products/{id}', [ProductsController::class, 'update'])->whereUuid('id');
         Route::post('/products/import', ProductImportController::class);
