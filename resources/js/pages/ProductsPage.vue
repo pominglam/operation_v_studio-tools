@@ -35,7 +35,6 @@ const creating = ref(false);
 const createError = ref<string | null>(null);
 const createMessage = ref<string | null>(null);
 
-type ProductsToolTab = 'import' | 'add';
 type ProductsToolTab = 'list' | 'add' | 'import';
 const activeTab = ref<ProductsToolTab>('list');
 
