@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import { api } from '../lib/api';
 import { formatLocalDateTime } from '../lib/datetime';
@@ -261,6 +261,21 @@ function marginMultiplier(p: ProductResearch): string | null {
     return (selling / cost).toFixed(2);
 }
 
+function siteHeaderLine1(name: string): string {
+    const trimmed = name.trim();
+    const idx = trimmed.indexOf(' ');
+    if (idx === -1) return trimmed;
+    return trimmed.slice(0, idx);
+}
+
+function siteHeaderLine2(name: string): string | null {
+    const trimmed = name.trim();
+    const idx = trimmed.indexOf(' ');
+    if (idx === -1) return null;
+    const rest = trimmed.slice(idx + 1).trim();
+    return rest === '' ? null : rest;
+}
+
 function buildProductsUrl(): string {
     const params = new URLSearchParams();
     params.set('per_page', String(perPage.value));
@@ -401,6 +416,26 @@ async function run(force: boolean): Promise<void> {
 }
 
 const savingSellingPrice = ref<string | null>(null);
+const editingSellingPriceId = ref<string | null>(null);
+const sellingPriceDrafts = reactive<Record<string, string>>({});
+
+function startSellingPriceEdit(productId: string, current: string | null): void {
+    editingSellingPriceId.value = productId;
+    if (sellingPriceDrafts[productId] === undefined) {
+        sellingPriceDrafts[productId] = current ?? '';
+    }
+}
+
+function updateSellingPriceDraft(productId: string, value: string): void {
+    sellingPriceDrafts[productId] = value;
+}
+
+function commitSellingPriceEdit(productId: string): void {
+    editingSellingPriceId.value = null;
+    const value = sellingPriceDrafts[productId] ?? '';
+    delete sellingPriceDrafts[productId];
+    void saveSellingPrice(productId, value);
+}
 
 async function saveSellingPrice(productId: string, value: string | null): Promise<void> {
     savingSellingPrice.value = productId;
@@ -697,306 +732,348 @@ watch(
             </div>
         </div>
 
-        <div class="overflow-hidden rounded-lg border border-slate-200 bg-white">
-            <div v-if="loading" class="px-4 py-3 text-sm text-slate-600">Loading…</div>
+        <div class="space-y-4">
+            <div class="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                <div v-if="loading" class="px-4 py-3 text-sm text-slate-600">Loading…</div>
 
-            <div v-else class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead class="bg-slate-50">
-                        <tr
-                            class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
-                        >
-                            <th class="px-4 py-3">
-                                <button
-                                    type="button"
-                                    class="hover:underline"
-                                    @click="onSortChange('sku')"
-                                >
-                                    SKU{{ sortIndicator('sku') }}
-                                </button>
-                            </th>
-                            <th class="px-4 py-3">
-                                <div class="flex flex-col">
-                                    <button
-                                        type="button"
-                                        class="text-left hover:underline"
-                                        @click="onSortChange('description')"
-                                    >
-                                        Description{{ sortIndicator('description') }}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        class="mt-1 text-left text-xs font-semibold text-slate-500 hover:underline"
-                                        @click="onSortChange('price_researched_at')"
-                                    >
-                                        Last updated{{ sortIndicator('price_researched_at') }}
-                                    </button>
-                                </div>
-                            </th>
-                            <th class="px-4 py-3">Status</th>
-                            <th class="px-4 py-3 text-right">
-                                <button
-                                    type="button"
-                                    class="hover:underline"
-                                    @click="onSortChange('cost')"
-                                >
-                                    Cost to buy{{ sortIndicator('cost') }}
-                                </button>
-                            </th>
-                            <th class="px-4 py-3 text-right">1.5x</th>
-                            <th class="px-4 py-3 text-right">
-                                <div class="flex flex-col items-end">
+                <div v-else class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead class="bg-slate-50">
+                            <tr
+                                class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
+                            >
+                                <th class="px-4 py-3">
                                     <button
                                         type="button"
                                         class="hover:underline"
-                                        @click="onSortChange('selling_price')"
+                                        @click="onSortChange('sku')"
                                     >
-                                        Selling price{{ sortIndicator('selling_price') }}
+                                        SKU{{ sortIndicator('sku') }}
                                     </button>
-                                    <button
-                                        type="button"
-                                        class="mt-1 text-xs font-semibold text-slate-500 hover:underline"
-                                        @click="onSortChange('multiplier')"
-                                    >
-                                        Multiplier{{ sortIndicator('multiplier') }}
-                                    </button>
-                                </div>
-                            </th>
-                            <th class="px-4 py-3 text-right">Average price online</th>
-                            <th v-for="s in sites" :key="s.key" class="px-4 py-3 text-center">
-                                {{ s.name }}
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100">
-                        <tr v-if="items.length === 0">
-                            <td class="px-4 py-4 text-slate-600" :colspan="7 + sites.length">
-                                No products found.
-                            </td>
-                        </tr>
-
-                        <tr v-for="p in items" :key="p.id" class="hover:bg-slate-50">
-                            <td class="px-4 py-3 font-medium text-slate-900">{{ p.sku }}</td>
-                            <td class="px-4 py-3 text-slate-700">
-                                <div class="font-medium text-slate-900">{{ p.description }}</div>
-                                <div class="mt-1 flex items-start justify-between gap-2">
-                                    <div class="text-xs text-slate-500">
-                                        {{ formatLocalDateTime(p.price_researched_at) }}
+                                </th>
+                                <th class="px-4 py-3">
+                                    <div class="flex flex-col">
+                                        <button
+                                            type="button"
+                                            class="text-left hover:underline"
+                                            @click="onSortChange('description')"
+                                        >
+                                            PRODUCT NAME{{ sortIndicator('description') }}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="mt-1 text-left text-xs font-semibold text-slate-500 hover:underline"
+                                            @click="onSortChange('price_researched_at')"
+                                        >
+                                            Last updated{{ sortIndicator('price_researched_at') }}
+                                        </button>
                                     </div>
+                                </th>
+                                <th class="px-4 py-3 text-right">
                                     <button
-                                        class="inline-flex h-6 w-6 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
                                         type="button"
-                                        title="Recrawl prices for this product"
-                                        :aria-label="`Recrawl prices for SKU ${p.sku}`"
-                                        :disabled="isBusy || recrawlingProductId === p.id"
-                                        @click.stop="recrawlProduct(p.id)"
+                                        class="hover:underline"
+                                        @click="onSortChange('cost')"
                                     >
-                                        <span v-if="recrawlingProductId === p.id" class="text-xs"
-                                            >…</span
-                                        >
-                                        <svg
-                                            v-else
-                                            viewBox="0 0 24 24"
-                                            class="h-4 w-4"
-                                            aria-hidden="true"
-                                        >
-                                            <path
-                                                fill="currentColor"
-                                                d="M12 6V3L8 7l4 4V8c2.76 0 5 2.24 5 5a5 5 0 0 1-8.9 3.1l-1.46 1.46A7 7 0 0 0 19 13c0-3.87-3.13-7-7-7Zm-5 7a5 5 0 0 1 8.9-3.1l1.46-1.46A7 7 0 0 0 5 13c0 3.87 3.13 7 7 7v3l4-4-4-4v3c-2.76 0-5-2.24-5-5Z"
-                                            />
-                                        </svg>
+                                        COST{{ sortIndicator('cost') }}
                                     </button>
-                                </div>
-                            </td>
-                            <td class="px-4 py-3">
-                                <span
-                                    class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold"
-                                    :class="
-                                        p.expired
-                                            ? 'bg-amber-100 text-amber-800'
-                                            : 'bg-emerald-100 text-emerald-800'
-                                    "
+                                </th>
+                                <th class="px-4 py-3 text-right">1.5x</th>
+                                <th class="px-4 py-3 text-right">
+                                    <div class="flex flex-col items-end">
+                                        <button
+                                            type="button"
+                                            class="hover:underline"
+                                            @click="onSortChange('selling_price')"
+                                        >
+                                            PRICE{{ sortIndicator('selling_price') }}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="mt-1 text-xs font-semibold text-slate-500 hover:underline"
+                                            @click="onSortChange('multiplier')"
+                                        >
+                                            Multiplier{{ sortIndicator('multiplier') }}
+                                        </button>
+                                    </div>
+                                </th>
+                                <th class="px-2.5 py-3 text-right">
+                                    <div class="flex flex-col items-end leading-tight">
+                                        <span>MARKET PRICE</span>
+                                        <span class="mt-1 text-[10px] font-semibold text-slate-500"
+                                            >(ONLINE)</span
+                                        >
+                                    </div>
+                                </th>
+                                <th
+                                    v-for="s in sites"
+                                    :key="s.key"
+                                    class="px-2.5 py-2.5 text-center"
                                 >
-                                    {{ p.expired ? 'Expired' : 'Fresh' }}
-                                </span>
-                            </td>
-                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                                <span class="font-medium text-slate-900">{{ p.cost ?? '—' }}</span>
-                            </td>
-                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                                <span class="font-medium text-slate-900">{{
-                                    costTimes(p, 1.5) ?? '—'
-                                }}</span>
-                            </td>
-                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                                <div class="flex flex-col items-end">
-                                    <input
-                                        class="w-24 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-sm tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
-                                        type="text"
-                                        inputmode="decimal"
-                                        :value="p.selling_price ?? ''"
-                                        :disabled="savingSellingPrice === p.id"
-                                        placeholder="—"
-                                        @blur="
-                                            saveSellingPrice(
-                                                p.id,
-                                                ($event.target as HTMLInputElement).value,
-                                            )
-                                        "
-                                    />
-                                    <div class="mt-1 text-xs text-slate-500 tabular-nums">
-                                        {{ marginMultiplier(p) ?? '—' }}
+                                    <span
+                                        class="mx-auto inline-block max-w-[110px] whitespace-normal break-words text-center leading-tight"
+                                    >
+                                        {{ siteHeaderLine1(s.name) }}
+                                        <span v-if="siteHeaderLine2(s.name)" class="block">
+                                            {{ siteHeaderLine2(s.name) }}
+                                        </span>
+                                    </span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <tr v-if="items.length === 0">
+                                <td class="px-4 py-4 text-slate-600" :colspan="6 + sites.length">
+                                    No products found.
+                                </td>
+                            </tr>
+
+                            <tr v-for="p in items" :key="p.id" class="hover:bg-slate-50">
+                                <td class="px-4 py-3 font-medium text-slate-900">{{ p.sku }}</td>
+                                <td class="px-4 py-3 text-slate-700">
+                                    <div class="font-medium text-slate-900">
+                                        {{ p.description }}
                                     </div>
-                                </div>
-                            </td>
-                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                                <div class="inline-flex items-center justify-end gap-1">
-                                    <span
-                                        class="font-medium"
-                                        :class="
-                                            hasWeirdPriceSpread(p)
-                                                ? 'text-rose-700'
-                                                : 'text-slate-900'
-                                        "
-                                    >
-                                        {{ averagePriceOnline(p) ?? '—' }}
-                                    </span>
-                                    <span
-                                        v-if="
-                                            averagePriceOnline(p) !== null && hasWeirdPriceSpread(p)
-                                        "
-                                        class="font-bold text-rose-600"
-                                        title="Warning: price spread (max-min) exceeds 30%"
-                                        aria-label="Warning: price spread (max-min) exceeds 30%"
-                                    >
-                                        !
-                                    </span>
-                                </div>
-                            </td>
+                                    <div class="mt-1 flex items-start justify-between gap-2">
+                                        <div class="text-xs text-slate-500">
+                                            {{ formatLocalDateTime(p.price_researched_at) }}
+                                        </div>
 
-                            <td
-                                v-for="s in sites"
-                                :key="s.key"
-                                class="px-4 py-3 text-center tabular-nums text-slate-700"
-                            >
-                                <template v-if="quoteFor(p, s.key)">
-                                    <div class="group relative inline-block w-full">
-                                        <button
-                                            class="absolute right-0 top-0 rounded px-1 text-xs font-semibold text-slate-400 opacity-0 transition hover:text-rose-600 group-hover:opacity-100"
-                                            type="button"
-                                            :aria-label="`Delete quote for ${p.sku} on ${s.name}`"
-                                            :disabled="
-                                                deleting?.productId === p.id &&
-                                                deleting?.siteKey === s.key
-                                            "
-                                            @click.stop="deleteQuote(p.id, s.key)"
-                                        >
-                                            ×
-                                        </button>
-
-                                        <button
-                                            class="absolute right-6 top-0 rounded px-1 text-xs font-semibold text-slate-400 opacity-0 transition hover:text-amber-700 group-hover:opacity-100"
-                                            type="button"
-                                            :aria-label="`Report quote for ${p.sku} on ${s.name}`"
-                                            @click.stop="openReportDialog(p, s.key)"
-                                        >
-                                            <svg
-                                                viewBox="0 0 24 24"
-                                                class="h-4 w-4"
-                                                aria-hidden="true"
-                                            >
-                                                <path
-                                                    fill="currentColor"
-                                                    d="M6 3h12a1 1 0 0 1 1 1v16l-4-2-4 2-4-2-4 2V4a1 1 0 0 1 1-1Zm1 2v12.382l3-1.5 4 2 4-2 1 .5V5H7Z"
-                                                />
-                                            </svg>
-                                        </button>
-
-                                        <template v-if="quoteFor(p, s.key)!.status === 'found'">
-                                            <div
-                                                class="flex items-baseline justify-center gap-2 px-10"
-                                            >
-                                                <span
-                                                    v-if="
-                                                        quoteFor(p, s.key)!.original_price &&
-                                                        quoteFor(p, s.key)!.original_price !==
-                                                            quoteFor(p, s.key)!.price
-                                                    "
-                                                    class="text-xs text-slate-500 line-through"
-                                                >
-                                                    {{ quoteFor(p, s.key)!.original_price }}
-                                                </span>
-                                                <a
-                                                    v-if="quoteFor(p, s.key)!.product_url"
-                                                    class="font-medium underline"
-                                                    :class="
-                                                        quoteFor(p, s.key)!.availability ===
-                                                        'sold_out'
-                                                            ? 'text-rose-700'
-                                                            : 'text-slate-900'
-                                                    "
-                                                    :href="quoteFor(p, s.key)!.product_url!"
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                >
-                                                    {{ quoteFor(p, s.key)!.price ?? '—' }}
-                                                </a>
-                                                <span
-                                                    v-else
-                                                    class="font-medium"
-                                                    :class="
-                                                        quoteFor(p, s.key)!.availability ===
-                                                        'sold_out'
-                                                            ? 'text-rose-700'
-                                                            : 'text-slate-900'
-                                                    "
-                                                >
-                                                    {{ quoteFor(p, s.key)!.price ?? '—' }}
-                                                </span>
-                                            </div>
-                                            <div
-                                                v-if="quoteFor(p, s.key)!.availability"
-                                                class="mt-0.5 px-10 text-[11px]"
+                                        <div class="flex items-center gap-2">
+                                            <span
+                                                class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold"
                                                 :class="
-                                                    quoteFor(p, s.key)!.availability === 'sold_out'
-                                                        ? 'text-rose-700'
-                                                        : 'text-slate-500'
+                                                    p.expired
+                                                        ? 'bg-amber-100 text-amber-800'
+                                                        : 'bg-emerald-100 text-emerald-800'
                                                 "
                                             >
-                                                {{
-                                                    quoteFor(p, s.key)!.availability === 'in_stock'
-                                                        ? 'In stock'
-                                                        : 'Sold out'
-                                                }}
-                                            </div>
-                                        </template>
-                                        <template
-                                            v-else-if="quoteFor(p, s.key)!.status === 'not_found'"
-                                        >
-                                            <div class="flex items-center justify-center px-10">
-                                                <span
-                                                    class="whitespace-nowrap text-xs font-medium leading-none text-slate-400"
-                                                    >Not found</span
-                                                >
-                                            </div>
-                                        </template>
-                                        <template v-else><span class="px-10">Error</span></template>
-                                    </div>
-                                </template>
-                                <template v-else>—</template>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
+                                                {{ p.expired ? 'Expired' : 'Fresh' }}
+                                            </span>
 
-        <PaginationControls
-            :current-page="currentPage"
-            :last-page="lastPage"
-            :total="total"
-            :on-change="onPageChange"
-        />
+                                            <button
+                                                class="inline-flex h-6 w-6 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
+                                                type="button"
+                                                title="Recrawl prices for this product"
+                                                :aria-label="`Recrawl prices for SKU ${p.sku}`"
+                                                :disabled="isBusy || recrawlingProductId === p.id"
+                                                @click.stop="recrawlProduct(p.id)"
+                                            >
+                                                <span
+                                                    v-if="recrawlingProductId === p.id"
+                                                    class="text-xs"
+                                                    >…</span
+                                                >
+                                                <svg
+                                                    v-else
+                                                    viewBox="0 0 24 24"
+                                                    class="h-4 w-4"
+                                                    aria-hidden="true"
+                                                >
+                                                    <path
+                                                        fill="currentColor"
+                                                        d="M12 6V3L8 7l4 4V8c2.76 0 5 2.24 5 5a5 5 0 0 1-8.9 3.1l-1.46 1.46A7 7 0 0 0 19 13c0-3.87-3.13-7-7-7Zm-5 7a5 5 0 0 1 8.9-3.1l1.46-1.46A7 7 0 0 0 5 13c0 3.87 3.13 7 7 7v3l4-4-4-4v3c-2.76 0-5-2.24-5-5Z"
+                                                    />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                    <span class="font-medium text-slate-900">{{
+                                        p.cost ?? '—'
+                                    }}</span>
+                                </td>
+                                <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                    <span class="font-medium text-slate-900">{{
+                                        costTimes(p, 1.5) ?? '—'
+                                    }}</span>
+                                </td>
+                                <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                    <div class="flex flex-col items-end">
+                                        <input
+                                            class="w-24 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-sm tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                                            type="text"
+                                            inputmode="decimal"
+                                            :value="
+                                                sellingPriceDrafts[p.id] ?? p.selling_price ?? ''
+                                            "
+                                            :disabled="savingSellingPrice === p.id"
+                                            placeholder="—"
+                                            @focus="startSellingPriceEdit(p.id, p.selling_price)"
+                                            @input="
+                                                updateSellingPriceDraft(
+                                                    p.id,
+                                                    ($event.target as HTMLInputElement).value,
+                                                )
+                                            "
+                                            @blur="commitSellingPriceEdit(p.id)"
+                                        />
+                                        <div class="mt-1 text-xs text-slate-500 tabular-nums">
+                                            {{ marginMultiplier(p) ?? '—' }}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td
+                                    class="whitespace-nowrap px-2.5 py-3 text-right tabular-nums text-slate-700"
+                                >
+                                    <div class="inline-flex items-center justify-end gap-1">
+                                        <span
+                                            class="font-medium"
+                                            :class="
+                                                hasWeirdPriceSpread(p)
+                                                    ? 'text-rose-700'
+                                                    : 'text-slate-900'
+                                            "
+                                        >
+                                            {{ averagePriceOnline(p) ?? '—' }}
+                                        </span>
+                                        <span
+                                            v-if="
+                                                averagePriceOnline(p) !== null &&
+                                                hasWeirdPriceSpread(p)
+                                            "
+                                            class="font-bold text-rose-600"
+                                            title="Warning: price spread (max-min) exceeds 30%"
+                                            aria-label="Warning: price spread (max-min) exceeds 30%"
+                                        >
+                                            !
+                                        </span>
+                                    </div>
+                                </td>
+
+                                <td
+                                    v-for="s in sites"
+                                    :key="s.key"
+                                    class="px-2.5 py-2.5 text-center tabular-nums text-slate-700"
+                                >
+                                    <template v-if="quoteFor(p, s.key)">
+                                        <div class="group relative inline-block w-full">
+                                            <button
+                                                class="absolute right-0 top-0 rounded px-1 text-xs font-semibold text-slate-400 opacity-0 transition hover:text-rose-600 group-hover:opacity-100"
+                                                type="button"
+                                                :aria-label="`Delete quote for ${p.sku} on ${s.name}`"
+                                                :disabled="
+                                                    deleting?.productId === p.id &&
+                                                    deleting?.siteKey === s.key
+                                                "
+                                                @click.stop="deleteQuote(p.id, s.key)"
+                                            >
+                                                ×
+                                            </button>
+
+                                            <button
+                                                class="absolute right-6 top-0 rounded px-1 text-xs font-semibold text-slate-400 opacity-0 transition hover:text-amber-700 group-hover:opacity-100"
+                                                type="button"
+                                                :aria-label="`Report quote for ${p.sku} on ${s.name}`"
+                                                @click.stop="openReportDialog(p, s.key)"
+                                            >
+                                                <svg
+                                                    viewBox="0 0 24 24"
+                                                    class="h-4 w-4"
+                                                    aria-hidden="true"
+                                                >
+                                                    <path
+                                                        fill="currentColor"
+                                                        d="M6 3h12a1 1 0 0 1 1 1v16l-4-2-4 2-4-2-4 2V4a1 1 0 0 1 1-1Zm1 2v12.382l3-1.5 4 2 4-2 1 .5V5H7Z"
+                                                    />
+                                                </svg>
+                                            </button>
+
+                                            <template v-if="quoteFor(p, s.key)!.status === 'found'">
+                                                <div
+                                                    class="flex items-baseline justify-center gap-2 px-2.5"
+                                                >
+                                                    <span
+                                                        v-if="
+                                                            quoteFor(p, s.key)!.original_price &&
+                                                            quoteFor(p, s.key)!.original_price !==
+                                                                quoteFor(p, s.key)!.price
+                                                        "
+                                                        class="text-xs text-slate-500 line-through"
+                                                    >
+                                                        {{ quoteFor(p, s.key)!.original_price }}
+                                                    </span>
+                                                    <a
+                                                        v-if="quoteFor(p, s.key)!.product_url"
+                                                        class="font-medium underline"
+                                                        :class="
+                                                            quoteFor(p, s.key)!.availability ===
+                                                            'sold_out'
+                                                                ? 'text-rose-700'
+                                                                : 'text-slate-900'
+                                                        "
+                                                        :href="quoteFor(p, s.key)!.product_url!"
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                    >
+                                                        {{ quoteFor(p, s.key)!.price ?? '—' }}
+                                                    </a>
+                                                    <span
+                                                        v-else
+                                                        class="font-medium"
+                                                        :class="
+                                                            quoteFor(p, s.key)!.availability ===
+                                                            'sold_out'
+                                                                ? 'text-rose-700'
+                                                                : 'text-slate-900'
+                                                        "
+                                                    >
+                                                        {{ quoteFor(p, s.key)!.price ?? '—' }}
+                                                    </span>
+                                                </div>
+                                                <div
+                                                    v-if="quoteFor(p, s.key)!.availability"
+                                                    class="mt-0.5 px-2.5 text-[11px]"
+                                                    :class="
+                                                        quoteFor(p, s.key)!.availability ===
+                                                        'sold_out'
+                                                            ? 'text-rose-700'
+                                                            : 'text-slate-500'
+                                                    "
+                                                >
+                                                    {{
+                                                        quoteFor(p, s.key)!.availability ===
+                                                        'in_stock'
+                                                            ? 'In stock'
+                                                            : 'Sold out'
+                                                    }}
+                                                </div>
+                                            </template>
+                                            <template
+                                                v-else-if="
+                                                    quoteFor(p, s.key)!.status === 'not_found'
+                                                "
+                                            >
+                                                <div
+                                                    class="flex items-center justify-center px-2.5"
+                                                >
+                                                    <span
+                                                        class="whitespace-nowrap text-xs font-medium leading-none text-slate-400"
+                                                        >Not found</span
+                                                    >
+                                                </div>
+                                            </template>
+                                            <template v-else
+                                                ><span class="px-2.5">Error</span></template
+                                            >
+                                        </div>
+                                    </template>
+                                    <template v-else>—</template>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <PaginationControls
+                :current-page="currentPage"
+                :last-page="lastPage"
+                :total="total"
+                :on-change="onPageChange"
+            />
+        </div>
 
         <div
             v-if="reporting"
