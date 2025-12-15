@@ -10,8 +10,10 @@ use Illuminate\Support\LazyCollection;
 
 interface ProductLookupRepository
 {
+    public function findByUuidOrFail(string $uuid): Product;
+
     /**
-     * @param array<int, string> $uuids
+     * @param  array<int, string>  $uuids
      * @return Collection<int, Product>
      */
     public function findByUuids(array $uuids): Collection;
@@ -21,5 +23,3 @@ interface ProductLookupRepository
      */
     public function cursorAll(): LazyCollection;
 }
-
-

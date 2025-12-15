@@ -6,6 +6,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 /**
@@ -47,7 +48,7 @@ final class Product extends Model
 
     protected static function booted(): void
     {
-        static::creating(function (self $product): void {
+        self::creating(function (self $product): void {
             if (($product->uuid ?? '') === '') {
                 $product->uuid = (string) Str::uuid();
             }
@@ -59,6 +60,10 @@ final class Product extends Model
     {
         return $this->hasMany(ProductPriceQuote::class);
     }
+
+    /** @return HasOne<ProductSellingPrice> */
+    public function sellingPrice(): HasOne
+    {
+        return $this->hasOne(ProductSellingPrice::class);
+    }
 }
-
-

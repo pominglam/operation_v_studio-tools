@@ -422,12 +422,24 @@ final class HtmlPriceParser
             }
 
             $score = 0;
-            if (str_contains($ctx, 'price')) $score += 3;
-            if (str_contains($ctx, 'product')) $score += 1;
-            if (str_contains($ctx, 'add to cart')) $score += 1;
-            if (str_contains($ctx, 'sold out')) $score += 1;
-            if (str_contains($ctx, 'tax')) $score -= 2;
-            if ($looksPriceSemantic) $score += 4;
+            if (str_contains($ctx, 'price')) {
+                $score += 3;
+            }
+            if (str_contains($ctx, 'product')) {
+                $score += 1;
+            }
+            if (str_contains($ctx, 'add to cart')) {
+                $score += 1;
+            }
+            if (str_contains($ctx, 'sold out')) {
+                $score += 1;
+            }
+            if (str_contains($ctx, 'tax')) {
+                $score -= 2;
+            }
+            if ($looksPriceSemantic) {
+                $score += 4;
+            }
 
             $candidates[] = [
                 'value' => $value,
@@ -442,8 +454,11 @@ final class HtmlPriceParser
         usort($candidates, function (array $a, array $b): int {
             // score desc, then value desc
             $cmp = ($b['score'] <=> $a['score']);
-            if ($cmp !== 0) return $cmp;
-            return ($b['value'] <=> $a['value']);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+
+            return $b['value'] <=> $a['value'];
         });
 
         $vals = array_map(static fn (array $c): float => (float) $c['value'], $candidates);
@@ -553,7 +568,8 @@ final class HtmlPriceParser
                 continue;
             }
 
-            if (preg_match('/\\/products\\/gift-?card(s)?\\b/i', $url) === 1) {
+            // Exclude gift cards (often match many queries but are never useful for price research).
+            if (preg_match('/\\/products\\/[^\\/]*gift-?card(s)?\\b/i', $url) === 1) {
                 continue;
             }
 
@@ -589,7 +605,7 @@ final class HtmlPriceParser
     }
 
     /**
-     * @param array<string, mixed> $decoded
+     * @param  array<string, mixed>  $decoded
      */
     private function findPriceInLdJson(array $decoded): ?float
     {
@@ -598,7 +614,9 @@ final class HtmlPriceParser
             foreach ($decoded['@graph'] as $node) {
                 if (is_array($node)) {
                     $p = $this->findPriceInLdJson($node);
-                    if ($p !== null) return $p;
+                    if ($p !== null) {
+                        return $p;
+                    }
                 }
             }
         }
@@ -624,7 +642,7 @@ final class HtmlPriceParser
     }
 
     /**
-     * @param array<string, mixed> $decoded
+     * @param  array<string, mixed>  $decoded
      * @return array{price: float|null, original_price: float|null, availability: string|null}
      */
     private function findOfferInLdJson(array $decoded): array
@@ -676,8 +694,12 @@ final class HtmlPriceParser
                     $ps = $offerObj['priceSpecification'];
                     // Handle list of price specifications.
                     foreach (is_array($ps) && array_is_list($ps) ? $ps : [$ps] as $spec) {
-                        if (! is_array($spec)) continue;
-                        if (! isset($spec['price'])) continue;
+                        if (! is_array($spec)) {
+                            continue;
+                        }
+                        if (! isset($spec['price'])) {
+                            continue;
+                        }
                         $pt = (string) ($spec['priceType'] ?? '');
                         if (str_contains($pt, 'ListPrice') || str_contains($pt, 'MSRP')) {
                             $originalPrice = (float) $spec['price'];
@@ -707,8 +729,7 @@ final class HtmlPriceParser
     {
         // strip fragments
         $url = preg_replace('/#.*/', '', $url) ?? $url;
+
         return $url;
     }
 }
-
-

@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
+use App\DAL\PriceResearch\PriceResearchRunLogRepository;
+use App\DAL\PriceResearch\PriceResearchRunRepository;
 use App\DAL\PriceResearch\ProductLookupRepository;
 use App\DAL\PriceResearch\ProductPriceQuoteRepository;
-use App\DAL\PriceResearch\PriceResearchRunRepository;
 use App\Models\Product;
 use App\Services\PriceResearch\DTOs\PriceLookupResult;
 use App\Services\PriceResearch\PriceResearchService;
@@ -49,12 +50,26 @@ final class FakeNotFoundProvider implements CompetitorPriceProvider
 
 function bindFakePriceResearchService(): void
 {
+    // Ensure controller runs inline in tests for deterministic assertions.
+    config()->set('queue.default', 'sync');
+
+    // Allow fake providers to be used as valid site_keys in request validation.
+    config()->set('price_research.sites.fake_found', [
+        'name' => 'Fake Found',
+        'base_url' => 'https://example.test',
+    ]);
+    config()->set('price_research.sites.fake_not_found', [
+        'name' => 'Fake Not Found',
+        'base_url' => 'https://example.test',
+    ]);
+
     app()->bind(PriceResearchService::class, function ($app): PriceResearchService {
         return new PriceResearchService(
             $app->make(ProductLookupRepository::class),
             $app->make(ProductPriceQuoteRepository::class),
             $app->make(PriceResearchRunRepository::class),
-            [new FakeFoundProvider(), new FakeNotFoundProvider()],
+            $app->make(PriceResearchRunLogRepository::class),
+            [new FakeFoundProvider, new FakeNotFoundProvider],
         );
     });
 }
@@ -88,6 +103,52 @@ it('runs price research and stores found/not_found quotes', function (): void {
         'site_key' => 'fake_not_found',
         'status' => 'not_found',
     ]);
+});
+
+it('can run price research for a single site key (useful when adding a new site)', function (): void {
+    bindFakePriceResearchService();
+
+    $product = Product::query()->create([
+        'sku' => 'PR-SITE-ONLY',
+        'description' => 'Site-only crawl',
+    ]);
+
+    $response = $this->postJson('/api/v1/price-research/run', [
+        'ids' => [$product->uuid],
+        'force' => true,
+        'site_keys' => ['fake_found'],
+    ]);
+
+    $response->assertOk()->assertJsonPath('queued', false);
+
+    $this->assertDatabaseHas('product_price_quotes', [
+        'product_id' => $product->id,
+        'site_key' => 'fake_found',
+        'status' => 'found',
+    ]);
+    $this->assertDatabaseMissing('product_price_quotes', [
+        'product_id' => $product->id,
+        'site_key' => 'fake_not_found',
+    ]);
+
+    $this->assertDatabaseHas('price_research_runs', [
+        'total_sites' => 1,
+    ]);
+});
+
+it('rejects unknown site keys for price research runs', function (): void {
+    bindFakePriceResearchService();
+
+    $product = Product::query()->create([
+        'sku' => 'PR-SITE-BAD',
+        'description' => 'Bad site key',
+    ]);
+
+    $this->postJson('/api/v1/price-research/run', [
+        'ids' => [$product->uuid],
+        'force' => true,
+        'site_keys' => ['nope'],
+    ])->assertStatus(422);
 });
 
 it('skips fresh products when not forced', function (): void {
@@ -156,6 +217,8 @@ it('auto-starts a stuck queued run in local dev', function (): void {
 
     // Use fast fake providers so the inline fallback completes quickly.
     bindFakePriceResearchService();
+    // bindFakePriceResearchService forces queue.default=sync for other tests; restore async mode here.
+    config()->set('queue.default', 'database');
 
     $product = Product::query()->create([
         'sku' => 'PR-QUEUE-1',
@@ -189,5 +252,3 @@ it('does not fail if a queued job references a missing run record', function ():
 
     expect($out['processed'])->toBeGreaterThan(0);
 });
-
-

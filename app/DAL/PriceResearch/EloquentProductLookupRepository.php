@@ -10,6 +10,14 @@ use Illuminate\Support\LazyCollection;
 
 final class EloquentProductLookupRepository implements ProductLookupRepository
 {
+    public function findByUuidOrFail(string $uuid): Product
+    {
+        /** @var Product $product */
+        $product = Product::query()->where('uuid', $uuid)->firstOrFail();
+
+        return $product;
+    }
+
     public function findByUuids(array $uuids): Collection
     {
         if ($uuids === []) {
@@ -26,5 +34,3 @@ final class EloquentProductLookupRepository implements ProductLookupRepository
         return Product::query()->orderBy('id')->cursor();
     }
 }
-
-

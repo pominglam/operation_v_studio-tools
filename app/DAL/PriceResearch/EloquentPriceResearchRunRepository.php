@@ -9,13 +9,21 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 final class EloquentPriceResearchRunRepository implements PriceResearchRunRepository
 {
-    public function create(bool $force, int $ttlDays, int $totalSites, int $totalProducts): PriceResearchRun
-    {
+    public function create(
+        bool $force,
+        int $ttlDays,
+        int $totalSites,
+        int $totalProducts,
+        ?array $productUuids = null,
+        ?array $siteKeys = null,
+    ): PriceResearchRun {
         /** @var PriceResearchRun $run */
         $run = PriceResearchRun::query()->create([
             'status' => 'queued',
             'force' => $force,
             'ttl_days' => $ttlDays,
+            'product_uuids' => $productUuids,
+            'site_keys' => $siteKeys,
             'total_sites' => $totalSites,
             'total_products' => $totalProducts,
         ]);
@@ -28,7 +36,7 @@ final class EloquentPriceResearchRunRepository implements PriceResearchRunReposi
         /** @var PriceResearchRun|null $run */
         $run = PriceResearchRun::query()->where('uuid', $uuid)->first();
         if ($run === null) {
-            throw (new ModelNotFoundException())->setModel(PriceResearchRun::class, [$uuid]);
+            throw (new ModelNotFoundException)->setModel(PriceResearchRun::class, [$uuid]);
         }
 
         return $run;
@@ -38,14 +46,14 @@ final class EloquentPriceResearchRunRepository implements PriceResearchRunReposi
     {
         /** @var PriceResearchRun|null $run */
         $run = PriceResearchRun::query()->orderByDesc('id')->first();
+
         return $run;
     }
 
     public function save(PriceResearchRun $run): PriceResearchRun
     {
         $run->save();
+
         return $run;
     }
 }
-
-

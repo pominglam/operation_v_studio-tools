@@ -20,23 +20,22 @@ final class RunPriceResearchJob implements ShouldQueue
     use SerializesModels;
 
     /**
-     * @param array<int, string>|null $productUuids
+     * @param  array<int, string>|null  $productUuids
+     * @param  array<int, string>|null  $siteKeys
      */
     public function __construct(
         public string $runUuid,
         public ?array $productUuids,
         public bool $force,
-    ) {
-    }
+        public ?array $siteKeys = null,
+    ) {}
 
     public function handle(PriceResearchService $research): void
     {
-        $summary = $research->run($this->productUuids, $this->force, $this->runUuid);
+        $summary = $research->run($this->productUuids, $this->force, $this->runUuid, $this->siteKeys);
 
         Log::info('price_research.completed', [
             'summary' => $summary,
         ]);
     }
 }
-
-

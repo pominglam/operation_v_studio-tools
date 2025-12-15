@@ -30,6 +30,8 @@ interface ProductPriceQuoteRepository
      * @return Collection<int, ProductPriceQuote>
      */
     public function listLatestForProduct(Product $product): Collection;
+
+    public function findForProductAndSiteKey(Product $product, string $siteKey): ?ProductPriceQuote;
+
+    public function deleteForProductAndSiteKey(Product $product, string $siteKey): bool;
 }
-
-

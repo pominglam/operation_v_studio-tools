@@ -8,7 +8,18 @@ use App\Models\PriceResearchRun;
 
 interface PriceResearchRunRepository
 {
-    public function create(bool $force, int $ttlDays, int $totalSites, int $totalProducts): PriceResearchRun;
+    /**
+     * @param  array<int, string>|null  $productUuids
+     * @param  array<int, string>|null  $siteKeys
+     */
+    public function create(
+        bool $force,
+        int $ttlDays,
+        int $totalSites,
+        int $totalProducts,
+        ?array $productUuids = null,
+        ?array $siteKeys = null,
+    ): PriceResearchRun;
 
     public function findByUuidOrFail(string $uuid): PriceResearchRun;
 
@@ -16,5 +27,3 @@ interface PriceResearchRunRepository
 
     public function save(PriceResearchRun $run): PriceResearchRun;
 }
-
-

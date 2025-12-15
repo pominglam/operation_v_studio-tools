@@ -10,10 +10,10 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 final class PriceResearchQueryService
 {
     /**
-     * @param array<int, string> $freshness
-     * @param array<int, string> $quoteSites
-     * @param array<int, string> $quoteStatuses
-     * @param array<int, string> $quoteAvailabilities
+     * @param  array<int, string>  $freshness
+     * @param  array<int, string>  $quoteSites
+     * @param  array<int, string>  $quoteStatuses
+     * @param  array<int, string>  $quoteAvailabilities
      */
     public function paginateProductsWithQuotes(
         int $perPage,
@@ -24,8 +24,7 @@ final class PriceResearchQueryService
         array $quoteSites = [],
         array $quoteStatuses = [],
         array $quoteAvailabilities = [],
-    ): LengthAwarePaginator
-    {
+    ): LengthAwarePaginator {
         $sortDir = strtolower($sortDir) === 'asc' ? 'asc' : 'desc';
         $sortBy = $sortBy !== null ? trim($sortBy) : null;
 
@@ -41,6 +40,7 @@ final class PriceResearchQueryService
             ->with(['priceQuotes' => function ($q): void {
                 $q->orderBy('site_key');
             }])
+            ->with('sellingPrice')
             ->select('products.*');
 
         $search = $search !== null ? trim($search) : null;
@@ -91,5 +91,3 @@ final class PriceResearchQueryService
         return $q->orderBy($sortColumn, $sortDir)->paginate($perPage);
     }
 }
-
-

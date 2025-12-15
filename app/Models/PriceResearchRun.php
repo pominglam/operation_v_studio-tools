@@ -13,6 +13,8 @@ use Illuminate\Support\Str;
  * @property string $status
  * @property bool $force
  * @property int $ttl_days
+ * @property array<int, string>|null $product_uuids
+ * @property array<int, string>|null $site_keys
  * @property int $total_products
  * @property int $processed_products
  * @property int $refreshed_products
@@ -32,6 +34,8 @@ final class PriceResearchRun extends Model
         'status',
         'force',
         'ttl_days',
+        'product_uuids',
+        'site_keys',
         'total_products',
         'processed_products',
         'refreshed_products',
@@ -48,6 +52,8 @@ final class PriceResearchRun extends Model
     protected $casts = [
         'force' => 'boolean',
         'ttl_days' => 'integer',
+        'product_uuids' => 'array',
+        'site_keys' => 'array',
         'total_products' => 'integer',
         'processed_products' => 'integer',
         'refreshed_products' => 'integer',
@@ -61,12 +67,10 @@ final class PriceResearchRun extends Model
 
     protected static function booted(): void
     {
-        static::creating(function (self $run): void {
+        self::creating(function (self $run): void {
             if (($run->uuid ?? '') === '') {
                 $run->uuid = (string) Str::uuid();
             }
         });
     }
 }
-
-

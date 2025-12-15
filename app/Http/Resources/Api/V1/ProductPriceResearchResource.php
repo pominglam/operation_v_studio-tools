@@ -33,9 +33,8 @@ final class ProductPriceResearchResource extends JsonResource
             'price_researched_at' => $product->price_researched_at?->toISOString(),
             'expired' => $expired,
             'cost' => $product->price,
+            'selling_price' => $product->sellingPrice?->selling_price,
             'quotes' => ProductPriceQuoteResource::collection($product->priceQuotes),
         ];
     }
 }
-
-

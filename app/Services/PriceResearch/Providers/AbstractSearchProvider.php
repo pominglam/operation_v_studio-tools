@@ -13,11 +13,33 @@ use Throwable;
 
 abstract class AbstractSearchProvider implements CompetitorPriceProvider
 {
+    protected function extractTitleForMatching(string $html): ?string
+    {
+        if (preg_match('/<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m) === 1) {
+            return html_entity_decode((string) $m[1], ENT_QUOTES | ENT_HTML5);
+        }
+
+        if (preg_match('/<title[^>]*>(.*?)<\\/title>/is', $html, $m) === 1) {
+            $t = trim(strip_tags((string) $m[1]));
+            if ($t !== '') {
+                return $t;
+            }
+        }
+
+        if (preg_match('/<h1\\b[^>]*>(.*?)<\\/h1>/is', $html, $m) === 1) {
+            $t = trim(strip_tags((string) $m[1]));
+            if ($t !== '') {
+                return $t;
+            }
+        }
+
+        return null;
+    }
+
     public function __construct(
         protected readonly ExternalHtmlClient $http,
         protected readonly HtmlPriceParser $parser,
-    ) {
-    }
+    ) {}
 
     abstract protected function baseUrl(): string;
 
@@ -94,15 +116,19 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
 
     protected function htmlLikelyMatchesProduct(string $html, Product $product): bool
     {
-        $haystack = mb_strtolower($html);
+        // Use full HTML for identifier checks, but prefer title-scoped matching for tokens to avoid false
+        // positives from recommendation widgets / embedded JSON on PDP pages.
+        $fullHaystack = mb_strtolower($html);
+        $title = $this->extractTitleForMatching($html);
+        $haystack = mb_strtolower($title ?? $html);
 
         // Prefer strong identifiers when present, but do NOT require them; some competitor PDPs do not
         // expose UPC/SKU in the HTML (e.g. Canadian Gundam). We'll fall back to a stricter token match.
-        if (($product->barcode ?? '') !== '' && str_contains($haystack, mb_strtolower((string) $product->barcode))) {
+        if (($product->barcode ?? '') !== '' && str_contains($fullHaystack, mb_strtolower((string) $product->barcode))) {
             return true;
         }
 
-        if (($product->sku ?? '') !== '' && str_contains($haystack, mb_strtolower((string) $product->sku))) {
+        if (($product->sku ?? '') !== '' && str_contains($fullHaystack, mb_strtolower((string) $product->sku))) {
             return true;
         }
 
@@ -115,15 +141,57 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
         // We intentionally allow small wording differences (missing 1–2 tokens) to avoid false "not found"
         // when competitor product titles vary slightly.
         $desc = preg_replace('/\\s*\\(edited\\)\\s*/i', ' ', $desc) ?? $desc;
-        $tokens = preg_split('/[^a-z0-9]+/i', $desc) ?: [];
-        $tokens = array_map(static fn (string $t): string => mb_strtolower($t), $tokens);
+        $rawTokens = preg_split('/[^a-z0-9]+/i', $desc) ?: [];
+        $rawTokens = array_map(static fn (string $t): string => mb_strtolower($t), $rawTokens);
 
-        // Drop common, low-signal tokens (reduces false positives and avoids requiring words like "gundam").
+        // Drop common, low-signal tokens (reduces false positives and avoids requiring words like "gundam"),
+        // but keep a small allow-list of short, meaningful tokens (grades/scales) so products like
+        // "RG 1/144 GOD GUNDAM" can still match a PDP title.
         $stop = ['gundam', 'bandai', 'hobby', 'model', 'kit'];
-        $tokens = array_values(array_filter($tokens, static function (string $t) use ($stop): bool {
-            if (mb_strlen($t) < 4) return false;
-            return ! in_array($t, $stop, true);
+        $shortAllow = ['rg', 'hg', 'mg', 'pg', 'sd', 'eg'];
+
+        $tokens = array_values(array_filter($rawTokens, static function (string $t) use ($stop, $shortAllow): bool {
+            $t = trim($t);
+            if ($t === '') {
+                return false;
+            }
+
+            // Always keep known grade abbreviations even though they're short.
+            if (in_array($t, $shortAllow, true)) {
+                return true;
+            }
+
+            // Keep common scale tokens (e.g. 144, 100) even though they are short.
+            if (preg_match('/^\d{3,4}$/', $t) === 1) {
+                return true;
+            }
+
+            if (in_array($t, $stop, true)) {
+                return false;
+            }
+
+            return mb_strlen($t) >= 4;
         }));
+
+        // If we ended up with too few tokens (common for short names like "RG ... GOD ..."),
+        // do a second pass that allows 3-letter non-stop words (e.g. "god") so matching still works.
+        if (count($tokens) < 2) {
+            $tokens = array_values(array_filter($rawTokens, static function (string $t) use ($stop, $shortAllow): bool {
+                if ($t === '' || in_array($t, $stop, true)) {
+                    return false;
+                }
+
+                if (in_array($t, $shortAllow, true)) {
+                    return true;
+                }
+
+                if (preg_match('/^\d{3,4}$/', $t) === 1) {
+                    return true;
+                }
+
+                return mb_strlen($t) >= 3;
+            }));
+        }
 
         if ($tokens === []) {
             return false;
@@ -138,7 +206,40 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
 
         // Allow up to 2 missing tokens, but always require at least 2 hits.
         $minHits = max(2, count($tokens) - 2);
-        return $hits >= $minHits;
+
+        $requiredTokens = array_values(array_filter($rawTokens, static function (string $t) use ($stop, $shortAllow): bool {
+            // Require at least one "name" token match (not just grade/scale), otherwise pages like
+            // "RG 1/144 decals" can match "RG 1/144 God Gundam".
+            if ($t === '' || in_array($t, $stop, true) || in_array($t, $shortAllow, true)) {
+                return false;
+            }
+
+            if (preg_match('/^\d{3,4}$/', $t) === 1) {
+                return false;
+            }
+
+            return mb_strlen($t) >= 3;
+        }));
+
+        if ($requiredTokens !== []) {
+            $matched = false;
+            foreach (array_slice($requiredTokens, 0, 8) as $t) {
+                if (str_contains($haystack, $t)) {
+                    $matched = true;
+                    break;
+                }
+            }
+
+            if (! $matched) {
+                return false;
+            }
+        }
+
+        if ($hits < $minHits) {
+            return false;
+        }
+
+        return true;
     }
 
     public function lookup(Product $product): PriceLookupResult
@@ -199,7 +300,7 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
      * Prefer candidate URLs that contain the product identifiers (sku/barcode), to reduce false positives
      * when search pages return many close matches.
      *
-     * @param array<int, string> $links
+     * @param  array<int, string>  $links
      * @return array<int, string>
      */
     protected function orderCandidateProductUrls(Product $product, array $links): array
@@ -216,16 +317,28 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
             $bScore = 0;
 
             if ($banSku !== '') {
-                if (str_contains($aL, $banSku)) $aScore += 10;
-                if (str_contains($bL, $banSku)) $bScore += 10;
+                if (str_contains($aL, $banSku)) {
+                    $aScore += 10;
+                }
+                if (str_contains($bL, $banSku)) {
+                    $bScore += 10;
+                }
             }
             if ($sku !== '') {
-                if (str_contains($aL, $sku)) $aScore += 6;
-                if (str_contains($bL, $sku)) $bScore += 6;
+                if (str_contains($aL, $sku)) {
+                    $aScore += 6;
+                }
+                if (str_contains($bL, $sku)) {
+                    $bScore += 6;
+                }
             }
             if ($barcode !== '') {
-                if (str_contains($aL, $barcode)) $aScore += 6;
-                if (str_contains($bL, $barcode)) $bScore += 6;
+                if (str_contains($aL, $barcode)) {
+                    $aScore += 6;
+                }
+                if (str_contains($bL, $barcode)) {
+                    $bScore += 6;
+                }
             }
 
             // Prefer shorter URLs (often closer to canonical PDP) when tie-breaking.
@@ -239,5 +352,3 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
         return $links;
     }
 }
-
-

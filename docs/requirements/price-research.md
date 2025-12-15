@@ -73,13 +73,42 @@ Response:
 - `started_at`, `finished_at`, `error_message`
 
 ### List products with latest quotes
-`GET /api/v1/price-research/products?per_page=25`
+`GET /api/v1/price-research/products`
+
+Query params:
+- `per_page` (1..100, default 25)
+- `page` (>=1)
+- `search` (string): matches `sku`, `barcode`, `description`
+- `sort_by`: `sku | description | price_researched_at | cost`
+- `sort_dir`: `asc | desc`
+- `freshness[]`: multi-select `fresh | expired`
+- `quote_sites[]`: multi-select site keys (e.g. `panda_hobby`)
+- `quote_statuses[]`: multi-select `found | not_found | error`
+- `quote_availabilities[]`: multi-select `in_stock | sold_out`
 
 Response includes:
 - product identity (`id`, `sku`, `barcode`, `description`)
 - `price_researched_at`
 - `expired` boolean
+- `cost` (nullable decimal): product cost from Plamod (`products.price`) — included for display only, not duplicated
 - `quotes[]` (one per retailer that has a stored quote)
+
+## UI (Price research page)
+
+### Table controls
+- Search bar
+- Column sorting
+- Multi-select filters (fresh/expired, site, quote status, availability)
+- Pagination
+
+### Derived columns (not stored)
+- **Cost to buy**: `products.price`
+- **Average price online**: average of `quotes[].price` for quotes where `status=found`
+- **1.5x**: `1.5 × Cost to buy`
+
+### Display rules
+- Quotes with `availability=sold_out` render in red (price + “Sold out”)
+- Quotes with `status=not_found` render in grey (“Not found”)
 
 ## Implementation Notes / Assumptions
 - Retailer integrations are implemented as **provider classes**. Each provider attempts to find a matching product using a small set of fallback search terms (`sku`, `barcode`, and `description` where available) and returns:
@@ -87,5 +116,10 @@ Response includes:
   - `not_found`, or
   - `error` with message (network/parse failure)
 - Outbound calls use timeouts + retries and write structured logs to the `external_api` log channel.
+
+### Rate limiting
+- Outbound requests are rate-limited per `site_key` (default **10 requests per minute**).
+- Config:
+  - `PRICE_RESEARCH_SITE_RATE_LIMIT_PER_MINUTE` (default 10)
 
 

@@ -59,7 +59,9 @@ return [
             'name' => 'Hobby Sense',
             'base_url' => 'https://hobbysense.ca',
         ],
+        'argama_hobby' => [
+            'name' => 'Argama Hobby',
+            'base_url' => 'https://argamahobby.com',
+        ],
     ],
 ];
-
-

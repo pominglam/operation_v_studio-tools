@@ -29,8 +29,10 @@ services:
       TZ: America/Toronto
       # Vite is running on the host (local Node). Container must point to host.docker.internal.
       VITE_DEV_SERVER_URL: http://host.docker.internal:5173
-      # If you use the local inline queue fallback, local env is required.
-      PRICE_RESEARCH_LOCAL_INLINE_FALLBACK: "true"
+      # Avoid running long crawls inside HTTP requests (PHP built-in server is single-process).
+      # Use the dedicated `queue` service below instead.
+      PRICE_RESEARCH_LOCAL_INLINE_FALLBACK: "false"
+      QUEUE_CONNECTION: database
     depends_on:
       mysql:
         condition: service_healthy
@@ -43,6 +45,36 @@ services:
     networks:
       - pricing_tool_net
     command: ["php", "-S", "0.0.0.0:8080", "-t", "public"]
+
+  queue:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: pricing-tool-queue
+    environment:
+      TZ: America/Toronto
+      QUEUE_CONNECTION: database
+      PRICE_RESEARCH_LOCAL_INLINE_FALLBACK: "false"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - .:/var/www/html
+    working_dir: /var/www/html
+    user: "0:0"
+    networks:
+      - pricing_tool_net
+    restart: unless-stopped
+    command:
+      [
+        "php",
+        "artisan",
+        "queue:work",
+        "--queue=price_research,default",
+        "--sleep=1",
+        "--tries=1",
+        "--timeout=600",
+      ]
 
 volumes:
   mysql_data:

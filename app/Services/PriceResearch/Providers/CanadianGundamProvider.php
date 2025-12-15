@@ -72,17 +72,29 @@ final class CanadianGundamProvider extends AbstractSearchProvider
         if ($title !== null) {
             $titleLower = mb_strtolower($title);
 
+            $desc = trim((string) ($product->description ?? ''));
+            $desc = preg_replace('/\\s*\\(edited\\)\\s*/i', ' ', $desc) ?? $desc;
+            $descLower = mb_strtolower($desc);
+
             if (($product->barcode ?? '') !== '' && str_contains($titleLower, mb_strtolower((string) $product->barcode))) {
+                // Even if the barcode matches, do not accept a different grade/scale (HG vs MG, 1/144 vs 1/100).
+                if ($this->gradeOrScaleMismatch($descLower, $titleLower)) {
+                    return false;
+                }
                 return true;
             }
 
             if (($product->sku ?? '') !== '' && str_contains($titleLower, mb_strtolower((string) $product->sku))) {
+                if ($this->gradeOrScaleMismatch($descLower, $titleLower)) {
+                    return false;
+                }
                 return true;
             }
 
-            $desc = trim((string) ($product->description ?? ''));
-            $desc = preg_replace('/\\s*\\(edited\\)\\s*/i', ' ', $desc) ?? $desc;
-            $descLower = mb_strtolower($desc);
+            // Strong guard: avoid mismatching HG/RG/MG/etc across grades.
+            if ($this->gradeOrScaleMismatch($descLower, $titleLower)) {
+                return false;
+            }
 
             // If we expect "gundam", require it in the title.
             if (str_contains($descLower, 'gundam') && ! str_contains($titleLower, 'gundam')) {
@@ -102,6 +114,48 @@ final class CanadianGundamProvider extends AbstractSearchProvider
         }
 
         return parent::htmlLikelyMatchesProduct($html, $product);
+    }
+
+    private function gradeOrScaleMismatch(string $expectedTextLower, string $actualTextLower): bool
+    {
+        $expectedGrade = $this->extractGradeGroup($expectedTextLower);
+        $actualGrade = $this->extractGradeGroup($actualTextLower);
+        if ($expectedGrade !== null && $actualGrade !== null && $expectedGrade !== $actualGrade) {
+            return true;
+        }
+
+        $expectedScale = $this->extractScale($expectedTextLower);
+        $actualScale = $this->extractScale($actualTextLower);
+        if ($expectedScale !== null && $actualScale !== null && $expectedScale !== $actualScale) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function extractGradeGroup(string $textLower): ?string
+    {
+        // Normalize a few common grade prefixes into broad groups.
+        // HG group includes many HG variants (HGBF/HGUC/HGCE/HGAC/HGBD/etc).
+        if (preg_match('/\\b(mg|master\\s+grade)\\b/', $textLower) === 1) return 'mg';
+        if (preg_match('/\\b(rg|real\\s+grade)\\b/', $textLower) === 1) return 'rg';
+        if (preg_match('/\\b(pg|perfect\\s+grade)\\b/', $textLower) === 1) return 'pg';
+        if (preg_match('/\\b(hg|hguc|hgce|hgac|hgbf|hgbd|hgbd:r|hggto|hgtb|hg\\s*1\\s*\\/\\s*144|high\\s+grade)\\b/', $textLower) === 1) {
+            return 'hg';
+        }
+        if (preg_match('/\\b(sd|sdw|sdcs|ex-std|ex\\s*standard|cross\\s+silhouette)\\b/', $textLower) === 1) return 'sd';
+
+        return null;
+    }
+
+    private function extractScale(string $textLower): ?string
+    {
+        if (preg_match('/\\b1\\s*\\/\\s*(\\d{2,3})\\b/', $textLower, $m) === 1) {
+            $den = (string) ($m[1] ?? '');
+            return $den !== '' ? $den : null;
+        }
+
+        return null;
     }
 
     private function extractProductTitle(string $html): ?string

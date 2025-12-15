@@ -14,8 +14,7 @@ final class PriceResearchRunStatusService
     public function __construct(
         private readonly PriceResearchRunRepository $runs,
         private readonly PriceResearchService $research,
-    ) {
-    }
+    ) {}
 
     public function findByUuidOrFail(string $uuid): PriceResearchRun
     {
@@ -72,8 +71,11 @@ final class PriceResearchRunStatusService
         }
 
         try {
-            // NOTE: UI currently only runs "all products", so we don't persist a subset of IDs here.
-            $this->research->run(null, (bool) $run->force, $run->uuid);
+            /** @var array<int, string>|null $productUuids */
+            $productUuids = $run->product_uuids;
+            /** @var array<int, string>|null $siteKeys */
+            $siteKeys = $run->site_keys;
+            $this->research->run($productUuids, (bool) $run->force, $run->uuid, $siteKeys);
         } catch (Throwable $e) {
             DB::transaction(function () use ($run, $e): void {
                 $fresh = $this->runs->findByUuidOrFail($run->uuid);
@@ -87,5 +89,3 @@ final class PriceResearchRunStatusService
         return $this->runs->findByUuidOrFail($run->uuid);
     }
 }
-
-

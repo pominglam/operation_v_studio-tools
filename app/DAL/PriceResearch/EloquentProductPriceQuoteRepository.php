@@ -41,6 +41,25 @@ final class EloquentProductPriceQuoteRepository implements ProductPriceQuoteRepo
             ->orderBy('site_key')
             ->get();
     }
+
+    public function findForProductAndSiteKey(Product $product, string $siteKey): ?ProductPriceQuote
+    {
+        /** @var ProductPriceQuote|null $quote */
+        $quote = ProductPriceQuote::query()
+            ->where('product_id', $product->id)
+            ->where('site_key', $siteKey)
+            ->first();
+
+        return $quote;
+    }
+
+    public function deleteForProductAndSiteKey(Product $product, string $siteKey): bool
+    {
+        $deleted = ProductPriceQuote::query()
+            ->where('product_id', $product->id)
+            ->where('site_key', $siteKey)
+            ->delete();
+
+        return $deleted > 0;
+    }
 }
-
-

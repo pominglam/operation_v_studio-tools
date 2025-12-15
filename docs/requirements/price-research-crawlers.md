@@ -28,7 +28,7 @@ This document describes how each competitor “crawler” (provider) works:
 ### Gundam Hangar (`gundam_hangar`)
 
 - **Approach**: Uses Gundam Hangar’s public JSON catalog API (preferred over HTML scraping).
-- **Search**: API query by description (preferred) / SKU / barcode.
+- **Search**: API query by description (preferred) / SKU / barcode (queries are URL-encoded; `/` becomes `%2F`).
 - **PDP**: Constructed from returned `slug` as `/canadian-gundam-store/product/{slug}`.
 - **Price**:
   - `final_price` (when > 0) is treated as current price
@@ -40,7 +40,7 @@ This document describes how each competitor “crawler” (provider) works:
 ### Panda Hobby (`panda_hobby`)
 
 - **Approach**: HTML search → PDP scrape.
-- **Search**: Uses the provider’s configured search URL(s) under the site base URL.
+- **Search**: Uses the provider’s configured search URL(s) under the site base URL (URL-encoded; `/` becomes `%2F`).
 - **PDP detection**: Shopify-style `/products/…` or `/product/…` links.
 
 ### Canadian Gundam (`canadian_gundam`)
@@ -49,6 +49,9 @@ This document describes how each competitor “crawler” (provider) works:
   - [Canadian Gundam search example](https://www.canadiangundam.com/search?controller=search&orderby=position&orderway=desc&search_query=HG+1%2F144+%2313+Gundam+Astray+Blue+Frame&submit_search=)
 - **PDP detection**: product links under `/gundam-model-kits/…`.
 - **Extraction**: PDP HTML + JSON-LD (when present).
+- **Notes**:
+  - CanadianGundam results are already well-ranked; the provider does not re-rank URLs globally.
+  - Matching is tolerant of small title differences (missing 1–2 tokens) when SKU/UPC aren’t present in the PDP HTML.
 
 ### Hobby Bee (`hobby_bee`)
 
@@ -72,8 +75,9 @@ This document describes how each competitor “crawler” (provider) works:
 
 ### Hobby Sense (`hobby_sense`)
 
-- **Search**: Shopify search endpoint:
-  - [Hobby Sense search example](https://hobbysense.ca/search?q=HG+1%2F144+%2313+Gundam+Astray+Blue+Frame)
-- **PDP detection**: `/products/…` links.
-- **Extraction**: PDP HTML + JSON-LD (when present).
+- **Search**:
+  - Uses Shopify predictive search JSON (`/search/suggest.json`) because the HTML search page can contain template placeholders.
+  - The provider still supports `/search?q=...` as a basic fallback search URL.
+- **PDP detection**: `/products/…` links from `suggest.json` results.
+- **Extraction**: PDP HTML + JSON-LD (when present), scoped to the product form area to avoid picking unrelated prices (recommended products).
 
