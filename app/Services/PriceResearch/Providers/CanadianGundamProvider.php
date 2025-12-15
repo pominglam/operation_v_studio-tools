@@ -34,7 +34,7 @@ final class CanadianGundamProvider extends AbstractSearchProvider
     /**
      * CanadianGundam search results are already ranked well; avoid re-ordering by URL heuristics.
      *
-     * @param array<int, string> $links
+     * @param  array<int, string>  $links
      * @return array<int, string>
      */
     protected function orderCandidateProductUrls(Product $product, array $links): array
@@ -50,6 +50,7 @@ final class CanadianGundamProvider extends AbstractSearchProvider
         if ($desc !== '') {
             $desc = preg_replace('/\\s*\\(edited\\)\\s*/i', ' ', $desc) ?? $desc;
             $desc = trim(preg_replace('/\\s+/', ' ', $desc) ?? $desc);
+
             return mb_substr($desc, 0, 80);
         }
 
@@ -81,6 +82,7 @@ final class CanadianGundamProvider extends AbstractSearchProvider
                 if ($this->gradeOrScaleMismatch($descLower, $titleLower)) {
                     return false;
                 }
+
                 return true;
             }
 
@@ -88,6 +90,7 @@ final class CanadianGundamProvider extends AbstractSearchProvider
                 if ($this->gradeOrScaleMismatch($descLower, $titleLower)) {
                     return false;
                 }
+
                 return true;
             }
 
@@ -137,13 +140,21 @@ final class CanadianGundamProvider extends AbstractSearchProvider
     {
         // Normalize a few common grade prefixes into broad groups.
         // HG group includes many HG variants (HGBF/HGUC/HGCE/HGAC/HGBD/etc).
-        if (preg_match('/\\b(mg|master\\s+grade)\\b/', $textLower) === 1) return 'mg';
-        if (preg_match('/\\b(rg|real\\s+grade)\\b/', $textLower) === 1) return 'rg';
-        if (preg_match('/\\b(pg|perfect\\s+grade)\\b/', $textLower) === 1) return 'pg';
+        if (preg_match('/\\b(mg|master\\s+grade)\\b/', $textLower) === 1) {
+            return 'mg';
+        }
+        if (preg_match('/\\b(rg|real\\s+grade)\\b/', $textLower) === 1) {
+            return 'rg';
+        }
+        if (preg_match('/\\b(pg|perfect\\s+grade)\\b/', $textLower) === 1) {
+            return 'pg';
+        }
         if (preg_match('/\\b(hg|hguc|hgce|hgac|hgbf|hgbd|hgbd:r|hggto|hgtb|hg\\s*1\\s*\\/\\s*144|high\\s+grade)\\b/', $textLower) === 1) {
             return 'hg';
         }
-        if (preg_match('/\\b(sd|sdw|sdcs|ex-std|ex\\s*standard|cross\\s+silhouette)\\b/', $textLower) === 1) return 'sd';
+        if (preg_match('/\\b(sd|sdw|sdcs|ex-std|ex\\s*standard|cross\\s+silhouette)\\b/', $textLower) === 1) {
+            return 'sd';
+        }
 
         return null;
     }
@@ -152,6 +163,7 @@ final class CanadianGundamProvider extends AbstractSearchProvider
     {
         if (preg_match('/\\b1\\s*\\/\\s*(\\d{2,3})\\b/', $textLower, $m) === 1) {
             $den = (string) ($m[1] ?? '');
+
             return $den !== '' ? $den : null;
         }
 
@@ -190,5 +202,3 @@ final class CanadianGundamProvider extends AbstractSearchProvider
         ];
     }
 }
-
-

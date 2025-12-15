@@ -12,8 +12,7 @@ final class ProductMaintenanceController extends Controller
 {
     public function __construct(
         private readonly ProductMaintenanceService $maintenance,
-    ) {
-    }
+    ) {}
 
     public function flush(): JsonResponse
     {
@@ -24,5 +23,3 @@ final class ProductMaintenanceController extends Controller
         ]);
     }
 }
-
-

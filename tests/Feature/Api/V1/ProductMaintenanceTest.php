@@ -24,5 +24,3 @@ it('flushes all products', function (): void {
 
     expect(DB::table('products')->count())->toBe(0);
 });
-
-

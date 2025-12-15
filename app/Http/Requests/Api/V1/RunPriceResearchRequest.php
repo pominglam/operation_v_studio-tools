@@ -16,6 +16,10 @@ final class RunPriceResearchRequest extends FormRequest
     {
         /** @var array<int, string> $allowedSiteKeys */
         $allowedSiteKeys = array_keys((array) config('price_research.sites', []));
+        /** @var array<int, string> $disabled */
+        $disabled = (array) config('price_research.disabled_site_keys', []);
+        $disabled = array_values(array_unique(array_filter(array_map('trim', $disabled), static fn (string $v): bool => $v !== '')));
+        $allowedSiteKeys = array_values(array_diff($allowedSiteKeys, $disabled));
 
         return [
             'ids' => ['sometimes', 'array', 'min:1'],

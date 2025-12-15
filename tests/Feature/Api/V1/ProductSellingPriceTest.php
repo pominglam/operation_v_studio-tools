@@ -22,4 +22,3 @@ it('can upsert a selling price for a product and returns it on price research pr
     $res->assertOk();
     $res->assertJsonPath('data.0.selling_price', '24.99');
 });
-

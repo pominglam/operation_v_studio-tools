@@ -13,8 +13,7 @@ final class PriceResearchQuoteMaintenanceController extends Controller
 {
     public function __construct(
         private readonly PriceResearchQuoteMaintenanceService $quotes,
-    ) {
-    }
+    ) {}
 
     public function __invoke(string $productId, string $siteKey): JsonResponse
     {
@@ -37,5 +36,3 @@ final class PriceResearchQuoteMaintenanceController extends Controller
         ]);
     }
 }
-
-

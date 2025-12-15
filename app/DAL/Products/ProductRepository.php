@@ -11,12 +11,12 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 interface ProductRepository
 {
     /**
-     * @param array<int, ProductImportRowDTO> $rows
+     * @param  array<int, ProductImportRowDTO>  $rows
      */
     public function upsertImportedRows(array $rows): int;
 
     /**
-     * @param array<int, string> $types
+     * @param  array<int, string>  $types
      */
     public function paginate(int $perPage, ?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator;
 
@@ -32,11 +32,9 @@ interface ProductRepository
     public function save(Product $product): Product;
 
     /**
-     * @param array<int, string> $uuids
+     * @param  array<int, string>  $uuids
      */
     public function deleteByUuids(array $uuids): int;
 
     public function flushAll(): void;
 }
-
-

@@ -6,8 +6,4 @@ namespace App\Services\Products\Exceptions;
 
 use RuntimeException;
 
-final class DuplicateSkuException extends RuntimeException
-{
-}
-
-
+final class DuplicateSkuException extends RuntimeException {}

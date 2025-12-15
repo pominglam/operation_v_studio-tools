@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/../vendor/autoload.php';
+require __DIR__.'/../vendor/autoload.php';
 
 use App\Services\PriceResearch\Support\HtmlPriceParser;
 
@@ -19,10 +19,10 @@ if ($html === false) {
     exit(1);
 }
 
-$parser = new HtmlPriceParser();
+$parser = new HtmlPriceParser;
 $urls = $parser->extractCandidateProductUrls($html, 'https://www.meeplemart.com');
 
-fwrite(STDOUT, "urls=" . count($urls) . "\n");
+fwrite(STDOUT, 'urls='.count($urls)."\n");
 foreach ($urls as $u) {
-    fwrite(STDOUT, $u . "\n");
+    fwrite(STDOUT, $u."\n");
 }

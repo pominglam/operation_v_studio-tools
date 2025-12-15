@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/../vendor/autoload.php';
+require __DIR__.'/../vendor/autoload.php';
 
 use App\Services\PriceResearch\Support\HtmlPriceParser;
 
@@ -18,7 +18,7 @@ if ($html === false) {
     exit(1);
 }
 
-$parser = new HtmlPriceParser();
+$parser = new HtmlPriceParser;
 $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
 var_export($out);

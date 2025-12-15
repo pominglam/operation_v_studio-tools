@@ -11,4 +11,3 @@ interface ProductSellingPriceRepository
 {
     public function upsertForProduct(Product $product, ?string $sellingPrice, string $currency = 'CAD'): ProductSellingPrice;
 }
-

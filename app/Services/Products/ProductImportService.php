@@ -13,8 +13,7 @@ final class ProductImportService
 {
     public function __construct(
         private readonly ProductRepository $products,
-    ) {
-    }
+    ) {}
 
     public function import(UploadedFile $file): int
     {
@@ -96,7 +95,7 @@ final class ProductImportService
     }
 
     /**
-     * @param array<int, string> $header
+     * @param  array<int, string>  $header
      * @return array{schema: 'catalog'|'order_details', map: array<string, int>}
      */
     private function buildHeaderSchema(array $header): array
@@ -164,8 +163,8 @@ final class ProductImportService
     }
 
     /**
-     * @param array<string, int> $map
-     * @param array<int, string> $required
+     * @param  array<string, int>  $map
+     * @param  array<int, string>  $required
      */
     private function hasAllColumns(array $map, array $required): bool
     {
@@ -179,7 +178,7 @@ final class ProductImportService
     }
 
     /**
-     * @param array<int, string> $row
+     * @param  array<int, string>  $row
      */
     private function isSummaryStart(array $row): bool
     {
@@ -208,7 +207,7 @@ final class ProductImportService
     }
 
     /**
-     * @param array<int, string> $row
+     * @param  array<int, string>  $row
      */
     private function stringAt(array $row, int $idx): string
     {
@@ -216,7 +215,7 @@ final class ProductImportService
     }
 
     /**
-     * @param array<int, string> $row
+     * @param  array<int, string>  $row
      */
     private function nullableStringAt(array $row, int $idx): ?string
     {
@@ -226,7 +225,7 @@ final class ProductImportService
     }
 
     /**
-     * @param array<int, string> $row
+     * @param  array<int, string>  $row
      */
     private function nullableIntAt(array $row, int $idx): ?int
     {
@@ -243,7 +242,7 @@ final class ProductImportService
     }
 
     /**
-     * @param array<int, string> $row
+     * @param  array<int, string>  $row
      */
     private function nullableMoneyAt(array $row, int $idx): ?string
     {
@@ -262,7 +261,7 @@ final class ProductImportService
     }
 
     /**
-     * @param array<int, string> $row
+     * @param  array<int, string>  $row
      */
     private function isBlankRow(array $row): bool
     {
@@ -275,5 +274,3 @@ final class ProductImportService
         return true;
     }
 }
-
-

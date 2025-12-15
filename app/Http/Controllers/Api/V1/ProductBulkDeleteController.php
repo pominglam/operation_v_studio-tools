@@ -13,8 +13,7 @@ final class ProductBulkDeleteController extends Controller
 {
     public function __construct(
         private readonly ProductBulkDeleteService $deleter,
-    ) {
-    }
+    ) {}
 
     public function __invoke(BulkDeleteProductsRequest $request): JsonResponse
     {
@@ -28,5 +27,3 @@ final class ProductBulkDeleteController extends Controller
         ]);
     }
 }
-
-

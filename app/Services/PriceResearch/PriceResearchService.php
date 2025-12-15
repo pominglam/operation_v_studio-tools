@@ -230,9 +230,17 @@ final class PriceResearchService
     {
         $out = [];
 
+        /** @var array<int, string> $disabled */
+        $disabled = (array) config('price_research.disabled_site_keys', []);
+        $disabled = array_values(array_unique(array_filter(array_map('trim', $disabled), static fn (string $v): bool => $v !== '')));
+        $disabledMap = array_fill_keys($disabled, true);
+
         if ($siteKeys === null) {
             foreach ($this->providers as $p) {
                 /** @var CompetitorPriceProvider $p */
+                if (isset($disabledMap[$p->siteKey()])) {
+                    continue;
+                }
                 $out[] = $p;
             }
 
@@ -242,12 +250,17 @@ final class PriceResearchService
         $wanted = array_fill_keys($siteKeys, true);
         foreach ($this->providers as $p) {
             /** @var CompetitorPriceProvider $p */
-            if (isset($wanted[$p->siteKey()])) {
+            if (isset($wanted[$p->siteKey()]) && ! isset($disabledMap[$p->siteKey()])) {
                 $out[] = $p;
             }
         }
 
         return $out;
+    }
+
+    public function providerCountForSiteKeys(?array $siteKeys): int
+    {
+        return count($this->filterProvidersBySiteKeys($siteKeys));
     }
 
     /**

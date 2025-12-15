@@ -29,7 +29,7 @@ final class PriceResearchRunController extends Controller
         $force = (bool) $request->boolean('force', false);
 
         $ttlDays = max(1, (int) config('price_research.ttl_days', 14));
-        $totalSites = $siteKeys !== null ? count($siteKeys) : count((array) config('price_research.sites', []));
+        $totalSites = $this->research->providerCountForSiteKeys($siteKeys);
         if ($ids === null) {
             $existingIds = null;
             $totalProducts = (int) \App\Models\Product::query()->count();

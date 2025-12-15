@@ -20,4 +20,3 @@ final class ProductSellingPriceUpsertRequest extends FormRequest
         ];
     }
 }
-

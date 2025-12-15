@@ -14,13 +14,12 @@ final class PriceResearchProductsController extends Controller
 {
     public function __construct(
         private readonly PriceResearchQueryService $query,
-    ) {
-    }
+    ) {}
 
     public function __invoke(PriceResearchProductsIndexRequest $request): AnonymousResourceCollection
     {
         $perPage = (int) ($request->validated('per_page') ?? 25);
-        $perPage = max(1, min($perPage, 100));
+        $perPage = max(1, min($perPage, 500));
 
         /** @var string|null $search */
         $search = $request->validated('search');
@@ -29,8 +28,13 @@ final class PriceResearchProductsController extends Controller
         /** @var string $sortDir */
         $sortDir = $request->validated('sort_dir') ?? 'desc';
 
+        /** @var string|null $sellingPrice */
+        $sellingPrice = $request->validated('selling_price');
+
         /** @var array<int, string> $freshness */
         $freshness = $request->validated('freshness') ?? [];
+        /** @var array<int, string> $types */
+        $types = $request->validated('types') ?? [];
         /** @var array<int, string> $quoteSites */
         $quoteSites = $request->validated('quote_sites') ?? [];
         /** @var array<int, string> $quoteStatuses */
@@ -44,7 +48,9 @@ final class PriceResearchProductsController extends Controller
                 search: $search,
                 sortBy: $sortBy,
                 sortDir: $sortDir,
+                sellingPrice: $sellingPrice,
                 freshness: $freshness,
+                types: $types,
                 quoteSites: $quoteSites,
                 quoteStatuses: $quoteStatuses,
                 quoteAvailabilities: $quoteAvailabilities,
@@ -52,5 +58,3 @@ final class PriceResearchProductsController extends Controller
         );
     }
 }
-
-

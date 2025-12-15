@@ -129,7 +129,7 @@ final class GundamHangarProvider extends AbstractSearchProvider
     }
 
     /**
-     * @param array<int, mixed> $items
+     * @param  array<int, mixed>  $items
      * @return array<string, mixed>|null
      */
     private function pickBestMatch(Product $product, array $items): ?array
@@ -202,5 +202,3 @@ final class GundamHangarProvider extends AbstractSearchProvider
         return array_values(array_unique($tokens));
     }
 }
-
-

@@ -38,6 +38,7 @@ final class MeeplemartProvider extends AbstractSearchProvider
             // Strip local annotations like "(edited)" which can slow down / break search matching.
             $desc = preg_replace('/\\s*\\(edited\\)\\s*/i', ' ', $desc) ?? $desc;
             $desc = trim(preg_replace('/\\s+/', ' ', $desc) ?? $desc);
+
             return mb_substr($desc, 0, 80);
         }
 
@@ -60,5 +61,3 @@ final class MeeplemartProvider extends AbstractSearchProvider
         ];
     }
 }
-
-

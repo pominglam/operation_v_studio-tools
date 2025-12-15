@@ -12,8 +12,7 @@ final class ProductFilterOptionsController extends Controller
 {
     public function __construct(
         private readonly ProductsQueryService $products,
-    ) {
-    }
+    ) {}
 
     public function __invoke(): JsonResponse
     {
@@ -24,5 +23,3 @@ final class ProductFilterOptionsController extends Controller
         ]);
     }
 }
-
-

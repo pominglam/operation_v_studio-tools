@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\DAL\Maintenance\EloquentMaintenanceNoteRepository;
+use App\DAL\Maintenance\MaintenanceNoteRepository;
 use App\DAL\PriceResearch\EloquentPriceResearchQuoteReportRepository;
 use App\DAL\PriceResearch\EloquentPriceResearchRunLogRepository;
 use App\DAL\PriceResearch\EloquentPriceResearchRunRepository;
@@ -36,6 +38,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->bind(MaintenanceNoteRepository::class, EloquentMaintenanceNoteRepository::class);
+
         $this->app->bind(ProductRepository::class, EloquentProductRepository::class);
         $this->app->bind(ProductSellingPriceRepository::class, EloquentProductSellingPriceRepository::class);
 

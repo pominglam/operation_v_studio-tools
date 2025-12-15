@@ -33,6 +33,7 @@ final class HobbySenseProvider extends AbstractSearchProvider
             // Strip local annotations like "(edited)" that can hurt search relevance.
             $desc = preg_replace('/\\s*\\(edited\\)\\s*/i', ' ', $desc) ?? $desc;
             $desc = trim(preg_replace('/\\s+/', ' ', $desc) ?? $desc);
+
             return mb_substr($desc, 0, 80);
         }
 
@@ -110,12 +111,20 @@ final class HobbySenseProvider extends AbstractSearchProvider
                     $aScore = 0;
                     $bScore = 0;
                     if ($sku !== '') {
-                        if (str_contains($aText, $sku)) $aScore += 4;
-                        if (str_contains($bText, $sku)) $bScore += 4;
+                        if (str_contains($aText, $sku)) {
+                            $aScore += 4;
+                        }
+                        if (str_contains($bText, $sku)) {
+                            $bScore += 4;
+                        }
                     }
                     if ($barcode !== '') {
-                        if (str_contains($aText, $barcode)) $aScore += 4;
-                        if (str_contains($bText, $barcode)) $bScore += 4;
+                        if (str_contains($aText, $barcode)) {
+                            $aScore += 4;
+                        }
+                        if (str_contains($bText, $barcode)) {
+                            $bScore += 4;
+                        }
                     }
 
                     return $bScore <=> $aScore;
@@ -179,5 +188,3 @@ final class HobbySenseProvider extends AbstractSearchProvider
         }
     }
 }
-
-

@@ -9,10 +9,11 @@ use App\Services\PriceResearch\Support\HtmlPriceParser;
 
 it('prefers SKU over barcode for the default search term', function (): void {
     // No network calls are made in this test; we only validate search-term selection.
-    $http = new ExternalHtmlClient();
-    $parser = new HtmlPriceParser();
+    $http = new ExternalHtmlClient;
+    $parser = new HtmlPriceParser;
 
-    $provider = new class($http, $parser) extends AbstractSearchProvider {
+    $provider = new class($http, $parser) extends AbstractSearchProvider
+    {
         public function siteKey(): string
         {
             return 'test';
@@ -34,7 +35,7 @@ it('prefers SKU over barcode for the default search term', function (): void {
         }
     };
 
-    $p = new Product();
+    $p = new Product;
     $p->sku = '5068840';
     $p->barcode = '4573102688408';
     $p->description = 'HG 1/144 GUNDAM HEAVYARMS CUSTOM';
@@ -43,10 +44,11 @@ it('prefers SKU over barcode for the default search term', function (): void {
 });
 
 it('includes the product name as a fallback search term (URL-encoded by search URLs)', function (): void {
-    $http = new ExternalHtmlClient();
-    $parser = new HtmlPriceParser();
+    $http = new ExternalHtmlClient;
+    $parser = new HtmlPriceParser;
 
-    $provider = new class($http, $parser) extends AbstractSearchProvider {
+    $provider = new class($http, $parser) extends AbstractSearchProvider
+    {
         public function siteKey(): string
         {
             return 'test';
@@ -69,7 +71,7 @@ it('includes the product name as a fallback search term (URL-encoded by search U
         }
     };
 
-    $p = new Product();
+    $p = new Product;
     $p->sku = '5068840';
     $p->barcode = '4573102688408';
     $p->description = 'HG 1/144 GUNDAM HEAVYARMS CUSTOM';
@@ -80,5 +82,3 @@ it('includes the product name as a fallback search term (URL-encoded by search U
     expect($terms)->toContain('4573102688408');
     expect($terms)->toContain('HG 1/144 GUNDAM HEAVYARMS CUSTOM');
 });
-
-

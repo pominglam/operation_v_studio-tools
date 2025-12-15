@@ -81,7 +81,13 @@ const isRunActive = computed<boolean>(() => {
 
 const isBusy = computed<boolean>(() => loading.value || running.value || isRunActive.value);
 
-type ResearchSortKey = 'sku' | 'description' | 'price_researched_at' | 'cost';
+type ResearchSortKey =
+    | 'sku'
+    | 'description'
+    | 'price_researched_at'
+    | 'cost'
+    | 'selling_price'
+    | 'multiplier';
 
 const search = ref('');
 const perPage = ref(50);
@@ -95,20 +101,7 @@ const freshnessOptions: MultiSelectOption[] = [
 ];
 const freshness = ref<string[]>([]);
 
-const quoteStatusOptions: MultiSelectOption[] = [
-    { value: 'found', label: 'Found' },
-    { value: 'not_found', label: 'Not found' },
-    { value: 'error', label: 'Error' },
-];
-const quoteStatuses = ref<string[]>([]);
-
-const quoteAvailabilityOptions: MultiSelectOption[] = [
-    { value: 'in_stock', label: 'In stock' },
-    { value: 'sold_out', label: 'Sold out' },
-];
-const quoteAvailabilities = ref<string[]>([]);
-
-const sites = [
+const allSites = [
     { key: 'argama_hobby', name: 'Argama Hobby' },
     { key: 'panda_hobby', name: 'Panda Hobby' },
     { key: 'canadian_gundam', name: 'Canadian Gundam' },
@@ -119,8 +112,24 @@ const sites = [
     { key: 'gundam_hangar', name: 'Gundam Hangar' },
 ];
 
-const quoteSiteOptions: MultiSelectOption[] = sites.map((s) => ({ value: s.key, label: s.name }));
+const disabledSiteKeys = ref<string[]>([]);
+const sites = computed(() => {
+    const disabled = new Set(disabledSiteKeys.value);
+    return allSites.filter((s) => !disabled.has(s.key));
+});
+
+const quoteSiteOptions = computed<MultiSelectOption[]>(() => {
+    return sites.value.map((s) => ({ value: s.key, label: s.name }));
+});
 const quoteSites = ref<string[]>([]);
+
+const sellingPrice = ref<'any' | 'set' | 'missing'>('any');
+
+const productTypes = ref<string[]>([]);
+const productTypeOptions = computed<MultiSelectOption[]>(() => {
+    return productTypes.value.map((t) => ({ value: t, label: t }));
+});
+const types = ref<string[]>([]);
 
 const meta = ref<Paginated<ProductResearch>['meta'] | null>(null);
 const total = computed<number>(() => meta.value?.total ?? 0);
@@ -212,8 +221,9 @@ function formatMoney(value: number | null): string | null {
 }
 
 function averagePriceOnline(p: ProductResearch): string | null {
+    const disabled = new Set(disabledSiteKeys.value);
     const nums = p.quotes
-        .filter((q) => q.status === 'found')
+        .filter((q) => q.status === 'found' && !disabled.has(q.site_key))
         .map((q) => parseMoney(q.price))
         .filter((n): n is number => n !== null);
 
@@ -243,6 +253,14 @@ function costTimes(p: ProductResearch, factor: number): string | null {
     return formatMoney(n * factor);
 }
 
+function marginMultiplier(p: ProductResearch): string | null {
+    const cost = parseMoney(p.cost);
+    const selling = parseMoney(p.selling_price);
+    if (cost === null || selling === null) return null;
+    if (cost <= 0) return null;
+    return (selling / cost).toFixed(2);
+}
+
 function buildProductsUrl(): string {
     const params = new URLSearchParams();
     params.set('per_page', String(perPage.value));
@@ -252,10 +270,13 @@ function buildProductsUrl(): string {
     const s = search.value.trim();
     if (s) params.set('search', s);
 
+    if (sellingPrice.value !== 'any') {
+        params.set('selling_price', sellingPrice.value);
+    }
+
     for (const v of freshness.value) params.append('freshness[]', v);
+    for (const v of types.value) params.append('types[]', v);
     for (const v of quoteSites.value) params.append('quote_sites[]', v);
-    for (const v of quoteStatuses.value) params.append('quote_statuses[]', v);
-    for (const v of quoteAvailabilities.value) params.append('quote_availabilities[]', v);
 
     return `/api/v1/price-research/products?${params.toString()}`;
 }
@@ -296,6 +317,19 @@ async function loadLatestRun(): Promise<void> {
         if (json.data && (json.data.status === 'queued' || json.data.status === 'running')) {
             void pollRun(json.data.id);
         }
+    } catch {
+        // ignore
+    }
+}
+
+async function loadProductFilterOptions(): Promise<void> {
+    try {
+        const r = await fetch('/api/v1/products/filter-options');
+        if (!r.ok) return;
+        const json = (await r.json()) as { data?: { types?: string[] } };
+        productTypes.value = (json.data?.types ?? []).filter(
+            (t) => typeof t === 'string' && t.trim() !== '',
+        );
     } catch {
         // ignore
     }
@@ -366,53 +400,41 @@ async function run(force: boolean): Promise<void> {
     }
 }
 
-async function runSiteKeys(siteKeys: string[], force: boolean): Promise<void> {
-    running.value = true;
-    error.value = null;
-    message.value = null;
-
-    try {
-        const res = await api.post(
-            '/api/v1/price-research/run',
-            { force, site_keys: siteKeys },
-            { validateStatus: () => true },
-        );
-
-        const runId = res.data?.run_id as string | undefined;
-        if (runId) {
-            activeRunId.value = runId;
-            await pollRun(runId);
-        }
-
-        if (res.status === 202) {
-            message.value = 'Queued price research job. Showing live status below…';
-            return;
-        }
-
-        message.value = `Processed ${res.data.data.processed}. Refreshed ${res.data.data.refreshed}. Skipped fresh ${res.data.data.skipped_fresh}.`;
-        await load();
-    } catch (e: unknown) {
-        error.value = 'Failed to run price research.';
-    } finally {
-        running.value = false;
-    }
-}
-
 const savingSellingPrice = ref<string | null>(null);
 
 async function saveSellingPrice(productId: string, value: string | null): Promise<void> {
     savingSellingPrice.value = productId;
     error.value = null;
+    const row = items.value.find((p) => p.id === productId);
+    const previous = row?.selling_price ?? null;
 
     try {
         const sellingPrice = value !== null && value.trim() !== '' ? value.trim() : null;
-        await api.put(
+        if (row) {
+            row.selling_price = sellingPrice;
+        }
+
+        const res = await api.put(
             `/api/v1/products/${productId}/selling-price`,
             { selling_price: sellingPrice },
             { validateStatus: () => true },
         );
-        await load();
+        if (res.status < 200 || res.status >= 300) {
+            if (row) {
+                row.selling_price = previous;
+            }
+            error.value = 'Failed to save selling price.';
+            return;
+        }
+
+        const saved = (res.data?.data?.selling_price as string | null | undefined) ?? null;
+        if (row) {
+            row.selling_price = saved;
+        }
     } catch {
+        if (row) {
+            row.selling_price = previous;
+        }
         error.value = 'Failed to save selling price.';
     } finally {
         savingSellingPrice.value = null;
@@ -451,9 +473,24 @@ async function recrawlProduct(productId: string): Promise<void> {
     }
 }
 
+async function loadPriceResearchFilterOptions(): Promise<void> {
+    try {
+        const r = await fetch('/api/v1/price-research/filter-options');
+        if (!r.ok) return;
+        const json = (await r.json()) as { data?: { disabled_site_keys?: string[] } };
+        disabledSiteKeys.value = (json.data?.disabled_site_keys ?? []).filter(
+            (t) => typeof t === 'string' && t.trim() !== '',
+        );
+    } catch {
+        // ignore
+    }
+}
+
 onMounted(() => {
     void load();
     void loadLatestRun();
+    void loadProductFilterOptions();
+    void loadPriceResearchFilterOptions();
 });
 
 onBeforeUnmount(() => {
@@ -479,15 +516,20 @@ function onPageChange(next: number): void {
 }
 
 let searchTimer: number | null = null;
-watch(
-    [search, perPage, freshness, quoteSites, quoteStatuses, quoteAvailabilities, sortBy, sortDir],
-    () => {
-        page.value = 1;
-        if (searchTimer) window.clearTimeout(searchTimer);
-        searchTimer = window.setTimeout(() => void load(), 250);
-    },
-);
+watch([search, perPage, sellingPrice, types, freshness, quoteSites, sortBy, sortDir], () => {
+    page.value = 1;
+    if (searchTimer) window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => void load(), 250);
+});
 watch(page, () => void load());
+watch(
+    disabledSiteKeys,
+    () => {
+        const disabled = new Set(disabledSiteKeys.value);
+        quoteSites.value = quoteSites.value.filter((k) => !disabled.has(k));
+    },
+    { deep: true },
+);
 </script>
 
 <template>
@@ -495,10 +537,6 @@ watch(page, () => void load());
         <div class="flex items-start justify-between gap-3">
             <div>
                 <h1 class="text-xl font-semibold">Price research</h1>
-                <p class="mt-1 text-sm text-slate-600">
-                    Fetch competitor prices for each product (prices are valid for 14 days; expired
-                    products should be refreshed).
-                </p>
             </div>
 
             <div class="flex items-center gap-2">
@@ -509,36 +547,12 @@ watch(page, () => void load());
                     Reports
                 </RouterLink>
                 <button
-                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
-                    type="button"
-                    :disabled="isBusy"
-                    @click="load"
-                >
-                    Refresh
-                </button>
-                <button
                     class="inline-flex items-center justify-center rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
                     type="button"
                     :disabled="isBusy"
                     @click="run(false)"
                 >
                     {{ isBusy ? 'Running…' : 'Run (expired only)' }}
-                </button>
-                <button
-                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
-                    type="button"
-                    :disabled="isBusy"
-                    @click="run(true)"
-                >
-                    Force refresh all
-                </button>
-                <button
-                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
-                    type="button"
-                    :disabled="isBusy"
-                    @click="runSiteKeys(['argama_hobby'], true)"
-                >
-                    Crawl Argama only
                 </button>
             </div>
         </div>
@@ -601,8 +615,8 @@ watch(page, () => void load());
         </div>
 
         <div class="rounded-lg border border-slate-200 bg-white p-4">
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-6 md:items-end">
-                <div class="md:col-span-2">
+            <div class="flex flex-wrap items-end gap-3">
+                <div class="min-w-[260px] flex-[2_1_520px]">
                     <label
                         class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                         >Search</label
@@ -615,39 +629,56 @@ watch(page, () => void load());
                     />
                 </div>
 
-                <MultiSelectFilter
-                    v-model="freshness"
-                    label="Status"
-                    :options="freshnessOptions"
-                    placeholder="Fresh + Expired"
-                />
-                <MultiSelectFilter
-                    v-model="quoteSites"
-                    label="Site"
-                    :options="quoteSiteOptions"
-                    placeholder="All sites"
-                />
-                <MultiSelectFilter
-                    v-model="quoteStatuses"
-                    label="Quote status"
-                    :options="quoteStatusOptions"
-                    placeholder="All"
-                />
-                <MultiSelectFilter
-                    v-model="quoteAvailabilities"
-                    label="Availability"
-                    :options="quoteAvailabilityOptions"
-                    placeholder="All"
-                />
+                <div class="min-w-[180px] flex-[1_1_220px]">
+                    <MultiSelectFilter
+                        v-model="freshness"
+                        label="Status"
+                        :options="freshnessOptions"
+                        placeholder="Fresh + Expired"
+                    />
+                </div>
+
+                <div class="min-w-[180px] flex-[1_1_220px]">
+                    <MultiSelectFilter
+                        v-model="quoteSites"
+                        label="Site"
+                        :options="quoteSiteOptions"
+                        placeholder="All sites"
+                    />
+                </div>
+
+                <div class="min-w-[180px] flex-[1_1_220px]">
+                    <MultiSelectFilter
+                        v-model="types"
+                        label="Type"
+                        :options="productTypeOptions"
+                        placeholder="All types"
+                    />
+                </div>
+
+                <div class="min-w-[180px] flex-[1_1_220px]">
+                    <label
+                        class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                        >Selling price</label
+                    >
+                    <select
+                        v-model="sellingPrice"
+                        class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                    >
+                        <option value="any">All</option>
+                        <option value="set">Has selling price</option>
+                        <option value="missing">Missing selling price</option>
+                    </select>
+                </div>
             </div>
 
-            <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-6 md:items-end">
-                <div class="md:col-span-2 text-sm text-slate-600">
+            <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <div class="text-sm text-slate-600">
                     Showing <span class="font-medium text-slate-900">{{ items.length }}</span> of
                     <span class="font-medium text-slate-900">{{ total }}</span>
                 </div>
-                <div class="md:col-span-2"></div>
-                <div class="md:col-span-2">
+
+                <div class="min-w-[180px] flex-[0_0_220px]">
                     <label
                         class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                         >Per page</label
@@ -659,6 +690,8 @@ watch(page, () => void load());
                         <option :value="25">25</option>
                         <option :value="50">50</option>
                         <option :value="100">100</option>
+                        <option :value="200">200</option>
+                        <option :value="500">500</option>
                     </select>
                 </div>
             </div>
@@ -683,22 +716,22 @@ watch(page, () => void load());
                                 </button>
                             </th>
                             <th class="px-4 py-3">
-                                <button
-                                    type="button"
-                                    class="hover:underline"
-                                    @click="onSortChange('description')"
-                                >
-                                    Description{{ sortIndicator('description') }}
-                                </button>
-                            </th>
-                            <th class="px-4 py-3">
-                                <button
-                                    type="button"
-                                    class="hover:underline"
-                                    @click="onSortChange('price_researched_at')"
-                                >
-                                    Last updated{{ sortIndicator('price_researched_at') }}
-                                </button>
+                                <div class="flex flex-col">
+                                    <button
+                                        type="button"
+                                        class="text-left hover:underline"
+                                        @click="onSortChange('description')"
+                                    >
+                                        Description{{ sortIndicator('description') }}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="mt-1 text-left text-xs font-semibold text-slate-500 hover:underline"
+                                        @click="onSortChange('price_researched_at')"
+                                    >
+                                        Last updated{{ sortIndicator('price_researched_at') }}
+                                    </button>
+                                </div>
                             </th>
                             <th class="px-4 py-3">Status</th>
                             <th class="px-4 py-3 text-right">
@@ -711,7 +744,24 @@ watch(page, () => void load());
                                 </button>
                             </th>
                             <th class="px-4 py-3 text-right">1.5x</th>
-                            <th class="px-4 py-3 text-right">Selling price</th>
+                            <th class="px-4 py-3 text-right">
+                                <div class="flex flex-col items-end">
+                                    <button
+                                        type="button"
+                                        class="hover:underline"
+                                        @click="onSortChange('selling_price')"
+                                    >
+                                        Selling price{{ sortIndicator('selling_price') }}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="mt-1 text-xs font-semibold text-slate-500 hover:underline"
+                                        @click="onSortChange('multiplier')"
+                                    >
+                                        Multiplier{{ sortIndicator('multiplier') }}
+                                    </button>
+                                </div>
+                            </th>
                             <th class="px-4 py-3 text-right">Average price online</th>
                             <th v-for="s in sites" :key="s.key" class="px-4 py-3 text-center">
                                 {{ s.name }}
@@ -720,21 +770,21 @@ watch(page, () => void load());
                     </thead>
                     <tbody class="divide-y divide-slate-100">
                         <tr v-if="items.length === 0">
-                            <td class="px-4 py-4 text-slate-600" :colspan="8 + sites.length">
+                            <td class="px-4 py-4 text-slate-600" :colspan="7 + sites.length">
                                 No products found.
                             </td>
                         </tr>
 
                         <tr v-for="p in items" :key="p.id" class="hover:bg-slate-50">
                             <td class="px-4 py-3 font-medium text-slate-900">{{ p.sku }}</td>
-                            <td class="px-4 py-3 text-slate-700">{{ p.description }}</td>
                             <td class="px-4 py-3 text-slate-700">
-                                <div
-                                    class="group relative inline-flex max-w-full items-start gap-2"
-                                >
-                                    <span>{{ formatLocalDateTime(p.price_researched_at) }}</span>
+                                <div class="font-medium text-slate-900">{{ p.description }}</div>
+                                <div class="mt-1 flex items-start justify-between gap-2">
+                                    <div class="text-xs text-slate-500">
+                                        {{ formatLocalDateTime(p.price_researched_at) }}
+                                    </div>
                                     <button
-                                        class="ml-1 inline-flex h-6 w-6 items-center justify-center rounded text-slate-400 opacity-0 transition hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100 disabled:opacity-40"
+                                        class="inline-flex h-6 w-6 items-center justify-center rounded text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
                                         type="button"
                                         title="Recrawl prices for this product"
                                         :aria-label="`Recrawl prices for SKU ${p.sku}`"
@@ -779,20 +829,25 @@ watch(page, () => void load());
                                 }}</span>
                             </td>
                             <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                                <input
-                                    class="w-24 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-sm tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
-                                    type="text"
-                                    inputmode="decimal"
-                                    :value="p.selling_price ?? ''"
-                                    :disabled="isBusy || savingSellingPrice === p.id"
-                                    placeholder="—"
-                                    @blur="
-                                        saveSellingPrice(
-                                            p.id,
-                                            ($event.target as HTMLInputElement).value,
-                                        )
-                                    "
-                                />
+                                <div class="flex flex-col items-end">
+                                    <input
+                                        class="w-24 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-sm tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                                        type="text"
+                                        inputmode="decimal"
+                                        :value="p.selling_price ?? ''"
+                                        :disabled="savingSellingPrice === p.id"
+                                        placeholder="—"
+                                        @blur="
+                                            saveSellingPrice(
+                                                p.id,
+                                                ($event.target as HTMLInputElement).value,
+                                            )
+                                        "
+                                    />
+                                    <div class="mt-1 text-xs text-slate-500 tabular-nums">
+                                        {{ marginMultiplier(p) ?? '—' }}
+                                    </div>
+                                </div>
                             </td>
                             <td class="px-4 py-3 text-right tabular-nums text-slate-700">
                                 <div class="inline-flex items-center justify-end gap-1">

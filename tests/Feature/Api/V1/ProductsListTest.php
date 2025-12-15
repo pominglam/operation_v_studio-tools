@@ -24,5 +24,3 @@ it('lists imported products', function (): void {
         ->assertJsonPath('data.0.barcode', '4573102603586')
         ->assertJsonPath('data.0.type', 'HG');
 });
-
-

@@ -21,5 +21,3 @@ final class PandaHobbyProvider extends AbstractSearchProvider
         return config('price_research.sites.panda_hobby.base_url', 'https://pandahobby.ca');
     }
 }
-
-

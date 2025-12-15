@@ -24,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property \Illuminate\Support\Carbon|null $fetched_at
  * @property string|null $run_uuid
  * @property string|null $note
+ * @property \Illuminate\Support\Carbon|null $handled_at
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  */
@@ -46,11 +47,13 @@ final class PriceResearchQuoteReport extends Model
         'fetched_at',
         'run_uuid',
         'note',
+        'handled_at',
     ];
 
     /** @var array<string, string> */
     protected $casts = [
         'fetched_at' => 'datetime',
+        'handled_at' => 'datetime',
     ];
 
     /** @return BelongsTo<Product, PriceResearchQuoteReport> */

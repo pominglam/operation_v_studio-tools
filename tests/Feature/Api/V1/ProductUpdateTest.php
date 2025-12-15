@@ -63,5 +63,3 @@ it('rejects duplicate sku when updating a product', function (): void {
         'message' => 'SKU already exists.',
     ]);
 });
-
-

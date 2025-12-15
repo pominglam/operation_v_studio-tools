@@ -79,5 +79,3 @@ it('can delete a single stored quote from the price research screen', function (
         'site_key' => 'panda_hobby',
     ]);
 });
-
-

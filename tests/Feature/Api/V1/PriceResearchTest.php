@@ -7,6 +7,7 @@ use App\DAL\PriceResearch\PriceResearchRunRepository;
 use App\DAL\PriceResearch\ProductLookupRepository;
 use App\DAL\PriceResearch\ProductPriceQuoteRepository;
 use App\Models\Product;
+use App\Models\ProductSellingPrice;
 use App\Services\PriceResearch\DTOs\PriceLookupResult;
 use App\Services\PriceResearch\PriceResearchService;
 use App\Services\PriceResearch\Providers\CompetitorPriceProvider;
@@ -52,6 +53,7 @@ function bindFakePriceResearchService(): void
 {
     // Ensure controller runs inline in tests for deterministic assertions.
     config()->set('queue.default', 'sync');
+    config()->set('price_research.disabled_site_keys', []);
 
     // Allow fake providers to be used as valid site_keys in request validation.
     config()->set('price_research.sites.fake_found', [
@@ -151,6 +153,54 @@ it('rejects unknown site keys for price research runs', function (): void {
     ])->assertStatus(422);
 });
 
+it('does not crawl disabled site keys (and total_sites reflects enabled providers)', function (): void {
+    bindFakePriceResearchService();
+
+    config()->set('price_research.disabled_site_keys', ['fake_not_found']);
+
+    $product = Product::query()->create([
+        'sku' => 'PR-DISABLED-1',
+        'description' => 'Disabled provider',
+    ]);
+
+    $res = $this->postJson('/api/v1/price-research/run', [
+        'ids' => [$product->uuid],
+        'force' => true,
+    ]);
+
+    $res->assertOk()->assertJsonPath('queued', false);
+
+    $this->assertDatabaseHas('product_price_quotes', [
+        'product_id' => $product->id,
+        'site_key' => 'fake_found',
+    ]);
+    $this->assertDatabaseMissing('product_price_quotes', [
+        'product_id' => $product->id,
+        'site_key' => 'fake_not_found',
+    ]);
+
+    $this->assertDatabaseHas('price_research_runs', [
+        'total_sites' => 1,
+    ]);
+});
+
+it('rejects explicitly requesting a disabled site key', function (): void {
+    bindFakePriceResearchService();
+
+    config()->set('price_research.disabled_site_keys', ['fake_not_found']);
+
+    $product = Product::query()->create([
+        'sku' => 'PR-DISABLED-2',
+        'description' => 'Disabled provider explicit request',
+    ]);
+
+    $this->postJson('/api/v1/price-research/run', [
+        'ids' => [$product->uuid],
+        'force' => true,
+        'site_keys' => ['fake_not_found'],
+    ])->assertStatus(422);
+});
+
 it('skips fresh products when not forced', function (): void {
     bindFakePriceResearchService();
 
@@ -187,6 +237,89 @@ it('lists products with quotes and expired flag', function (): void {
     $response->assertOk()
         ->assertJsonPath('data.0.sku', 'PR-3')
         ->assertJsonPath('data.0.expired', false);
+});
+
+it('can filter price research products by selling price presence', function (): void {
+    bindFakePriceResearchService();
+
+    $with = Product::query()->create([
+        'sku' => 'PR-SELLING-1',
+        'description' => 'With selling price',
+    ]);
+    $without = Product::query()->create([
+        'sku' => 'PR-SELLING-2',
+        'description' => 'Without selling price',
+    ]);
+
+    ProductSellingPrice::query()->create([
+        'product_id' => $with->id,
+        'product_uuid' => $with->uuid,
+        'selling_price' => '12.34',
+        'currency' => 'CAD',
+    ]);
+
+    $setRes = $this->getJson('/api/v1/price-research/products?per_page=100&selling_price=set');
+    $setRes->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-SELLING-1')
+        ->assertJsonMissing(['sku' => 'PR-SELLING-2']);
+
+    $missingRes = $this->getJson('/api/v1/price-research/products?per_page=100&selling_price=missing');
+    $missingRes->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-SELLING-2')
+        ->assertJsonMissing(['sku' => 'PR-SELLING-1']);
+});
+
+it('can filter price research products by product type', function (): void {
+    bindFakePriceResearchService();
+
+    Product::query()->create([
+        'sku' => 'PR-TYPE-1',
+        'description' => 'Type A',
+        'type' => 'Gunpla',
+    ]);
+    Product::query()->create([
+        'sku' => 'PR-TYPE-2',
+        'description' => 'Type B',
+        'type' => 'Supplies',
+    ]);
+
+    $res = $this->getJson('/api/v1/price-research/products?per_page=100&types[]=Gunpla');
+    $res->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-TYPE-1')
+        ->assertJsonMissing(['sku' => 'PR-TYPE-2']);
+});
+
+it('can sort price research products by multiplier (selling_price / cost)', function (): void {
+    bindFakePriceResearchService();
+
+    $p1 = Product::query()->create([
+        'sku' => 'PR-MULT-1',
+        'description' => 'Multiplier 1',
+        'price' => '10.00',
+    ]);
+    $p2 = Product::query()->create([
+        'sku' => 'PR-MULT-2',
+        'description' => 'Multiplier 2',
+        'price' => '20.00',
+    ]);
+
+    ProductSellingPrice::query()->create([
+        'product_id' => $p1->id,
+        'product_uuid' => $p1->uuid,
+        'selling_price' => '15.00', // 1.50
+        'currency' => 'CAD',
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $p2->id,
+        'product_uuid' => $p2->uuid,
+        'selling_price' => '50.00', // 2.50
+        'currency' => 'CAD',
+    ]);
+
+    $res = $this->getJson('/api/v1/price-research/products?per_page=100&sort_by=multiplier&sort_dir=desc');
+    $res->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-MULT-2')
+        ->assertJsonPath('data.1.sku', 'PR-MULT-1');
 });
 
 it('exposes latest run status', function (): void {

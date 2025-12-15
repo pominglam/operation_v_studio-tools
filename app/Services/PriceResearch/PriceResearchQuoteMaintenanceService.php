@@ -12,8 +12,7 @@ final class PriceResearchQuoteMaintenanceService
     public function __construct(
         private readonly ProductRepository $products,
         private readonly ProductPriceQuoteRepository $quotes,
-    ) {
-    }
+    ) {}
 
     public function deleteQuote(string $productUuid, string $siteKey): bool
     {
@@ -22,5 +21,3 @@ final class PriceResearchQuoteMaintenanceService
         return $this->quotes->deleteForProductAndSiteKey($product, $siteKey);
     }
 }
-
-

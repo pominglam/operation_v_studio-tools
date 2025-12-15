@@ -88,5 +88,3 @@ it('returns 404 for crawl logs when run does not exist', function (): void {
     $this->getJson('/api/v1/price-research/runs/'.Str::uuid().'/logs')
         ->assertNotFound();
 });
-
-

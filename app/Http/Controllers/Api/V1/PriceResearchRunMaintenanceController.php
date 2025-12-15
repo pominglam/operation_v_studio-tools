@@ -14,8 +14,7 @@ final class PriceResearchRunMaintenanceController extends Controller
 {
     public function __construct(
         private readonly PriceResearchRunMaintenanceService $maintenance,
-    ) {
-    }
+    ) {}
 
     public function __invoke(ResetPriceResearchRunRequest $request): JsonResponse
     {
@@ -47,5 +46,3 @@ final class PriceResearchRunMaintenanceController extends Controller
         ]);
     }
 }
-
-

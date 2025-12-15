@@ -35,4 +35,3 @@ final class ProductSellingPrice extends Model
         return $this->belongsTo(Product::class);
     }
 }
-

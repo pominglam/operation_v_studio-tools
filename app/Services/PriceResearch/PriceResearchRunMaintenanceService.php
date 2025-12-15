@@ -12,8 +12,7 @@ final class PriceResearchRunMaintenanceService
 {
     public function __construct(
         private readonly PriceResearchRunRepository $runs,
-    ) {
-    }
+    ) {}
 
     /**
      * Reset a stuck run (queued/running) to failed so the UI is not blocked.
@@ -39,5 +38,3 @@ final class PriceResearchRunMaintenanceService
         return $this->runs->save($run);
     }
 }
-
-

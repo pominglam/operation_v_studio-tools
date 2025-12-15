@@ -59,5 +59,3 @@ final class HobbyWholesaleProvider extends AbstractSearchProvider
         ];
     }
 }
-
-

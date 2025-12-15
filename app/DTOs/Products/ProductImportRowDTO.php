@@ -15,8 +15,5 @@ final readonly class ProductImportRowDTO
         public ?int $orderQty,
         public ?int $filledQty,
         public ?string $extended,
-    ) {
-    }
+    ) {}
 }
-
-

@@ -2,8 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\V1\MaintenanceNoteController;
+use App\Http\Controllers\Api\V1\MaintenanceNoteUpsertController;
+use App\Http\Controllers\Api\V1\PriceResearchFilterOptionsController;
 use App\Http\Controllers\Api\V1\PriceResearchProductsController;
 use App\Http\Controllers\Api\V1\PriceResearchQuoteMaintenanceController;
+use App\Http\Controllers\Api\V1\PriceResearchQuoteReportHandledController;
 use App\Http\Controllers\Api\V1\PriceResearchQuoteReportsController;
 use App\Http\Controllers\Api\V1\PriceResearchRunController;
 use App\Http\Controllers\Api\V1\PriceResearchRunLogsController;
@@ -13,8 +17,8 @@ use App\Http\Controllers\Api\V1\ProductBulkDeleteController;
 use App\Http\Controllers\Api\V1\ProductFilterOptionsController;
 use App\Http\Controllers\Api\V1\ProductImportController;
 use App\Http\Controllers\Api\V1\ProductMaintenanceController;
-use App\Http\Controllers\Api\V1\ProductSellingPriceController;
 use App\Http\Controllers\Api\V1\ProductsController;
+use App\Http\Controllers\Api\V1\ProductSellingPriceController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')
@@ -28,10 +32,15 @@ Route::prefix('v1')
         Route::post('/products/bulk-delete', ProductBulkDeleteController::class);
         Route::delete('/products', [ProductMaintenanceController::class, 'flush']);
 
+        Route::get('/maintenance/notes', MaintenanceNoteController::class);
+        Route::put('/maintenance/notes', MaintenanceNoteUpsertController::class);
+
+        Route::get('/price-research/filter-options', PriceResearchFilterOptionsController::class);
         Route::get('/price-research/products', PriceResearchProductsController::class);
         Route::delete('/price-research/products/{id}/quotes/{siteKey}', PriceResearchQuoteMaintenanceController::class)->whereUuid('id');
         Route::get('/price-research/reports', [PriceResearchQuoteReportsController::class, 'index']);
         Route::post('/price-research/reports', [PriceResearchQuoteReportsController::class, 'store']);
+        Route::patch('/price-research/reports/{id}/handled', PriceResearchQuoteReportHandledController::class)->whereNumber('id');
         Route::post('/price-research/run', PriceResearchRunController::class);
         Route::post('/price-research/runs/reset', PriceResearchRunMaintenanceController::class);
         Route::get('/price-research/runs/latest', [PriceResearchRunStatusController::class, 'latest']);

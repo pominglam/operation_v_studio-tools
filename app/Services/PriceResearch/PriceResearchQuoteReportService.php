@@ -45,4 +45,11 @@ final class PriceResearchQuoteReportService
             'note' => $note,
         ]);
     }
+
+    public function markHandled(int $reportId): PriceResearchQuoteReport
+    {
+        $report = $this->reports->findByIdOrFail($reportId);
+
+        return $this->reports->markHandled($report);
+    }
 }

@@ -18,5 +18,3 @@ final class ResetPriceResearchRunRequest extends FormRequest
         ];
     }
 }
-
-

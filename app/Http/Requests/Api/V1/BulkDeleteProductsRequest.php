@@ -19,5 +19,3 @@ final class BulkDeleteProductsRequest extends FormRequest
         ];
     }
 }
-
-

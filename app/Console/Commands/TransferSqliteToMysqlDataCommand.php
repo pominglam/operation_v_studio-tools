@@ -13,6 +13,7 @@ final class TransferSqliteToMysqlDataCommand extends Command
         {--truncate : Truncate destination tables before copying}
         {--force : Allow running even if destination has data}
         {--yes : Do not prompt; assume yes}';
+
     protected $description = 'One-time transfer of local SQLite data (database/database.sqlite) into MySQL, preserving IDs.';
 
     public function handle(SqliteToMysqlTransferService $service): int
@@ -27,6 +28,7 @@ final class TransferSqliteToMysqlDataCommand extends Command
             $inspect = $service->inspect();
         } catch (\Throwable $e) {
             $this->error($e->getMessage());
+
             return self::FAILURE;
         }
 
@@ -40,6 +42,7 @@ final class TransferSqliteToMysqlDataCommand extends Command
         $mysqlHasData = collect($inspect['mysql_counts'])->sum() > 0;
         if ($mysqlHasData && ! $force && ! $truncate) {
             $this->warn('MySQL already has data. Re-run with --truncate (wipe & re-copy) or --force (append, not recommended).');
+
             return self::FAILURE;
         }
 
@@ -49,6 +52,7 @@ final class TransferSqliteToMysqlDataCommand extends Command
 
         if (! $yes && ! $this->confirm('Proceed with transfer?', false)) {
             $this->info('Cancelled.');
+
             return self::SUCCESS;
         }
 
@@ -56,6 +60,7 @@ final class TransferSqliteToMysqlDataCommand extends Command
             $result = $service->transfer($truncate);
         } catch (\Throwable $e) {
             $this->error($e->getMessage());
+
             return self::FAILURE;
         }
 
@@ -70,5 +75,3 @@ final class TransferSqliteToMysqlDataCommand extends Command
         return self::SUCCESS;
     }
 }
-
-

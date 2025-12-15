@@ -33,5 +33,3 @@ it('validates ids for bulk delete', function (): void {
 
     $response->assertStatus(422);
 });
-
-

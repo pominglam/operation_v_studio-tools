@@ -42,5 +42,3 @@ return new class extends Migration
         Schema::dropIfExists('price_research_runs');
     }
 };
-
-

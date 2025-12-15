@@ -29,5 +29,3 @@ final class ProductsIndexRequest extends FormRequest
         ];
     }
 }
-
-

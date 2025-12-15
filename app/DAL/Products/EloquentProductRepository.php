@@ -44,7 +44,7 @@ final class EloquentProductRepository implements ProductRepository
     }
 
     /**
-     * @param array<int, string> $types
+     * @param  array<int, string>  $types
      */
     public function paginate(int $perPage, ?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator
     {
@@ -112,7 +112,7 @@ final class EloquentProductRepository implements ProductRepository
         /** @var Product|null $product */
         $product = Product::query()->where('uuid', $uuid)->first();
         if ($product === null) {
-            throw (new ModelNotFoundException())->setModel(Product::class, [$uuid]);
+            throw (new ModelNotFoundException)->setModel(Product::class, [$uuid]);
         }
 
         return $product;
@@ -141,5 +141,3 @@ final class EloquentProductRepository implements ProductRepository
         Product::query()->truncate();
     }
 }
-
-

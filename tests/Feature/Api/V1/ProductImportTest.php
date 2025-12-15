@@ -127,5 +127,3 @@ it('imports products from an order-details CSV and ignores the trailing summary 
         'sku' => 'SUMMARY',
     ]);
 });
-
-

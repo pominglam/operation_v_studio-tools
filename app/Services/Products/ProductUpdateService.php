@@ -13,8 +13,7 @@ final class ProductUpdateService
 {
     public function __construct(
         private readonly ProductRepository $products,
-    ) {
-    }
+    ) {}
 
     /**
      * @param array{
@@ -50,5 +49,3 @@ final class ProductUpdateService
         }
     }
 }
-
-

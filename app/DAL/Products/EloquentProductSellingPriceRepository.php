@@ -24,4 +24,3 @@ final class EloquentProductSellingPriceRepository implements ProductSellingPrice
         return $row;
     }
 }
-

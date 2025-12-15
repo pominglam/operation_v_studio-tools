@@ -33,5 +33,3 @@ final class ProductPriceQuoteResource extends JsonResource
         ];
     }
 }
-
-

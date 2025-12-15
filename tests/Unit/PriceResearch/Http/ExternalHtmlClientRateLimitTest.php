@@ -23,10 +23,8 @@ it('hits the per-site rate limiter key for outbound requests', function (): void
         ->with('price_research:site:panda_hobby', 60)
         ->andReturn(1);
 
-    $client = new ExternalHtmlClient();
+    $client = new ExternalHtmlClient;
     $res = $client->get('https://example.com/test', [], 'panda_hobby');
 
     expect($res->status())->toBe(200);
 });
-
-

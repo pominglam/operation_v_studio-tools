@@ -10,7 +10,7 @@ it('prefers CAD-labelled prices over unrelated dollar amounts', function (): voi
 <div class="price">$21.99 CAD</div>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(21.99);
@@ -25,7 +25,7 @@ it('only infers sale prices when the page indicates a compare-at/list price', fu
 </div>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(18.0);
@@ -41,7 +41,7 @@ it('does not mistake free-shipping thresholds for the product price', function (
 </div>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(16.99);
@@ -56,7 +56,7 @@ it('prefers the PDP CAD price over smaller CAD amounts in shipping context', fun
 <button>SOLD OUT</button>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(21.99);
@@ -73,7 +73,7 @@ it('extracts original price when a compare-at price is present (Shopify-style)',
 <button>Add to cart</button>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(15.99);
@@ -94,7 +94,7 @@ it('does not drop the PDP price when "Shipping Policy" is nearby (Hobby Bee)', f
 <div class="btn">SOLD OUT</div>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(21.99);
@@ -116,7 +116,7 @@ it('extracts original and current price from Panda compare-at/current markup', f
 <button>Add to cart</button>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(15.99);
@@ -139,7 +139,7 @@ it('merges Panda compare-at/original from markup even when JSON-LD only includes
 </div>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(15.99);
@@ -159,7 +159,7 @@ it('does not override an existing price when inferring original price (avoids pi
 </div>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(15.99);
@@ -175,7 +175,7 @@ it('extracts CanadianGundam PrestaShop PDP links from search results', function 
 </ul>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $urls = $parser->extractCandidateProductUrls($html, 'https://www.canadiangundam.com');
 
     expect($urls)->toContain('https://www.canadiangundam.com/1144-scale/1447-hg-gundam-astray-blue-frame-13.html?search_query=HG+1%2F144+%2313+Gundam+Astray+Blue+Frame&results=3679');
@@ -190,7 +190,7 @@ it('extracts HobbyWholesale product PDP links and excludes category .html pages'
 </nav>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $urls = $parser->extractCandidateProductUrls($html, 'https://hobbywholesale.com');
 
     expect($urls)->toContain('https://hobbywholesale.com/models/plastic-models/gundam-models/hg/hg-1-144-13-gundam-astray-blue-frame-ban5060358.html');
@@ -208,7 +208,7 @@ it('extracts Meeplemart PDP links and excludes /store/ category/search pages', f
 </nav>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $urls = $parser->extractCandidateProductUrls($html, 'https://www.meeplemart.com');
 
     expect($urls)->toContain('https://www.meeplemart.com/gundam-seed-msv-series-hg-1/144-13-gundam-astray-blue-frame.aspx');
@@ -237,7 +237,7 @@ it('extracts HobbyWholesale (Magento) price + stock from product-info-main and i
 </div>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(16.99);
@@ -254,7 +254,7 @@ it('extracts PrestaShop microdata price + availability from our_price_display', 
 </p>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(23.29);
@@ -281,7 +281,7 @@ it('extracts Hobby Bee price and availability from product-single__meta and igno
 </div>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(21.99);
@@ -323,7 +323,7 @@ it('does not infer an original price from unrelated prices when JSON-LD provides
 </html>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(18.99);
@@ -343,12 +343,10 @@ it('extracts Panda online shipping availability from the PDP widget', function (
 </div>
 HTML;
 
-    $parser = new HtmlPriceParser();
+    $parser = new HtmlPriceParser;
     $out = $parser->extractPriceAndAvailabilityFromHtml($html);
 
     expect($out['price'])->toBe(15.99);
     expect($out['original_price'])->toBe(19.99);
     expect($out['availability'])->toBe('in_stock');
 });
-
-

@@ -24,6 +24,7 @@ final class PriceResearchQuoteReportResource extends JsonResource
         return [
             'id' => $r->id,
             'created_at' => optional($r->created_at)->toISOString(),
+            'handled_at' => optional($r->handled_at)->toISOString(),
             'run_id' => $r->run_uuid,
 
             'product_id' => $r->product_uuid,

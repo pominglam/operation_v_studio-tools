@@ -10,13 +10,10 @@ final class ProductMaintenanceService
 {
     public function __construct(
         private readonly ProductRepository $products,
-    ) {
-    }
+    ) {}
 
     public function flushAll(): void
     {
         $this->products->flushAll();
     }
 }
-
-

@@ -8,6 +8,7 @@ import PaginationControls from '../components/ui/PaginationControls.vue';
 type QuoteReport = {
     id: number;
     created_at: string | null;
+    handled_at: string | null;
     run_id: string | null;
     product_id: string;
     sku: string;
@@ -42,6 +43,7 @@ const meta = ref<Paginated<QuoteReport>['meta'] | null>(null);
 
 const perPage = ref(50);
 const page = ref(1);
+const handlingId = ref<number | null>(null);
 
 const total = computed<number>(() => meta.value?.total ?? 0);
 const currentPage = computed<number>(() => meta.value?.current_page ?? page.value);
@@ -61,6 +63,32 @@ async function load(): Promise<void> {
         error.value = 'Failed to load reports.';
     } finally {
         loading.value = false;
+    }
+}
+
+async function markHandled(id: number): Promise<void> {
+    handlingId.value = id;
+    error.value = null;
+
+    try {
+        const res = await api.patch<{ data: QuoteReport }>(
+            `/api/v1/price-research/reports/${id}/handled`,
+            {},
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            error.value = 'Failed to mark handled.';
+            return;
+        }
+
+        const idx = reports.value.findIndex((r) => r.id === id);
+        if (idx >= 0) {
+            reports.value[idx] = res.data.data;
+        }
+    } catch {
+        error.value = 'Failed to mark handled.';
+    } finally {
+        handlingId.value = null;
     }
 }
 
@@ -124,11 +152,12 @@ onMounted(() => void load());
                             <th class="px-4 py-3 text-right">Price</th>
                             <th class="px-4 py-3">URL</th>
                             <th class="px-4 py-3">Note</th>
+                            <th class="px-4 py-3 text-right">Handled</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
                         <tr v-if="reports.length === 0">
-                            <td class="px-4 py-4 text-slate-600" colspan="6">No reports yet.</td>
+                            <td class="px-4 py-4 text-slate-600" colspan="7">No reports yet.</td>
                         </tr>
 
                         <tr v-for="r in reports" :key="r.id" class="hover:bg-slate-50">
@@ -166,6 +195,20 @@ onMounted(() => void load());
                             <td class="px-4 py-3 text-slate-700">
                                 <span v-if="r.note">{{ r.note }}</span>
                                 <span v-else class="text-slate-400">—</span>
+                            </td>
+                            <td class="px-4 py-3 text-right">
+                                <div v-if="r.handled_at" class="text-xs text-slate-500">
+                                    {{ formatLocalDateTime(r.handled_at) }}
+                                </div>
+                                <button
+                                    v-else
+                                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-900 hover:bg-slate-50 disabled:opacity-50"
+                                    type="button"
+                                    :disabled="handlingId === r.id"
+                                    @click="markHandled(r.id)"
+                                >
+                                    {{ handlingId === r.id ? 'Saving…' : 'Mark handled' }}
+                                </button>
                             </td>
                         </tr>
                     </tbody>

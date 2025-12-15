@@ -15,5 +15,3 @@ interface CompetitorPriceProvider
 
     public function lookup(Product $product): PriceLookupResult;
 }
-
-

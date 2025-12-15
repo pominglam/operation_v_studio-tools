@@ -14,7 +14,7 @@ use Throwable;
 final class ExternalHtmlClient
 {
     /**
-     * @param array<string, string> $headers
+     * @param  array<string, string>  $headers
      */
     public function get(string $url, array $headers = [], ?string $siteKey = null): Response
     {
@@ -40,7 +40,7 @@ final class ExternalHtmlClient
             ];
 
             $response = Http::connectTimeout(3)
-                    ->timeout(20)
+                ->timeout(20)
                 ->retry(1, 200)
                 ->withOptions([
                     'allow_redirects' => [
@@ -121,5 +121,3 @@ final class ExternalHtmlClient
         return "price_research:host:{$host}";
     }
 }
-
-

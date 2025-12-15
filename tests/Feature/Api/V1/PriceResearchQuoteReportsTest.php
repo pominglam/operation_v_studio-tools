@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Models\PriceResearchQuoteReport;
 use App\Models\Product;
 use App\Models\ProductPriceQuote;
-use App\Models\PriceResearchQuoteReport;
 use Illuminate\Support\Str;
 
 it('creates a quote report with a snapshot of the latest quote', function (): void {
@@ -112,5 +112,3 @@ it('lists quote reports', function (): void {
     $res->assertJsonPath('data.0.sku', 'TEST-SKU-REPORT-3');
     $res->assertJsonPath('data.0.note', 'Test note');
 });
-
-

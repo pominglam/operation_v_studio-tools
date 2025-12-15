@@ -10,16 +10,13 @@ final class ProductBulkDeleteService
 {
     public function __construct(
         private readonly ProductRepository $products,
-    ) {
-    }
+    ) {}
 
     /**
-     * @param array<int, string> $uuids
+     * @param  array<int, string>  $uuids
      */
     public function deleteByUuids(array $uuids): int
     {
         return $this->products->deleteByUuids($uuids);
     }
 }
-
-

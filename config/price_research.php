@@ -26,6 +26,19 @@ return [
     ],
 
     /**
+     * Temporarily disable specific competitor crawlers (by site_key).
+     * Comma-separated list via env for easy toggling in local/dev.
+     *
+     * Example: PRICE_RESEARCH_DISABLED_SITE_KEYS=canadian_gundam
+     *
+     * @var array<int, string>
+     */
+    'disabled_site_keys' => array_values(array_filter(array_map(
+        static fn (string $v): string => trim($v),
+        explode(',', (string) env('PRICE_RESEARCH_DISABLED_SITE_KEYS', '')),
+    ), static fn (string $v): bool => $v !== '')),
+
+    /**
      * Competitor sites to query.
      *
      * Keys are stable identifiers used in DB records.

@@ -23,17 +23,6 @@ function isActive(name: string): boolean {
 
             <nav class="flex items-center gap-2 text-sm">
                 <RouterLink
-                    to="/import"
-                    class="rounded-md px-3 py-1.5 transition"
-                    :class="
-                        isActive('import')
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-100'
-                    "
-                >
-                    Import
-                </RouterLink>
-                <RouterLink
                     to="/products"
                     class="rounded-md px-3 py-1.5 transition"
                     :class="
@@ -53,7 +42,7 @@ function isActive(name: string): boolean {
                             : 'text-slate-700 hover:bg-slate-100'
                     "
                 >
-                    Research
+                    Pricing
                 </RouterLink>
                 <RouterLink
                     to="/maintenance"

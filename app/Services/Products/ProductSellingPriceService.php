@@ -22,4 +22,3 @@ final class ProductSellingPriceService
         return $this->sellingPrices->upsertForProduct($product, $sellingPrice, $currency);
     }
 }
-

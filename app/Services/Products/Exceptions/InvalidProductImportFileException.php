@@ -6,8 +6,4 @@ namespace App\Services\Products\Exceptions;
 
 use RuntimeException;
 
-final class InvalidProductImportFileException extends RuntimeException
-{
-}
-
-
+final class InvalidProductImportFileException extends RuntimeException {}

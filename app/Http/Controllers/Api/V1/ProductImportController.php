@@ -15,8 +15,7 @@ final class ProductImportController extends Controller
 {
     public function __construct(
         private readonly ProductImportService $importer,
-    ) {
-    }
+    ) {}
 
     public function __invoke(ProductImportRequest $request): JsonResponse
     {
@@ -40,5 +39,3 @@ final class ProductImportController extends Controller
         }
     }
 }
-
-

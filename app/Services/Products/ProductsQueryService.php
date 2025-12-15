@@ -11,11 +11,10 @@ final class ProductsQueryService
 {
     public function __construct(
         private readonly ProductRepository $products,
-    ) {
-    }
+    ) {}
 
     /**
-     * @param array<int, string> $types
+     * @param  array<int, string>  $types
      */
     public function paginate(int $perPage, ?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator
     {
@@ -30,5 +29,3 @@ final class ProductsQueryService
         return $this->products->distinctTypes();
     }
 }
-
-

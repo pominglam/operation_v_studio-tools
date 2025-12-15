@@ -31,4 +31,8 @@ interface PriceResearchQuoteReportRepository
     public function create(array $attributes): PriceResearchQuoteReport;
 
     public function paginate(int $perPage): LengthAwarePaginator;
+
+    public function findByIdOrFail(int $id): PriceResearchQuoteReport;
+
+    public function markHandled(PriceResearchQuoteReport $report): PriceResearchQuoteReport;
 }

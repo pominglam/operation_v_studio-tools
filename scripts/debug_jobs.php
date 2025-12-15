@@ -18,5 +18,3 @@ if (! is_array($payload)) {
 }
 
 echo json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
-
-

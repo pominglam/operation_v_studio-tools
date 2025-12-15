@@ -16,8 +16,7 @@ final class PriceLookupResult
         public readonly ?string $productUrl,
         public readonly ?string $availability, // in_stock | sold_out | null
         public readonly ?string $errorMessage,
-    ) {
-    }
+    ) {}
 
     public static function found(
         string $siteKey,
@@ -27,8 +26,7 @@ final class PriceLookupResult
         string $currency,
         ?string $productUrl,
         ?string $availability,
-    ): self
-    {
+    ): self {
         return new self($siteKey, $siteName, 'found', $price, $originalPrice, $currency, $productUrl, $availability, null);
     }
 
@@ -42,5 +40,3 @@ final class PriceLookupResult
         return new self($siteKey, $siteName, 'error', null, null, 'CAD', null, null, $message);
     }
 }
-
-

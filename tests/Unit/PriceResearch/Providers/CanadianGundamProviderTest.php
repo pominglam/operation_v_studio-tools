@@ -23,9 +23,9 @@ function cgMatches(CanadianGundamProvider $provider, string $html, Product $prod
 }
 
 it('does not match a CanadianGundam PDP when the grade differs (HG vs MG)', function (): void {
-    $provider = new CanadianGundamProvider(new ExternalHtmlClient(), new HtmlPriceParser());
+    $provider = new CanadianGundamProvider(new ExternalHtmlClient, new HtmlPriceParser);
 
-    $p = new Product();
+    $p = new Product;
     $p->description = 'HGBF 1/144 Sengoku Astray Gundam';
 
     $html = '<html><body><h1>MG Sengoku Gundam Astray</h1></body></html>';
@@ -34,9 +34,9 @@ it('does not match a CanadianGundam PDP when the grade differs (HG vs MG)', func
 });
 
 it('does not match when barcode matches but the grade differs (HG vs MG)', function (): void {
-    $provider = new CanadianGundamProvider(new ExternalHtmlClient(), new HtmlPriceParser());
+    $provider = new CanadianGundamProvider(new ExternalHtmlClient, new HtmlPriceParser);
 
-    $p = new Product();
+    $p = new Product;
     $p->description = 'HGBF 1/144 Sengoku Astray Gundam';
     $p->barcode = '4573102661364';
 
@@ -46,9 +46,9 @@ it('does not match when barcode matches but the grade differs (HG vs MG)', funct
 });
 
 it('does not match when scale differs (1/144 vs 1/100)', function (): void {
-    $provider = new CanadianGundamProvider(new ExternalHtmlClient(), new HtmlPriceParser());
+    $provider = new CanadianGundamProvider(new ExternalHtmlClient, new HtmlPriceParser);
 
-    $p = new Product();
+    $p = new Product;
     $p->description = 'HGBF 1/144 Sengoku Astray Gundam';
 
     $html = '<html><body><h1>HG 1/100 Sengoku Astray Gundam</h1></body></html>';
@@ -57,14 +57,12 @@ it('does not match when scale differs (1/144 vs 1/100)', function (): void {
 });
 
 it('matches when the grade group aligns (HG family)', function (): void {
-    $provider = new CanadianGundamProvider(new ExternalHtmlClient(), new HtmlPriceParser());
+    $provider = new CanadianGundamProvider(new ExternalHtmlClient, new HtmlPriceParser);
 
-    $p = new Product();
+    $p = new Product;
     $p->description = 'HGBF 1/144 Sengoku Astray Gundam';
 
     $html = '<html><body><h1>HG Sengoku Astray Gundam</h1></body></html>';
 
     expect(cgMatches($provider, $html, $p))->toBeTrue();
 });
-
-

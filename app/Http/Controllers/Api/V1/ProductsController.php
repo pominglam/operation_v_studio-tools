@@ -11,8 +11,8 @@ use App\Http\Requests\Api\V1\UpdateProductRequest;
 use App\Http\Resources\Api\V1\ProductResource;
 use App\Services\Products\Exceptions\DuplicateSkuException;
 use App\Services\Products\ProductCreateService;
-use App\Services\Products\ProductUpdateService;
 use App\Services\Products\ProductsQueryService;
+use App\Services\Products\ProductUpdateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -22,8 +22,7 @@ final class ProductsController extends Controller
         private readonly ProductsQueryService $products,
         private readonly ProductCreateService $creator,
         private readonly ProductUpdateService $updater,
-    ) {
-    }
+    ) {}
 
     public function index(ProductsIndexRequest $request): AnonymousResourceCollection
     {
@@ -73,5 +72,3 @@ final class ProductsController extends Controller
         }
     }
 }
-
-

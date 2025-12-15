@@ -20,7 +20,9 @@ final class PriceResearchQueryService
         ?string $search = null,
         ?string $sortBy = null,
         string $sortDir = 'desc',
+        ?string $sellingPrice = null,
         array $freshness = [],
+        array $types = [],
         array $quoteSites = [],
         array $quoteStatuses = [],
         array $quoteAvailabilities = [],
@@ -33,6 +35,7 @@ final class PriceResearchQueryService
             'description' => 'description',
             'price_researched_at' => 'price_researched_at',
             'cost' => 'price',
+            'selling_price' => 'sps.selling_price',
         ];
         $sortColumn = $sortBy !== null && array_key_exists($sortBy, $sortMap) ? $sortMap[$sortBy] : 'price_researched_at';
 
@@ -41,7 +44,27 @@ final class PriceResearchQueryService
                 $q->orderBy('site_key');
             }])
             ->with('sellingPrice')
+            ->leftJoin('product_selling_prices as sps', 'sps.product_id', '=', 'products.id')
             ->select('products.*');
+
+        $sellingPrice = $sellingPrice !== null ? trim($sellingPrice) : null;
+        if ($sellingPrice === 'set') {
+            $q->whereHas('sellingPrice', function ($sp): void {
+                $sp->whereNotNull('selling_price');
+            });
+        } elseif ($sellingPrice === 'missing') {
+            $q->where(function ($sub): void {
+                $sub->whereDoesntHave('sellingPrice')
+                    ->orWhereHas('sellingPrice', function ($sp): void {
+                        $sp->whereNull('selling_price');
+                    });
+            });
+        }
+
+        $types = array_values(array_unique(array_filter(array_map('trim', $types), static fn (string $v): bool => $v !== '')));
+        if ($types !== []) {
+            $q->whereIn('type', $types);
+        }
 
         $search = $search !== null ? trim($search) : null;
         if ($search !== null && $search !== '') {
@@ -86,6 +109,19 @@ final class PriceResearchQueryService
         // Nulls last for researched_at; for other columns default ordering is fine.
         if ($sortColumn === 'price_researched_at') {
             $q->orderByRaw('price_researched_at is null asc');
+        }
+
+        if ($sortBy === 'multiplier') {
+            $q->orderByRaw(
+                'case when sps.selling_price is null or products.price is null or products.price = 0 then 1 else 0 end asc',
+            );
+            $q->orderByRaw('(sps.selling_price / products.price) '.$sortDir);
+
+            return $q->paginate($perPage);
+        }
+
+        if ($sortBy === 'selling_price') {
+            $q->orderByRaw('sps.selling_price is null asc');
         }
 
         return $q->orderBy($sortColumn, $sortDir)->paginate($perPage);

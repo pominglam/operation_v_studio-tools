@@ -12,8 +12,7 @@ final class PriceResearchRunStatusController extends Controller
 {
     public function __construct(
         private readonly PriceResearchRunStatusService $status,
-    ) {
-    }
+    ) {}
 
     public function show(string $id): JsonResponse
     {
@@ -61,5 +60,3 @@ final class PriceResearchRunStatusController extends Controller
         ];
     }
 }
-
-
