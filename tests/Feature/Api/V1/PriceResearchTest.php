@@ -322,6 +322,57 @@ it('can sort price research products by multiplier (selling_price / cost)', func
         ->assertJsonPath('data.1.sku', 'PR-MULT-1');
 });
 
+it('can sort price research products by selling price (nulls last)', function (): void {
+    bindFakePriceResearchService();
+
+    $p1 = Product::query()->create([
+        'sku' => 'PR-SP-1',
+        'description' => 'Selling price 10',
+        'price' => '10.00',
+    ]);
+    $p2 = Product::query()->create([
+        'sku' => 'PR-SP-2',
+        'description' => 'Selling price missing',
+        'price' => '10.00',
+    ]);
+    $p3 = Product::query()->create([
+        'sku' => 'PR-SP-3',
+        'description' => 'Selling price 20',
+        'price' => '10.00',
+    ]);
+
+    ProductSellingPrice::query()->create([
+        'product_id' => $p1->id,
+        'product_uuid' => $p1->uuid,
+        'selling_price' => '10.00',
+        'currency' => 'CAD',
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $p2->id,
+        'product_uuid' => $p2->uuid,
+        'selling_price' => null,
+        'currency' => 'CAD',
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $p3->id,
+        'product_uuid' => $p3->uuid,
+        'selling_price' => '20.00',
+        'currency' => 'CAD',
+    ]);
+
+    $asc = $this->getJson('/api/v1/price-research/products?per_page=100&sort_by=selling_price&sort_dir=asc');
+    $asc->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-SP-1')
+        ->assertJsonPath('data.1.sku', 'PR-SP-3')
+        ->assertJsonPath('data.2.sku', 'PR-SP-2');
+
+    $desc = $this->getJson('/api/v1/price-research/products?per_page=100&sort_by=selling_price&sort_dir=desc');
+    $desc->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-SP-3')
+        ->assertJsonPath('data.1.sku', 'PR-SP-1')
+        ->assertJsonPath('data.2.sku', 'PR-SP-2');
+});
+
 it('exposes latest run status', function (): void {
     bindFakePriceResearchService();
 

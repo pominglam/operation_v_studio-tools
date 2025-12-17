@@ -6,6 +6,7 @@ export type CreateProductPayload = {
     barcode: string | null;
     description: string;
     type: string | null;
+    vendor: string | null;
     price: string | null;
     order: number | null;
     filled: number | null;
@@ -25,6 +26,7 @@ const form = ref<CreateProductPayload>({
     barcode: null,
     description: '',
     type: null,
+    vendor: 'Plamod',
     price: null,
     order: null,
     filled: null,
@@ -36,7 +38,7 @@ const localError = ref<string | null>(null);
 async function submit(): Promise<void> {
     localError.value = null;
     if (!form.value.sku.trim() || !form.value.description.trim()) {
-        localError.value = 'SKU and Description are required.';
+        localError.value = 'SKU and Name are required.';
         return;
     }
 
@@ -45,6 +47,7 @@ async function submit(): Promise<void> {
         barcode: form.value.barcode?.trim() || null,
         description: form.value.description.trim(),
         type: form.value.type?.trim() || null,
+        vendor: form.value.vendor?.trim() || null,
         price: form.value.price?.trim() || null,
         order: form.value.order,
         filled: form.value.filled,
@@ -56,6 +59,7 @@ async function submit(): Promise<void> {
         barcode: null,
         description: '',
         type: null,
+        vendor: 'Plamod',
         price: null,
         order: null,
         filled: null,
@@ -75,8 +79,8 @@ async function submit(): Promise<void> {
             </div>
         </div>
 
-        <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div>
+        <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6">
+            <div class="md:col-span-3">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                     >SKU *</label
                 >
@@ -87,7 +91,7 @@ async function submit(): Promise<void> {
                     autocomplete="off"
                 />
             </div>
-            <div>
+            <div class="md:col-span-3">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                     >Barcode</label
                 >
@@ -98,9 +102,9 @@ async function submit(): Promise<void> {
                     autocomplete="off"
                 />
             </div>
-            <div class="md:col-span-2">
+            <div class="md:col-span-6">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
-                    >Description *</label
+                    >Name *</label
                 >
                 <input
                     v-model="form.description"
@@ -108,7 +112,20 @@ async function submit(): Promise<void> {
                     type="text"
                 />
             </div>
-            <div>
+            <div class="md:col-span-3">
+                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                    >Vendor</label
+                >
+                <select
+                    v-model="form.vendor"
+                    class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                >
+                    <option :value="null">—</option>
+                    <option value="Plamod">Plamod</option>
+                    <option value="MSMN">MSMN</option>
+                </select>
+            </div>
+            <div class="md:col-span-3">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                     >Type</label
                 >
@@ -118,9 +135,10 @@ async function submit(): Promise<void> {
                     type="text"
                 />
             </div>
-            <div>
+
+            <div class="md:col-span-2">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
-                    >Price</label
+                    >Unit cost</label
                 >
                 <input
                     v-model="form.price"
@@ -128,9 +146,19 @@ async function submit(): Promise<void> {
                     type="text"
                 />
             </div>
-            <div>
+            <div class="md:col-span-2">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
-                    >Order</label
+                    >Total cost</label
+                >
+                <input
+                    v-model="form.extended"
+                    class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    type="text"
+                />
+            </div>
+            <div class="md:col-span-1">
+                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                    >Ordered</label
                 >
                 <input
                     v-model.number="form.order"
@@ -139,25 +167,15 @@ async function submit(): Promise<void> {
                     min="0"
                 />
             </div>
-            <div>
+            <div class="md:col-span-1">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
-                    >Filled</label
+                    >Shipped</label
                 >
                 <input
                     v-model.number="form.filled"
                     class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                     type="number"
                     min="0"
-                />
-            </div>
-            <div>
-                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
-                    >Extended</label
-                >
-                <input
-                    v-model="form.extended"
-                    class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
-                    type="text"
                 />
             </div>
         </div>

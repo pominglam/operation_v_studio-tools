@@ -8,6 +8,7 @@ export type ProductRow = {
     barcode: string | null;
     description: string;
     type: string | null;
+    vendor: string | null;
     price: string | null;
     order: number | null;
     filled: number | null;
@@ -19,6 +20,7 @@ export type UpdateProductPayload = {
     barcode: string | null;
     description: string;
     type: string | null;
+    vendor: string | null;
     price: string | null;
     order: number | null;
     filled: number | null;
@@ -30,6 +32,7 @@ export type ProductSortKey =
     | 'barcode'
     | 'description'
     | 'type'
+    | 'vendor'
     | 'price'
     | 'order'
     | 'filled'
@@ -66,12 +69,13 @@ function sortLabel(key: ProductSortKey): string {
     const map: Record<ProductSortKey, string> = {
         sku: 'SKU',
         barcode: 'Barcode',
-        description: 'Description',
+        description: 'Name',
         type: 'Type',
-        price: 'Price',
-        order: 'Order',
-        filled: 'Filled',
-        extended: 'Extended',
+        vendor: 'Vendor',
+        price: 'Unit cost',
+        order: 'Ordered',
+        filled: 'Shipped',
+        extended: 'Total cost',
     };
     return map[key];
 }
@@ -153,6 +157,7 @@ function startEdit(p: ProductRow): void {
         barcode: p.barcode,
         description: p.description,
         type: p.type,
+        vendor: p.vendor,
         price: p.price,
         order: p.order,
         filled: p.filled,
@@ -171,7 +176,7 @@ async function saveEdit(): Promise<void> {
 
     rowError.value = null;
     if (!draft.value.sku.trim() || !draft.value.description.trim()) {
-        rowError.value = 'SKU and Description are required.';
+        rowError.value = 'SKU and Name are required.';
         return;
     }
 
@@ -182,6 +187,7 @@ async function saveEdit(): Promise<void> {
             barcode: draft.value.barcode?.trim() || null,
             description: draft.value.description.trim(),
             type: draft.value.type?.trim() || null,
+            vendor: draft.value.vendor?.trim() || null,
             price: draft.value.price?.trim() || null,
             order: draft.value.order,
             filled: draft.value.filled,
@@ -302,6 +308,16 @@ async function saveEdit(): Promise<void> {
                                 {{ sortLabel('type') }}{{ sortIndicator('type') }}
                             </button>
                         </th>
+                        <th class="px-4 py-3">
+                            <button
+                                type="button"
+                                class="hover:underline"
+                                :class="sortHeaderClass('vendor')"
+                                @click="onSortChange('vendor')"
+                            >
+                                {{ sortLabel('vendor') }}{{ sortIndicator('vendor') }}
+                            </button>
+                        </th>
                         <th class="px-4 py-3 text-right">
                             <button
                                 type="button"
@@ -347,7 +363,7 @@ async function saveEdit(): Promise<void> {
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     <tr v-if="products.length === 0">
-                        <td class="px-4 py-4 text-slate-600" colspan="10">
+                        <td class="px-4 py-4 text-slate-600" colspan="11">
                             No products yet. Import a CSV or add one manually above.
                         </td>
                     </tr>
@@ -406,6 +422,20 @@ async function saveEdit(): Promise<void> {
                                 />
                             </template>
                             <template v-else>{{ p.type ?? '—' }}</template>
+                        </td>
+
+                        <td class="px-4 py-3 text-slate-700">
+                            <template v-if="editingId === p.id">
+                                <select
+                                    v-model="draft!.vendor"
+                                    class="w-36 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                                >
+                                    <option :value="null">—</option>
+                                    <option value="Plamod">Plamod</option>
+                                    <option value="MSMN">MSMN</option>
+                                </select>
+                            </template>
+                            <template v-else>{{ p.vendor ?? '—' }}</template>
                         </td>
 
                         <td class="px-4 py-3 text-right tabular-nums text-slate-700">

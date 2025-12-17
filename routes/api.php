@@ -19,16 +19,22 @@ use App\Http\Controllers\Api\V1\ProductImportController;
 use App\Http\Controllers\Api\V1\ProductMaintenanceController;
 use App\Http\Controllers\Api\V1\ProductsController;
 use App\Http\Controllers\Api\V1\ProductSellingPriceController;
+use App\Http\Controllers\Api\V1\ProductsExportController;
+use App\Http\Controllers\Api\V1\ProductTypeBackfillController;
+use App\Http\Controllers\Api\V1\ProductTypeRecomputeController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')
     ->group(function (): void {
         Route::get('/products', [ProductsController::class, 'index']);
+        Route::get('/products/export', ProductsExportController::class);
         Route::get('/products/filter-options', ProductFilterOptionsController::class);
         Route::post('/products', [ProductsController::class, 'store']);
         Route::patch('/products/{id}', [ProductsController::class, 'update'])->whereUuid('id');
         Route::put('/products/{id}/selling-price', ProductSellingPriceController::class)->whereUuid('id');
         Route::post('/products/import', ProductImportController::class);
+        Route::post('/products/backfill-types', ProductTypeBackfillController::class);
+        Route::post('/products/recompute-types', ProductTypeRecomputeController::class);
         Route::post('/products/bulk-delete', ProductBulkDeleteController::class);
         Route::delete('/products', [ProductMaintenanceController::class, 'flush']);
 

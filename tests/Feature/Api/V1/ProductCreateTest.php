@@ -8,6 +8,7 @@ it('creates a product', function (): void {
         'barcode' => '123',
         'description' => 'Test product',
         'type' => 'HG',
+        'vendor' => 'Plamod',
         'price' => 10.13,
         'order' => 2,
         'filled' => 1,
@@ -21,6 +22,7 @@ it('creates a product', function (): void {
         'barcode' => '123',
         'description' => 'Test product',
         'type' => 'HG',
+        'vendor' => 'Plamod',
     ]);
 });
 

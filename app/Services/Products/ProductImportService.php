@@ -13,11 +13,16 @@ final class ProductImportService
 {
     public function __construct(
         private readonly ProductRepository $products,
+        private readonly ProductTypeDerivationService $types,
     ) {}
 
-    public function import(UploadedFile $file): int
+    public function import(UploadedFile $file, string $format = 'plamod'): int
     {
-        $rows = $this->parseCsv($file);
+        if ($format !== 'plamod') {
+            throw new InvalidProductImportFileException('Unknown import format.');
+        }
+
+        $rows = $this->parseCsv($file, $format);
 
         return $this->products->upsertImportedRows($rows);
     }
@@ -25,8 +30,10 @@ final class ProductImportService
     /**
      * @return array<int, ProductImportRowDTO>
      */
-    private function parseCsv(UploadedFile $file): array
+    private function parseCsv(UploadedFile $file, string $format): array
     {
+        $vendor = $format === 'plamod' ? 'Plamod' : null;
+
         $path = $file->getRealPath();
         if ($path === false) {
             throw new InvalidProductImportFileException('Uploaded file is not readable.');
@@ -63,11 +70,21 @@ final class ProductImportService
                 }
 
                 if ($schemaName === 'catalog') {
+                    $description = $this->stringAt($data, $map['PRODUCT DESCRIPTION']);
+                    $type = $this->nullableStringAt($data, $map['TYPE']);
+                    if ($type === null) {
+                        $type = $this->types->deriveFromName($description);
+                        if ($type === null) {
+                            $type = 'Others';
+                        }
+                    }
+
                     $rows[] = new ProductImportRowDTO(
                         sku: $sku,
                         barcode: $this->nullableStringAt($data, $map['BARCODE']),
-                        description: $this->stringAt($data, $map['PRODUCT DESCRIPTION']),
-                        type: $this->nullableStringAt($data, $map['TYPE']),
+                        description: $description,
+                        type: $type,
+                        vendor: $vendor,
                         price: $this->nullableMoneyAt($data, $map['PRICE']),
                         orderQty: $this->nullableIntAt($data, $map['ORDER']),
                         filledQty: $this->nullableIntAt($data, $map['FILLED']),
@@ -75,11 +92,13 @@ final class ProductImportService
                     );
                 } else {
                     $name = $this->stringAt($data, $map['PRODUCT NAME']);
+                    $type = $this->types->deriveFromName($name) ?? 'Others';
                     $rows[] = new ProductImportRowDTO(
                         sku: $sku,
                         barcode: $this->nullableStringAt($data, $map['BARCODE']),
                         description: $name,
-                        type: $this->deriveTypeFromName($name),
+                        type: $type,
+                        vendor: $vendor,
                         price: $this->nullableMoneyAt($data, $map['UNIT PRICE']),
                         orderQty: $this->nullableIntAt($data, $map['QTY ORDERED']),
                         filledQty: $this->nullableIntAt($data, $map['QTY FILLED']),
@@ -108,6 +127,8 @@ final class ProductImportService
                 $normalized[$key] = $idx;
             }
         }
+
+        $normalized = $this->applyHeaderAliases($normalized);
 
         $catalogRequired = [
             'SKU',
@@ -154,6 +175,34 @@ final class ProductImportService
         throw new InvalidProductImportFileException('Missing required columns.');
     }
 
+    /**
+     * @param  array<string, int>  $map
+     * @return array<string, int>
+     */
+    private function applyHeaderAliases(array $map): array
+    {
+        $aliases = [
+            // New friendly names (UI-aligned)
+            'NAME' => 'PRODUCT DESCRIPTION',
+            'DESCRIPTION' => 'PRODUCT DESCRIPTION',
+            'UNIT COST' => 'PRICE',
+            'ORDERED' => 'ORDER',
+            'SHIPPED' => 'FILLED',
+            'TOTAL COST' => 'EXTENDED',
+
+            // Allow Plamod-ish "NAME" to be treated like order-details "PRODUCT NAME" too.
+            'NAME (ORDER DETAILS)' => 'PRODUCT NAME',
+        ];
+
+        foreach ($aliases as $from => $to) {
+            if (! array_key_exists($to, $map) && array_key_exists($from, $map)) {
+                $map[$to] = $map[$from];
+            }
+        }
+
+        return $map;
+    }
+
     private function normalizeHeader(string $value): string
     {
         $value = trim($value);
@@ -192,19 +241,7 @@ final class ProductImportService
         return in_array($first, ['SUMMARY', 'TOTALS', 'SHIPPING NOTES'], true);
     }
 
-    private function deriveTypeFromName(string $name): ?string
-    {
-        $name = trim($name);
-        if ($name === '') {
-            return null;
-        }
-
-        if (preg_match('/^(HGUC|HGBF|HGCE|HGAC|HG|MG|RG|SDW?|SD|30MM)\b/i', $name, $m) === 1) {
-            return mb_strtoupper((string) $m[1]);
-        }
-
-        return null;
-    }
+    // Type derivation is handled by ProductTypeDerivationService.
 
     /**
      * @param  array<int, string>  $row

@@ -27,7 +27,10 @@ final class ProductImportController extends Controller
                 ], 422);
             }
 
-            $count = $this->importer->import($file);
+            /** @var string $format */
+            $format = $request->validated('format') ?? 'plamod';
+
+            $count = $this->importer->import($file, $format);
 
             return response()->json([
                 'imported' => $count,

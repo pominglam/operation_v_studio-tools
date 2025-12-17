@@ -8,6 +8,8 @@ const flushing = ref(false);
 const resettingRun = ref(false);
 const recrawlingSites = ref(false);
 const forceRefreshingAll = ref(false);
+const backfillingTypes = ref(false);
+const recomputingTypes = ref(false);
 const notesLoading = ref(false);
 const notesSaving = ref(false);
 const flushMessage = ref<string | null>(null);
@@ -18,6 +20,10 @@ const recrawlMessage = ref<string | null>(null);
 const recrawlError = ref<string | null>(null);
 const forceRefreshMessage = ref<string | null>(null);
 const forceRefreshError = ref<string | null>(null);
+const typeBackfillMessage = ref<string | null>(null);
+const typeBackfillError = ref<string | null>(null);
+const typeRecomputeMessage = ref<string | null>(null);
+const typeRecomputeError = ref<string | null>(null);
 const notesMessage = ref<string | null>(null);
 const notesError = ref<string | null>(null);
 const notesBody = ref<string>('');
@@ -45,6 +51,20 @@ type ConfirmState =
       }
     | {
           kind: 'force_refresh_all';
+          title: string;
+          message: string;
+          confirmText: string;
+          variant: 'danger' | 'primary';
+      }
+    | {
+          kind: 'backfill_product_types';
+          title: string;
+          message: string;
+          confirmText: string;
+          variant: 'danger' | 'primary';
+      }
+    | {
+          kind: 'recompute_product_types';
           title: string;
           message: string;
           confirmText: string;
@@ -84,6 +104,28 @@ function requestForceRefreshAll(): void {
     };
 }
 
+function requestBackfillProductTypes(): void {
+    confirm.value = {
+        kind: 'backfill_product_types',
+        title: 'Backfill product types',
+        message:
+            'This will fill missing product types based on the product description (it will not overwrite existing types). Continue?',
+        confirmText: 'Backfill',
+        variant: 'primary',
+    };
+}
+
+function requestRecomputeProductTypes(): void {
+    confirm.value = {
+        kind: 'recompute_product_types',
+        title: 'Recompute product types',
+        message:
+            'This will recompute product types for ALL products based on the current mapping rules and may overwrite existing types. Continue?',
+        confirmText: 'Recompute',
+        variant: 'danger',
+    };
+}
+
 async function confirmAction(): Promise<void> {
     const current = confirm.value;
     if (!current) return;
@@ -95,6 +137,16 @@ async function confirmAction(): Promise<void> {
 
     if (current.kind === 'reset_run') {
         await resetPriceResearchRun();
+        return;
+    }
+
+    if (current.kind === 'backfill_product_types') {
+        await backfillProductTypes();
+        return;
+    }
+
+    if (current.kind === 'recompute_product_types') {
+        await recomputeProductTypes();
         return;
     }
 
@@ -207,6 +259,56 @@ async function forceRefreshAll(): Promise<void> {
         forceRefreshError.value = 'Failed to start force refresh.';
     } finally {
         forceRefreshingAll.value = false;
+        confirm.value = null;
+    }
+}
+
+async function backfillProductTypes(): Promise<void> {
+    backfillingTypes.value = true;
+    typeBackfillMessage.value = null;
+    typeBackfillError.value = null;
+
+    try {
+        const res = await api.post<{ updated: number }>(
+            '/api/v1/products/backfill-types',
+            {},
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            typeBackfillError.value = 'Failed to backfill product types.';
+            return;
+        }
+
+        typeBackfillMessage.value = `Updated ${res.data.updated} product(s).`;
+    } catch {
+        typeBackfillError.value = 'Failed to backfill product types.';
+    } finally {
+        backfillingTypes.value = false;
+        confirm.value = null;
+    }
+}
+
+async function recomputeProductTypes(): Promise<void> {
+    recomputingTypes.value = true;
+    typeRecomputeMessage.value = null;
+    typeRecomputeError.value = null;
+
+    try {
+        const res = await api.post<{ updated: number }>(
+            '/api/v1/products/recompute-types',
+            {},
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            typeRecomputeError.value = 'Failed to recompute product types.';
+            return;
+        }
+
+        typeRecomputeMessage.value = `Updated ${res.data.updated} product(s).`;
+    } catch {
+        typeRecomputeError.value = 'Failed to recompute product types.';
+    } finally {
+        recomputingTypes.value = false;
         confirm.value = null;
     }
 }
@@ -351,6 +453,66 @@ onMounted(() => {
 
         <div class="rounded-lg border border-slate-200 bg-white p-4">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                    <div class="text-sm font-medium text-slate-900">Backfill product types</div>
+                    <div class="mt-1 text-sm text-slate-600">
+                        Fill missing product types based on the product description (does not
+                        overwrite existing types).
+                    </div>
+                </div>
+
+                <button
+                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    :disabled="backfillingTypes"
+                    @click="requestBackfillProductTypes"
+                >
+                    {{ backfillingTypes ? 'Backfilling…' : 'Backfill types' }}
+                </button>
+            </div>
+
+            <div class="mt-3 flex justify-end">
+                <button
+                    class="inline-flex items-center justify-center rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    :disabled="recomputingTypes"
+                    @click="requestRecomputeProductTypes"
+                >
+                    {{ recomputingTypes ? 'Recomputing…' : 'Recompute all types' }}
+                </button>
+            </div>
+
+            <div
+                v-if="typeBackfillError"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
+                {{ typeBackfillError }}
+            </div>
+
+            <div
+                v-if="typeBackfillMessage"
+                class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+                {{ typeBackfillMessage }}
+            </div>
+
+            <div
+                v-if="typeRecomputeError"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
+                {{ typeRecomputeError }}
+            </div>
+
+            <div
+                v-if="typeRecomputeMessage"
+                class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+                {{ typeRecomputeMessage }}
+            </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div class="flex-1">
                     <div class="text-sm font-medium text-slate-900">Recrawl prices by site</div>
                     <div class="mt-1 text-sm text-slate-600">
@@ -471,7 +633,7 @@ onMounted(() => {
             :message="confirm?.message ?? ''"
             :confirm-text="confirm?.confirmText ?? 'Confirm'"
             :variant="confirm?.variant ?? 'primary'"
-            :busy="flushing || resettingRun"
+            :busy="flushing || resettingRun || backfillingTypes || recomputingTypes"
             @cancel="cancelConfirm"
             @confirm="confirmAction"
         />

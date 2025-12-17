@@ -11,6 +11,7 @@ final readonly class ProductImportRowDTO
         public ?string $barcode,
         public string $description,
         public ?string $type,
+        public ?string $vendor,
         public ?string $price,
         public ?int $orderQty,
         public ?int $filledQty,

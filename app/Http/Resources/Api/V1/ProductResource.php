@@ -25,6 +25,7 @@ final class ProductResource extends JsonResource
             'barcode' => $product->barcode,
             'description' => $product->description,
             'type' => $product->type,
+            'vendor' => $product->vendor,
             'price' => $product->price,
             'order' => $product->order_qty,
             'filled' => $product->filled_qty,

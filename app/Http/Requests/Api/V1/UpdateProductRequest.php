@@ -18,6 +18,7 @@ final class UpdateProductRequest extends FormRequest
             'barcode' => ['nullable', 'string', 'max:64'],
             'description' => ['required', 'string', 'max:512'],
             'type' => ['nullable', 'string', 'max:128'],
+            'vendor' => ['nullable', 'string', 'max:128'],
             'price' => ['nullable', 'numeric'],
             'order' => ['nullable', 'integer', 'min:0'],
             'filled' => ['nullable', 'integer', 'min:0'],

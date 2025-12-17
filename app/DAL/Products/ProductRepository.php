@@ -7,6 +7,7 @@ namespace App\DAL\Products;
 use App\DTOs\Products\ProductImportRowDTO;
 use App\Models\Product;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 interface ProductRepository
 {
@@ -19,6 +20,22 @@ interface ProductRepository
      * @param  array<int, string>  $types
      */
     public function paginate(int $perPage, ?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator;
+
+    /**
+     * @param  array<int, string>  $types
+     * @return Collection<int, Product>
+     */
+    public function listForExport(?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): Collection;
+
+    /**
+     * @return Collection<int, Product>
+     */
+    public function listMissingType(): Collection;
+
+    /**
+     * @return Collection<int, Product>
+     */
+    public function listAll(): Collection;
 
     /**
      * @return array<int, string>

@@ -8,66 +8,16 @@ use App\DTOs\Products\ProductImportRowDTO;
 use App\Models\Product;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 final class EloquentProductRepository implements ProductRepository
 {
-    public function upsertImportedRows(array $rows): int
-    {
-        if ($rows === []) {
-            return 0;
-        }
-
-        $payload = array_map(static function (ProductImportRowDTO $row): array {
-            return [
-                'uuid' => (string) Str::uuid(),
-                'sku' => $row->sku,
-                'barcode' => $row->barcode,
-                'description' => $row->description,
-                'type' => $row->type,
-                'price' => $row->price,
-                'order_qty' => $row->orderQty,
-                'filled_qty' => $row->filledQty,
-                'extended' => $row->extended,
-                'updated_at' => now(),
-                'created_at' => now(),
-            ];
-        }, $rows);
-
-        Product::query()->upsert(
-            $payload,
-            uniqueBy: ['sku'],
-            update: ['barcode', 'description', 'type', 'price', 'order_qty', 'filled_qty', 'extended', 'updated_at'],
-        );
-
-        return count($rows);
-    }
-
     /**
      * @param  array<int, string>  $types
      */
-    public function paginate(int $perPage, ?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator
+    private function applyListQueryFilters($q, ?string $search, array $types): void
     {
-        $sortDir = strtolower($sortDir) === 'desc' ? 'desc' : 'asc';
-        $sortBy = $sortBy !== null ? trim($sortBy) : null;
-
-        $sortMap = [
-            'sku' => 'sku',
-            'barcode' => 'barcode',
-            'description' => 'description',
-            'type' => 'type',
-            'price' => 'price',
-            'order' => 'order_qty',
-            'filled' => 'filled_qty',
-            'extended' => 'extended',
-            'updated_at' => 'updated_at',
-            'created_at' => 'created_at',
-        ];
-
-        $sortColumn = $sortBy !== null && array_key_exists($sortBy, $sortMap) ? $sortMap[$sortBy] : 'sku';
-
-        $q = Product::query();
-
         $search = $search !== null ? trim($search) : null;
         if ($search !== null && $search !== '') {
             $q->where(function ($sub) use ($search): void {
@@ -81,8 +31,113 @@ final class EloquentProductRepository implements ProductRepository
         if ($types !== []) {
             $q->whereIn('type', $types);
         }
+    }
+
+    /**
+     * @return array{0:string,1:string}
+     */
+    private function resolveSort(?string $sortBy, string $sortDir): array
+    {
+        $sortDir = strtolower($sortDir) === 'desc' ? 'desc' : 'asc';
+        $sortBy = $sortBy !== null ? trim($sortBy) : null;
+
+        $sortMap = [
+            'sku' => 'sku',
+            'barcode' => 'barcode',
+            'description' => 'description',
+            'type' => 'type',
+            'vendor' => 'vendor',
+            'price' => 'price',
+            'order' => 'order_qty',
+            'filled' => 'filled_qty',
+            'extended' => 'extended',
+            'updated_at' => 'updated_at',
+            'created_at' => 'created_at',
+        ];
+
+        $sortColumn = $sortBy !== null && array_key_exists($sortBy, $sortMap) ? $sortMap[$sortBy] : 'sku';
+
+        return [$sortColumn, $sortDir];
+    }
+
+    public function upsertImportedRows(array $rows): int
+    {
+        if ($rows === []) {
+            return 0;
+        }
+
+        $payload = array_map(static function (ProductImportRowDTO $row): array {
+            return [
+                'uuid' => (string) Str::uuid(),
+                'sku' => $row->sku,
+                'barcode' => $row->barcode,
+                'description' => $row->description,
+                'type' => $row->type,
+                'vendor' => $row->vendor,
+                'price' => $row->price,
+                'order_qty' => $row->orderQty,
+                'filled_qty' => $row->filledQty,
+                'extended' => $row->extended,
+                'updated_at' => now(),
+                'created_at' => now(),
+            ];
+        }, $rows);
+
+        Product::query()->upsert(
+            $payload,
+            uniqueBy: ['sku'],
+            update: ['barcode', 'description', 'type', 'vendor', 'price', 'order_qty', 'filled_qty', 'extended', 'updated_at'],
+        );
+
+        return count($rows);
+    }
+
+    /**
+     * @param  array<int, string>  $types
+     */
+    public function paginate(int $perPage, ?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator
+    {
+        [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+
+        $q = Product::query();
+        $this->applyListQueryFilters($q, $search, $types);
 
         return $q->orderBy($sortColumn, $sortDir)->paginate(perPage: $perPage);
+    }
+
+    /**
+     * @param  array<int, string>  $types
+     * @return Collection<int, Product>
+     */
+    public function listForExport(?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): Collection
+    {
+        [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+
+        $q = Product::query()->with(['sellingPrice']);
+        $this->applyListQueryFilters($q, $search, $types);
+
+        return $q->orderBy($sortColumn, $sortDir)->get();
+    }
+
+    /**
+     * @return Collection<int, Product>
+     */
+    public function listMissingType(): Collection
+    {
+        return Product::query()
+            ->where(function ($q): void {
+                $q->whereNull('type')
+                    ->orWhere('type', '=', '');
+            })
+            ->get();
+    }
+
+    /**
+     * @return Collection<int, Product>
+     */
+    public function listAll(): Collection
+    {
+        return Product::query()->get();
     }
 
     /**

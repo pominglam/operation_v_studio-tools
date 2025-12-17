@@ -21,7 +21,7 @@ final class ProductsIndexRequest extends FormRequest
             'sort_by' => [
                 'sometimes',
                 'string',
-                Rule::in(['sku', 'barcode', 'description', 'type', 'price', 'order', 'filled', 'extended', 'updated_at', 'created_at']),
+                Rule::in(['sku', 'barcode', 'description', 'type', 'vendor', 'price', 'order', 'filled', 'extended', 'updated_at', 'created_at']),
             ],
             'sort_dir' => ['sometimes', 'string', Rule::in(['asc', 'desc'])],
             'types' => ['sometimes', 'array'],

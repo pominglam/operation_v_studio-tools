@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { api } from '../lib/api';
 import AddProductForm, {
     type CreateProductPayload,
@@ -30,13 +30,42 @@ const products = ref<ProductRow[]>([]);
 const meta = ref<Paginated<ProductRow>['meta'] | null>(null);
 
 const route = useRoute();
+const router = useRouter();
 
 const creating = ref(false);
 const createError = ref<string | null>(null);
 const createMessage = ref<string | null>(null);
 
-type ProductsToolTab = 'list' | 'add' | 'import';
+type ProductsToolTab = 'list' | 'add' | 'import' | 'export';
 const activeTab = ref<ProductsToolTab>('list');
+const exportFormat = ref<'shopify'>('shopify');
+
+function tabFromHash(hash: string): ProductsToolTab | null {
+    const key = hash.startsWith('#') ? hash.slice(1) : hash;
+    const normalized = key.trim().toLowerCase();
+    if (normalized === 'products' || normalized === 'list') return 'list';
+    if (normalized === 'add') return 'add';
+    if (normalized === 'import') return 'import';
+    if (normalized === 'export') return 'export';
+    return null;
+}
+
+function setActiveTab(next: ProductsToolTab): void {
+    activeTab.value = next;
+    const nextHash = next === 'list' ? '#products' : `#${next}`;
+    if (route.hash !== nextHash) {
+        void router.replace({ hash: nextHash });
+    }
+}
+
+function downloadExport(): void {
+    const params = new URLSearchParams();
+    params.set('format', exportFormat.value);
+    params.set('sort_by', sortBy.value);
+    params.set('sort_dir', sortDir.value);
+
+    window.location.assign(`/api/v1/products/export?${params.toString()}`);
+}
 
 const search = ref('');
 const perPage = ref(50);
@@ -141,10 +170,13 @@ onMounted(() => {
 watch(
     () => route.hash,
     (hash) => {
-        if (hash !== '#import') return;
-        activeTab.value = 'import';
+        const tab = tabFromHash(hash);
+        if (!tab) return;
+        activeTab.value = tab;
         void nextTick(() => {
-            document.getElementById('import')?.scrollIntoView({ block: 'start' });
+            if (tab === 'import') {
+                document.getElementById('import')?.scrollIntoView({ block: 'start' });
+            }
         });
     },
     { immediate: true },
@@ -195,7 +227,7 @@ watch(
                                 ? 'border-slate-200 border-b-white bg-white text-slate-900'
                                 : 'border-transparent text-slate-600 hover:text-slate-900'
                         "
-                        @click="activeTab = 'list'"
+                        @click="setActiveTab('list')"
                     >
                         Products
                     </button>
@@ -209,7 +241,7 @@ watch(
                                 ? 'border-slate-200 border-b-white bg-white text-slate-900'
                                 : 'border-transparent text-slate-600 hover:text-slate-900'
                         "
-                        @click="activeTab = 'add'"
+                        @click="setActiveTab('add')"
                     >
                         Add
                     </button>
@@ -223,9 +255,23 @@ watch(
                                 ? 'border-slate-200 border-b-white bg-white text-slate-900'
                                 : 'border-transparent text-slate-600 hover:text-slate-900'
                         "
-                        @click="activeTab = 'import'"
+                        @click="setActiveTab('import')"
                     >
                         Import
+                    </button>
+                    <button
+                        class="-mb-px rounded-t-md border px-3 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
+                        role="tab"
+                        type="button"
+                        :aria-selected="activeTab === 'export'"
+                        :class="
+                            activeTab === 'export'
+                                ? 'border-slate-200 border-b-white bg-white text-slate-900'
+                                : 'border-transparent text-slate-600 hover:text-slate-900'
+                        "
+                        @click="setActiveTab('export')"
+                    >
+                        Export
                     </button>
                 </div>
             </div>
@@ -243,7 +289,7 @@ watch(
                                     v-model="search"
                                     class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
                                     type="text"
-                                    placeholder="Search SKU / barcode / description…"
+                                    placeholder="Search SKU / barcode / name…"
                                 />
                             </div>
 
@@ -305,6 +351,44 @@ watch(
                     :embedded="true"
                 />
                 <ImportProductsCard v-show="activeTab === 'import'" :embedded="true" />
+
+                <div v-show="activeTab === 'export'" class="space-y-4">
+                    <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div class="flex-1">
+                            <div class="text-sm font-semibold text-slate-900">Export products</div>
+                            <div class="mt-1 text-sm text-slate-600">
+                                Download a CSV file for a supported platform.
+                            </div>
+                        </div>
+
+                        <button
+                            class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+                            type="button"
+                            @click="downloadExport"
+                        >
+                            Download CSV
+                        </button>
+                    </div>
+
+                    <div class="max-w-sm">
+                        <label
+                            class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                            >Format</label
+                        >
+                        <select
+                            v-model="exportFormat"
+                            class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                        >
+                            <option value="shopify">Shopify</option>
+                        </select>
+                    </div>
+
+                    <div
+                        class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                    >
+                        Export includes all products (100%).
+                    </div>
+                </div>
             </div>
         </div>
     </section>

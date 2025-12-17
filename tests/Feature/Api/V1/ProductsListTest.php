@@ -22,5 +22,6 @@ it('lists imported products', function (): void {
         ->assertOk()
         ->assertJsonPath('data.0.sku', '5060358')
         ->assertJsonPath('data.0.barcode', '4573102603586')
-        ->assertJsonPath('data.0.type', 'HG');
+        ->assertJsonPath('data.0.type', 'HG')
+        ->assertJsonPath('data.0.vendor', 'Plamod');
 });

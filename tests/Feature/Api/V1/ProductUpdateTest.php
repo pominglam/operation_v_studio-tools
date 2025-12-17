@@ -16,6 +16,7 @@ it('updates a product by uuid', function (): void {
         'barcode' => '222',
         'description' => 'After',
         'type' => 'HG',
+        'vendor' => 'Plamod',
         'price' => 12.34,
         'order' => 3,
         'filled' => 2,
@@ -30,6 +31,7 @@ it('updates a product by uuid', function (): void {
         'barcode' => '222',
         'description' => 'After',
         'type' => 'HG',
+        'vendor' => 'Plamod',
     ]);
 });
 

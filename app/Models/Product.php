@@ -16,6 +16,7 @@ use Illuminate\Support\Str;
  * @property string|null $barcode
  * @property string $description
  * @property string|null $type
+ * @property string|null $vendor
  * @property string|null $price
  * @property int|null $order_qty
  * @property int|null $filled_qty
@@ -31,6 +32,7 @@ final class Product extends Model
         'barcode',
         'description',
         'type',
+        'vendor',
         'price',
         'order_qty',
         'filled_qty',

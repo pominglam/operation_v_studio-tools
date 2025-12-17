@@ -7,28 +7,81 @@ use Illuminate\Http\UploadedFile;
 it('imports products from a CSV and persists them', function (): void {
     $csv = implode("\n", [
         'SKU,BARCODE,PRODUCT DESCRIPTION,TYPE,PRICE,ORDER,FILLED,EXTENDED',
-        '5060358,4573102603586,HG 1/144 #13 Gundam Astray Blue Frame,HG,$10.13,2,2,$20.26',
-        '5066295,4573102662958,HG 1/144 BLACK KNIGHT SQUAD Shi-ve.A,HG,$25.65,2,2,$51.30',
+        '5060358,4573102603586,Orphans HG 1/144 #13 Gundam Astray Blue Frame,,$10.13,2,2,$20.26',
+        '5066295,4573102662958,BB372 Gundam Age-3 (Normal/Fortress/Orbital),,$25.65,2,2,$51.30',
+        'X-UNK,111,Some random unmatched product,,$1.00,1,1,$1.00',
     ]);
 
     $file = UploadedFile::fake()->createWithContent('products.csv', $csv, 'text/csv');
 
     $response = $this->postJson('/api/v1/products/import', [
         'file' => $file,
+        'format' => 'plamod',
     ]);
 
     $response->assertOk()->assertJson([
-        'imported' => 2,
+        'imported' => 3,
     ]);
 
     $this->assertDatabaseHas('products', [
         'sku' => '5060358',
         'barcode' => '4573102603586',
+        'vendor' => 'Plamod',
+        'type' => 'Orphans HG',
     ]);
 
     $this->assertDatabaseHas('products', [
         'sku' => '5066295',
         'barcode' => '4573102662958',
+        'vendor' => 'Plamod',
+        'type' => 'SD',
+    ]);
+
+    $this->assertDatabaseHas('products', [
+        'sku' => 'X-UNK',
+        'barcode' => '111',
+        'vendor' => 'Plamod',
+        'type' => 'Others',
+    ]);
+});
+
+it('rejects an unknown import format', function (): void {
+    $csv = implode("\n", [
+        'SKU,BARCODE,PRODUCT DESCRIPTION,TYPE,PRICE,ORDER,FILLED,EXTENDED',
+        '5060358,4573102603586,HG 1/144 #13 Gundam Astray Blue Frame,HG,$10.13,2,2,$20.26',
+    ]);
+
+    $file = UploadedFile::fake()->createWithContent('products.csv', $csv, 'text/csv');
+
+    $this->postJson('/api/v1/products/import', [
+        'file' => $file,
+        'format' => 'unknown',
+    ])->assertStatus(422);
+});
+
+it('imports Plamod products when the CSV uses the new UI-aligned column names', function (): void {
+    $csv = implode("\n", [
+        'SKU,BARCODE,NAME,TYPE,UNIT COST,ORDERED,SHIPPED,TOTAL COST',
+        'NEW-1,999,Some random unmatched product,,10.00,2,1,20.00',
+    ]);
+
+    $file = UploadedFile::fake()->createWithContent('products.csv', $csv, 'text/csv');
+
+    $this->postJson('/api/v1/products/import', [
+        'file' => $file,
+        'format' => 'plamod',
+    ])->assertOk()->assertJson(['imported' => 1]);
+
+    $this->assertDatabaseHas('products', [
+        'sku' => 'NEW-1',
+        'barcode' => '999',
+        'description' => 'Some random unmatched product',
+        'vendor' => 'Plamod',
+        'type' => 'Others',
+        'price' => '10.00',
+        'order_qty' => 2,
+        'filled_qty' => 1,
+        'extended' => '20.00',
     ]);
 });
 
@@ -73,6 +126,7 @@ it('updates an existing product (by SKU) during import', function (): void {
         'sku' => '5060358',
         'barcode' => '9999999999999',
         'description' => 'HG 1/144 #13 Gundam Astray Blue Frame (updated)',
+        'vendor' => 'Plamod',
         'price' => '12.34',
         'order_qty' => 3,
         'filled_qty' => 1,
