@@ -63,7 +63,10 @@ final class PriceResearchService
         $providersToUse = $this->filterProvidersBySiteKeys($siteKeys);
         // Only touch product.price_researched_at when doing a full run across all sites; otherwise we can
         // accidentally mark products "fresh" even though other site quotes may be old.
-        $touchProductTimestamp = $siteKeys === null;
+        // Exception: when the user explicitly targets specific products (recrawl), we should mark them fresh
+        // after completing the requested site checks; otherwise the UI remains "Expired" forever since the UI
+        // always passes site_keys for opt-in sites like AliExpress.
+        $touchProductTimestamp = $siteKeys === null || $productUuids !== null;
 
         $targets = $productUuids === null
             ? $this->products->cursorAll()

@@ -86,7 +86,15 @@ final class ExternalHtmlClient
 
     private function throttle(string $url, ?string $siteKey, string $traceId): void
     {
-        $perMinute = max(1, (int) config('price_research.rate_limit.per_site_per_minute', 10));
+        $defaultPerMinute = max(1, (int) config('price_research.rate_limit.per_site_per_minute', 10));
+        $override = null;
+        if ($siteKey !== null && $siteKey !== '') {
+            $v = config('price_research.rate_limit.per_site_overrides.'.$siteKey);
+            if (is_numeric($v)) {
+                $override = (int) $v;
+            }
+        }
+        $perMinute = max(1, $override ?? $defaultPerMinute);
         $decaySeconds = 60;
 
         $key = $siteKey !== null && $siteKey !== ''

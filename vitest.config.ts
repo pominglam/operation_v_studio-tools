@@ -7,6 +7,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['resources/js/test/setup.ts'],
+    include: ['resources/js/**/*.{spec,test}.ts'],
+    exclude: ['node_modules/**', 'node/aliexpress-scraper/**'],
   },
 });
 

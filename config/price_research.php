@@ -23,6 +23,9 @@ return [
     'rate_limit' => [
         // Max requests per competitor site (site_key) per minute.
         'per_site_per_minute' => (int) env('PRICE_RESEARCH_SITE_RATE_LIMIT_PER_MINUTE', 10),
+        // Optional per-site overrides (site_key => per-minute int).
+        // Example: 'argama_hobby' => 20
+        'per_site_overrides' => [],
     ],
 
     /**
@@ -44,6 +47,10 @@ return [
      * Keys are stable identifiers used in DB records.
      */
     'sites' => [
+        'aliexpress' => [
+            'name' => 'AliExpress',
+            'base_url' => 'https://www.aliexpress.com',
+        ],
         'gundam_hangar' => [
             'name' => 'Gundam Hangar',
             'base_url' => 'https://gundamhangar.com',

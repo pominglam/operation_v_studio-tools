@@ -25,6 +25,22 @@ final class ProductExportService
     }
 
     /**
+     * @return Collection<int, Product>
+     */
+    public function listMissingSellingPriceForExport(?string $sortBy, string $sortDir): Collection
+    {
+        return $this->products->listMissingSellingPriceForExport($sortBy, $sortDir);
+    }
+
+    /**
+     * @return Collection<int, Product>
+     */
+    public function listMissingBarcodeForExport(?string $sortBy, string $sortDir): Collection
+    {
+        return $this->products->listMissingBarcodeForExport($sortBy, $sortDir);
+    }
+
+    /**
      * @return array<int, string>
      */
     public function shopifyHeader(): array
@@ -107,10 +123,6 @@ final class ProductExportService
         $filledQty = $product->filled_qty ?? 0;
         $selling = $product->sellingPrice?->selling_price;
         $type = $product->type !== null ? trim((string) $product->type) : '';
-        $fallbackPrice = '';
-        if ($selling === null && $product->price !== null && trim((string) $product->price) !== '') {
-            $fallbackPrice = number_format(round(((float) $product->price) * 1.5, 2), 2, '.', '');
-        }
 
         return [
             $handle, // Handle
@@ -136,7 +148,7 @@ final class ProductExportService
             (string) max(0, (int) $filledQty), // Variant Inventory Qty
             'continue', // Variant Inventory Policy
             'manual', // Variant Fulfillment Service
-            $selling === null ? $fallbackPrice : (string) $selling, // Variant Price
+            (string) ($selling ?? ''), // Variant Price
             '', // Variant Compare At Price
             'true', // Variant Requires Shipping
             'true', // Variant Taxable
@@ -158,4 +170,5 @@ final class ProductExportService
             'active', // Status
         ];
     }
+
 }

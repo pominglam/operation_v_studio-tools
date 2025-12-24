@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import ConfirmDialog from '../ui/ConfirmDialog.vue';
+import BulkUpdateDialog from './BulkUpdateDialog.vue';
 
 export type ProductRow = {
     id: string; // uuid
@@ -12,6 +13,7 @@ export type ProductRow = {
     price: string | null;
     order: number | null;
     filled: number | null;
+    available: number | null;
     extended: string | null;
 };
 
@@ -24,7 +26,21 @@ export type UpdateProductPayload = {
     price: string | null;
     order: number | null;
     filled: number | null;
+    available: number | null;
     extended: string | null;
+};
+
+export type BulkUpdateProductChanges = {
+    sku?: string;
+    barcode?: string | null;
+    description?: string;
+    type?: string | null;
+    vendor?: string | null;
+    price?: string | null;
+    order?: number | null;
+    filled?: number | null;
+    // available intentionally omitted for now; add when needed
+    extended?: string | null;
 };
 
 export type ProductSortKey =
@@ -36,6 +52,7 @@ export type ProductSortKey =
     | 'price'
     | 'order'
     | 'filled'
+    | 'available'
     | 'extended';
 
 const props = defineProps<{
@@ -46,15 +63,18 @@ const props = defineProps<{
     onSortChange: (sortBy: ProductSortKey) => void;
     onRefresh: () => Promise<void>;
     onBulkDelete: (ids: string[]) => Promise<number>;
+    onBulkUpdate: (ids: string[], changes: BulkUpdateProductChanges) => Promise<number>;
     onUpdate: (id: string, payload: UpdateProductPayload) => Promise<void>;
 }>();
 
 const selected = ref<Set<string>>(new Set());
 const bulkDeleting = ref(false);
+const bulkUpdating = ref(false);
 const bulkMessage = ref<string | null>(null);
 const bulkError = ref<string | null>(null);
 const confirmBulkDeleteOpen = ref(false);
 const confirmBulkDeleteCount = ref(0);
+const bulkUpdateOpen = ref(false);
 
 const editingId = ref<string | null>(null);
 const draft = ref<UpdateProductPayload | null>(null);
@@ -75,6 +95,7 @@ function sortLabel(key: ProductSortKey): string {
         price: 'Unit cost',
         order: 'Ordered',
         filled: 'Shipped',
+        available: 'Available',
         extended: 'Total cost',
     };
     return map[key];
@@ -123,6 +144,19 @@ function requestBulkDelete(): void {
     confirmBulkDeleteOpen.value = true;
 }
 
+function requestBulkUpdate(): void {
+    bulkError.value = null;
+    bulkMessage.value = null;
+
+    const ids = Array.from(selected.value);
+    if (ids.length === 0) {
+        bulkError.value = 'No products selected.';
+        return;
+    }
+
+    bulkUpdateOpen.value = true;
+}
+
 async function confirmBulkDelete(): Promise<void> {
     bulkError.value = null;
     bulkMessage.value = null;
@@ -149,6 +183,30 @@ async function confirmBulkDelete(): Promise<void> {
     }
 }
 
+async function confirmBulkUpdate(changes: BulkUpdateProductChanges): Promise<void> {
+    bulkError.value = null;
+    bulkMessage.value = null;
+
+    const ids = Array.from(selected.value);
+    if (ids.length === 0) {
+        bulkError.value = 'No products selected.';
+        return;
+    }
+
+    bulkUpdating.value = true;
+    try {
+        const updated = await props.onBulkUpdate(ids, changes);
+        bulkMessage.value = `Updated ${updated} product(s).`;
+        await props.onRefresh();
+        syncSelection();
+        bulkUpdateOpen.value = false;
+    } catch (e: unknown) {
+        bulkError.value = 'Failed to update selected products.';
+    } finally {
+        bulkUpdating.value = false;
+    }
+}
+
 function startEdit(p: ProductRow): void {
     rowError.value = null;
     editingId.value = p.id;
@@ -161,6 +219,7 @@ function startEdit(p: ProductRow): void {
         price: p.price,
         order: p.order,
         filled: p.filled,
+        available: p.available,
         extended: p.extended,
     };
 }
@@ -191,6 +250,7 @@ async function saveEdit(): Promise<void> {
             price: draft.value.price?.trim() || null,
             order: draft.value.order,
             filled: draft.value.filled,
+            available: draft.value.available,
             extended: draft.value.extended?.trim() || null,
         });
         await props.onRefresh();
@@ -219,15 +279,23 @@ async function saveEdit(): Promise<void> {
                     <button
                         class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
                         type="button"
-                        :disabled="bulkDeleting"
+                        :disabled="bulkDeleting || bulkUpdating"
                         @click="selected = new Set()"
                     >
                         Clear
                     </button>
                     <button
+                        class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
+                        type="button"
+                        :disabled="bulkDeleting || bulkUpdating"
+                        @click="requestBulkUpdate"
+                    >
+                        {{ bulkUpdating ? 'Updating…' : 'Update selected' }}
+                    </button>
+                    <button
                         class="rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-rose-700 disabled:opacity-50"
                         type="button"
-                        :disabled="bulkDeleting"
+                        :disabled="bulkDeleting || bulkUpdating"
                         @click="requestBulkDelete"
                     >
                         {{ bulkDeleting ? 'Deleting…' : 'Delete selected' }}
@@ -352,6 +420,16 @@ async function saveEdit(): Promise<void> {
                             <button
                                 type="button"
                                 class="hover:underline"
+                                :class="sortHeaderClass('available')"
+                                @click="onSortChange('available')"
+                            >
+                                {{ sortLabel('available') }}{{ sortIndicator('available') }}
+                            </button>
+                        </th>
+                        <th class="px-4 py-3 text-right">
+                            <button
+                                type="button"
+                                class="hover:underline"
                                 :class="sortHeaderClass('extended')"
                                 @click="onSortChange('extended')"
                             >
@@ -363,7 +441,7 @@ async function saveEdit(): Promise<void> {
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     <tr v-if="products.length === 0">
-                        <td class="px-4 py-4 text-slate-600" colspan="11">
+                        <td class="px-4 py-4 text-slate-600" colspan="12">
                             No products yet. Import a CSV or add one manually above.
                         </td>
                     </tr>
@@ -476,6 +554,18 @@ async function saveEdit(): Promise<void> {
                         <td class="px-4 py-3 text-right tabular-nums text-slate-700">
                             <template v-if="editingId === p.id">
                                 <input
+                                    v-model.number="draft!.available"
+                                    class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
+                                    type="number"
+                                    min="0"
+                                />
+                            </template>
+                            <template v-else>{{ p.available ?? '—' }}</template>
+                        </td>
+
+                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                            <template v-if="editingId === p.id">
+                                <input
                                     v-model="draft!.extended"
                                     class="w-24 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
                                     type="text"
@@ -528,5 +618,13 @@ async function saveEdit(): Promise<void> {
         :busy="bulkDeleting"
         @cancel="confirmBulkDeleteOpen = false"
         @confirm="confirmBulkDelete"
+    />
+
+    <BulkUpdateDialog
+        :open="bulkUpdateOpen"
+        :selected-count="selected.size"
+        :busy="bulkUpdating"
+        @cancel="bulkUpdateOpen = false"
+        @confirm="confirmBulkUpdate"
     />
 </template>

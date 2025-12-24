@@ -9,6 +9,7 @@ use App\DAL\PriceResearch\ProductLookupRepository;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\RunPriceResearchRequest;
 use App\Jobs\RunPriceResearchJob;
+use App\Services\PriceResearch\PriceResearchQueryService;
 use App\Services\PriceResearch\PriceResearchService;
 use Illuminate\Http\JsonResponse;
 
@@ -18,6 +19,7 @@ final class PriceResearchRunController extends Controller
         private readonly PriceResearchService $research,
         private readonly ProductLookupRepository $products,
         private readonly PriceResearchRunRepository $runs,
+        private readonly PriceResearchQueryService $queries,
     ) {}
 
     public function __invoke(RunPriceResearchRequest $request): JsonResponse
@@ -28,11 +30,24 @@ final class PriceResearchRunController extends Controller
         $siteKeys = $request->validated('site_keys');
         $force = (bool) $request->boolean('force', false);
 
+        $status = (string) ($request->validated('status') ?? 'any');
+        $quoteStatus = (string) ($request->validated('quote_status') ?? 'any');
+        /** @var array<int, string> $types */
+        $types = (array) ($request->validated('types') ?? []);
+        /** @var array<int, string> $vendors */
+        $vendors = (array) ($request->validated('vendors') ?? []);
+
         $ttlDays = max(1, (int) config('price_research.ttl_days', 14));
         $totalSites = $this->research->providerCountForSiteKeys($siteKeys);
         if ($ids === null) {
-            $existingIds = null;
-            $totalProducts = (int) \App\Models\Product::query()->count();
+            $filtersRequested = $status !== 'any' || $quoteStatus !== 'any' || $types !== [] || $vendors !== [];
+            if ($filtersRequested) {
+                $existingIds = $this->queries->productUuidsForRunFilters($status, $types, $vendors, $quoteStatus, $siteKeys ?? []);
+                $totalProducts = count($existingIds);
+            } else {
+                $existingIds = null;
+                $totalProducts = (int) \App\Models\Product::query()->count();
+            }
         } else {
             $existing = $this->products->findByUuids($ids);
             $existingIds = $existing->pluck('uuid')->values()->all();

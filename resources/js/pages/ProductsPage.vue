@@ -6,9 +6,11 @@ import AddProductForm, {
     type CreateProductPayload,
 } from '../components/products/AddProductForm.vue';
 import ImportProductsCard from '../components/products/ImportProductsCard.vue';
+import ImportInventoryCard from '../components/products/ImportInventoryCard.vue';
 import ProductsTable, {
     type ProductRow,
     type ProductSortKey,
+    type BulkUpdateProductChanges,
     type UpdateProductPayload,
 } from '../components/products/ProductsTable.vue';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
@@ -39,6 +41,11 @@ const createMessage = ref<string | null>(null);
 type ProductsToolTab = 'list' | 'add' | 'import' | 'export';
 const activeTab = ref<ProductsToolTab>('list');
 const exportFormat = ref<'shopify'>('shopify');
+const missingSellingPriceLoading = ref(false);
+const missingSellingPriceError = ref<string | null>(null);
+const missingSellingPriceItems = ref<Array<{ id: string; sku: string; barcode: string | null; description: string }>>(
+    [],
+);
 
 function tabFromHash(hash: string): ProductsToolTab | null {
     const key = hash.startsWith('#') ? hash.slice(1) : hash;
@@ -67,14 +74,46 @@ function downloadExport(): void {
     window.location.assign(`/api/v1/products/export?${params.toString()}`);
 }
 
+function downloadMissingBarcodeCsv(): void {
+    const params = new URLSearchParams();
+    params.set('format', exportFormat.value);
+    params.set('sort_by', sortBy.value);
+    params.set('sort_dir', sortDir.value);
+    window.location.assign(`/api/v1/products/export/missing-barcode?${params.toString()}`);
+}
+
+async function loadMissingSellingPrice(): Promise<void> {
+    missingSellingPriceLoading.value = true;
+    missingSellingPriceError.value = null;
+    try {
+        const res = await api.get<{ data: Array<{ id: string; sku: string; barcode: string | null; description: string }> }>(
+            '/api/v1/products/export/missing-selling-price',
+            {
+                params: {
+                    format: exportFormat.value,
+                    sort_by: sortBy.value,
+                    sort_dir: sortDir.value,
+                },
+            },
+        );
+        missingSellingPriceItems.value = res.data.data;
+    } catch {
+        missingSellingPriceError.value = 'Failed to load products missing selling price.';
+    } finally {
+        missingSellingPriceLoading.value = false;
+    }
+}
+
 const search = ref('');
 const perPage = ref(50);
 const page = ref(1);
 const sortBy = ref<ProductSortKey>('sku');
 const sortDir = ref<'asc' | 'desc'>('asc');
 const selectedTypes = ref<string[]>([]);
+const selectedVendors = ref<string[]>([]);
 
 const typeOptions = ref<MultiSelectOption[]>([]);
+const vendorOptions = ref<MultiSelectOption[]>([]);
 
 const total = computed<number>(() => meta.value?.total ?? 0);
 const currentPage = computed<number>(() => meta.value?.current_page ?? page.value);
@@ -93,6 +132,7 @@ async function load(): Promise<void> {
                 sort_by: sortBy.value,
                 sort_dir: sortDir.value,
                 types: selectedTypes.value.length > 0 ? selectedTypes.value : undefined,
+                vendors: selectedVendors.value.length > 0 ? selectedVendors.value : undefined,
             },
         });
         products.value = res.data.data;
@@ -106,8 +146,11 @@ async function load(): Promise<void> {
 
 async function loadFilterOptions(): Promise<void> {
     try {
-        const res = await api.get<{ data: { types: string[] } }>('/api/v1/products/filter-options');
+        const res = await api.get<{ data: { types: string[]; vendors?: string[] } }>(
+            '/api/v1/products/filter-options',
+        );
         typeOptions.value = res.data.data.types.map((t) => ({ value: t, label: t }));
+        vendorOptions.value = (res.data.data.vendors ?? []).map((v) => ({ value: v, label: v }));
     } catch {
         // ignore; filter dropdown will just be empty
     }
@@ -135,6 +178,11 @@ async function bulkDelete(ids: string[]): Promise<number> {
     return res.data.deleted;
 }
 
+async function bulkUpdate(ids: string[], changes: BulkUpdateProductChanges): Promise<number> {
+    const res = await api.post<{ updated: number }>('/api/v1/products/bulk-update', { ids, changes });
+    return res.data.updated;
+}
+
 async function updateProduct(id: string, payload: UpdateProductPayload): Promise<void> {
     await api.patch(`/api/v1/products/${id}`, payload);
 }
@@ -154,7 +202,7 @@ function onPageChange(next: number): void {
 }
 
 let searchTimer: number | null = null;
-watch([search, perPage, selectedTypes, sortBy, sortDir], () => {
+watch([search, perPage, selectedTypes, selectedVendors, sortBy, sortDir], () => {
     page.value = 1;
     if (searchTimer) window.clearTimeout(searchTimer);
     searchTimer = window.setTimeout(() => void load(), 250);
@@ -300,6 +348,13 @@ watch(
                                 placeholder="All types"
                             />
 
+                            <MultiSelectFilter
+                                v-model="selectedVendors"
+                                label="Vendor"
+                                :options="vendorOptions"
+                                placeholder="All vendors"
+                            />
+
                             <div>
                                 <label
                                     class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
@@ -312,6 +367,8 @@ watch(
                                     <option :value="25">25</option>
                                     <option :value="50">50</option>
                                     <option :value="100">100</option>
+                                    <option :value="200">200</option>
+                                    <option :value="500">500</option>
                                 </select>
                             </div>
                         </div>
@@ -331,6 +388,7 @@ watch(
                         :on-sort-change="onSortChange"
                         :on-refresh="load"
                         :on-bulk-delete="bulkDelete"
+                        :on-bulk-update="bulkUpdate"
                         :on-update="updateProduct"
                     />
 
@@ -351,6 +409,9 @@ watch(
                     :embedded="true"
                 />
                 <ImportProductsCard v-show="activeTab === 'import'" :embedded="true" />
+                <div v-show="activeTab === 'import'" class="mt-4">
+                    <ImportInventoryCard :embedded="true" />
+                </div>
 
                 <div v-show="activeTab === 'export'" class="space-y-4">
                     <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -361,13 +422,22 @@ watch(
                             </div>
                         </div>
 
-                        <button
-                            class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
-                            type="button"
-                            @click="downloadExport"
-                        >
-                            Download CSV
-                        </button>
+                        <div class="flex flex-col gap-2 md:flex-row">
+                            <button
+                                class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+                                type="button"
+                                @click="downloadMissingBarcodeCsv"
+                            >
+                                Download missing barcodes CSV
+                            </button>
+                            <button
+                                class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+                                type="button"
+                                @click="downloadExport"
+                            >
+                                Download Shopify CSV
+                            </button>
+                        </div>
                     </div>
 
                     <div class="max-w-sm">
@@ -386,7 +456,75 @@ watch(
                     <div
                         class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
                     >
-                        Export includes all products (100%).
+                        Export includes only products with a selling price set.
+                    </div>
+
+                    <div class="rounded-lg border border-slate-200 bg-white p-4">
+                        <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div>
+                                <div class="text-sm font-semibold text-slate-900">
+                                    Products missing selling price
+                                </div>
+                                <div class="mt-1 text-sm text-slate-600">
+                                    These are excluded from the Shopify export.
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                                :disabled="missingSellingPriceLoading"
+                                @click="loadMissingSellingPrice"
+                            >
+                                {{ missingSellingPriceLoading ? 'Loading…' : 'Refresh list' }}
+                            </button>
+                        </div>
+
+                        <div
+                            v-if="missingSellingPriceError"
+                            class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+                        >
+                            {{ missingSellingPriceError }}
+                        </div>
+
+                        <div v-else class="mt-3 text-sm text-slate-700">
+                            <div class="text-slate-600">
+                                {{ missingSellingPriceItems.length }} product(s)
+                            </div>
+
+                            <div
+                                v-if="missingSellingPriceItems.length > 0"
+                                class="mt-3 overflow-x-auto rounded-md border border-slate-200"
+                            >
+                                <table class="min-w-full divide-y divide-slate-200 text-sm">
+                                    <thead class="bg-slate-50">
+                                        <tr
+                                            class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
+                                        >
+                                            <th class="px-3 py-2">SKU</th>
+                                            <th class="px-3 py-2">Barcode</th>
+                                            <th class="px-3 py-2">Description</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100">
+                                        <tr
+                                            v-for="p in missingSellingPriceItems"
+                                            :key="p.id"
+                                            class="hover:bg-slate-50"
+                                        >
+                                            <td class="px-3 py-2 font-medium text-slate-900">
+                                                {{ p.sku }}
+                                            </td>
+                                            <td class="px-3 py-2 text-slate-700">
+                                                {{ p.barcode ?? '—' }}
+                                            </td>
+                                            <td class="px-3 py-2 text-slate-700">
+                                                {{ p.description }}
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

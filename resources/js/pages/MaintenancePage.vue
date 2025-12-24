@@ -18,6 +18,10 @@ const resetMessage = ref<string | null>(null);
 const resetError = ref<string | null>(null);
 const recrawlMessage = ref<string | null>(null);
 const recrawlError = ref<string | null>(null);
+const aliCookiesJson = ref<string>('');
+const uploadingAliCookies = ref(false);
+const aliCookiesMessage = ref<string | null>(null);
+const aliCookiesError = ref<string | null>(null);
 const forceRefreshMessage = ref<string | null>(null);
 const forceRefreshError = ref<string | null>(null);
 const typeBackfillMessage = ref<string | null>(null);
@@ -29,9 +33,23 @@ const notesError = ref<string | null>(null);
 const notesBody = ref<string>('');
 const availableSites = ref<Array<{ key: string; name: string }>>([]);
 const siteKeys = ref<string[]>([]);
+const recrawlStatus = ref<'any' | 'fresh' | 'expired'>('any');
+const recrawlQuoteStatus = ref<'any' | 'error'>('any');
+const productTypes = ref<string[]>([]);
+const productVendors = ref<string[]>([]);
+const selectedTypes = ref<string[]>([]);
+const selectedVendors = ref<string[]>([]);
 
 const siteOptions = computed<MultiSelectOption[]>(() => {
     return availableSites.value.map((s) => ({ value: s.key, label: s.name }));
+});
+
+const typeOptions = computed<MultiSelectOption[]>(() => {
+    return productTypes.value.map((t) => ({ value: t, label: t }));
+});
+
+const vendorOptions = computed<MultiSelectOption[]>(() => {
+    return productVendors.value.map((v) => ({ value: v, label: v }));
 });
 
 type ConfirmState =
@@ -211,6 +229,18 @@ async function loadPriceResearchSites(): Promise<void> {
     }
 }
 
+async function loadProductFilterOptions(): Promise<void> {
+    try {
+        const r = await fetch('/api/v1/products/filter-options');
+        if (!r.ok) return;
+        const json = (await r.json()) as { data?: { types?: string[]; vendors?: string[] } };
+        productTypes.value = (json.data?.types ?? []).filter((t) => typeof t === 'string' && t.trim() !== '');
+        productVendors.value = (json.data?.vendors ?? []).filter((v) => typeof v === 'string' && v.trim() !== '');
+    } catch {
+        // ignore
+    }
+}
+
 async function recrawlSelectedSites(): Promise<void> {
     if (siteKeys.value.length === 0) return;
     recrawlingSites.value = true;
@@ -220,7 +250,14 @@ async function recrawlSelectedSites(): Promise<void> {
     try {
         const res = await api.post(
             '/api/v1/price-research/run',
-            { force: true, site_keys: siteKeys.value },
+            {
+                force: true,
+                site_keys: siteKeys.value,
+                status: recrawlStatus.value,
+                quote_status: recrawlQuoteStatus.value,
+                types: selectedTypes.value,
+                vendors: selectedVendors.value,
+            },
             { validateStatus: () => true },
         );
 
@@ -234,6 +271,49 @@ async function recrawlSelectedSites(): Promise<void> {
         recrawlError.value = 'Failed to start site recrawl.';
     } finally {
         recrawlingSites.value = false;
+    }
+}
+
+async function uploadAliExpressCookies(): Promise<void> {
+    aliCookiesMessage.value = null;
+    aliCookiesError.value = null;
+
+    const raw = aliCookiesJson.value.trim();
+    if (!raw) {
+        aliCookiesError.value = 'Paste cookies JSON first.';
+        return;
+    }
+
+    let cookies: unknown;
+    try {
+        cookies = JSON.parse(raw);
+    } catch {
+        aliCookiesError.value = 'Invalid JSON.';
+        return;
+    }
+
+    if (!Array.isArray(cookies)) {
+        aliCookiesError.value = 'Cookies JSON must be an array.';
+        return;
+    }
+
+    uploadingAliCookies.value = true;
+    try {
+        const res = await api.post(
+            '/api/v1/price-research/aliexpress/cookies',
+            { cookies },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            aliCookiesError.value = res.data?.message ?? 'Failed to upload cookies.';
+            return;
+        }
+
+        aliCookiesMessage.value = `AliExpress cookies uploaded (${res.data?.count ?? cookies.length}).`;
+    } catch {
+        aliCookiesError.value = 'Failed to upload cookies.';
+    } finally {
+        uploadingAliCookies.value = false;
     }
 }
 
@@ -360,6 +440,7 @@ async function saveMaintenanceNotes(): Promise<void> {
 
 onMounted(() => {
     void loadPriceResearchSites();
+    void loadProductFilterOptions();
     void loadMaintenanceNotes();
 });
 </script>
@@ -516,15 +597,57 @@ onMounted(() => {
                 <div class="flex-1">
                     <div class="text-sm font-medium text-slate-900">Recrawl prices by site</div>
                     <div class="mt-1 text-sm text-slate-600">
-                        Force recrawl only the selected competitor site(s) across all products. This
-                        does not mark other sites as fresh.
+                        Force recrawl only the selected competitor site(s) across matching products.
                     </div>
-                    <div class="mt-3 max-w-sm">
+                    <div class="mt-3 flex flex-col gap-3 md:flex-row md:flex-wrap">
                         <MultiSelectFilter
                             v-model="siteKeys"
                             label="Sites"
                             :options="siteOptions"
                             placeholder="Select site(s)…"
+                        />
+
+                        <div class="min-w-[180px] flex-[1_1_220px]">
+                            <label
+                                class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                                >Status</label
+                            >
+                            <select
+                                v-model="recrawlStatus"
+                                class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                            >
+                                <option value="any">All</option>
+                                <option value="fresh">Fresh</option>
+                                <option value="expired">Expired</option>
+                            </select>
+                        </div>
+
+                        <div class="min-w-[180px] flex-[1_1_220px]">
+                            <label
+                                class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                                >Result</label
+                            >
+                            <select
+                                v-model="recrawlQuoteStatus"
+                                class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                            >
+                                <option value="any">All</option>
+                                <option value="error">Error</option>
+                            </select>
+                        </div>
+
+                        <MultiSelectFilter
+                            v-model="selectedTypes"
+                            label="Type"
+                            :options="typeOptions"
+                            placeholder="All types"
+                        />
+
+                        <MultiSelectFilter
+                            v-model="selectedVendors"
+                            label="Vendor"
+                            :options="vendorOptions"
+                            placeholder="All vendors"
                         />
                     </div>
                 </div>
@@ -551,6 +674,45 @@ onMounted(() => {
                 class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
             >
                 {{ recrawlMessage }}
+            </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div class="flex-1">
+                    <div class="text-sm font-medium text-slate-900">AliExpress cookies (optional)</div>
+                    <div class="mt-1 text-sm text-slate-600">
+                        AliExpress blocks automated browsing. Paste your browser cookies JSON here to
+                        allow the scraper to use your session.
+                    </div>
+                    <textarea
+                        v-model="aliCookiesJson"
+                        class="mt-3 h-32 w-full rounded-md border border-slate-200 bg-white p-3 text-xs text-slate-900"
+                        placeholder='[{"name":"...","value":"...","domain":".aliexpress.com","path":"/", ...}]'
+                    />
+                </div>
+                <button
+                    class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    :disabled="uploadingAliCookies || aliCookiesJson.trim() === ''"
+                    @click="uploadAliExpressCookies"
+                >
+                    {{ uploadingAliCookies ? 'Uploading…' : 'Upload cookies' }}
+                </button>
+            </div>
+
+            <div
+                v-if="aliCookiesError"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
+                {{ aliCookiesError }}
+            </div>
+
+            <div
+                v-if="aliCookiesMessage"
+                class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+                {{ aliCookiesMessage }}
             </div>
         </div>
 

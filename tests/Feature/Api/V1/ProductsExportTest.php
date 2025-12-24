@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Models\Product;
 use App\Models\ProductSellingPrice;
 
-it('exports Shopify CSV with expected headers and key fields', function (): void {
+it('exports Shopify CSV for products with selling price only', function (): void {
     $p = Product::query()->create([
         'uuid' => '00000000-0000-0000-0000-000000000001',
         'sku' => 'ABC123',
@@ -25,7 +25,7 @@ it('exports Shopify CSV with expected headers and key fields', function (): void
         'currency' => 'CAD',
     ]);
 
-    $p2 = Product::query()->create([
+    Product::query()->create([
         'uuid' => '00000000-0000-0000-0000-000000000002',
         'sku' => 'DEF456',
         'barcode' => null,
@@ -39,13 +39,15 @@ it('exports Shopify CSV with expected headers and key fields', function (): void
 
     $res = $this->get('/api/v1/products/export?format=shopify');
     $res->assertOk();
+    $res->assertHeader('content-type', 'text/csv; charset=UTF-8');
 
     $csv = $res->streamedContent();
     $lines = preg_split("/\r\n|\n|\r/", trim($csv)) ?: [];
-    expect(count($lines))->toBe(Product::query()->count() + 1);
+
+    // Header + ONLY products with selling price (ABC123)
+    expect(count($lines))->toBe(2);
     $header = str_getcsv($lines[0]);
     $row = str_getcsv($lines[1]);
-    $row2 = str_getcsv($lines[2]);
 
     expect($header)->toEqual([
         'Handle',
@@ -105,10 +107,69 @@ it('exports Shopify CSV with expected headers and key fields', function (): void
     expect($row[23])->toBe('28.99');
     expect($row[31])->toBe('0123456789012');
     expect($row[42])->toBe('active');
+});
 
-    // When selling price is missing, fall back to 1.5x unit cost.
-    expect($row2[17])->toBe('DEF456');
-    expect($row2[23])->toBe('15.00');
+it('lists products missing selling price for export UI', function (): void {
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000000010',
+        'sku' => 'MISS-1',
+        'barcode' => null,
+        'description' => 'Missing price 1',
+        'type' => 'HG',
+    ]);
+
+    Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000000011',
+        'sku' => 'HAVE-1',
+        'barcode' => '111',
+        'description' => 'Has price',
+        'type' => 'HG',
+    ]);
+
+    ProductSellingPrice::query()->create([
+        'product_id' => Product::query()->where('uuid', '00000000-0000-0000-0000-000000000011')->value('id'),
+        'product_uuid' => '00000000-0000-0000-0000-000000000011',
+        'selling_price' => '1.23',
+        'currency' => 'CAD',
+    ]);
+
+    $res = $this->getJson('/api/v1/products/export/missing-selling-price?format=shopify');
+    $res->assertOk()
+        ->assertJsonPath('data.0.id', $p->uuid)
+        ->assertJsonPath('data.0.sku', 'MISS-1');
+});
+
+it('exports products missing barcode as CSV', function (): void {
+    Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000000020',
+        'sku' => 'NOBC-1',
+        'barcode' => null,
+        'description' => 'No barcode 1',
+    ]);
+
+    Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000000021',
+        'sku' => 'HASBC-1',
+        'barcode' => '123',
+        'description' => 'Has barcode',
+    ]);
+
+    $res = $this->get('/api/v1/products/export/missing-barcode?format=shopify');
+    $res->assertOk();
+    $res->assertHeader('content-type', 'text/csv; charset=UTF-8');
+
+    $csv = $res->streamedContent();
+    $lines = preg_split("/\r\n|\n|\r/", trim($csv)) ?: [];
+
+    // Header + only the missing-barcode row
+    expect(count($lines))->toBe(2);
+    $header = str_getcsv($lines[0]);
+    $row = str_getcsv($lines[1]);
+
+    expect($header)->toEqual(['Variant SKU', 'Title', 'Variant Barcode']);
+    expect($row[0])->toBe('NOBC-1');
+    expect($row[1])->toBe('No barcode 1');
+    expect($row[2])->toBe('');
 });
 
 it('rejects unknown export format', function (): void {

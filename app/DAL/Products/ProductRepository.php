@@ -18,14 +18,25 @@ interface ProductRepository
 
     /**
      * @param  array<int, string>  $types
+     * @param  array<int, string>  $vendors
      */
-    public function paginate(int $perPage, ?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator;
+    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator;
 
     /**
      * @param  array<int, string>  $types
      * @return Collection<int, Product>
      */
     public function listForExport(?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): Collection;
+
+    /**
+     * @return Collection<int, Product>
+     */
+    public function listMissingSellingPriceForExport(?string $sortBy = null, string $sortDir = 'asc'): Collection;
+
+    /**
+     * @return Collection<int, Product>
+     */
+    public function listMissingBarcodeForExport(?string $sortBy = null, string $sortDir = 'asc'): Collection;
 
     /**
      * @return Collection<int, Product>
@@ -42,6 +53,23 @@ interface ProductRepository
      */
     public function distinctTypes(): array;
 
+    /**
+     * @return array<int, string>
+     */
+    public function distinctVendors(): array;
+
+    /**
+     * @param  array<int, string>  $skus
+     * @return Collection<int, Product>
+     */
+    public function findBySkus(array $skus): Collection;
+
+    /**
+     * @param  array<int, string>  $barcodes
+     * @return Collection<int, Product>
+     */
+    public function findByBarcodes(array $barcodes): Collection;
+
     public function create(Product $product): Product;
 
     public function findByUuidOrFail(string $uuid): Product;
@@ -52,6 +80,12 @@ interface ProductRepository
      * @param  array<int, string>  $uuids
      */
     public function deleteByUuids(array $uuids): int;
+
+    /**
+     * @param  array<int, string>  $uuids
+     * @param  array<string, mixed>  $updates
+     */
+    public function updateByUuids(array $uuids, array $updates): int;
 
     public function flushAll(): void;
 }

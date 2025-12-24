@@ -25,6 +25,7 @@ final class ProductUpdateService
      *   price?: string|null,
      *   order?: int|null,
      *   filled?: int|null,
+     *   available?: int|null,
      *   extended?: string|null
      * } $payload
      */
@@ -41,6 +42,7 @@ final class ProductUpdateService
             'price' => $payload['price'] ?? null,
             'order_qty' => $payload['order'] ?? null,
             'filled_qty' => $payload['filled'] ?? null,
+            'available_qty' => $payload['available'] ?? null,
             'extended' => $payload['extended'] ?? null,
         ]);
 
@@ -49,5 +51,25 @@ final class ProductUpdateService
         } catch (QueryException $e) {
             throw new DuplicateSkuException('SKU already exists.', previous: $e);
         }
+    }
+
+    public function updateBarcode(string $uuid, ?string $barcode): Product
+    {
+        $product = $this->products->findByUuidOrFail($uuid);
+        $product->fill([
+            'barcode' => $barcode,
+        ]);
+
+        return $this->products->save($product);
+    }
+
+    public function updateFilled(string $uuid, ?int $filled): Product
+    {
+        $product = $this->products->findByUuidOrFail($uuid);
+        $product->fill([
+            'filled_qty' => $filled,
+        ]);
+
+        return $this->products->save($product);
     }
 }

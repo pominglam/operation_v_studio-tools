@@ -25,6 +25,7 @@ final class ProductCreateService
      *   price?: string|null,
      *   order?: int|null,
      *   filled?: int|null,
+     *   available?: int|null,
      *   extended?: string|null
      * } $payload
      */
@@ -39,6 +40,7 @@ final class ProductCreateService
             'price' => $payload['price'] ?? null,
             'order_qty' => $payload['order'] ?? null,
             'filled_qty' => $payload['filled'] ?? null,
+            'available_qty' => $payload['available'] ?? null,
             'extended' => $payload['extended'] ?? null,
         ]);
 

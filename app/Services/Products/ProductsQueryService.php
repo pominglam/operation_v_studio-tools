@@ -15,10 +15,18 @@ final class ProductsQueryService
 
     /**
      * @param  array<int, string>  $types
+     * @param  array<int, string>  $vendors
      */
-    public function paginate(int $perPage, ?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator
+    public function paginate(
+        int $perPage,
+        ?string $search = null,
+        array $types = [],
+        array $vendors = [],
+        ?string $sortBy = null,
+        string $sortDir = 'asc',
+    ): LengthAwarePaginator
     {
-        return $this->products->paginate($perPage, $search, $types, $sortBy, $sortDir);
+        return $this->products->paginate($perPage, $search, $types, $vendors, $sortBy, $sortDir);
     }
 
     /**
@@ -27,5 +35,13 @@ final class ProductsQueryService
     public function distinctTypes(): array
     {
         return $this->products->distinctTypes();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function distinctVendors(): array
+    {
+        return $this->products->distinctVendors();
     }
 }

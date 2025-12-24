@@ -31,6 +31,12 @@ final class PriceResearchProductsController extends Controller
         /** @var string|null $sellingPrice */
         $sellingPrice = $request->validated('selling_price');
 
+        /** @var string|null $barcode */
+        $barcode = $request->validated('barcode');
+
+        /** @var array<int, string> $vendors */
+        $vendors = $request->validated('vendors') ?? [];
+
         /** @var array<int, string> $freshness */
         $freshness = $request->validated('freshness') ?? [];
         /** @var array<int, string> $types */
@@ -49,6 +55,8 @@ final class PriceResearchProductsController extends Controller
                 sortBy: $sortBy,
                 sortDir: $sortDir,
                 sellingPrice: $sellingPrice,
+                barcode: $barcode,
+                vendors: $vendors,
                 freshness: $freshness,
                 types: $types,
                 quoteSites: $quoteSites,

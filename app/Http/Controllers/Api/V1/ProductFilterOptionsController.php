@@ -19,6 +19,7 @@ final class ProductFilterOptionsController extends Controller
         return response()->json([
             'data' => [
                 'types' => $this->products->distinctTypes(),
+                'vendors' => $this->products->distinctVendors(),
             ],
         ]);
     }

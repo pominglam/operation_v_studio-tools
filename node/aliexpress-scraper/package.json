@@ -1,0 +1,19 @@
+{
+  "name": "aliexpress-scraper",
+  "private": true,
+  "version": "0.1.0",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright": "1.49.1"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "cookies:refresh:edge": "node scripts/refresh-cookies-from-edge-cdp.cjs"
+  }
+}
+
+

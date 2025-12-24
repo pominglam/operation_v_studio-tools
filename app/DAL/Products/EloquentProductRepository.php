@@ -16,7 +16,7 @@ final class EloquentProductRepository implements ProductRepository
     /**
      * @param  array<int, string>  $types
      */
-    private function applyListQueryFilters($q, ?string $search, array $types): void
+    private function applyListQueryFilters($q, ?string $search, array $types, array $vendors = []): void
     {
         $search = $search !== null ? trim($search) : null;
         if ($search !== null && $search !== '') {
@@ -30,6 +30,11 @@ final class EloquentProductRepository implements ProductRepository
         $types = array_values(array_filter(array_map('trim', $types), static fn (string $t): bool => $t !== ''));
         if ($types !== []) {
             $q->whereIn('type', $types);
+        }
+
+        $vendors = array_values(array_filter(array_map('trim', $vendors), static fn (string $v): bool => $v !== ''));
+        if ($vendors !== []) {
+            $q->whereIn('vendor', $vendors);
         }
     }
 
@@ -50,6 +55,7 @@ final class EloquentProductRepository implements ProductRepository
             'price' => 'price',
             'order' => 'order_qty',
             'filled' => 'filled_qty',
+            'available' => 'available_qty',
             'extended' => 'extended',
             'updated_at' => 'updated_at',
             'created_at' => 'created_at',
@@ -94,13 +100,14 @@ final class EloquentProductRepository implements ProductRepository
 
     /**
      * @param  array<int, string>  $types
+     * @param  array<int, string>  $vendors
      */
-    public function paginate(int $perPage, ?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator
+    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator
     {
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
 
         $q = Product::query();
-        $this->applyListQueryFilters($q, $search, $types);
+        $this->applyListQueryFilters($q, $search, $types, $vendors);
 
         return $q->orderBy($sortColumn, $sortDir)->paginate(perPage: $perPage);
     }
@@ -117,6 +124,36 @@ final class EloquentProductRepository implements ProductRepository
         $this->applyListQueryFilters($q, $search, $types);
 
         return $q->orderBy($sortColumn, $sortDir)->get();
+    }
+
+    public function listMissingSellingPriceForExport(?string $sortBy = null, string $sortDir = 'asc'): Collection
+    {
+        [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+
+        return Product::query()
+            ->with(['sellingPrice'])
+            ->leftJoin('product_selling_prices as sps', 'sps.product_id', '=', 'products.id')
+            ->where(function ($q): void {
+                $q->whereNull('sps.selling_price')
+                    ->orWhere('sps.selling_price', '=', '');
+            })
+            ->select('products.*')
+            ->orderBy($sortColumn, $sortDir)
+            ->get();
+    }
+
+    public function listMissingBarcodeForExport(?string $sortBy = null, string $sortDir = 'asc'): Collection
+    {
+        [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+
+        return Product::query()
+            ->with(['sellingPrice'])
+            ->where(function ($q): void {
+                $q->whereNull('barcode')
+                    ->orWhere('barcode', '=', '');
+            })
+            ->orderBy($sortColumn, $sortDir)
+            ->get();
     }
 
     /**
@@ -157,6 +194,45 @@ final class EloquentProductRepository implements ProductRepository
         return array_values(array_filter($types, static fn (?string $t): bool => $t !== null && trim($t) !== ''));
     }
 
+    public function distinctVendors(): array
+    {
+        /** @var array<int, string|null> $vendors */
+        $vendors = Product::query()
+            ->select('vendor')
+            ->whereNotNull('vendor')
+            ->distinct()
+            ->orderBy('vendor')
+            ->pluck('vendor')
+            ->all();
+
+        return array_values(array_filter($vendors, static fn (?string $v): bool => $v !== null && trim($v) !== ''));
+    }
+
+    public function findBySkus(array $skus): Collection
+    {
+        $skus = array_values(array_filter(array_map('trim', $skus), static fn (string $v): bool => $v !== ''));
+        if ($skus === []) {
+            return collect();
+        }
+
+        return Product::query()
+            ->whereIn('sku', $skus)
+            ->get();
+    }
+
+    public function findByBarcodes(array $barcodes): Collection
+    {
+        $barcodes = array_values(array_filter(array_map('trim', $barcodes), static fn (string $v): bool => $v !== ''));
+        if ($barcodes === []) {
+            return collect();
+        }
+
+        return Product::query()
+            ->whereNotNull('barcode')
+            ->whereIn('barcode', $barcodes)
+            ->get();
+    }
+
     public function create(Product $product): Product
     {
         return $this->save($product);
@@ -189,6 +265,17 @@ final class EloquentProductRepository implements ProductRepository
         return Product::query()
             ->whereIn('uuid', $uuids)
             ->delete();
+    }
+
+    public function updateByUuids(array $uuids, array $updates): int
+    {
+        if ($uuids === [] || $updates === []) {
+            return 0;
+        }
+
+        return Product::query()
+            ->whereIn('uuid', $uuids)
+            ->update($updates);
     }
 
     public function flushAll(): void

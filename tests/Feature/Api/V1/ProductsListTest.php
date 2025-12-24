@@ -25,3 +25,21 @@ it('lists imported products', function (): void {
         ->assertJsonPath('data.0.type', 'HG')
         ->assertJsonPath('data.0.vendor', 'Plamod');
 });
+
+it('filters products by vendor', function (): void {
+    \App\Models\Product::query()->create([
+        'sku' => 'VEND-1',
+        'description' => 'Vendor A',
+        'vendor' => 'Plamod',
+    ]);
+    \App\Models\Product::query()->create([
+        'sku' => 'VEND-2',
+        'description' => 'Vendor B',
+        'vendor' => 'Stedi',
+    ]);
+
+    $res = $this->getJson('/api/v1/products?per_page=100&vendors[]=Stedi');
+    $res->assertOk()
+        ->assertJsonPath('data.0.sku', 'VEND-2')
+        ->assertJsonMissing(['sku' => 'VEND-1']);
+});

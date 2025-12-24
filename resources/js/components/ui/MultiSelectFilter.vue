@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 
 export type MultiSelectOption = {
     value: string;
@@ -19,8 +19,12 @@ const emit = defineEmits<{
 
 const open = ref(false);
 const rootEl = ref<HTMLElement | null>(null);
+const selectAllEl = ref<HTMLInputElement | null>(null);
 
 const selectedSet = computed<Set<string>>(() => new Set(props.modelValue));
+const allOptionValues = computed<string[]>(() => props.options.map((o) => o.value));
+const allSelected = computed<boolean>(() => props.options.length > 0 && props.modelValue.length === props.options.length);
+const someSelected = computed<boolean>(() => props.modelValue.length > 0 && props.modelValue.length < props.options.length);
 const selectedLabel = computed<string>(() => {
     if (props.modelValue.length === 0) return props.placeholder ?? 'All';
     if (props.modelValue.length === 1) {
@@ -39,6 +43,10 @@ function toggle(value: string): void {
 
 function clear(): void {
     emit('update:modelValue', []);
+}
+
+function selectAll(): void {
+    emit('update:modelValue', allOptionValues.value);
 }
 
 function close(): void {
@@ -64,6 +72,14 @@ function onDocumentKeyDown(e: KeyboardEvent): void {
 onMounted(() => {
     document.addEventListener('pointerdown', onDocumentPointerDown, { capture: true });
     document.addEventListener('keydown', onDocumentKeyDown);
+});
+
+// Keep the select-all checkbox in an indeterminate state when partially selected
+watch([open, someSelected], () => {
+    if (!open.value) return;
+    if (selectAllEl.value) {
+        selectAllEl.value.indeterminate = someSelected.value;
+    }
 });
 
 onBeforeUnmount(() => {
@@ -102,6 +118,26 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="max-h-64 overflow-auto">
+                <label
+                    v-if="options.length > 0"
+                    class="flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-1 text-sm hover:bg-slate-50"
+                >
+                    <div class="flex items-center gap-2">
+                        <input
+                            class="h-4 w-4 rounded border-slate-300"
+                            type="checkbox"
+                            :checked="allSelected"
+                            :aria-checked="someSelected ? 'mixed' : allSelected"
+                            @click.stop
+                            @change="allSelected ? clear() : selectAll()"
+                            ref="selectAllEl"
+                        />
+                        <span class="font-medium text-slate-900">Select all</span>
+                    </div>
+                    <span class="text-xs text-slate-500">{{ modelValue.length }}/{{ options.length }}</span>
+                </label>
+                <div v-if="options.length > 0" class="my-1 border-t border-slate-100"></div>
+
                 <label
                     v-for="o in options"
                     :key="o.value"

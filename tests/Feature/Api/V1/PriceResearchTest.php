@@ -7,6 +7,7 @@ use App\DAL\PriceResearch\PriceResearchRunRepository;
 use App\DAL\PriceResearch\ProductLookupRepository;
 use App\DAL\PriceResearch\ProductPriceQuoteRepository;
 use App\Models\Product;
+use App\Models\ProductPriceQuote;
 use App\Models\ProductSellingPrice;
 use App\Services\PriceResearch\DTOs\PriceLookupResult;
 use App\Services\PriceResearch\PriceResearchService;
@@ -49,6 +50,24 @@ final class FakeNotFoundProvider implements CompetitorPriceProvider
     }
 }
 
+final class FakeAliExpressProvider implements CompetitorPriceProvider
+{
+    public function siteKey(): string
+    {
+        return 'aliexpress';
+    }
+
+    public function siteName(): string
+    {
+        return 'AliExpress';
+    }
+
+    public function lookup(Product $product): PriceLookupResult
+    {
+        return PriceLookupResult::found($this->siteKey(), $this->siteName(), 9.99, null, 'CAD', 'https://www.aliexpress.com/item/1005005954938798.html', 'in_stock');
+    }
+}
+
 function bindFakePriceResearchService(): void
 {
     // Ensure controller runs inline in tests for deterministic assertions.
@@ -64,6 +83,10 @@ function bindFakePriceResearchService(): void
         'name' => 'Fake Not Found',
         'base_url' => 'https://example.test',
     ]);
+    config()->set('price_research.sites.aliexpress', [
+        'name' => 'AliExpress',
+        'base_url' => 'https://www.aliexpress.com',
+    ]);
 
     app()->bind(PriceResearchService::class, function ($app): PriceResearchService {
         return new PriceResearchService(
@@ -71,7 +94,7 @@ function bindFakePriceResearchService(): void
             $app->make(ProductPriceQuoteRepository::class),
             $app->make(PriceResearchRunRepository::class),
             $app->make(PriceResearchRunLogRepository::class),
-            [new FakeFoundProvider, new FakeNotFoundProvider],
+            [new FakeFoundProvider, new FakeNotFoundProvider, new FakeAliExpressProvider],
         );
     });
 }
@@ -153,6 +176,35 @@ it('rejects unknown site keys for price research runs', function (): void {
     ])->assertStatus(422);
 });
 
+it('can run price research for aliexpress only (opt-in site)', function (): void {
+    bindFakePriceResearchService();
+
+    $product = Product::query()->create([
+        'sku' => 'STEDI-MS-104',
+        'description' => 'Stedi MS-104',
+    ]);
+
+    $res = $this->postJson('/api/v1/price-research/run', [
+        'ids' => [$product->uuid],
+        'force' => true,
+        'site_keys' => ['aliexpress'],
+    ]);
+
+    $res->assertOk()->assertJsonPath('queued', false);
+
+    $this->assertDatabaseHas('product_price_quotes', [
+        'product_id' => $product->id,
+        'site_key' => 'aliexpress',
+        'status' => 'found',
+        'currency' => 'CAD',
+    ]);
+
+    $this->assertDatabaseMissing('product_price_quotes', [
+        'product_id' => $product->id,
+        'site_key' => 'fake_found',
+    ]);
+});
+
 it('does not crawl disabled site keys (and total_sites reflects enabled providers)', function (): void {
     bindFakePriceResearchService();
 
@@ -180,7 +232,7 @@ it('does not crawl disabled site keys (and total_sites reflects enabled provider
     ]);
 
     $this->assertDatabaseHas('price_research_runs', [
-        'total_sites' => 1,
+        'total_sites' => 2,
     ]);
 });
 
@@ -239,6 +291,167 @@ it('lists products with quotes and expired flag', function (): void {
         ->assertJsonPath('data.0.expired', false);
 });
 
+it('marks a product fresh after a targeted recrawl even when site_keys are provided', function (): void {
+    bindFakePriceResearchService();
+
+    // Make product expired.
+    $product = Product::query()->create([
+        'sku' => 'PR-EXPIRED-RECrawl',
+        'description' => 'Expired then recrawled',
+    ]);
+    $product->price_researched_at = CarbonImmutable::now()->subDays(60);
+    $product->save();
+
+    // Targeted run (like clicking recrawl) with explicit site keys.
+    $this->postJson('/api/v1/price-research/run', [
+        'ids' => [$product->uuid],
+        'force' => true,
+        'site_keys' => ['fake_found'],
+    ])->assertOk();
+
+    $res = $this->getJson('/api/v1/price-research/products?per_page=25&search=PR-EXPIRED-RECrawl');
+    $res->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-EXPIRED-RECrawl')
+        ->assertJsonPath('data.0.expired', false);
+});
+
+it('can filter bulk price research runs by status/type/vendor (maintenance recrawl by site)', function (): void {
+    bindFakePriceResearchService();
+
+    $old = CarbonImmutable::now()->subDays(60);
+
+    $p1 = Product::query()->create([
+        'sku' => 'PR-FILTER-1',
+        'description' => 'Filter target',
+        'type' => 'TOOL',
+        'vendor' => 'Stedi',
+    ]);
+    $p1->price_researched_at = $old;
+    $p1->save();
+
+    $p2 = Product::query()->create([
+        'sku' => 'PR-FILTER-2',
+        'description' => 'Other vendor',
+        'type' => 'TOOL',
+        'vendor' => 'Plamod',
+    ]);
+    $p2->price_researched_at = $old;
+    $p2->save();
+
+    $p3 = Product::query()->create([
+        'sku' => 'PR-FILTER-3',
+        'description' => 'Fresh already',
+        'type' => 'TOOL',
+        'vendor' => 'Stedi',
+    ]);
+    $p3->price_researched_at = CarbonImmutable::now()->subDays(1);
+    $p3->save();
+
+    $res = $this->postJson('/api/v1/price-research/run', [
+        'force' => true,
+        'site_keys' => ['fake_found'],
+        'status' => 'expired',
+        'types' => ['TOOL'],
+        'vendors' => ['Stedi'],
+    ]);
+
+    $res->assertOk()
+        ->assertJsonPath('queued', false)
+        ->assertJsonPath('data.processed', 1);
+
+    // Only the matching product should have a quote from fake_found.
+    $this->assertDatabaseHas('product_price_quotes', [
+        'product_id' => $p1->id,
+        'site_key' => 'fake_found',
+        'status' => 'found',
+    ]);
+    $this->assertDatabaseMissing('product_price_quotes', [
+        'product_id' => $p2->id,
+        'site_key' => 'fake_found',
+    ]);
+    $this->assertDatabaseMissing('product_price_quotes', [
+        'product_id' => $p3->id,
+        'site_key' => 'fake_found',
+    ]);
+});
+
+it('can filter bulk price research runs to recrawl error quotes only (maintenance recrawl by site)', function (): void {
+    bindFakePriceResearchService();
+
+    $old = CarbonImmutable::now()->subDays(60);
+
+    $p1 = Product::query()->create([
+        'sku' => 'PR-FILTER-ERR-1',
+        'description' => 'Error quote',
+        'vendor' => 'Stedi',
+    ]);
+    $p1->price_researched_at = $old;
+    $p1->save();
+
+    $p2 = Product::query()->create([
+        'sku' => 'PR-FILTER-ERR-2',
+        'description' => 'Found quote',
+        'vendor' => 'Stedi',
+    ]);
+    $p2->price_researched_at = $old;
+    $p2->save();
+
+    ProductPriceQuote::query()->create([
+        'product_id' => $p1->id,
+        'site_key' => 'fake_found',
+        'site_name' => 'Fake Found',
+        'status' => 'error',
+        'availability' => null,
+        'currency' => 'CAD',
+        'price' => null,
+        'original_price' => null,
+        'product_url' => null,
+        'error_message' => 'blocked_by_antibot',
+        'fetched_at' => CarbonImmutable::now()->subDays(10),
+    ]);
+
+    $p2FetchedAt = CarbonImmutable::now()->subDays(10);
+    ProductPriceQuote::query()->create([
+        'product_id' => $p2->id,
+        'site_key' => 'fake_found',
+        'site_name' => 'Fake Found',
+        'status' => 'found',
+        'availability' => null,
+        'currency' => 'CAD',
+        'price' => '1.23',
+        'original_price' => null,
+        'product_url' => 'https://example.test/p/2',
+        'error_message' => null,
+        'fetched_at' => $p2FetchedAt,
+    ]);
+
+    $res = $this->postJson('/api/v1/price-research/run', [
+        'force' => true,
+        'site_keys' => ['fake_found'],
+        'quote_status' => 'error',
+        'vendors' => ['Stedi'],
+    ]);
+
+    $res->assertOk()
+        ->assertJsonPath('queued', false)
+        ->assertJsonPath('data.processed', 1);
+
+    // Error product should have been processed (and therefore updated to found by FakeFoundProvider).
+    $this->assertDatabaseHas('product_price_quotes', [
+        'product_id' => $p1->id,
+        'site_key' => 'fake_found',
+        'status' => 'found',
+    ]);
+
+    // Found product should not be processed; its fetched_at should remain unchanged.
+    $unchanged = ProductPriceQuote::query()
+        ->where('product_id', $p2->id)
+        ->where('site_key', 'fake_found')
+        ->first();
+    expect($unchanged)->not->toBeNull();
+    expect($unchanged?->fetched_at?->getTimestamp())->toBe($p2FetchedAt->getTimestamp());
+});
+
 it('can filter price research products by selling price presence', function (): void {
     bindFakePriceResearchService();
 
@@ -287,6 +500,26 @@ it('can filter price research products by product type', function (): void {
     $res->assertOk()
         ->assertJsonPath('data.0.sku', 'PR-TYPE-1')
         ->assertJsonMissing(['sku' => 'PR-TYPE-2']);
+});
+
+it('can filter price research products by vendor', function (): void {
+    bindFakePriceResearchService();
+
+    Product::query()->create([
+        'sku' => 'PR-VEND-1',
+        'description' => 'Vendor A',
+        'vendor' => 'Plamod',
+    ]);
+    Product::query()->create([
+        'sku' => 'PR-VEND-2',
+        'description' => 'Vendor B',
+        'vendor' => 'Stedi',
+    ]);
+
+    $res = $this->getJson('/api/v1/price-research/products?per_page=100&vendors[]=Stedi');
+    $res->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-VEND-2')
+        ->assertJsonMissing(['sku' => 'PR-VEND-1']);
 });
 
 it('can sort price research products by multiplier (selling_price / cost)', function (): void {

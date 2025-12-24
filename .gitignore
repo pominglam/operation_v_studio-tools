@@ -36,3 +36,11 @@ pnpm-debug.log*
 Homestead.json
 Homestead.yaml
 Thumbs.db
+**/node_modules/
+
+# Playwright / Chromium user data & caches
+**/.pw-user-data/
+**/pw-user-data/
+**/Code Cache/
+**/Cache/
+**/*.tmp

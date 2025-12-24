@@ -7,10 +7,11 @@ const props = defineProps<{
 }>();
 
 const file = ref<File | null>(null);
-const format = ref<'plamod'>('plamod');
+const format = ref<'plamod' | 'stedi'>('plamod');
 const uploading = ref(false);
 const error = ref<string | null>(null);
 const imported = ref<number | null>(null);
+const issues = ref<Array<Record<string, unknown>> | null>(null);
 
 const containerClass = computed<string>(() => {
     return props.embedded ? '' : 'rounded-lg border border-slate-200 bg-white p-4';
@@ -21,6 +22,7 @@ function onFileChange(e: Event): void {
     file.value = input.files?.[0] ?? null;
     error.value = null;
     imported.value = null;
+    issues.value = null;
 }
 
 async function submit(): Promise<void> {
@@ -32,6 +34,7 @@ async function submit(): Promise<void> {
     uploading.value = true;
     error.value = null;
     imported.value = null;
+    issues.value = null;
 
     try {
         const form = new FormData();
@@ -44,7 +47,19 @@ async function submit(): Promise<void> {
 
         imported.value = res.data.imported;
     } catch (e: unknown) {
-        error.value = 'Import failed. Check the CSV format and try again.';
+        const anyErr = e as any;
+        const apiMessage: string | undefined = anyErr?.response?.data?.message;
+        const apiIssues: unknown = anyErr?.response?.data?.issues;
+
+        if (typeof apiMessage === 'string') {
+            error.value = apiMessage;
+        } else {
+            error.value = 'Import failed. Check the CSV format and try again.';
+        }
+
+        if (Array.isArray(apiIssues)) {
+            issues.value = apiIssues as Array<Record<string, unknown>>;
+        }
     } finally {
         uploading.value = false;
     }
@@ -57,8 +72,7 @@ async function submit(): Promise<void> {
             <div>
                 <div class="text-sm font-medium text-slate-900">Import products</div>
                 <div class="mt-1 text-sm text-slate-600">
-                    Format: Plamod. Upload a CSV with columns: SKU, BARCODE, NAME, TYPE, UNIT COST,
-                    ORDERED, SHIPPED, TOTAL COST.
+                    Upload a CSV. For Stedi, selling price is computed only when Multiplier is present (CAD-focused).
                 </div>
             </div>
 
@@ -80,6 +94,7 @@ async function submit(): Promise<void> {
                     class="mt-2 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                 >
                     <option value="plamod">Plamod</option>
+                    <option value="stedi">Stedi</option>
                 </select>
             </div>
 
@@ -99,6 +114,18 @@ async function submit(): Promise<void> {
             class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
         >
             {{ error }}
+        </div>
+
+        <div
+            v-if="issues && issues.length"
+            class="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+            <div class="font-medium">Import blocked. Fix these issues, then retry:</div>
+            <ul class="mt-2 list-disc space-y-1 pl-5">
+                <li v-for="(issue, idx) in issues" :key="idx">
+                    <code class="text-xs">{{ issue }}</code>
+                </li>
+            </ul>
         </div>
 
         <div

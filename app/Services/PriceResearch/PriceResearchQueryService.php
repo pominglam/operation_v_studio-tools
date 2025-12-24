@@ -10,6 +10,68 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 final class PriceResearchQueryService
 {
     /**
+     * @param  array<int, string>  $types
+     * @param  array<int, string>  $vendors
+     * @param  array<int, string>  $siteKeys
+     * @return array<int, string> Product UUIDs
+     */
+    public function productUuidsForRunFilters(
+        ?string $status = null,
+        array $types = [],
+        array $vendors = [],
+        ?string $quoteStatus = null,
+        array $siteKeys = [],
+    ): array
+    {
+        $status = $status !== null ? trim($status) : null;
+        if ($status === '' || $status === null) {
+            $status = 'any';
+        }
+
+        $quoteStatus = $quoteStatus !== null ? trim($quoteStatus) : null;
+        if ($quoteStatus === '' || $quoteStatus === null) {
+            $quoteStatus = 'any';
+        }
+
+        $vendors = array_values(array_unique(array_filter(array_map('trim', $vendors), static fn (string $v): bool => $v !== '')));
+        $types = array_values(array_unique(array_filter(array_map('trim', $types), static fn (string $v): bool => $v !== '')));
+        $siteKeys = array_values(array_unique(array_filter(array_map('trim', $siteKeys), static fn (string $v): bool => $v !== '')));
+
+        $q = Product::query()->select('uuid');
+
+        if ($vendors !== []) {
+            $q->whereIn('vendor', $vendors);
+        }
+        if ($types !== []) {
+            $q->whereIn('type', $types);
+        }
+
+        if ($status === 'fresh') {
+            $q->whereNotNull('price_researched_at')
+                ->where('price_researched_at', '>=', now()->subDays(max(1, (int) config('price_research.ttl_days', 14))));
+        } elseif ($status === 'expired') {
+            $q->where(function ($sub): void {
+                $sub->whereNull('price_researched_at')
+                    ->orWhere('price_researched_at', '<', now()->subDays(max(1, (int) config('price_research.ttl_days', 14))));
+            });
+        }
+
+        if ($quoteStatus !== 'any') {
+            $q->whereHas('priceQuotes', function ($qq) use ($siteKeys, $quoteStatus): void {
+                if ($siteKeys !== []) {
+                    $qq->whereIn('site_key', $siteKeys);
+                }
+                $qq->where('status', $quoteStatus);
+            });
+        }
+
+        /** @var array<int, string> $uuids */
+        $uuids = $q->orderBy('id')->pluck('uuid')->values()->all();
+
+        return $uuids;
+    }
+
+    /**
      * @param  array<int, string>  $freshness
      * @param  array<int, string>  $quoteSites
      * @param  array<int, string>  $quoteStatuses
@@ -21,6 +83,8 @@ final class PriceResearchQueryService
         ?string $sortBy = null,
         string $sortDir = 'desc',
         ?string $sellingPrice = null,
+        ?string $barcode = null,
+        array $vendors = [],
         array $freshness = [],
         array $types = [],
         array $quoteSites = [],
@@ -34,6 +98,8 @@ final class PriceResearchQueryService
             'sku' => 'sku',
             'description' => 'description',
             'price_researched_at' => 'price_researched_at',
+            'filled' => 'filled_qty',
+            'available' => 'available_qty',
             'cost' => 'price',
             'selling_price' => 'sps.selling_price',
         ];
@@ -59,6 +125,21 @@ final class PriceResearchQueryService
                         $sp->whereNull('selling_price');
                     });
             });
+        }
+
+        $barcode = $barcode !== null ? trim($barcode) : null;
+        if ($barcode === 'set') {
+            $q->whereNotNull('barcode')->where('barcode', '<>', '');
+        } elseif ($barcode === 'missing') {
+            $q->where(function ($sub): void {
+                $sub->whereNull('barcode')
+                    ->orWhere('barcode', '=', '');
+            });
+        }
+
+        $vendors = array_values(array_unique(array_filter(array_map('trim', $vendors), static fn (string $v): bool => $v !== '')));
+        if ($vendors !== []) {
+            $q->whereIn('vendor', $vendors);
         }
 
         $types = array_values(array_unique(array_filter(array_map('trim', $types), static fn (string $v): bool => $v !== '')));

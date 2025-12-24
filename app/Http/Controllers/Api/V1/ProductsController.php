@@ -27,13 +27,16 @@ final class ProductsController extends Controller
     public function index(ProductsIndexRequest $request): AnonymousResourceCollection
     {
         $perPage = (int) ($request->validated('per_page') ?? 25);
-        $perPage = max(1, min($perPage, 100));
+        $perPage = max(1, min($perPage, 500));
 
         /** @var string|null $search */
         $search = $request->validated('search');
 
         /** @var array<int, string> $types */
         $types = $request->validated('types') ?? [];
+
+        /** @var array<int, string> $vendors */
+        $vendors = $request->validated('vendors') ?? [];
 
         /** @var string|null $sortBy */
         $sortBy = $request->validated('sort_by');
@@ -42,7 +45,7 @@ final class ProductsController extends Controller
         $sortDir = $request->validated('sort_dir') ?? 'asc';
 
         return ProductResource::collection(
-            $this->products->paginate($perPage, $search, $types, $sortBy, $sortDir),
+            $this->products->paginate($perPage, $search, $types, $vendors, $sortBy, $sortDir),
         );
     }
 

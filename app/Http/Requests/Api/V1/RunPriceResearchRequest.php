@@ -27,6 +27,14 @@ final class RunPriceResearchRequest extends FormRequest
             'force' => ['sometimes', 'boolean'],
             'site_keys' => ['sometimes', 'array', 'min:1'],
             'site_keys.*' => ['required', 'string', Rule::in($allowedSiteKeys), 'distinct'],
+
+            // Optional filters (used by Maintenance "recrawl by site" to target subsets).
+            'status' => ['sometimes', 'string', Rule::in(['any', 'fresh', 'expired'])],
+            'quote_status' => ['sometimes', 'string', Rule::in(['any', 'found', 'not_found', 'error'])],
+            'types' => ['sometimes', 'array'],
+            'types.*' => ['required', 'string'],
+            'vendors' => ['sometimes', 'array'],
+            'vendors.*' => ['required', 'string'],
         ];
     }
 }

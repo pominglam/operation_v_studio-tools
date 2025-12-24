@@ -22,6 +22,7 @@ final class UpdateProductRequest extends FormRequest
             'price' => ['nullable', 'numeric'],
             'order' => ['nullable', 'integer', 'min:0'],
             'filled' => ['nullable', 'integer', 'min:0'],
+            'available' => ['nullable', 'integer', 'min:0', 'max:2147483647'],
             'extended' => ['nullable', 'numeric'],
         ];
     }

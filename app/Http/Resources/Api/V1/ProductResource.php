@@ -29,6 +29,7 @@ final class ProductResource extends JsonResource
             'price' => $product->price,
             'order' => $product->order_qty,
             'filled' => $product->filled_qty,
+            'available' => $product->available_qty,
             'extended' => $product->extended,
             'created_at' => optional($product->created_at)->toISOString(),
             'updated_at' => optional($product->updated_at)->toISOString(),

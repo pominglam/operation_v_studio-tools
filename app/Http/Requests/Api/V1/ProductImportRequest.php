@@ -16,7 +16,7 @@ final class ProductImportRequest extends FormRequest
     {
         return [
             'file' => ['required', 'file', 'mimes:csv,txt', 'max:51200'],
-            'format' => ['sometimes', 'string', Rule::in(['plamod'])],
+            'format' => ['sometimes', 'string', Rule::in(['plamod', 'stedi'])],
         ];
     }
 }

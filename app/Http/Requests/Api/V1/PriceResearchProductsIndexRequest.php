@@ -21,11 +21,23 @@ final class PriceResearchProductsIndexRequest extends FormRequest
             'sort_by' => [
                 'sometimes',
                 'string',
-                Rule::in(['sku', 'description', 'price_researched_at', 'cost', 'selling_price', 'multiplier']),
+                Rule::in([
+                    'sku',
+                    'description',
+                    'price_researched_at',
+                    'filled',
+                    'available',
+                    'cost',
+                    'selling_price',
+                    'multiplier',
+                ]),
             ],
             'sort_dir' => ['sometimes', 'string', Rule::in(['asc', 'desc'])],
 
             'selling_price' => ['sometimes', 'string', Rule::in(['any', 'set', 'missing'])],
+            'barcode' => ['sometimes', 'string', Rule::in(['any', 'set', 'missing'])],
+            'vendors' => ['sometimes', 'array'],
+            'vendors.*' => ['string', 'max:128'],
 
             // Multi-select filters
             'freshness' => ['sometimes', 'array'],

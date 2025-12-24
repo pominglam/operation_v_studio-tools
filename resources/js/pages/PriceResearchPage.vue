@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router';
 import { api } from '../lib/api';
 import { formatLocalDateTime } from '../lib/datetime';
+import { parseNonNegativeIntOrNull } from '../lib/numbers';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
 import PaginationControls from '../components/ui/PaginationControls.vue';
 
@@ -26,6 +27,8 @@ type ProductResearch = {
     description: string;
     price_researched_at: string | null;
     expired: boolean;
+    filled: number | null;
+    available: number | null;
     cost: string | null;
     selling_price: string | null;
     quotes: Quote[];
@@ -81,10 +84,37 @@ const isRunActive = computed<boolean>(() => {
 
 const isBusy = computed<boolean>(() => loading.value || running.value || isRunActive.value);
 
+// Recrawl should still work while the table is loading; only block when a run is actually active.
+const isRecrawlBlocked = computed<boolean>(() => running.value || isRunActive.value);
+
+const pageTotals = computed(() => {
+    let shipped = 0;
+    let cost = 0;
+    let price = 0;
+
+    for (const p of items.value) {
+        shipped += p.filled ?? 0;
+
+        const c = parseMoney(p.cost);
+        if (c !== null) cost += c;
+
+        const sp = parseMoney(p.selling_price);
+        if (sp !== null) price += sp;
+    }
+
+    return {
+        shipped,
+        cost: formatMoney(cost) ?? '0.00',
+        price: formatMoney(price) ?? '0.00',
+    };
+});
+
 type ResearchSortKey =
     | 'sku'
     | 'description'
     | 'price_researched_at'
+    | 'filled'
+    | 'available'
     | 'cost'
     | 'selling_price'
     | 'multiplier';
@@ -102,6 +132,7 @@ const freshnessOptions: MultiSelectOption[] = [
 const freshness = ref<string[]>([]);
 
 const allSites = [
+    { key: 'aliexpress', name: 'AliExpress' },
     { key: 'argama_hobby', name: 'Argama Hobby' },
     { key: 'panda_hobby', name: 'Panda Hobby' },
     { key: 'canadian_gundam', name: 'Canadian Gundam' },
@@ -123,13 +154,26 @@ const quoteSiteOptions = computed<MultiSelectOption[]>(() => {
 });
 const quoteSites = ref<string[]>([]);
 
+const runSiteOptions = computed<MultiSelectOption[]>(() => {
+    const disabled = new Set(disabledSiteKeys.value);
+    return allSites.filter((s) => !disabled.has(s.key)).map((s) => ({ value: s.key, label: s.name }));
+});
+const runSites = ref<string[]>(allSites.filter((s) => s.key !== 'aliexpress').map((s) => s.key));
+
 const sellingPrice = ref<'any' | 'set' | 'missing'>('any');
+const barcodeFilter = ref<'any' | 'set' | 'missing'>('any');
 
 const productTypes = ref<string[]>([]);
 const productTypeOptions = computed<MultiSelectOption[]>(() => {
     return productTypes.value.map((t) => ({ value: t, label: t }));
 });
 const types = ref<string[]>([]);
+
+const productVendors = ref<string[]>([]);
+const vendorOptions = computed<MultiSelectOption[]>(() => {
+    return productVendors.value.map((v) => ({ value: v, label: v }));
+});
+const vendors = ref<string[]>([]);
 
 const meta = ref<Paginated<ProductResearch>['meta'] | null>(null);
 const total = computed<number>(() => meta.value?.total ?? 0);
@@ -289,8 +333,13 @@ function buildProductsUrl(): string {
         params.set('selling_price', sellingPrice.value);
     }
 
+    if (barcodeFilter.value !== 'any') {
+        params.set('barcode', barcodeFilter.value);
+    }
+
     for (const v of freshness.value) params.append('freshness[]', v);
     for (const v of types.value) params.append('types[]', v);
+    for (const v of vendors.value) params.append('vendors[]', v);
     for (const v of quoteSites.value) params.append('quote_sites[]', v);
 
     return `/api/v1/price-research/products?${params.toString()}`;
@@ -299,7 +348,6 @@ function buildProductsUrl(): string {
 async function load(): Promise<void> {
     loading.value = true;
     error.value = null;
-    message.value = null;
 
     try {
         // Use fetch directly here to avoid any adapter/proxy issues during local dev.
@@ -341,9 +389,12 @@ async function loadProductFilterOptions(): Promise<void> {
     try {
         const r = await fetch('/api/v1/products/filter-options');
         if (!r.ok) return;
-        const json = (await r.json()) as { data?: { types?: string[] } };
+        const json = (await r.json()) as { data?: { types?: string[]; vendors?: string[] } };
         productTypes.value = (json.data?.types ?? []).filter(
             (t) => typeof t === 'string' && t.trim() !== '',
+        );
+        productVendors.value = (json.data?.vendors ?? []).filter(
+            (v) => typeof v === 'string' && v.trim() !== '',
         );
     } catch {
         // ignore
@@ -391,7 +442,7 @@ async function run(force: boolean): Promise<void> {
     try {
         const res = await api.post(
             '/api/v1/price-research/run',
-            { force },
+            { force, site_keys: runSites.value.length > 0 ? runSites.value : undefined },
             { validateStatus: () => true },
         );
 
@@ -419,6 +470,139 @@ const savingSellingPrice = ref<string | null>(null);
 const editingSellingPriceId = ref<string | null>(null);
 const sellingPriceDrafts = reactive<Record<string, string>>({});
 
+const savingBarcode = ref<string | null>(null);
+const editingBarcodeId = ref<string | null>(null);
+const barcodeDrafts = reactive<Record<string, string>>({});
+
+const savingFilled = ref<string | null>(null);
+const editingFilledId = ref<string | null>(null);
+const filledDrafts = reactive<Record<string, string>>({});
+
+function startFilledEdit(productId: string, current: number | null): void {
+    editingFilledId.value = productId;
+    if (filledDrafts[productId] === undefined) {
+        filledDrafts[productId] = current === null ? '' : String(current);
+    }
+}
+
+function updateFilledDraft(productId: string, value: string): void {
+    filledDrafts[productId] = value;
+}
+
+function commitFilledEdit(productId: string): void {
+    // Prevent Enter + blur from committing twice (second commit would send empty after draft deletion)
+    if (editingFilledId.value !== productId) {
+        return;
+    }
+
+    editingFilledId.value = null;
+    const value = filledDrafts[productId] ?? '';
+    delete filledDrafts[productId];
+    void saveFilled(productId, value);
+}
+
+async function saveFilled(productId: string, value: string | null): Promise<void> {
+    savingFilled.value = productId;
+    error.value = null;
+    const row = items.value.find((p) => p.id === productId);
+    const previous = row?.filled ?? null;
+
+    try {
+        const filled = parseNonNegativeIntOrNull(value ?? '');
+
+        if (row) {
+            row.filled = filled;
+        }
+
+        if (!row) {
+            error.value = 'Failed to save shipped amount.';
+            return;
+        }
+
+        const res = await api.patch(
+            `/api/v1/products/${productId}/filled`,
+            { filled },
+            { validateStatus: () => true },
+        );
+
+        if (res.status < 200 || res.status >= 300) {
+            row.filled = previous;
+            error.value = res.data?.message ?? 'Failed to save shipped amount.';
+            return;
+        }
+
+        const saved = (res.data?.data?.filled as number | null | undefined) ?? null;
+        row.filled = saved;
+    } catch {
+        if (row) {
+            row.filled = previous;
+        }
+        error.value = 'Failed to save shipped amount.';
+    } finally {
+        savingFilled.value = null;
+    }
+}
+
+function startBarcodeEdit(productId: string, current: string | null): void {
+    editingBarcodeId.value = productId;
+    if (barcodeDrafts[productId] === undefined) {
+        barcodeDrafts[productId] = current ?? '';
+    }
+}
+
+function updateBarcodeDraft(productId: string, value: string): void {
+    barcodeDrafts[productId] = value;
+}
+
+function commitBarcodeEdit(productId: string): void {
+    // Prevent Enter + blur from committing twice (second commit would send empty after draft deletion)
+    if (editingBarcodeId.value !== productId) {
+        return;
+    }
+
+    editingBarcodeId.value = null;
+    const value = barcodeDrafts[productId] ?? '';
+    delete barcodeDrafts[productId];
+    void saveBarcode(productId, value);
+}
+
+async function saveBarcode(productId: string, value: string | null): Promise<void> {
+    savingBarcode.value = productId;
+    error.value = null;
+    const row = items.value.find((p) => p.id === productId);
+    const previous = row?.barcode ?? null;
+
+    try {
+        const barcode = value !== null && value.trim() !== '' ? value.trim() : null;
+        if (row) {
+            row.barcode = barcode;
+        }
+
+        if (!row) {
+            error.value = 'Failed to save barcode.';
+            return;
+        }
+
+        const res = await api.patch(`/api/v1/products/${productId}/barcode`, { barcode }, { validateStatus: () => true });
+
+        if (res.status < 200 || res.status >= 300) {
+            row.barcode = previous;
+            error.value = res.data?.message ?? 'Failed to save barcode.';
+            return;
+        }
+
+        const saved = (res.data?.data?.barcode as string | null | undefined) ?? null;
+        row.barcode = saved;
+    } catch {
+        if (row) {
+            row.barcode = previous;
+        }
+        error.value = 'Failed to save barcode.';
+    } finally {
+        savingBarcode.value = null;
+    }
+}
+
 function startSellingPriceEdit(productId: string, current: string | null): void {
     editingSellingPriceId.value = productId;
     if (sellingPriceDrafts[productId] === undefined) {
@@ -431,6 +615,11 @@ function updateSellingPriceDraft(productId: string, value: string): void {
 }
 
 function commitSellingPriceEdit(productId: string): void {
+    // Prevent Enter + blur from committing twice (second commit would send empty after draft deletion)
+    if (editingSellingPriceId.value !== productId) {
+        return;
+    }
+
     editingSellingPriceId.value = null;
     const value = sellingPriceDrafts[productId] ?? '';
     delete sellingPriceDrafts[productId];
@@ -477,24 +666,36 @@ async function saveSellingPrice(productId: string, value: string | null): Promis
 }
 
 async function recrawlProduct(productId: string): Promise<void> {
-    if (isBusy.value) return;
+    if (isRecrawlBlocked.value) {
+        message.value = isRunActive.value
+            ? 'A price research run is already in progress. Please wait for it to finish.'
+            : 'Already running…';
+        return;
+    }
     running.value = true;
     recrawlingProductId.value = productId;
     error.value = null;
     message.value = null;
+    message.value = 'Starting recrawl…';
 
     try {
         const res = await api.post(
             '/api/v1/price-research/run',
-            { force: true, ids: [productId] },
+            { force: true, ids: [productId], site_keys: runSites.value.length > 0 ? runSites.value : undefined },
             { validateStatus: () => true },
         );
+
+        if (res.status < 200 || res.status >= 300) {
+            error.value = (res.data?.message as string | undefined) ?? `Failed to recrawl product (HTTP ${res.status}).`;
+            return;
+        }
 
         const runId = res.data?.run_id as string | undefined;
         if (runId) {
             activeRunId.value = runId;
             message.value = 'Queued recrawl for this product. Showing live status below…';
             await pollRun(runId);
+            message.value = 'Recrawl completed.';
             return;
         }
 
@@ -551,17 +752,22 @@ function onPageChange(next: number): void {
 }
 
 let searchTimer: number | null = null;
-watch([search, perPage, sellingPrice, types, freshness, quoteSites, sortBy, sortDir], () => {
+watch(
+    [search, perPage, sellingPrice, barcodeFilter, vendors, types, freshness, quoteSites, sortBy, sortDir],
+    () => {
     page.value = 1;
     if (searchTimer) window.clearTimeout(searchTimer);
     searchTimer = window.setTimeout(() => void load(), 250);
-});
+    },
+    { deep: true },
+);
 watch(page, () => void load());
 watch(
     disabledSiteKeys,
     () => {
         const disabled = new Set(disabledSiteKeys.value);
         quoteSites.value = quoteSites.value.filter((k) => !disabled.has(k));
+        runSites.value = runSites.value.filter((k) => !disabled.has(k));
     },
     { deep: true },
 );
@@ -684,10 +890,28 @@ watch(
 
                 <div class="min-w-[180px] flex-[1_1_220px]">
                     <MultiSelectFilter
+                        v-model="runSites"
+                        label="Run sites"
+                        :options="runSiteOptions"
+                        placeholder="All (excluding AliExpress)"
+                    />
+                </div>
+
+                <div class="min-w-[180px] flex-[1_1_220px]">
+                    <MultiSelectFilter
                         v-model="types"
                         label="Type"
                         :options="productTypeOptions"
                         placeholder="All types"
+                    />
+                </div>
+
+                <div class="min-w-[180px] flex-[1_1_220px]">
+                    <MultiSelectFilter
+                        v-model="vendors"
+                        label="Vendor"
+                        :options="vendorOptions"
+                        placeholder="All vendors"
                     />
                 </div>
 
@@ -703,6 +927,21 @@ watch(
                         <option value="any">All</option>
                         <option value="set">Has selling price</option>
                         <option value="missing">Missing selling price</option>
+                    </select>
+                </div>
+
+                <div class="min-w-[180px] flex-[1_1_220px]">
+                    <label
+                        class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                        >Barcode</label
+                    >
+                    <select
+                        v-model="barcodeFilter"
+                        class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                    >
+                        <option value="any">All</option>
+                        <option value="set">Has barcode</option>
+                        <option value="missing">Missing barcode</option>
                     </select>
                 </div>
             </div>
@@ -751,6 +990,7 @@ watch(
                                         SKU{{ sortIndicator('sku') }}
                                     </button>
                                 </th>
+                                <th class="px-4 py-3">BARCODE</th>
                                 <th class="px-4 py-3">
                                     <div class="flex flex-col">
                                         <button
@@ -768,6 +1008,24 @@ watch(
                                             Last updated{{ sortIndicator('price_researched_at') }}
                                         </button>
                                     </div>
+                                </th>
+                                <th class="px-4 py-3 text-right">
+                                    <button
+                                        type="button"
+                                        class="hover:underline"
+                                        @click="onSortChange('filled')"
+                                    >
+                                        SHIPPED{{ sortIndicator('filled') }}
+                                    </button>
+                                </th>
+                                <th class="px-4 py-3 text-right">
+                                    <button
+                                        type="button"
+                                        class="hover:underline"
+                                        @click="onSortChange('available')"
+                                    >
+                                        AVAILABLE{{ sortIndicator('available') }}
+                                    </button>
                                 </th>
                                 <th class="px-4 py-3 text-right">
                                     <button
@@ -823,13 +1081,32 @@ watch(
                         </thead>
                         <tbody class="divide-y divide-slate-100">
                             <tr v-if="items.length === 0">
-                                <td class="px-4 py-4 text-slate-600" :colspan="6 + sites.length">
+                                <td class="px-4 py-4 text-slate-600" :colspan="8 + sites.length">
                                     No products found.
                                 </td>
                             </tr>
 
                             <tr v-for="p in items" :key="p.id" class="hover:bg-slate-50">
                                 <td class="px-4 py-3 font-medium text-slate-900">{{ p.sku }}</td>
+                                <td class="px-4 py-3 text-slate-700">
+                                    <input
+                                        class="w-40 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                                        type="text"
+                                        inputmode="numeric"
+                                        :value="barcodeDrafts[p.id] ?? p.barcode ?? ''"
+                                        :disabled="savingBarcode === p.id"
+                                        placeholder="—"
+                                        @focus="startBarcodeEdit(p.id, p.barcode)"
+                                        @input="
+                                            updateBarcodeDraft(
+                                                p.id,
+                                                ($event.target as HTMLInputElement).value,
+                                            )
+                                        "
+                                        @keydown.enter.prevent="commitBarcodeEdit(p.id)"
+                                        @blur="commitBarcodeEdit(p.id)"
+                                    />
+                                </td>
                                 <td class="px-4 py-3 text-slate-700">
                                     <div class="font-medium text-slate-900">
                                         {{ p.description }}
@@ -856,7 +1133,7 @@ watch(
                                                 type="button"
                                                 title="Recrawl prices for this product"
                                                 :aria-label="`Recrawl prices for SKU ${p.sku}`"
-                                                :disabled="isBusy || recrawlingProductId === p.id"
+                                                :disabled="isRecrawlBlocked || recrawlingProductId === p.id"
                                                 @click.stop="recrawlProduct(p.id)"
                                             >
                                                 <span
@@ -878,6 +1155,31 @@ watch(
                                             </button>
                                         </div>
                                     </div>
+                                </td>
+                                <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                    <input
+                                        class="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-sm tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                                        type="text"
+                                        inputmode="numeric"
+                                        :value="
+                                            filledDrafts[p.id] ??
+                                            (p.filled === null ? '' : String(p.filled))
+                                        "
+                                        :disabled="savingFilled === p.id"
+                                        placeholder="—"
+                                        @focus="startFilledEdit(p.id, p.filled)"
+                                        @input="
+                                            updateFilledDraft(
+                                                p.id,
+                                                ($event.target as HTMLInputElement).value,
+                                            )
+                                        "
+                                        @keydown.enter.prevent="commitFilledEdit(p.id)"
+                                        @blur="commitFilledEdit(p.id)"
+                                    />
+                                </td>
+                                <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                    {{ p.available ?? '—' }}
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
                                     <span class="font-medium text-slate-900">{{
@@ -1063,6 +1365,20 @@ watch(
                                 </td>
                             </tr>
                         </tbody>
+                        <tfoot class="bg-slate-50">
+                            <tr class="text-sm font-semibold text-slate-900">
+                                <td class="px-4 py-3 text-slate-600">Page total</td>
+                                <td class="px-4 py-3"></td>
+                                <td class="px-4 py-3"></td>
+                                <td class="px-4 py-3 text-right tabular-nums">{{ pageTotals.shipped }}</td>
+                                <td class="px-4 py-3"></td>
+                                <td class="px-4 py-3 text-right tabular-nums">{{ pageTotals.cost }}</td>
+                                <td class="px-4 py-3"></td>
+                                <td class="px-4 py-3 text-right tabular-nums">{{ pageTotals.price }}</td>
+                                <td class="px-2.5 py-3"></td>
+                                <td v-for="s in sites" :key="s.key" class="px-2.5 py-3"></td>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
             </div>

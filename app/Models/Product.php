@@ -20,6 +20,7 @@ use Illuminate\Support\Str;
  * @property string|null $price
  * @property int|null $order_qty
  * @property int|null $filled_qty
+ * @property int|null $available_qty
  * @property string|null $extended
  * @property \Illuminate\Support\Carbon|null $price_researched_at
  */
@@ -36,6 +37,7 @@ final class Product extends Model
         'price',
         'order_qty',
         'filled_qty',
+        'available_qty',
         'extended',
     ];
 
@@ -44,6 +46,7 @@ final class Product extends Model
         'price' => 'decimal:2',
         'order_qty' => 'integer',
         'filled_qty' => 'integer',
+        'available_qty' => 'integer',
         'extended' => 'decimal:2',
         'price_researched_at' => 'datetime',
     ];

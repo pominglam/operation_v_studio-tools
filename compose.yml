@@ -76,6 +76,28 @@ services:
         "--timeout=600",
       ]
 
+  aliexpress_scraper:
+    image: mcr.microsoft.com/playwright:v1.49.1-jammy
+    container_name: pricing-tool-aliexpress-scraper
+    environment:
+      TZ: America/Toronto
+      PORT: "3000"
+      ALIEXPRESS_BASE_URL: https://www.aliexpress.com
+      # Best-effort: ask AliExpress to display CAD (may still vary by region).
+      ALIEXPRESS_CURRENCY: CAD
+      # Persistent Playwright profile directory (stored on the host via the /app bind mount).
+      ALIEXPRESS_PERSISTENT_PROFILE_DIR: /app/.pw-user-data
+      # Optional: pass your own browser session cookies as a JSON array (Playwright cookie format).
+      # Set on host before `docker compose up`: $env:ALIEXPRESS_COOKIES_JSON='[...]'
+      ALIEXPRESS_COOKIES_JSON: ${ALIEXPRESS_COOKIES_JSON-}
+    volumes:
+      - ./node/aliexpress-scraper:/app
+    working_dir: /app
+    networks:
+      - pricing_tool_net
+    restart: unless-stopped
+    command: ["bash", "-lc", "npm ci --silent && node server.js"]
+
 volumes:
   mysql_data:
     name: pricing-tool-mysql-data

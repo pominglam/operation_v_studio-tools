@@ -19,8 +19,10 @@ use App\DAL\Products\EloquentProductSellingPriceRepository;
 use App\DAL\Products\ProductRepository;
 use App\DAL\Products\ProductSellingPriceRepository;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
+use App\Services\PriceResearch\Http\AliExpressScraperClient;
 use App\Services\PriceResearch\PriceResearchService;
 use App\Services\PriceResearch\Providers\ArgamaHobbyProvider;
+use App\Services\PriceResearch\Providers\AliExpressProvider;
 use App\Services\PriceResearch\Providers\CanadianGundamProvider;
 use App\Services\PriceResearch\Providers\CompetitorPriceProvider;
 use App\Services\PriceResearch\Providers\GundamHangarProvider;
@@ -49,8 +51,13 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(PriceResearchRunLogRepository::class, EloquentPriceResearchRunLogRepository::class);
         $this->app->bind(PriceResearchQuoteReportRepository::class, EloquentPriceResearchQuoteReportRepository::class);
         $this->app->singleton(ExternalHtmlClient::class);
+        $this->app->singleton(AliExpressScraperClient::class, function (): AliExpressScraperClient {
+            $url = (string) env('ALIEXPRESS_SCRAPER_URL', 'http://aliexpress_scraper:3000');
+            return new AliExpressScraperClient($url);
+        });
 
         $this->app->tag([
+            AliExpressProvider::class,
             GundamHangarProvider::class,
             PandaHobbyProvider::class,
             CanadianGundamProvider::class,
