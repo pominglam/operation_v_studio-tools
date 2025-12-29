@@ -121,6 +121,8 @@ final class ArgamaHobbyProvider extends AbstractSearchProvider
                         continue;
                     }
 
+                    $this->captureCompetitorDescription($product, $productUrl, $productRes->body());
+
                     $offer = $this->parser->extractPriceAndAvailabilityFromHtml($productRes->body());
                     if ($offer['price'] !== null) {
                         return PriceLookupResult::found(

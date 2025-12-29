@@ -8,6 +8,31 @@ use Illuminate\Support\Str;
 
 final class HtmlPriceParser
 {
+    public function extractDescriptionHtmlFromHtml(string $html): ?string
+    {
+        $htmlForExtraction = $this->extractPrimaryProductScope($html) ?? $html;
+
+        // Prefer JSON-LD Product.description when available.
+        $fromLd = $this->extractDescriptionFromLdJson($html);
+        if ($fromLd !== null) {
+            return $fromLd;
+        }
+
+        // Shopify / general: product description blocks.
+        $fromBlocks = $this->extractDescriptionFromKnownBlocks($htmlForExtraction);
+        if ($fromBlocks !== null) {
+            return $fromBlocks;
+        }
+
+        // Fallback: OG/standard meta description (plain text → minimal HTML).
+        $fromMeta = $this->extractDescriptionFromMeta($html);
+        if ($fromMeta !== null) {
+            return $fromMeta;
+        }
+
+        return null;
+    }
+
     /**
      * @return array{price: float|null, original_price: float|null, availability: string|null}
      */
@@ -178,6 +203,143 @@ final class HtmlPriceParser
         $magento = $this->extractMagentoProductInfoMainScope($html);
         if ($magento !== null) {
             return $magento;
+        }
+
+        return null;
+    }
+
+    private function extractDescriptionFromLdJson(string $html): ?string
+    {
+        if (preg_match_all('/<script[^>]+type=["\']application\/ld\+json["\'][^>]*>(.*?)<\/script>/is', $html, $m) !== 1) {
+            return null;
+        }
+
+        foreach ($m[1] as $json) {
+            $decoded = json_decode($json, true);
+            if (! is_array($decoded)) {
+                continue;
+            }
+
+            $desc = $this->findProductDescriptionInLdJson($decoded);
+            if ($desc !== null) {
+                $desc = trim($desc);
+                if ($desc === '') {
+                    continue;
+                }
+
+                $desc = html_entity_decode($desc, ENT_QUOTES | ENT_HTML5);
+                $descEsc = htmlspecialchars($desc, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $descEsc = nl2br($descEsc);
+                // Simple, safe HTML wrapper.
+                return '<p>'.$descEsc.'</p>';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function findProductDescriptionInLdJson(array $node): ?string
+    {
+        // Direct Product node.
+        if (isset($node['@type'])) {
+            $type = $node['@type'];
+            $isProduct = false;
+            if (is_string($type)) {
+                $isProduct = mb_strtolower($type) === 'product';
+            } elseif (is_array($type)) {
+                $typeVals = array_map(static fn ($v): string => mb_strtolower((string) $v), $type);
+                $isProduct = in_array('product', $typeVals, true);
+            }
+
+            if ($isProduct) {
+                $d = $node['description'] ?? null;
+                if (is_string($d) && trim($d) !== '') {
+                    return $d;
+                }
+            }
+        }
+
+        // Graph container.
+        if (isset($node['@graph']) && is_array($node['@graph'])) {
+            foreach ($node['@graph'] as $child) {
+                if (is_array($child)) {
+                    $found = $this->findProductDescriptionInLdJson($child);
+                    if ($found !== null) {
+                        return $found;
+                    }
+                }
+            }
+        }
+
+        // Recurse arrays/objects.
+        foreach ($node as $v) {
+            if (is_array($v)) {
+                $found = $this->findProductDescriptionInLdJson($v);
+                if ($found !== null) {
+                    return $found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function extractDescriptionFromMeta(string $html): ?string
+    {
+        $candidates = [];
+        if (preg_match('/<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m) === 1) {
+            $candidates[] = (string) $m[1];
+        }
+        if (preg_match('/<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m2) === 1) {
+            $candidates[] = (string) $m2[1];
+        }
+
+        foreach ($candidates as $raw) {
+            $t = trim(html_entity_decode($raw, ENT_QUOTES | ENT_HTML5));
+            if ($t === '') continue;
+            // Avoid useless one-liners.
+            if (mb_strlen($t) < 30) continue;
+
+            $esc = htmlspecialchars($t, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            return '<p>'.$esc.'</p>';
+        }
+
+        return null;
+    }
+
+    private function extractDescriptionFromKnownBlocks(string $html): ?string
+    {
+        $patterns = [
+            // Common Shopify themes
+            '/<div[^>]+class=["\'][^"\']*product__description[^"\']*["\'][^>]*>(.*?)<\/div>/is',
+            '/<div[^>]+class=["\'][^"\']*product-single__description[^"\']*["\'][^>]*>(.*?)<\/div>/is',
+            '/<div[^>]+class=["\'][^"\']*product-single__description-full[^"\']*["\'][^>]*>(.*?)<\/div>/is',
+            '/<div[^>]+id=["\']ProductDescription[^"\']*["\'][^>]*>(.*?)<\/div>/is',
+        ];
+
+        foreach ($patterns as $re) {
+            if (preg_match($re, $html, $m) !== 1) {
+                continue;
+            }
+
+            $inner = (string) ($m[1] ?? '');
+            $inner = preg_replace('/<script\\b[\\s\\S]*?<\\/script>/i', '', $inner) ?? $inner;
+            $inner = preg_replace('/<style\\b[\\s\\S]*?<\\/style>/i', '', $inner) ?? $inner;
+            $inner = trim($inner);
+            if ($inner === '') {
+                continue;
+            }
+
+            // Basic sanity check: ensure there is some text content.
+            $text = trim(strip_tags($inner));
+            if ($text === '' || mb_strlen($text) < 30) {
+                continue;
+            }
+
+            return $inner;
         }
 
         return null;

@@ -10,12 +10,34 @@ export type ProductRow = {
     description: string;
     type: string | null;
     vendor: string | null;
+    published_on_shopify?: boolean;
     price: string | null;
+    selling_price?: string | null;
+    pdp?: {
+        has_description: boolean;
+        plamod_image_count: number;
+    };
     order: number | null;
     filled: number | null;
     available: number | null;
     extended: string | null;
 };
+
+function isMissingBarcode(p: ProductRow): boolean {
+    return !p.barcode || p.barcode.trim() === '';
+}
+
+function isMissingSellingPrice(p: ProductRow): boolean {
+    return !p.selling_price || String(p.selling_price).trim() === '';
+}
+
+function isMissingPdpDescription(p: ProductRow): boolean {
+    return !(p.pdp?.has_description ?? false);
+}
+
+function isMissingPdpImages(p: ProductRow): boolean {
+    return (p.pdp?.plamod_image_count ?? 0) <= 0;
+}
 
 export type UpdateProductPayload = {
     sku: string;
@@ -36,6 +58,7 @@ export type BulkUpdateProductChanges = {
     description?: string;
     type?: string | null;
     vendor?: string | null;
+    published_on_shopify?: boolean;
     price?: string | null;
     order?: number | null;
     filled?: number | null;
@@ -64,8 +87,18 @@ const props = defineProps<{
     onRefresh: () => Promise<void>;
     onBulkDelete: (ids: string[]) => Promise<number>;
     onBulkUpdate: (ids: string[], changes: BulkUpdateProductChanges) => Promise<number>;
+    onBulkRenamePlamodAssets: (ids: string[]) => Promise<number>;
     onUpdate: (id: string, payload: UpdateProductPayload) => Promise<void>;
+    onOpenPlamod: (id: string) => void;
+    vendorOptions?: string[];
 }>();
+
+const vendorChoices = computed<string[]>(() => {
+    const base = (props.vendorOptions ?? []).map((v) => v.trim()).filter((v) => v !== '');
+    const current = draft.value?.vendor?.trim() ?? '';
+    const merged = current !== '' ? [...base, current] : base;
+    return Array.from(new Set(merged)).sort((a, b) => a.localeCompare(b));
+});
 
 const selected = ref<Set<string>>(new Set());
 const bulkDeleting = ref(false);
@@ -183,7 +216,7 @@ async function confirmBulkDelete(): Promise<void> {
     }
 }
 
-async function confirmBulkUpdate(changes: BulkUpdateProductChanges): Promise<void> {
+async function confirmBulkUpdate(payload: { changes: BulkUpdateProductChanges; renamePlamodAssets: boolean }): Promise<void> {
     bulkError.value = null;
     bulkMessage.value = null;
 
@@ -195,8 +228,22 @@ async function confirmBulkUpdate(changes: BulkUpdateProductChanges): Promise<voi
 
     bulkUpdating.value = true;
     try {
-        const updated = await props.onBulkUpdate(ids, changes);
-        bulkMessage.value = `Updated ${updated} product(s).`;
+        const changes = payload.changes;
+        const doRename = payload.renamePlamodAssets;
+
+        let parts: string[] = [];
+        if (Object.keys(changes).length > 0) {
+            const updated = await props.onBulkUpdate(ids, changes);
+            parts.push(`Updated ${updated} product(s).`);
+        }
+        if (doRename) {
+            const renamed = await props.onBulkRenamePlamodAssets(ids);
+            parts.push(`Renamed ${renamed} Plamod asset(s).`);
+        }
+        if (parts.length === 0) {
+            parts = ['No changes selected.'];
+        }
+        bulkMessage.value = parts.join(' ');
         await props.onRefresh();
         syncSelection();
         bulkUpdateOpen.value = false;
@@ -324,9 +371,7 @@ async function saveEdit(): Promise<void> {
 
             <table class="min-w-full divide-y divide-slate-200 text-sm">
                 <thead class="bg-slate-50">
-                    <tr
-                        class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
-                    >
+                    <tr class="text-left text-xs font-semibold tracking-wide text-slate-600">
                         <th class="w-12 px-4 py-3">
                             <input
                                 class="h-4 w-4 rounded border-slate-300"
@@ -436,12 +481,14 @@ async function saveEdit(): Promise<void> {
                                 {{ sortLabel('extended') }}{{ sortIndicator('extended') }}
                             </button>
                         </th>
+                        <th class="px-4 py-3">Info</th>
+                        <th class="px-4 py-3">Published on Shopify</th>
                         <th class="px-4 py-3 text-right">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     <tr v-if="products.length === 0">
-                        <td class="px-4 py-4 text-slate-600" colspan="12">
+                        <td class="px-4 py-4 text-slate-600" colspan="14">
                             No products yet. Import a CSV or add one manually above.
                         </td>
                     </tr>
@@ -509,8 +556,7 @@ async function saveEdit(): Promise<void> {
                                     class="w-36 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
                                 >
                                     <option :value="null">—</option>
-                                    <option value="Plamod">Plamod</option>
-                                    <option value="MSMN">MSMN</option>
+                                    <option v-for="v in vendorChoices" :key="v" :value="v">{{ v }}</option>
                                 </select>
                             </template>
                             <template v-else>{{ p.vendor ?? '—' }}</template>
@@ -572,6 +618,96 @@ async function saveEdit(): Promise<void> {
                                 />
                             </template>
                             <template v-else>{{ p.extended ?? '—' }}</template>
+                        </td>
+
+                        <td class="px-4 py-3">
+                            <button
+                                v-if="editingId !== p.id"
+                                class="flex cursor-pointer flex-wrap gap-1 rounded-md text-left transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                                type="button"
+                                data-testid="product-info-open"
+                                :aria-label="`Open PDP info for ${p.sku}`"
+                                @click="props.onOpenPlamod(p.id)"
+                            >
+                                <span
+                                    v-if="isMissingPdpImages(p)"
+                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                >
+                                    images
+                                </span>
+                                <span
+                                    v-if="isMissingPdpDescription(p)"
+                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                >
+                                    desc
+                                </span>
+                                <span
+                                    v-if="isMissingSellingPrice(p)"
+                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                >
+                                    selling
+                                </span>
+                                <span
+                                    v-if="isMissingBarcode(p)"
+                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                >
+                                    barcode
+                                </span>
+
+                                <span
+                                    v-if="!isMissingPdpImages(p) && !isMissingPdpDescription(p) && !isMissingSellingPrice(p) && !isMissingBarcode(p)"
+                                    class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-900"
+                                >
+                                    ok
+                                </span>
+                            </button>
+
+                            <div v-else class="flex flex-wrap gap-1">
+                                <span
+                                    v-if="isMissingPdpImages(p)"
+                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                >
+                                    images
+                                </span>
+                                <span
+                                    v-if="isMissingPdpDescription(p)"
+                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                >
+                                    desc
+                                </span>
+                                <span
+                                    v-if="isMissingSellingPrice(p)"
+                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                >
+                                    selling
+                                </span>
+                                <span
+                                    v-if="isMissingBarcode(p)"
+                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                >
+                                    barcode
+                                </span>
+
+                                <span
+                                    v-if="!isMissingPdpImages(p) && !isMissingPdpDescription(p) && !isMissingSellingPrice(p) && !isMissingBarcode(p)"
+                                    class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-900"
+                                >
+                                    ok
+                                </span>
+                            </div>
+                        </td>
+
+                        <td class="px-4 py-3">
+                            <span
+                                class="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+                                :class="
+                                    p.published_on_shopify
+                                        ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                                        : 'border-slate-200 bg-slate-50 text-slate-700'
+                                "
+                            >
+                                {{ p.published_on_shopify ? 'yes' : 'no' }}
+                            </span>
                         </td>
 
                         <td class="px-4 py-3 text-right">

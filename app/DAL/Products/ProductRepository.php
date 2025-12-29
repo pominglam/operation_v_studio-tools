@@ -8,6 +8,7 @@ use App\DTOs\Products\ProductImportRowDTO;
 use App\Models\Product;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\LazyCollection;
 
 interface ProductRepository
 {
@@ -19,8 +20,17 @@ interface ProductRepository
     /**
      * @param  array<int, string>  $types
      * @param  array<int, string>  $vendors
+     * @param  array<int, string>  $missing
      */
-    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator;
+    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator;
+
+    /**
+     * @param  array<int, string>  $types
+     * @param  array<int, string>  $vendors
+     * @param  array<int, string>  $missing
+     * @return LazyCollection<int, Product>
+     */
+    public function cursorForMissingInfo(?string $search = null, array $types = [], array $vendors = [], array $missing = []): LazyCollection;
 
     /**
      * @param  array<int, string>  $types
@@ -37,6 +47,20 @@ interface ProductRepository
      * @return Collection<int, Product>
      */
     public function listMissingBarcodeForExport(?string $sortBy = null, string $sortDir = 'asc'): Collection;
+
+    /**
+     * Barcoded products for operational export: sorted by type then SKU.
+     *
+     * @return Collection<int, Product>
+     */
+    public function listBarcodedForExportSorted(): Collection;
+
+    /**
+     * Products for Shopify content export (requires selling price and eager-loaded PDP content/assets).
+     *
+     * @return Collection<int, Product>
+     */
+    public function listForShopifyContentExport(): Collection;
 
     /**
      * @return Collection<int, Product>
@@ -69,6 +93,16 @@ interface ProductRepository
      * @return Collection<int, Product>
      */
     public function findByBarcodes(array $barcodes): Collection;
+
+    /**
+     * @return Collection<int, Product>
+     */
+    public function findByHandle(string $handle): Collection;
+
+    /**
+     * @return Collection<int, Product>
+     */
+    public function findBySkuAndVendor(string $sku, string $vendor): Collection;
 
     public function create(Product $product): Product;
 

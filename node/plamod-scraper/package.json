@@ -1,0 +1,15 @@
+{
+  "name": "plamod-scraper",
+  "private": true,
+  "version": "0.1.0",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "playwright": "1.49.1"
+  }
+}
+
+

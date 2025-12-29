@@ -72,4 +72,14 @@ final class ProductUpdateService
 
         return $this->products->save($product);
     }
+
+    public function updateAvailable(string $uuid, ?int $available): Product
+    {
+        $product = $this->products->findByUuidOrFail($uuid);
+        $product->fill([
+            'available_qty' => $available,
+        ]);
+
+        return $this->products->save($product);
+    }
 }

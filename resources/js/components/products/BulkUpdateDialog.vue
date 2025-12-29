@@ -12,7 +12,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
     (e: 'cancel'): void;
-    (e: 'confirm', payload: BulkUpdateProductChanges): void;
+    (e: 'confirm', payload: { changes: BulkUpdateProductChanges; renamePlamodAssets: boolean }): void;
 }>();
 
 type BulkFieldState<T> = {
@@ -27,10 +27,12 @@ const barcode = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const description = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const type = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const vendor = ref<BulkFieldState<string>>({ apply: false, value: '' });
+const publishedOnShopify = ref<BulkFieldState<'true' | 'false'>>({ apply: false, value: 'false' });
 const price = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const order = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const filled = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const extended = ref<BulkFieldState<string>>({ apply: false, value: '' });
+const renamePlamodAssets = ref(false);
 
 const hasAnyApply = computed<boolean>(() => {
     return (
@@ -39,10 +41,12 @@ const hasAnyApply = computed<boolean>(() => {
         description.value.apply ||
         type.value.apply ||
         vendor.value.apply ||
+        publishedOnShopify.value.apply ||
         price.value.apply ||
         order.value.apply ||
         filled.value.apply ||
-        extended.value.apply
+        extended.value.apply ||
+        renamePlamodAssets.value
     );
 });
 
@@ -53,10 +57,12 @@ function reset(): void {
     description.value = { apply: false, value: '' };
     type.value = { apply: false, value: '' };
     vendor.value = { apply: false, value: '' };
+    publishedOnShopify.value = { apply: false, value: 'false' };
     price.value = { apply: false, value: '' };
     order.value = { apply: false, value: '' };
     filled.value = { apply: false, value: '' };
     extended.value = { apply: false, value: '' };
+    renamePlamodAssets.value = false;
 }
 
 watch(
@@ -71,7 +77,7 @@ function parseNullableInt(input: string): number | null {
 }
 
 watch(
-    [sku, barcode, description, type, vendor, price, order, filled, extended],
+    [sku, barcode, description, type, vendor, publishedOnShopify, price, order, filled, extended],
     () => {
         // Clear stale validation messages as the user edits fields
         if (localError.value !== null) {
@@ -134,6 +140,10 @@ function onConfirm(): void {
         changes.vendor = nextVendor === '' ? null : nextVendor;
     }
 
+    if (publishedOnShopify.value.apply) {
+        changes.published_on_shopify = publishedOnShopify.value.value === 'true';
+    }
+
     if (price.value.apply) {
         try {
             changes.price = parseNullableNumericString(price.value.value);
@@ -170,7 +180,7 @@ function onConfirm(): void {
         }
     }
 
-    emit('confirm', changes);
+    emit('confirm', { changes, renamePlamodAssets: renamePlamodAssets.value });
 }
 </script>
 
@@ -241,6 +251,25 @@ function onConfirm(): void {
                             type="text"
                             :disabled="!vendor.apply || busy"
                         />
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="publishedOnShopify.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                            />
+                            Published on Shopify
+                        </label>
+                        <select
+                            v-model="publishedOnShopify.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                            :disabled="!publishedOnShopify.apply || busy"
+                        >
+                            <option value="true">True</option>
+                            <option value="false">False</option>
+                        </select>
                     </div>
 
                     <div class="md:col-span-6">
@@ -331,6 +360,17 @@ function onConfirm(): void {
                             inputmode="numeric"
                             :disabled="!filled.apply || busy"
                         />
+                    </div>
+                </div>
+
+                <div class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-600">Bulk actions</div>
+                    <label class="mt-2 flex items-center gap-2 text-sm text-slate-800">
+                        <input v-model="renamePlamodAssets" type="checkbox" class="h-4 w-4 rounded" :disabled="busy" />
+                        Rename Plamod image filenames (SEO)
+                    </label>
+                    <div class="mt-1 text-xs text-slate-600">
+                        Renames existing Plamod image files in-place to ASCII-only filenames.
                     </div>
                 </div>
 

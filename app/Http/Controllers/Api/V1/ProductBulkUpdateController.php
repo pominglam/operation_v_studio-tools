@@ -27,6 +27,7 @@ final class ProductBulkUpdateController extends Controller
          *   description?: string,
          *   type?: string|null,
          *   vendor?: string|null,
+         *   published_on_shopify?: bool,
          *   price?: string|int|float|null,
          *   order?: int|null,
          *   filled?: int|null,

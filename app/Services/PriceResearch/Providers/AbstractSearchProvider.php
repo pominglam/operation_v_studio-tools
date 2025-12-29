@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\PriceResearch\Providers;
 
 use App\Models\Product;
+use App\DAL\Products\ProductExternalContentRepository;
 use App\Services\PriceResearch\DTOs\PriceLookupResult;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\PriceResearch\Support\HtmlPriceParser;
@@ -39,6 +40,7 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
     public function __construct(
         protected readonly ExternalHtmlClient $http,
         protected readonly HtmlPriceParser $parser,
+        protected readonly ProductExternalContentRepository $contents,
     ) {}
 
     abstract protected function baseUrl(): string;
@@ -269,6 +271,8 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
                             continue;
                         }
 
+                        $this->captureCompetitorDescription($product, $productUrl, $productRes->body());
+
                         $offer = $this->parser->extractPriceAndAvailabilityFromHtml($productRes->body());
                         if ($offer['price'] !== null) {
                             return PriceLookupResult::found(
@@ -289,6 +293,24 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
         } catch (Throwable $e) {
             return PriceLookupResult::error($this->siteKey(), $this->siteName(), $e->getMessage());
         }
+    }
+
+    protected function captureCompetitorDescription(Product $product, string $productUrl, string $html): void
+    {
+        $desc = $this->parser->extractDescriptionHtmlFromHtml($html);
+        if ($desc === null || trim($desc) === '') {
+            return;
+        }
+
+        $title = $this->extractTitleForMatching($html);
+        $this->contents->upsertForProduct(
+            (int) $product->id,
+            $this->siteKey(),
+            $title,
+            $desc,
+            null,
+            $productUrl,
+        );
     }
 
     protected function maxCandidateProductUrlsToCheck(): int

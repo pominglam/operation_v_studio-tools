@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Models\Product;
+use App\DAL\Products\ProductExternalContentRepository;
+use App\Models\ProductExternalContent;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\PriceResearch\Providers\AbstractSearchProvider;
 use App\Services\PriceResearch\Support\HtmlPriceParser;
@@ -10,8 +12,25 @@ use App\Services\PriceResearch\Support\HtmlPriceParser;
 it('allows small wording differences in title matching (up to 2 missing tokens)', function (): void {
     $http = new ExternalHtmlClient;
     $parser = new HtmlPriceParser;
+    $contents = new class implements ProductExternalContentRepository
+    {
+        public function upsertForProduct(int $productId, string $source, ?string $title, ?string $descriptionHtml, ?array $attributes, ?string $sourceUrl = null): ProductExternalContent
+        {
+            return new ProductExternalContent;
+        }
 
-    $provider = new class($http, $parser) extends AbstractSearchProvider
+        public function findForProduct(int $productId, string $source): ?ProductExternalContent
+        {
+            return null;
+        }
+
+        public function updateSourceUrl(int $id, ?string $sourceUrl): void
+        {
+            //
+        }
+    };
+
+    $provider = new class($http, $parser, $contents) extends AbstractSearchProvider
     {
         public function siteKey(): string
         {
@@ -46,8 +65,25 @@ it('allows small wording differences in title matching (up to 2 missing tokens)'
 it('matches short-but-meaningful tokens like RG + 144 + God (Argama example)', function (): void {
     $http = new ExternalHtmlClient;
     $parser = new HtmlPriceParser;
+    $contents = new class implements ProductExternalContentRepository
+    {
+        public function upsertForProduct(int $productId, string $source, ?string $title, ?string $descriptionHtml, ?array $attributes, ?string $sourceUrl = null): ProductExternalContent
+        {
+            return new ProductExternalContent;
+        }
 
-    $provider = new class($http, $parser) extends AbstractSearchProvider
+        public function findForProduct(int $productId, string $source): ?ProductExternalContent
+        {
+            return null;
+        }
+
+        public function updateSourceUrl(int $id, ?string $sourceUrl): void
+        {
+            //
+        }
+    };
+
+    $provider = new class($http, $parser, $contents) extends AbstractSearchProvider
     {
         public function siteKey(): string
         {
@@ -81,8 +117,25 @@ it('matches short-but-meaningful tokens like RG + 144 + God (Argama example)', f
 it('does not match when tokens only appear outside the PDP title (avoids false positives)', function (): void {
     $http = new ExternalHtmlClient;
     $parser = new HtmlPriceParser;
+    $contents = new class implements ProductExternalContentRepository
+    {
+        public function upsertForProduct(int $productId, string $source, ?string $title, ?string $descriptionHtml, ?array $attributes, ?string $sourceUrl = null): ProductExternalContent
+        {
+            return new ProductExternalContent;
+        }
 
-    $provider = new class($http, $parser) extends AbstractSearchProvider
+        public function findForProduct(int $productId, string $source): ?ProductExternalContent
+        {
+            return null;
+        }
+
+        public function updateSourceUrl(int $id, ?string $sourceUrl): void
+        {
+            //
+        }
+    };
+
+    $provider = new class($http, $parser, $contents) extends AbstractSearchProvider
     {
         public function siteKey(): string
         {
@@ -117,8 +170,25 @@ it('does not match when tokens only appear outside the PDP title (avoids false p
 it('does not match based only on grade+scale tokens (RG 1/144) without the product name', function (): void {
     $http = new ExternalHtmlClient;
     $parser = new HtmlPriceParser;
+    $contents = new class implements ProductExternalContentRepository
+    {
+        public function upsertForProduct(int $productId, string $source, ?string $title, ?string $descriptionHtml, ?array $attributes, ?string $sourceUrl = null): ProductExternalContent
+        {
+            return new ProductExternalContent;
+        }
 
-    $provider = new class($http, $parser) extends AbstractSearchProvider
+        public function findForProduct(int $productId, string $source): ?ProductExternalContent
+        {
+            return null;
+        }
+
+        public function updateSourceUrl(int $id, ?string $sourceUrl): void
+        {
+            //
+        }
+    };
+
+    $provider = new class($http, $parser, $contents) extends AbstractSearchProvider
     {
         public function siteKey(): string
         {

@@ -18,6 +18,11 @@ final class ProductsIndexRequest extends FormRequest
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'search' => ['sometimes', 'string', 'max:200'],
+            'missing' => ['sometimes', 'array'],
+            'missing.*' => [
+                'string',
+                Rule::in(['ok', 'pdp_description', 'pdp_images', 'barcode', 'selling_price']),
+            ],
             'sort_by' => [
                 'sometimes',
                 'string',

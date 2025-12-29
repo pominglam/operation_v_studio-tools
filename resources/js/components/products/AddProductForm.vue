@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 
 export type CreateProductPayload = {
     sku: string;
@@ -10,6 +10,7 @@ export type CreateProductPayload = {
     price: string | null;
     order: number | null;
     filled: number | null;
+    available: number | null;
     extended: string | null;
 };
 
@@ -18,6 +19,7 @@ const props = defineProps<{
     error: string | null;
     message: string | null;
     onCreate: (payload: CreateProductPayload) => Promise<void>;
+    vendorOptions?: string[];
     embedded?: boolean;
 }>();
 
@@ -30,10 +32,24 @@ const form = ref<CreateProductPayload>({
     price: null,
     order: null,
     filled: null,
+    available: null,
     extended: null,
 });
 
 const localError = ref<string | null>(null);
+
+watch(
+    () => props.vendorOptions,
+    (opts) => {
+        if (!opts || opts.length === 0) return;
+
+        const current = form.value.vendor;
+        if (current && opts.includes(current)) return;
+
+        form.value.vendor = opts.includes('Plamod') ? 'Plamod' : (opts[0] ?? null);
+    },
+    { immediate: true },
+);
 
 async function submit(): Promise<void> {
     localError.value = null;
@@ -51,6 +67,7 @@ async function submit(): Promise<void> {
         price: form.value.price?.trim() || null,
         order: form.value.order,
         filled: form.value.filled,
+        available: form.value.available,
         extended: form.value.extended?.trim() || null,
     });
 
@@ -63,6 +80,7 @@ async function submit(): Promise<void> {
         price: null,
         order: null,
         filled: null,
+        available: null,
         extended: null,
     };
 }
@@ -121,8 +139,7 @@ async function submit(): Promise<void> {
                     class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                 >
                     <option :value="null">—</option>
-                    <option value="Plamod">Plamod</option>
-                    <option value="MSMN">MSMN</option>
+                    <option v-for="v in vendorOptions ?? []" :key="v" :value="v">{{ v }}</option>
                 </select>
             </div>
             <div class="md:col-span-3">
@@ -156,7 +173,7 @@ async function submit(): Promise<void> {
                     type="text"
                 />
             </div>
-            <div class="md:col-span-1">
+            <div class="md:col-span-2">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                     >Ordered</label
                 >
@@ -167,12 +184,23 @@ async function submit(): Promise<void> {
                     min="0"
                 />
             </div>
-            <div class="md:col-span-1">
+            <div class="md:col-span-2">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                     >Shipped</label
                 >
                 <input
                     v-model.number="form.filled"
+                    class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    type="number"
+                    min="0"
+                />
+            </div>
+            <div class="md:col-span-2">
+                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                    >Available</label
+                >
+                <input
+                    v-model.number="form.available"
                     class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                     type="number"
                     min="0"

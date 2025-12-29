@@ -5,6 +5,9 @@ import logoUrl from '../assets/operation-v-logo.svg?url';
 const route = useRoute();
 
 function isActive(name: string): boolean {
+    if (name === 'inventory-check') {
+        return route.path.startsWith('/inventory-check');
+    }
     return route.name === name;
 }
 </script>
@@ -32,6 +35,17 @@ function isActive(name: string): boolean {
                     "
                 >
                     Products
+                </RouterLink>
+                <RouterLink
+                    to="/inventory-check"
+                    class="rounded-md px-3 py-1.5 transition"
+                    :class="
+                        isActive('inventory-check')
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-100'
+                    "
+                >
+                    Inventory Check
                 </RouterLink>
                 <RouterLink
                     to="/price-research"

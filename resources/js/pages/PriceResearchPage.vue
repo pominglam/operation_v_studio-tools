@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router';
 import { api } from '../lib/api';
 import { formatLocalDateTime } from '../lib/datetime';
 import { parseNonNegativeIntOrNull } from '../lib/numbers';
+import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
 import PaginationControls from '../components/ui/PaginationControls.vue';
 
@@ -174,6 +175,9 @@ const vendorOptions = computed<MultiSelectOption[]>(() => {
     return productVendors.value.map((v) => ({ value: v, label: v }));
 });
 const vendors = ref<string[]>([]);
+
+const STATE_KEY = 'page_state:price_research';
+const hydrating = ref(true);
 
 const meta = ref<Paginated<ProductResearch>['meta'] | null>(null);
 const total = computed<number>(() => meta.value?.total ?? 0);
@@ -478,6 +482,10 @@ const savingFilled = ref<string | null>(null);
 const editingFilledId = ref<string | null>(null);
 const filledDrafts = reactive<Record<string, string>>({});
 
+const savingAvailable = ref<string | null>(null);
+const editingAvailableId = ref<string | null>(null);
+const availableDrafts = reactive<Record<string, string>>({});
+
 function startFilledEdit(productId: string, current: number | null): void {
     editingFilledId.value = productId;
     if (filledDrafts[productId] === undefined) {
@@ -540,6 +548,64 @@ async function saveFilled(productId: string, value: string | null): Promise<void
         error.value = 'Failed to save shipped amount.';
     } finally {
         savingFilled.value = null;
+    }
+}
+
+function startAvailableEdit(productId: string, current: number | null): void {
+    editingAvailableId.value = productId;
+    if (availableDrafts[productId] === undefined) {
+        availableDrafts[productId] = current === null ? '' : String(current);
+    }
+}
+
+function updateAvailableDraft(productId: string, value: string): void {
+    availableDrafts[productId] = value;
+}
+
+function commitAvailableEdit(productId: string): void {
+    // Prevent Enter + blur from committing twice (second commit would send empty after draft deletion)
+    if (editingAvailableId.value !== productId) {
+        return;
+    }
+
+    editingAvailableId.value = null;
+    const value = availableDrafts[productId] ?? '';
+    delete availableDrafts[productId];
+    void saveAvailable(productId, value);
+}
+
+async function saveAvailable(productId: string, value: string | null): Promise<void> {
+    savingAvailable.value = productId;
+    error.value = null;
+    const row = items.value.find((p) => p.id === productId);
+    const previous = row?.available ?? null;
+
+    try {
+        const available = parseNonNegativeIntOrNull(value ?? '');
+
+        if (row) {
+            row.available = available;
+        }
+
+        const res = await api.patch(
+            `/api/v1/products/${productId}/available`,
+            { available },
+            { validateStatus: () => true },
+        );
+
+        if (res.status < 200 || res.status >= 300) {
+            if (row) row.available = previous;
+            error.value = 'Failed to save available quantity.';
+            return;
+        }
+
+        const saved = (res.data?.data?.available as number | null | undefined) ?? null;
+        if (row) row.available = saved;
+    } catch {
+        if (row) row.available = previous;
+        error.value = 'Failed to save available quantity.';
+    } finally {
+        savingAvailable.value = null;
     }
 }
 
@@ -723,6 +789,40 @@ async function loadPriceResearchFilterOptions(): Promise<void> {
 }
 
 onMounted(() => {
+    const saved = loadPageState<{
+        search?: string;
+        perPage?: number;
+        page?: number;
+        sortBy?: ResearchSortKey;
+        sortDir?: 'asc' | 'desc';
+        sellingPrice?: 'any' | 'set' | 'missing';
+        barcodeFilter?: 'any' | 'set' | 'missing';
+        freshness?: string[];
+        types?: string[];
+        vendors?: string[];
+        quoteSites?: string[];
+        runSites?: string[];
+        disabledSiteKeys?: string[];
+    }>(STATE_KEY);
+
+    if (saved) {
+        if (typeof saved.search === 'string') search.value = saved.search;
+        if (typeof saved.perPage === 'number') perPage.value = saved.perPage;
+        if (typeof saved.page === 'number') page.value = saved.page;
+        if (saved.sortBy) sortBy.value = saved.sortBy;
+        if (saved.sortDir) sortDir.value = saved.sortDir;
+        if (saved.sellingPrice) sellingPrice.value = saved.sellingPrice;
+        if (saved.barcodeFilter) barcodeFilter.value = saved.barcodeFilter;
+        if (Array.isArray(saved.freshness)) freshness.value = saved.freshness;
+        if (Array.isArray(saved.types)) types.value = saved.types;
+        if (Array.isArray(saved.vendors)) vendors.value = saved.vendors;
+        if (Array.isArray(saved.quoteSites)) quoteSites.value = saved.quoteSites;
+        if (Array.isArray(saved.runSites)) runSites.value = saved.runSites;
+        if (Array.isArray(saved.disabledSiteKeys)) disabledSiteKeys.value = saved.disabledSiteKeys;
+    }
+
+    hydrating.value = false;
+
     void load();
     void loadLatestRun();
     void loadProductFilterOptions();
@@ -755,22 +855,68 @@ let searchTimer: number | null = null;
 watch(
     [search, perPage, sellingPrice, barcodeFilter, vendors, types, freshness, quoteSites, sortBy, sortDir],
     () => {
+    if (hydrating.value) return;
     page.value = 1;
     if (searchTimer) window.clearTimeout(searchTimer);
     searchTimer = window.setTimeout(() => void load(), 250);
     },
     { deep: true },
 );
-watch(page, () => void load());
+watch(page, () => {
+    if (hydrating.value) return;
+    void load();
+});
 watch(
     disabledSiteKeys,
     () => {
+        if (hydrating.value) return;
         const disabled = new Set(disabledSiteKeys.value);
         quoteSites.value = quoteSites.value.filter((k) => !disabled.has(k));
         runSites.value = runSites.value.filter((k) => !disabled.has(k));
     },
     { deep: true },
 );
+
+watch(
+    [search, perPage, page, sortBy, sortDir, sellingPrice, barcodeFilter, vendors, types, freshness, quoteSites, runSites, disabledSiteKeys],
+    () => {
+        if (hydrating.value) return;
+        savePageState(STATE_KEY, {
+            search: search.value,
+            perPage: perPage.value,
+            page: page.value,
+            sortBy: sortBy.value,
+            sortDir: sortDir.value,
+            sellingPrice: sellingPrice.value,
+            barcodeFilter: barcodeFilter.value,
+            freshness: freshness.value,
+            types: types.value,
+            vendors: vendors.value,
+            quoteSites: quoteSites.value,
+            runSites: runSites.value,
+            disabledSiteKeys: disabledSiteKeys.value,
+        });
+    },
+    { deep: true },
+);
+
+function resetPageState(): void {
+    clearPageState(STATE_KEY);
+    search.value = '';
+    perPage.value = 50;
+    page.value = 1;
+    sortBy.value = 'price_researched_at';
+    sortDir.value = 'desc';
+    sellingPrice.value = 'any';
+    barcodeFilter.value = 'any';
+    freshness.value = [];
+    types.value = [];
+    vendors.value = [];
+    quoteSites.value = [];
+    disabledSiteKeys.value = [];
+    runSites.value = allSites.filter((s) => s.key !== 'aliexpress').map((s) => s.key);
+    void load();
+}
 </script>
 
 <template>
@@ -781,6 +927,14 @@ watch(
             </div>
 
             <div class="flex items-center gap-2">
+                <button
+                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+                    type="button"
+                    :disabled="isBusy"
+                    @click="resetPageState"
+                >
+                    Reset
+                </button>
                 <RouterLink
                     to="/price-research/reports"
                     class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
@@ -1179,7 +1333,26 @@ watch(
                                     />
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                                    {{ p.available ?? '—' }}
+                                    <input
+                                        class="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-sm tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                                        type="text"
+                                        inputmode="numeric"
+                                        :value="
+                                            availableDrafts[p.id] ??
+                                            (p.available === null ? '' : String(p.available))
+                                        "
+                                        :disabled="savingAvailable === p.id"
+                                        placeholder="—"
+                                        @focus="startAvailableEdit(p.id, p.available)"
+                                        @input="
+                                            updateAvailableDraft(
+                                                p.id,
+                                                ($event.target as HTMLInputElement).value,
+                                            )
+                                        "
+                                        @keydown.enter.prevent="commitAvailableEdit(p.id)"
+                                        @blur="commitAvailableEdit(p.id)"
+                                    />
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
                                     <span class="font-medium text-slate-900">{{

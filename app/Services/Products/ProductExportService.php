@@ -41,6 +41,14 @@ final class ProductExportService
     }
 
     /**
+     * @return Collection<int, Product>
+     */
+    public function listBarcodedForExportSorted(): Collection
+    {
+        return $this->products->listBarcodedForExportSorted();
+    }
+
+    /**
      * @return array<int, string>
      */
     public function shopifyHeader(): array
@@ -132,7 +140,7 @@ final class ProductExportService
             '', // Product Category
             $type, // Type
             $type, // Tags
-            'false', // Published
+            $product->published_on_shopify ? 'TRUE' : 'FALSE', // Published
             'Title', // Option1 Name
             'Default Title', // Option1 Value
             '', // Option1 Linked To

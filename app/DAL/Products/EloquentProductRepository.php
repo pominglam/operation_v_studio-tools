@@ -9,6 +9,7 @@ use App\Models\Product;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\LazyCollection;
 use Illuminate\Support\Str;
 
 final class EloquentProductRepository implements ProductRepository
@@ -101,15 +102,101 @@ final class EloquentProductRepository implements ProductRepository
     /**
      * @param  array<int, string>  $types
      * @param  array<int, string>  $vendors
+     * @param  array<int, string>  $missing
      */
-    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator
+    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator
     {
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
 
-        $q = Product::query();
+        $q = Product::query()
+            ->with(['sellingPrice', 'hljExternalContent', 'plamodExternalContent'])
+            ->withCount(['plamodImageAssets as plamod_image_assets_count']);
         $this->applyListQueryFilters($q, $search, $types, $vendors);
+        $this->applyMissingFilters($q, $missing);
 
         return $q->orderBy($sortColumn, $sortDir)->paginate(perPage: $perPage);
+    }
+
+    public function cursorForMissingInfo(?string $search = null, array $types = [], array $vendors = [], array $missing = []): LazyCollection
+    {
+        $q = Product::query()
+            ->with(['sellingPrice', 'hljExternalContent', 'plamodExternalContent'])
+            ->withCount(['plamodImageAssets as plamod_image_assets_count']);
+
+        $this->applyListQueryFilters($q, $search, $types, $vendors);
+        $this->applyMissingFilters($q, $missing);
+
+        // Keep ordering stable for cursor iteration.
+        return $q->orderBy('products.id')->lazyById(chunkSize: 200);
+    }
+
+    /**
+     * @param  array<int, string>  $missing
+     */
+    private function applyMissingFilters($q, array $missing): void
+    {
+        $missing = array_values(array_unique(array_filter(array_map('trim', $missing), static fn (string $v): bool => $v !== '')));
+        if ($missing === []) return;
+
+        // Special filter: return only "complete" products (no missing info).
+        // If present, it takes precedence over other missing flags.
+        if (in_array('ok', $missing, true)) {
+            $q->where(function ($sub): void {
+                $sub->whereNotNull('barcode')->where('barcode', '<>', '');
+            });
+
+            $q->whereHas('sellingPrice', function ($q2): void {
+                $q2->whereNotNull('selling_price')->where('selling_price', '<>', '');
+            });
+
+            $q->whereHas('plamodImageAssets');
+
+            $q->where(function ($sub): void {
+                $sub->whereHas('hljExternalContent', function ($q2): void {
+                    $q2->whereNotNull('description_html')->where('description_html', '<>', '');
+                })->orWhereHas('plamodExternalContent', function ($q2): void {
+                    $q2->whereNotNull('description_html')->where('description_html', '<>', '');
+                });
+            });
+
+            return;
+        }
+
+        foreach ($missing as $flag) {
+            if ($flag === 'barcode') {
+                $q->where(function ($sub): void {
+                    $sub->whereNull('barcode')->orWhere('barcode', '=', '');
+                });
+                continue;
+            }
+
+            if ($flag === 'selling_price') {
+                $q->leftJoin('product_selling_prices as sps', 'sps.product_id', '=', 'products.id')
+                    ->where(function ($sub): void {
+                        $sub->whereNull('sps.selling_price')->orWhere('sps.selling_price', '=', '');
+                    })
+                    ->select('products.*');
+                continue;
+            }
+
+            if ($flag === 'pdp_images') {
+                $q->whereDoesntHave('plamodImageAssets');
+                continue;
+            }
+
+            if ($flag === 'pdp_description') {
+                $q->where(function ($sub): void {
+                    $sub
+                        ->whereDoesntHave('hljExternalContent', function ($q2): void {
+                            $q2->whereNotNull('description_html')->where('description_html', '<>', '');
+                        })
+                        ->whereDoesntHave('plamodExternalContent', function ($q2): void {
+                            $q2->whereNotNull('description_html')->where('description_html', '<>', '');
+                        });
+                });
+                continue;
+            }
+        }
     }
 
     /**
@@ -156,6 +243,35 @@ final class EloquentProductRepository implements ProductRepository
             ->get();
     }
 
+    public function listBarcodedForExportSorted(): Collection
+    {
+        return Product::query()
+            ->with(['sellingPrice'])
+            ->whereNotNull('barcode')
+            ->where('barcode', '<>', '')
+            ->orderByRaw('COALESCE(vendor, "") asc')
+            ->orderByRaw('COALESCE(type, "") asc')
+            ->orderBy('sku', 'asc')
+            ->get();
+    }
+
+    public function listForShopifyContentExport(): Collection
+    {
+        return Product::query()
+            ->with([
+                'sellingPrice',
+                'hljExternalContent',
+                'plamodExternalContent',
+                'externalContents',
+                'plamodImageAssets',
+            ])
+            ->whereHas('sellingPrice', function ($q): void {
+                $q->whereNotNull('selling_price')->where('selling_price', '<>', '');
+            })
+            ->orderBy('sku', 'asc')
+            ->get();
+    }
+
     /**
      * @return Collection<int, Product>
      */
@@ -191,7 +307,11 @@ final class EloquentProductRepository implements ProductRepository
             ->pluck('type')
             ->all();
 
-        return array_values(array_filter($types, static fn (?string $t): bool => $t !== null && trim($t) !== ''));
+        $types = array_map(static fn (?string $t): string => trim((string) $t), $types);
+        $types = array_values(array_unique(array_filter($types, static fn (string $t): bool => $t !== '')));
+        sort($types);
+
+        return $types;
     }
 
     public function distinctVendors(): array
@@ -205,7 +325,11 @@ final class EloquentProductRepository implements ProductRepository
             ->pluck('vendor')
             ->all();
 
-        return array_values(array_filter($vendors, static fn (?string $v): bool => $v !== null && trim($v) !== ''));
+        $vendors = array_map(static fn (?string $v): string => trim((string) $v), $vendors);
+        $vendors = array_values(array_unique(array_filter($vendors, static fn (string $v): bool => $v !== '')));
+        sort($vendors);
+
+        return $vendors;
     }
 
     public function findBySkus(array $skus): Collection
@@ -230,6 +354,35 @@ final class EloquentProductRepository implements ProductRepository
         return Product::query()
             ->whereNotNull('barcode')
             ->whereIn('barcode', $barcodes)
+            ->get();
+    }
+
+    public function findByHandle(string $handle): Collection
+    {
+        $handle = trim($handle);
+        if ($handle === '') {
+            return collect();
+        }
+
+        return Product::query()
+            ->whereNotNull('handle')
+            ->where('handle', '=', $handle)
+            ->get();
+    }
+
+    public function findBySkuAndVendor(string $sku, string $vendor): Collection
+    {
+        $sku = trim($sku);
+        $vendor = trim($vendor);
+
+        if ($sku === '' || $vendor === '') {
+            return collect();
+        }
+
+        return Product::query()
+            ->where('sku', '=', $sku)
+            ->whereNotNull('vendor')
+            ->where('vendor', '=', $vendor)
             ->get();
     }
 

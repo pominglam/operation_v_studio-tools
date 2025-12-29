@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\DAL\Maintenance\EloquentMaintenanceNoteRepository;
 use App\DAL\Maintenance\MaintenanceNoteRepository;
+use App\DAL\Maintenance\DatabaseBackupRepository;
+use App\DAL\Maintenance\EloquentDatabaseBackupRepository;
 use App\DAL\PriceResearch\EloquentPriceResearchQuoteReportRepository;
 use App\DAL\PriceResearch\EloquentPriceResearchRunLogRepository;
 use App\DAL\PriceResearch\EloquentPriceResearchRunRepository;
@@ -15,9 +17,17 @@ use App\DAL\PriceResearch\PriceResearchRunRepository;
 use App\DAL\PriceResearch\ProductLookupRepository;
 use App\DAL\PriceResearch\ProductPriceQuoteRepository;
 use App\DAL\Products\EloquentProductRepository;
+use App\DAL\Products\EloquentProductExternalAssetRepository;
+use App\DAL\Products\EloquentProductExternalContentRepository;
 use App\DAL\Products\EloquentProductSellingPriceRepository;
 use App\DAL\Products\ProductRepository;
+use App\DAL\Products\ProductExternalAssetRepository;
+use App\DAL\Products\ProductExternalContentRepository;
 use App\DAL\Products\ProductSellingPriceRepository;
+use App\DAL\InventoryChecks\EloquentInventoryCheckRepository;
+use App\DAL\InventoryChecks\InventoryCheckRepository;
+use App\DAL\Jobs\EloquentJobBatchItemRepository;
+use App\DAL\Jobs\JobBatchItemRepository;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\PriceResearch\Http\AliExpressScraperClient;
 use App\Services\PriceResearch\PriceResearchService;
@@ -31,6 +41,17 @@ use App\Services\PriceResearch\Providers\HobbySenseProvider;
 use App\Services\PriceResearch\Providers\HobbyWholesaleProvider;
 use App\Services\PriceResearch\Providers\MeeplemartProvider;
 use App\Services\PriceResearch\Providers\PandaHobbyProvider;
+use App\Services\Products\Http\PlamodScraper;
+use App\Services\Products\Http\PlamodScraperClient;
+use App\Services\Products\Hlj\HljContentSync;
+use App\Services\Products\Hlj\HljContentSyncService;
+use App\Services\Maintenance\DatabaseBackupManager;
+use App\Services\Maintenance\DatabaseBackupManagerService;
+use App\Services\Maintenance\DatabaseRestore;
+use App\Services\Maintenance\DatabaseRestoreService;
+use App\Services\Shopify\CloudflaredTunnel;
+use App\Services\Shopify\CloudflaredTunnelService;
+use App\Services\Shopify\CloudflareQuickTunnelVerifier;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -41,9 +62,16 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(MaintenanceNoteRepository::class, EloquentMaintenanceNoteRepository::class);
+        $this->app->bind(DatabaseBackupRepository::class, EloquentDatabaseBackupRepository::class);
+        $this->app->bind(DatabaseBackupManager::class, DatabaseBackupManagerService::class);
+        $this->app->bind(DatabaseRestore::class, DatabaseRestoreService::class);
 
         $this->app->bind(ProductRepository::class, EloquentProductRepository::class);
         $this->app->bind(ProductSellingPriceRepository::class, EloquentProductSellingPriceRepository::class);
+        $this->app->bind(ProductExternalContentRepository::class, EloquentProductExternalContentRepository::class);
+        $this->app->bind(ProductExternalAssetRepository::class, EloquentProductExternalAssetRepository::class);
+        $this->app->bind(JobBatchItemRepository::class, EloquentJobBatchItemRepository::class);
+        $this->app->bind(InventoryCheckRepository::class, EloquentInventoryCheckRepository::class);
 
         $this->app->bind(ProductLookupRepository::class, EloquentProductLookupRepository::class);
         $this->app->bind(ProductPriceQuoteRepository::class, EloquentProductPriceQuoteRepository::class);
@@ -54,6 +82,18 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(AliExpressScraperClient::class, function (): AliExpressScraperClient {
             $url = (string) env('ALIEXPRESS_SCRAPER_URL', 'http://aliexpress_scraper:3000');
             return new AliExpressScraperClient($url);
+        });
+
+        $this->app->singleton(PlamodScraperClient::class, function (): PlamodScraperClient {
+            $url = (string) env('PLAMOD_SCRAPER_URL', 'http://plamod_scraper:3001');
+
+            return new PlamodScraperClient($url);
+        });
+        $this->app->bind(PlamodScraper::class, PlamodScraperClient::class);
+        $this->app->bind(HljContentSync::class, HljContentSyncService::class);
+        $this->app->singleton(CloudflareQuickTunnelVerifier::class);
+        $this->app->bind(CloudflaredTunnel::class, function ($app): CloudflaredTunnelService {
+            return new CloudflaredTunnelService($app->make(CloudflareQuickTunnelVerifier::class));
         });
 
         $this->app->tag([

@@ -10,13 +10,17 @@ use Illuminate\Console\Command;
 final class DatabaseBackupCommand extends Command
 {
     protected $signature = 'db:backup
-        {--yes : Do not prompt; assume yes}';
+        {--yes : Do not prompt; assume yes}
+        {--description= : Description for this backup (shown in Maintenance UI)}
+        {--created-by=manual : created_by for this backup (manual|system|cursor)}';
 
     protected $description = 'Create a database backup (schema + data) into storage/backups.';
 
-    public function handle(DatabaseBackupService $service): int
+    public function handle(\App\Services\Maintenance\DatabaseBackupManagerService $service): int
     {
         $yes = (bool) $this->option('yes');
+        $description = (string) ($this->option('description') ?? '');
+        $createdBy = (string) ($this->option('created-by') ?? 'manual');
 
         $this->warn('This will create a database backup (schema + data) into storage/backups.');
 
@@ -27,7 +31,7 @@ final class DatabaseBackupCommand extends Command
         }
 
         try {
-            $result = $service->backup();
+            $backup = $service->create($description, $createdBy);
         } catch (\Throwable $e) {
             $this->error($e->getMessage());
 
@@ -36,8 +40,8 @@ final class DatabaseBackupCommand extends Command
 
         $this->info('Backup created.');
         $this->table(
-            ['driver', 'filename', 'path'],
-            [[$result['driver'], $result['filename'], $result['path']]],
+            ['driver', 'filename', 'storage_path', 'description'],
+            [[$backup->driver, $backup->filename, $backup->storage_path, $backup->description]],
         );
 
         return self::SUCCESS;

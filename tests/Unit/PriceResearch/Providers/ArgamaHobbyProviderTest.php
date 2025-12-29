@@ -5,15 +5,53 @@ declare(strict_types=1);
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\PriceResearch\Providers\ArgamaHobbyProvider;
 use App\Services\PriceResearch\Support\HtmlPriceParser;
+use App\DAL\Products\ProductExternalContentRepository;
+use App\Models\ProductExternalContent;
 
 it('exposes correct site key', function (): void {
-    $provider = new ArgamaHobbyProvider(new ExternalHtmlClient, new HtmlPriceParser);
+    $contents = new class implements ProductExternalContentRepository
+    {
+        public function upsertForProduct(int $productId, string $source, ?string $title, ?string $descriptionHtml, ?array $attributes, ?string $sourceUrl = null): ProductExternalContent
+        {
+            return new ProductExternalContent;
+        }
+
+        public function findForProduct(int $productId, string $source): ?ProductExternalContent
+        {
+            return null;
+        }
+
+        public function updateSourceUrl(int $id, ?string $sourceUrl): void
+        {
+            //
+        }
+    };
+
+    $provider = new ArgamaHobbyProvider(new ExternalHtmlClient, new HtmlPriceParser, $contents);
 
     expect($provider->siteKey())->toBe('argama_hobby');
 });
 
 it('prefers candidate URLs that look like the intended product (RG God Gundam) over decals/gift cards', function (): void {
-    $provider = new ArgamaHobbyProvider(new ExternalHtmlClient, new HtmlPriceParser);
+    $contents = new class implements ProductExternalContentRepository
+    {
+        public function upsertForProduct(int $productId, string $source, ?string $title, ?string $descriptionHtml, ?array $attributes, ?string $sourceUrl = null): ProductExternalContent
+        {
+            return new ProductExternalContent;
+        }
+
+        public function findForProduct(int $productId, string $source): ?ProductExternalContent
+        {
+            return null;
+        }
+
+        public function updateSourceUrl(int $id, ?string $sourceUrl): void
+        {
+            //
+        }
+    };
+
+    $provider = new ArgamaHobbyProvider(new ExternalHtmlClient, new HtmlPriceParser, $contents);
 
     $p = new \App\Models\Product;
     $p->description = 'RG 1/144 GOD GUNDAM';

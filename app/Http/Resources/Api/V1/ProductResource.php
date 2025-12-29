@@ -24,9 +24,16 @@ final class ProductResource extends JsonResource
             'sku' => $product->sku,
             'barcode' => $product->barcode,
             'description' => $product->description,
+            'handle' => $product->handle,
             'type' => $product->type,
             'vendor' => $product->vendor,
+            'published_on_shopify' => (bool) $product->published_on_shopify,
             'price' => $product->price,
+            'selling_price' => $product->sellingPrice?->selling_price,
+            'pdp' => [
+                'has_description' => $this->hasExternalDescription($product),
+                'plamod_image_count' => (int) ($product->plamod_image_assets_count ?? 0),
+            ],
             'order' => $product->order_qty,
             'filled' => $product->filled_qty,
             'available' => $product->available_qty,
@@ -34,5 +41,14 @@ final class ProductResource extends JsonResource
             'created_at' => optional($product->created_at)->toISOString(),
             'updated_at' => optional($product->updated_at)->toISOString(),
         ];
+    }
+
+    private function hasExternalDescription(Product $product): bool
+    {
+        $hlj = $product->hljExternalContent?->description_html;
+        if (is_string($hlj) && trim($hlj) !== '') return true;
+
+        $plamod = $product->plamodExternalContent?->description_html;
+        return is_string($plamod) && trim($plamod) !== '';
     }
 }

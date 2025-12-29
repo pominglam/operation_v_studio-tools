@@ -10,12 +10,14 @@ it('bulk updates selected products by uuid', function (): void {
         'description' => 'Bulk Up 1',
         'vendor' => 'Plamod',
         'type' => 'Old',
+        'published_on_shopify' => false,
     ]);
     $p2 = Product::query()->create([
         'sku' => 'BULK-UP-2',
         'description' => 'Bulk Up 2',
         'vendor' => 'Plamod',
         'type' => 'Old',
+        'published_on_shopify' => false,
     ]);
 
     $response = $this->postJson('/api/v1/products/bulk-update', [
@@ -23,6 +25,7 @@ it('bulk updates selected products by uuid', function (): void {
         'changes' => [
             'vendor' => 'MSMN',
             'type' => 'New',
+            'published_on_shopify' => true,
             'price' => 12.34,
             'order' => 5,
             'filled' => 2,
@@ -37,6 +40,7 @@ it('bulk updates selected products by uuid', function (): void {
         'uuid' => $p1->uuid,
         'vendor' => 'MSMN',
         'type' => 'New',
+        'published_on_shopify' => 1,
         'order_qty' => 5,
         'filled_qty' => 2,
     ]);
@@ -45,6 +49,7 @@ it('bulk updates selected products by uuid', function (): void {
         'uuid' => $p2->uuid,
         'vendor' => 'MSMN',
         'type' => 'New',
+        'published_on_shopify' => 1,
         'order_qty' => 5,
         'filled_qty' => 2,
     ]);

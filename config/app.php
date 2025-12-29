@@ -67,6 +67,9 @@ return [
 
     'timezone' => env('APP_TIMEZONE', 'America/Toronto'),
 
+    // When enabled, this instance will only serve /shopify-images/* and 404 everything else.
+    'shopify_images_only' => (bool) env('SHOPIFY_IMAGES_ONLY', false),
+
     /*
     |--------------------------------------------------------------------------
     | Application Locale Configuration

@@ -21,6 +21,6 @@ final class ProductFilterOptionsController extends Controller
                 'types' => $this->products->distinctTypes(),
                 'vendors' => $this->products->distinctVendors(),
             ],
-        ]);
+        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 }

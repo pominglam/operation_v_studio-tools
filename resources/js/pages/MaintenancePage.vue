@@ -1,8 +1,19 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { api } from '../lib/api';
 import ConfirmDialog from '../components/ui/ConfirmDialog.vue';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
+import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
+
+type DbBackupRow = {
+    uuid: string;
+    driver: string;
+    filename: string;
+    description: string;
+    created_by: string;
+    size_bytes: number | null;
+    created_at: string | null;
+};
 
 const flushing = ref(false);
 const resettingRun = ref(false);
@@ -39,6 +50,21 @@ const productTypes = ref<string[]>([]);
 const productVendors = ref<string[]>([]);
 const selectedTypes = ref<string[]>([]);
 const selectedVendors = ref<string[]>([]);
+
+const STATE_KEY = 'page_state:maintenance';
+const hydrating = ref(true);
+
+const dbBackupsLoading = ref(false);
+const dbBackups = ref<DbBackupRow[]>([]);
+const dbBackupDescription = ref<string>('');
+const creatingDbBackup = ref(false);
+const dbBackupMessage = ref<string | null>(null);
+const dbBackupError = ref<string | null>(null);
+
+const selectedRestoreUuid = ref<string>('');
+const restoringDb = ref(false);
+const dbRestoreMessage = ref<string | null>(null);
+const dbRestoreError = ref<string | null>(null);
 
 const siteOptions = computed<MultiSelectOption[]>(() => {
     return availableSites.value.map((s) => ({ value: s.key, label: s.name }));
@@ -83,6 +109,13 @@ type ConfirmState =
       }
     | {
           kind: 'recompute_product_types';
+          title: string;
+          message: string;
+          confirmText: string;
+          variant: 'danger' | 'primary';
+      }
+    | {
+          kind: 'restore_db';
           title: string;
           message: string;
           confirmText: string;
@@ -144,6 +177,19 @@ function requestRecomputeProductTypes(): void {
     };
 }
 
+function requestRestoreDb(): void {
+    if (!selectedRestoreUuid.value) return;
+    const b = dbBackups.value.find((x) => x.uuid === selectedRestoreUuid.value) ?? null;
+    const label = b ? `${b.filename} — ${b.description || 'No description'}` : selectedRestoreUuid.value;
+    confirm.value = {
+        kind: 'restore_db',
+        title: 'Restore database from backup',
+        message: `This will overwrite the database using:\n${label}\n\nContinue?`,
+        confirmText: 'Restore',
+        variant: 'danger',
+    };
+}
+
 async function confirmAction(): Promise<void> {
     const current = confirm.value;
     if (!current) return;
@@ -165,6 +211,11 @@ async function confirmAction(): Promise<void> {
 
     if (current.kind === 'recompute_product_types') {
         await recomputeProductTypes();
+        return;
+    }
+
+    if (current.kind === 'restore_db') {
+        await restoreDb();
         return;
     }
 
@@ -438,11 +489,127 @@ async function saveMaintenanceNotes(): Promise<void> {
     }
 }
 
+async function loadDbBackups(): Promise<void> {
+    dbBackupsLoading.value = true;
+    dbBackupError.value = null;
+    try {
+        const res = await api.get<{ data: DbBackupRow[] }>('/api/v1/maintenance/db-backups', {
+            params: { limit: 200 },
+            validateStatus: () => true,
+        });
+        if (res.status !== 200) {
+            dbBackupError.value = 'Failed to load database backups.';
+            return;
+        }
+        dbBackups.value = res.data.data ?? [];
+        if (!selectedRestoreUuid.value && dbBackups.value.length > 0) {
+            selectedRestoreUuid.value = dbBackups.value[0].uuid;
+        }
+    } catch {
+        dbBackupError.value = 'Failed to load database backups.';
+    } finally {
+        dbBackupsLoading.value = false;
+    }
+}
+
+async function createDbBackup(): Promise<void> {
+    creatingDbBackup.value = true;
+    dbBackupMessage.value = null;
+    dbBackupError.value = null;
+    try {
+        const res = await api.post(
+            '/api/v1/maintenance/db-backups',
+            { description: dbBackupDescription.value },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 201) {
+            dbBackupError.value = 'Failed to create database backup.';
+            return;
+        }
+        dbBackupMessage.value = 'Backup created.';
+        dbBackupDescription.value = '';
+        await loadDbBackups();
+    } catch {
+        dbBackupError.value = 'Failed to create database backup.';
+    } finally {
+        creatingDbBackup.value = false;
+    }
+}
+
+async function restoreDb(): Promise<void> {
+    restoringDb.value = true;
+    dbRestoreMessage.value = null;
+    dbRestoreError.value = null;
+    try {
+        const res = await api.post(
+            '/api/v1/maintenance/db-backups/restore',
+            { backup_uuid: selectedRestoreUuid.value },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            dbRestoreError.value = res.data?.message ?? 'Failed to restore database.';
+            return;
+        }
+        dbRestoreMessage.value = 'Restore started/completed. Refresh the page if things look stale.';
+        confirm.value = null;
+    } catch {
+        dbRestoreError.value = 'Failed to restore database.';
+    } finally {
+        restoringDb.value = false;
+    }
+}
+
+function resetRecrawlState(): void {
+    clearPageState(STATE_KEY);
+    siteKeys.value = [];
+    recrawlStatus.value = 'any';
+    recrawlQuoteStatus.value = 'any';
+    selectedTypes.value = [];
+    selectedVendors.value = [];
+}
+
 onMounted(() => {
+    const saved = loadPageState<{
+        siteKeys?: string[];
+        recrawlStatus?: 'any' | 'fresh' | 'expired';
+        recrawlQuoteStatus?: 'any' | 'error';
+        selectedTypes?: string[];
+        selectedVendors?: string[];
+        aliCookiesJson?: string;
+    }>(STATE_KEY);
+
+    if (saved) {
+        if (Array.isArray(saved.siteKeys)) siteKeys.value = saved.siteKeys;
+        if (saved.recrawlStatus) recrawlStatus.value = saved.recrawlStatus;
+        if (saved.recrawlQuoteStatus) recrawlQuoteStatus.value = saved.recrawlQuoteStatus;
+        if (Array.isArray(saved.selectedTypes)) selectedTypes.value = saved.selectedTypes;
+        if (Array.isArray(saved.selectedVendors)) selectedVendors.value = saved.selectedVendors;
+        if (typeof saved.aliCookiesJson === 'string') aliCookiesJson.value = saved.aliCookiesJson;
+    }
+
+    hydrating.value = false;
+
     void loadPriceResearchSites();
     void loadProductFilterOptions();
     void loadMaintenanceNotes();
+    void loadDbBackups();
 });
+
+watch(
+    [siteKeys, recrawlStatus, recrawlQuoteStatus, selectedTypes, selectedVendors, aliCookiesJson],
+    () => {
+        if (hydrating.value) return;
+        savePageState(STATE_KEY, {
+            siteKeys: siteKeys.value,
+            recrawlStatus: recrawlStatus.value,
+            recrawlQuoteStatus: recrawlQuoteStatus.value,
+            selectedTypes: selectedTypes.value,
+            selectedVendors: selectedVendors.value,
+            aliCookiesJson: aliCookiesJson.value,
+        });
+    },
+    { deep: true },
+);
 </script>
 
 <template>
@@ -495,6 +662,101 @@ onMounted(() => {
                 class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
             >
                 {{ notesMessage }}
+            </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div class="flex-1">
+                    <div class="text-sm font-medium text-slate-900">Database backups</div>
+                    <div class="mt-1 text-sm text-slate-600">
+                        Create a backup with a description, or restore from an existing backup.
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
+                    <div class="text-sm font-semibold text-slate-900">Create backup</div>
+                    <div class="mt-2">
+                        <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                            Description
+                        </label>
+                        <textarea
+                            v-model="dbBackupDescription"
+                            class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                            rows="3"
+                            placeholder="Why are you taking this backup?"
+                            :disabled="creatingDbBackup"
+                        />
+                    </div>
+                    <div class="mt-3 flex justify-end">
+                        <button
+                            class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                            type="button"
+                            :disabled="creatingDbBackup"
+                            @click="createDbBackup"
+                        >
+                            {{ creatingDbBackup ? 'Creating…' : 'Backup DB' }}
+                        </button>
+                    </div>
+                    <div
+                        v-if="dbBackupError"
+                        class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+                    >
+                        {{ dbBackupError }}
+                    </div>
+                    <div
+                        v-if="dbBackupMessage"
+                        class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+                    >
+                        {{ dbBackupMessage }}
+                    </div>
+                </div>
+
+                <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
+                    <div class="text-sm font-semibold text-slate-900">Restore backup</div>
+                    <div class="mt-2">
+                        <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                            Select backup
+                        </label>
+                        <select
+                            v-model="selectedRestoreUuid"
+                            class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                            :disabled="restoringDb || dbBackupsLoading"
+                        >
+                            <option value="" disabled>Select…</option>
+                            <option v-for="b in dbBackups" :key="b.uuid" :value="b.uuid">
+                                {{ b.created_at ?? '' }} — {{ b.description || 'No description' }} ({{ b.filename }})
+                            </option>
+                        </select>
+                        <div class="mt-2 text-xs text-slate-600">
+                            Loaded <span class="font-semibold text-slate-900">{{ dbBackups.length }}</span> backups.
+                        </div>
+                    </div>
+                    <div class="mt-3 flex justify-end">
+                        <button
+                            class="inline-flex items-center justify-center rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            type="button"
+                            :disabled="restoringDb || !selectedRestoreUuid"
+                            @click="requestRestoreDb"
+                        >
+                            {{ restoringDb ? 'Restoring…' : 'Restore DB' }}
+                        </button>
+                    </div>
+                    <div
+                        v-if="dbRestoreError"
+                        class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+                    >
+                        {{ dbRestoreError }}
+                    </div>
+                    <div
+                        v-if="dbRestoreMessage"
+                        class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+                    >
+                        {{ dbRestoreMessage }}
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -652,14 +914,24 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <button
-                    class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                    type="button"
-                    :disabled="recrawlingSites || siteKeys.length === 0"
-                    @click="recrawlSelectedSites"
-                >
-                    {{ recrawlingSites ? 'Starting…' : 'Start recrawl' }}
-                </button>
+                <div class="flex items-center gap-2">
+                    <button
+                        class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        type="button"
+                        :disabled="recrawlingSites"
+                        @click="resetRecrawlState"
+                    >
+                        Reset
+                    </button>
+                    <button
+                        class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        type="button"
+                        :disabled="recrawlingSites || siteKeys.length === 0"
+                        @click="recrawlSelectedSites"
+                    >
+                        {{ recrawlingSites ? 'Starting…' : 'Start recrawl' }}
+                    </button>
+                </div>
             </div>
 
             <div

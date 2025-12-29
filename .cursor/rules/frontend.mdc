@@ -119,6 +119,12 @@ Example:
 - **TODO comments**: Warn on TODO comments
 - **Console.log**: Disallow in production code
 
+## Post-change verification (required)
+
+- After **any frontend change** (Vue/TS/CSS or frontend tooling config), the agent must run:
+  - `npm run build`
+  - Fix any build errors before handing the change back.
+
 ### Good vs Bad
 
 Good:

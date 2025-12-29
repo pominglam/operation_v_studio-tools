@@ -15,8 +15,10 @@ use Illuminate\Support\Str;
  * @property string $sku
  * @property string|null $barcode
  * @property string $description
+ * @property string|null $handle
  * @property string|null $type
  * @property string|null $vendor
+ * @property bool $published_on_shopify
  * @property string|null $price
  * @property int|null $order_qty
  * @property int|null $filled_qty
@@ -32,8 +34,10 @@ final class Product extends Model
         'sku',
         'barcode',
         'description',
+        'handle',
         'type',
         'vendor',
+        'published_on_shopify',
         'price',
         'order_qty',
         'filled_qty',
@@ -47,6 +51,7 @@ final class Product extends Model
         'order_qty' => 'integer',
         'filled_qty' => 'integer',
         'available_qty' => 'integer',
+        'published_on_shopify' => 'boolean',
         'extended' => 'decimal:2',
         'price_researched_at' => 'datetime',
     ];
@@ -70,5 +75,43 @@ final class Product extends Model
     public function sellingPrice(): HasOne
     {
         return $this->hasOne(ProductSellingPrice::class);
+    }
+
+    /** @return HasMany<ProductExternalContent> */
+    public function externalContents(): HasMany
+    {
+        return $this->hasMany(ProductExternalContent::class);
+    }
+
+    /** @return HasMany<ProductExternalAsset> */
+    public function externalAssets(): HasMany
+    {
+        return $this->hasMany(ProductExternalAsset::class);
+    }
+
+    /** @return HasOne<ProductExternalContent> */
+    public function hljExternalContent(): HasOne
+    {
+        return $this->hasOne(ProductExternalContent::class)->where('source', '=', 'hlj');
+    }
+
+    /** @return HasOne<ProductExternalContent> */
+    public function plamodExternalContent(): HasOne
+    {
+        return $this->hasOne(ProductExternalContent::class)->where('source', '=', 'plamod');
+    }
+
+    /** @return HasMany<ProductExternalAsset> */
+    public function plamodImageAssets(): HasMany
+    {
+        return $this->hasMany(ProductExternalAsset::class)
+            ->where('source', '=', 'plamod')
+            ->where(function ($q): void {
+                $q->where('kind', '=', 'image')
+                    ->orWhere('mime_type', 'like', 'image/%');
+            })
+            ->orderByRaw('sort_order is null')
+            ->orderBy('sort_order')
+            ->orderBy('id');
     }
 }

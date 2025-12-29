@@ -22,6 +22,7 @@ final class ProductBulkUpdateService
      *   description?: string,
      *   type?: string|null,
      *   vendor?: string|null,
+ *   published_on_shopify?: bool,
      *   price?: string|int|float|null,
      *   order?: int|null,
      *   filled?: int|null,
@@ -60,6 +61,10 @@ final class ProductBulkUpdateService
             $vendor = $changes['vendor'];
             $vendor = $vendor !== null ? trim($vendor) : null;
             $updates['vendor'] = $vendor !== '' ? $vendor : null;
+        }
+
+        if (array_key_exists('published_on_shopify', $changes)) {
+            $updates['published_on_shopify'] = (bool) $changes['published_on_shopify'];
         }
 
         if (array_key_exists('price', $changes)) {

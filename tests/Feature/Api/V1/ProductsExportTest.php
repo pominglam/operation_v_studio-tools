@@ -13,6 +13,7 @@ it('exports Shopify CSV for products with selling price only', function (): void
         'description' => 'HG 1/144 DEMI BARDING',
         'type' => 'HG',
         'price' => '10.00',
+        'published_on_shopify' => false,
         'order_qty' => 5,
         'filled_qty' => 2,
         'extended' => '20.00',
@@ -100,6 +101,7 @@ it('exports Shopify CSV for products with selling price only', function (): void
     expect($row[1])->toBe('HG 1/144 DEMI BARDING');
     expect($row[5])->toBe('HG');
     expect($row[6])->toBe('HG');
+    expect($row[7])->toBe('FALSE');
     expect($row[17])->toBe('ABC123');
     expect($row[20])->toBe('2');
     expect($row[21])->toBe('continue');
@@ -107,6 +109,41 @@ it('exports Shopify CSV for products with selling price only', function (): void
     expect($row[23])->toBe('28.99');
     expect($row[31])->toBe('0123456789012');
     expect($row[42])->toBe('active');
+});
+
+it('exports Published=TRUE when product is published_on_shopify', function (): void {
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000000003',
+        'sku' => 'PUB-1',
+        'barcode' => '999',
+        'description' => 'Published product',
+        'type' => 'HG',
+        'published_on_shopify' => true,
+        'filled_qty' => 1,
+    ]);
+
+    ProductSellingPrice::query()->create([
+        'product_id' => $p->id,
+        'product_uuid' => $p->uuid,
+        'selling_price' => '9.99',
+        'currency' => 'CAD',
+    ]);
+
+    $res = $this->get('/api/v1/products/export?format=shopify');
+    $res->assertOk();
+
+    $csv = $res->streamedContent();
+    $lines = preg_split("/\r\n|\n|\r/", trim($csv)) ?: [];
+    expect(count($lines))->toBeGreaterThanOrEqual(2);
+
+    $rows = array_map('str_getcsv', $lines);
+    $publishedRow = collect($rows)->first(function (array $r): bool {
+        return ($r[17] ?? '') === 'PUB-1';
+    });
+
+    expect($publishedRow)->not->toBeNull();
+    /** @var array<int, string> $publishedRow */
+    expect($publishedRow[7])->toBe('TRUE');
 });
 
 it('lists products missing selling price for export UI', function (): void {

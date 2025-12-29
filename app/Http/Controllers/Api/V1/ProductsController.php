@@ -38,6 +38,9 @@ final class ProductsController extends Controller
         /** @var array<int, string> $vendors */
         $vendors = $request->validated('vendors') ?? [];
 
+        /** @var array<int, string> $missing */
+        $missing = $request->validated('missing') ?? [];
+
         /** @var string|null $sortBy */
         $sortBy = $request->validated('sort_by');
 
@@ -45,7 +48,7 @@ final class ProductsController extends Controller
         $sortDir = $request->validated('sort_dir') ?? 'asc';
 
         return ProductResource::collection(
-            $this->products->paginate($perPage, $search, $types, $vendors, $sortBy, $sortDir),
+            $this->products->paginate($perPage, $search, $types, $vendors, $missing, $sortBy, $sortDir),
         );
     }
 

@@ -2,18 +2,23 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../lib/api';
+import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
 import AddProductForm, {
     type CreateProductPayload,
 } from '../components/products/AddProductForm.vue';
 import ImportProductsCard from '../components/products/ImportProductsCard.vue';
 import ImportInventoryCard from '../components/products/ImportInventoryCard.vue';
+import ImportHandlesCard from '../components/products/ImportHandlesCard.vue';
+import ShopifyContentExportCard from '../components/products/ShopifyContentExportCard.vue';
 import ProductsTable, {
     type ProductRow,
     type ProductSortKey,
     type BulkUpdateProductChanges,
     type UpdateProductPayload,
 } from '../components/products/ProductsTable.vue';
+import PlamodDrawer from '../components/products/PlamodDrawer.vue';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
+import ConfirmDialog from '../components/ui/ConfirmDialog.vue';
 import PaginationControls from '../components/ui/PaginationControls.vue';
 
 type Paginated<T> = {
@@ -82,6 +87,10 @@ function downloadMissingBarcodeCsv(): void {
     window.location.assign(`/api/v1/products/export/missing-barcode?${params.toString()}`);
 }
 
+function downloadBarcodedProductsCsv(): void {
+    window.location.assign('/api/v1/products/export/barcoded');
+}
+
 async function loadMissingSellingPrice(): Promise<void> {
     missingSellingPriceLoading.value = true;
     missingSellingPriceError.value = null;
@@ -111,9 +120,41 @@ const sortBy = ref<ProductSortKey>('sku');
 const sortDir = ref<'asc' | 'desc'>('asc');
 const selectedTypes = ref<string[]>([]);
 const selectedVendors = ref<string[]>([]);
+const selectedMissing = ref<string[]>([]);
+
+const missingOptions = ref<MultiSelectOption[]>([
+    { value: 'ok', label: 'OK (complete)' },
+    { value: 'pdp_images', label: 'PDP images' },
+    { value: 'pdp_description', label: 'PDP description' },
+    { value: 'selling_price', label: 'Selling price' },
+    { value: 'barcode', label: 'Barcode' },
+]);
+
+const syncMissingOpen = ref(false);
+const syncMissingBusy = ref(false);
+const syncMissingCount = ref<number | null>(null);
+const syncMissingError = ref<string | null>(null);
+const syncMissingMessage = ref<string | null>(null);
 
 const typeOptions = ref<MultiSelectOption[]>([]);
 const vendorOptions = ref<MultiSelectOption[]>([]);
+
+const plamodDrawerOpen = ref(false);
+const plamodDrawerProductId = ref<string | null>(null);
+const plamodDrawerProductSku = ref<string | null>(null);
+const plamodDrawerProductPrice = ref<string | null>(null);
+
+function openPlamodDrawer(productId: string): void {
+    plamodDrawerProductId.value = productId;
+    const p = products.value.find((x) => x.id === productId) ?? null;
+    plamodDrawerProductSku.value = p?.sku ?? null;
+    plamodDrawerProductPrice.value = p?.selling_price ?? null;
+    plamodDrawerOpen.value = true;
+}
+
+function closePlamodDrawer(): void {
+    plamodDrawerOpen.value = false;
+}
 
 const total = computed<number>(() => meta.value?.total ?? 0);
 const currentPage = computed<number>(() => meta.value?.current_page ?? page.value);
@@ -133,6 +174,10 @@ async function load(): Promise<void> {
                 sort_dir: sortDir.value,
                 types: selectedTypes.value.length > 0 ? selectedTypes.value : undefined,
                 vendors: selectedVendors.value.length > 0 ? selectedVendors.value : undefined,
+                missing:
+                    selectedMissing.value.length > 0
+                        ? selectedMissing.value
+                        : undefined,
             },
         });
         products.value = res.data.data;
@@ -166,6 +211,7 @@ async function create(payload: CreateProductPayload): Promise<void> {
         createMessage.value = 'Product created.';
         page.value = 1;
         await load();
+        await loadFilterOptions();
     } catch (e: unknown) {
         createError.value = 'Failed to create product (check SKU uniqueness and required fields).';
     } finally {
@@ -175,16 +221,142 @@ async function create(payload: CreateProductPayload): Promise<void> {
 
 async function bulkDelete(ids: string[]): Promise<number> {
     const res = await api.post<{ deleted: number }>('/api/v1/products/bulk-delete', { ids });
+    await loadFilterOptions();
     return res.data.deleted;
 }
 
 async function bulkUpdate(ids: string[], changes: BulkUpdateProductChanges): Promise<number> {
     const res = await api.post<{ updated: number }>('/api/v1/products/bulk-update', { ids, changes });
+    await loadFilterOptions();
     return res.data.updated;
+}
+
+async function bulkRenamePlamodAssets(ids: string[]): Promise<number> {
+    const res = await api.post<{ ok: boolean; renamed_assets: number }>('/api/v1/products/bulk/plamod-assets/rename', { ids });
+    return res.data.renamed_assets ?? 0;
 }
 
 async function updateProduct(id: string, payload: UpdateProductPayload): Promise<void> {
     await api.patch(`/api/v1/products/${id}`, payload);
+    await loadFilterOptions();
+}
+
+type JobBatchStatus = {
+    id: string;
+    name: string;
+    total_jobs: number;
+    pending_jobs: number;
+    processed_jobs: number;
+    failed_jobs: number;
+    progress_percent: number;
+    finished_at: string | null;
+    cancelled_at: string | null;
+};
+
+const syncBatchId = ref<string | null>(null);
+const syncBatchStatus = ref<JobBatchStatus | null>(null);
+let syncBatchPollTimer: number | null = null;
+
+const STATE_KEY = 'page_state:products';
+const hydrating = ref(true);
+
+function stopSyncBatchPoll(): void {
+    if (syncBatchPollTimer !== null) {
+        window.clearInterval(syncBatchPollTimer);
+        syncBatchPollTimer = null;
+    }
+}
+
+async function pollSyncBatchOnce(): Promise<void> {
+    if (!syncBatchId.value) return;
+    try {
+        const res = await api.get<{ ok: boolean; data: JobBatchStatus }>(
+            `/api/v1/job-batches/${syncBatchId.value}`,
+        );
+        syncBatchStatus.value = res.data.data;
+        if (res.data.data.finished_at || res.data.data.cancelled_at) {
+            stopSyncBatchPoll();
+            // Refresh products so missing-info badges/filters reflect the latest ingested content.
+            void load();
+        }
+    } catch {
+        // ignore transient polling failures
+    }
+}
+
+function startSyncBatchPoll(): void {
+    stopSyncBatchPoll();
+    void pollSyncBatchOnce();
+    syncBatchPollTimer = window.setInterval(() => void pollSyncBatchOnce(), 2000);
+}
+
+async function requestSyncMissing(): Promise<void> {
+    syncMissingError.value = null;
+    syncMissingMessage.value = null;
+    syncMissingCount.value = null;
+    syncMissingBusy.value = true;
+
+    try {
+        const res = await api.post<{ ok: boolean; queued: number; dry_run: boolean; batch_id?: string | null }>(
+            '/api/v1/products/sync-missing-info',
+            {
+                search: search.value.trim() || undefined,
+                types: selectedTypes.value.length > 0 ? selectedTypes.value : undefined,
+                vendors: selectedVendors.value.length > 0 ? selectedVendors.value : undefined,
+                missing:
+                    selectedMissing.value.length > 0 && !selectedMissing.value.includes('ok')
+                        ? selectedMissing.value
+                        : undefined,
+                dry_run: true,
+            },
+        );
+
+        syncMissingCount.value = res.data.queued;
+        syncMissingOpen.value = true;
+    } catch {
+        syncMissingError.value = 'Failed to calculate missing info count.';
+    } finally {
+        syncMissingBusy.value = false;
+    }
+}
+
+async function confirmSyncMissing(): Promise<void> {
+    syncMissingBusy.value = true;
+    syncMissingError.value = null;
+    syncMissingMessage.value = null;
+
+    try {
+        const res = await api.post<{ ok: boolean; queued: number; dry_run: boolean; batch_id?: string | null }>(
+            '/api/v1/products/sync-missing-info',
+            {
+                search: search.value.trim() || undefined,
+                types: selectedTypes.value.length > 0 ? selectedTypes.value : undefined,
+                vendors: selectedVendors.value.length > 0 ? selectedVendors.value : undefined,
+                missing:
+                    selectedMissing.value.length > 0 && !selectedMissing.value.includes('ok')
+                        ? selectedMissing.value
+                        : undefined,
+                dry_run: false,
+            },
+        );
+        const batchId = res.data.batch_id ?? null;
+        syncBatchId.value = batchId;
+        syncBatchStatus.value = null;
+        if (batchId) {
+            try {
+                window.localStorage.setItem('last_sync_batch_id', batchId);
+            } catch {
+                // ignore
+            }
+            startSyncBatchPoll();
+        }
+        syncMissingMessage.value = `Queued ${res.data.queued} product(s) for sync.`;
+        syncMissingOpen.value = false;
+    } catch {
+        syncMissingError.value = 'Failed to queue sync jobs.';
+    } finally {
+        syncMissingBusy.value = false;
+    }
 }
 
 function onSortChange(next: ProductSortKey): void {
@@ -202,22 +374,75 @@ function onPageChange(next: number): void {
 }
 
 let searchTimer: number | null = null;
-watch([search, perPage, selectedTypes, selectedVendors, sortBy, sortDir], () => {
+watch([search, perPage, selectedTypes, selectedVendors, selectedMissing, sortBy, sortDir], () => {
+    if (hydrating.value) return;
     page.value = 1;
     if (searchTimer) window.clearTimeout(searchTimer);
     searchTimer = window.setTimeout(() => void load(), 250);
 });
 
+watch(selectedMissing, () => {
+    if (hydrating.value) return;
+    // Make "OK (complete)" mutually exclusive with other flags.
+    if (selectedMissing.value.includes('ok') && selectedMissing.value.length > 1) {
+        selectedMissing.value = ['ok'];
+        return;
+    }
+}, { deep: true });
+
 watch(page, () => void load());
 
 onMounted(() => {
+    const saved = loadPageState<{
+        activeTab?: ProductsToolTab;
+        search?: string;
+        perPage?: number;
+        page?: number;
+        sortBy?: ProductSortKey;
+        sortDir?: 'asc' | 'desc';
+        selectedTypes?: string[];
+        selectedVendors?: string[];
+        selectedMissing?: string[];
+    }>(STATE_KEY);
+
+    if (saved) {
+        if (saved.activeTab) activeTab.value = saved.activeTab;
+        if (typeof saved.search === 'string') search.value = saved.search;
+        if (typeof saved.perPage === 'number') perPage.value = saved.perPage;
+        if (typeof saved.page === 'number') page.value = saved.page;
+        if (saved.sortBy) sortBy.value = saved.sortBy;
+        if (saved.sortDir) sortDir.value = saved.sortDir;
+        if (Array.isArray(saved.selectedTypes)) selectedTypes.value = saved.selectedTypes;
+        if (Array.isArray(saved.selectedVendors)) selectedVendors.value = saved.selectedVendors;
+        if (Array.isArray(saved.selectedMissing)) selectedMissing.value = saved.selectedMissing;
+    }
+
+    hydrating.value = false;
+
     void loadFilterOptions();
     void load();
+
+    try {
+        const last = window.localStorage.getItem('last_sync_batch_id');
+        if (last && !syncBatchId.value) {
+            syncBatchId.value = last;
+            startSyncBatchPoll();
+        }
+    } catch {
+        // ignore
+    }
+});
+
+watch(activeTab, () => {
+    if (activeTab.value !== 'list') {
+        stopSyncBatchPoll();
+    }
 });
 
 watch(
     () => route.hash,
     (hash) => {
+        if (hydrating.value) return;
         const tab = tabFromHash(hash);
         if (!tab) return;
         activeTab.value = tab;
@@ -229,6 +454,38 @@ watch(
     },
     { immediate: true },
 );
+
+watch(
+    [activeTab, search, perPage, page, selectedTypes, selectedVendors, selectedMissing, sortBy, sortDir],
+    () => {
+        if (hydrating.value) return;
+        savePageState(STATE_KEY, {
+            activeTab: activeTab.value,
+            search: search.value,
+            perPage: perPage.value,
+            page: page.value,
+            sortBy: sortBy.value,
+            sortDir: sortDir.value,
+            selectedTypes: selectedTypes.value,
+            selectedVendors: selectedVendors.value,
+            selectedMissing: selectedMissing.value,
+        });
+    },
+    { deep: true },
+);
+
+function resetListState(): void {
+    clearPageState(STATE_KEY);
+    search.value = '';
+    perPage.value = 50;
+    page.value = 1;
+    sortBy.value = 'sku';
+    sortDir.value = 'asc';
+    selectedTypes.value = [];
+    selectedVendors.value = [];
+    selectedMissing.value = [];
+    void load();
+}
 </script>
 
 <template>
@@ -355,6 +612,13 @@ watch(
                                 placeholder="All vendors"
                             />
 
+                            <MultiSelectFilter
+                                v-model="selectedMissing"
+                                label="Missing info"
+                                :options="missingOptions"
+                                placeholder="Any"
+                            />
+
                             <div>
                                 <label
                                     class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
@@ -373,10 +637,64 @@ watch(
                             </div>
                         </div>
 
-                        <div class="mt-3 text-sm text-slate-600">
-                            Showing
-                            <span class="font-medium text-slate-900">{{ products.length }}</span> of
-                            <span class="font-medium text-slate-900">{{ total }}</span>
+                        <div class="mt-3 flex flex-col gap-2 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+                            <div>
+                                Showing
+                                <span class="font-medium text-slate-900">{{ products.length }}</span> of
+                                <span class="font-medium text-slate-900">{{ total }}</span>
+                            </div>
+
+                            <div class="flex flex-col gap-2 md:flex-row md:items-center">
+                                <div v-if="syncMissingError" class="text-rose-700">{{ syncMissingError }}</div>
+                                <div v-if="syncMissingMessage" class="text-emerald-700">{{ syncMissingMessage }}</div>
+                                <a
+                                    class="text-xs font-semibold text-slate-900 underline"
+                                    href="/sync-progress"
+                                >
+                                    Sync progress
+                                </a>
+                                <button
+                                    class="text-xs font-semibold text-slate-900 underline"
+                                    type="button"
+                                    :disabled="loading"
+                                    @click="resetListState"
+                                >
+                                    Reset
+                                </button>
+                                <div
+                                    v-if="syncBatchId && syncBatchStatus"
+                                    class="flex items-center gap-2 text-slate-700"
+                                >
+                                    <div class="w-40 overflow-hidden rounded-full bg-slate-200">
+                                        <div
+                                            class="h-2 bg-slate-900"
+                                            :style="{ width: `${syncBatchStatus.progress_percent}%` }"
+                                        />
+                                    </div>
+                                    <div class="tabular-nums text-xs">
+                                        {{ syncBatchStatus.progress_percent }}% ({{ syncBatchStatus.processed_jobs }}/{{
+                                            syncBatchStatus.total_jobs
+                                        }})
+                                        <span v-if="syncBatchStatus.failed_jobs > 0" class="text-rose-700">
+                                            · failed {{ syncBatchStatus.failed_jobs }}
+                                        </span>
+                                    </div>
+                                    <a
+                                        class="text-xs font-semibold text-slate-900 underline"
+                                        :href="`/sync-progress?batch_id=${encodeURIComponent(syncBatchId)}`"
+                                    >
+                                        Open
+                                    </a>
+                                </div>
+                                <button
+                                    class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                                    type="button"
+                                    :disabled="loading || syncMissingBusy"
+                                    @click="requestSyncMissing"
+                                >
+                                    {{ syncMissingBusy ? 'Checking…' : 'Sync missing PDP info' }}
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -389,7 +707,10 @@ watch(
                         :on-refresh="load"
                         :on-bulk-delete="bulkDelete"
                         :on-bulk-update="bulkUpdate"
+                        :on-bulk-rename-plamod-assets="bulkRenamePlamodAssets"
                         :on-update="updateProduct"
+                        :on-open-plamod="openPlamodDrawer"
+                        :vendor-options="vendorOptions.map((v) => v.value)"
                     />
 
                     <PaginationControls
@@ -406,58 +727,82 @@ watch(
                     :error="createError"
                     :message="createMessage"
                     :on-create="create"
+                    :vendor-options="vendorOptions.map((v) => v.value)"
                     :embedded="true"
                 />
                 <ImportProductsCard v-show="activeTab === 'import'" :embedded="true" />
                 <div v-show="activeTab === 'import'" class="mt-4">
                     <ImportInventoryCard :embedded="true" />
                 </div>
+                <div v-show="activeTab === 'import'" class="mt-4">
+                    <ImportHandlesCard :embedded="true" />
+                </div>
 
                 <div v-show="activeTab === 'export'" class="space-y-4">
-                    <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div class="flex-1">
-                            <div class="text-sm font-semibold text-slate-900">Export products</div>
+                    <div class="grid gap-3 md:grid-cols-3">
+                        <div class="rounded-lg border border-slate-200 bg-white p-4">
+                            <div class="text-sm font-semibold text-slate-900">Shopify import</div>
                             <div class="mt-1 text-sm text-slate-600">
-                                Download a CSV file for a supported platform.
+                                Generate a Shopify CSV for products that are ready to publish. Uses the product’s
+                                “Published on Shopify” field.
                             </div>
-                        </div>
 
-                        <div class="flex flex-col gap-2 md:flex-row">
+                            <div class="mt-3 max-w-sm">
+                                <label class="block text-xs font-semibold tracking-wide text-slate-600">Format</label>
+                                <select
+                                    v-model="exportFormat"
+                                    class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                >
+                                    <option value="shopify">Shopify</option>
+                                </select>
+                            </div>
+
+                            <div class="mt-3 text-xs text-slate-600">
+                                Note: Export includes only products with a selling price set.
+                            </div>
+
                             <button
-                                class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
-                                type="button"
-                                @click="downloadMissingBarcodeCsv"
-                            >
-                                Download missing barcodes CSV
-                            </button>
-                            <button
-                                class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
+                                class="mt-3 inline-flex w-full items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800"
                                 type="button"
                                 @click="downloadExport"
                             >
-                                Download Shopify CSV
+                                Export for Shopify (CSV)
+                            </button>
+                        </div>
+
+                        <div class="rounded-lg border border-slate-200 bg-white p-4">
+                            <div class="text-sm font-semibold text-slate-900">Operations</div>
+                            <div class="mt-1 text-sm text-slate-600">
+                                Review current sellable inventory. Exports only products with barcodes; sorted by Type
+                                then SKU.
+                            </div>
+
+                            <button
+                                class="mt-3 inline-flex w-full items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+                                type="button"
+                                @click="downloadBarcodedProductsCsv"
+                            >
+                                Export current inventory (CSV)
+                            </button>
+                        </div>
+
+                        <div class="rounded-lg border border-slate-200 bg-white p-4">
+                            <div class="text-sm font-semibold text-slate-900">Data cleanup</div>
+                            <div class="mt-1 text-sm text-slate-600">
+                                Find products that need fixes before publishing or scanning at fulfillment.
+                            </div>
+
+                            <button
+                                class="mt-3 inline-flex w-full items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+                                type="button"
+                                @click="downloadMissingBarcodeCsv"
+                            >
+                                Export missing barcodes (CSV)
                             </button>
                         </div>
                     </div>
 
-                    <div class="max-w-sm">
-                        <label
-                            class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
-                            >Format</label
-                        >
-                        <select
-                            v-model="exportFormat"
-                            class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                        >
-                            <option value="shopify">Shopify</option>
-                        </select>
-                    </div>
-
-                    <div
-                        class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-                    >
-                        Export includes only products with a selling price set.
-                    </div>
+                    <ShopifyContentExportCard />
 
                     <div class="rounded-lg border border-slate-200 bg-white p-4">
                         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -529,5 +874,23 @@ watch(
                 </div>
             </div>
         </div>
+
+        <PlamodDrawer
+            :open="plamodDrawerOpen"
+            :product-id="plamodDrawerProductId"
+            :product-sku="plamodDrawerProductSku"
+            :product-price="plamodDrawerProductPrice"
+            :on-close="closePlamodDrawer"
+        />
+
+        <ConfirmDialog
+            :open="syncMissingOpen"
+            title="Sync missing PDP info"
+            :message="`Queue sync jobs for ${syncMissingCount ?? 0} product(s) missing PDP info?`"
+            confirm-text="Queue sync"
+            :busy="syncMissingBusy"
+            @cancel="syncMissingOpen = false"
+            @confirm="confirmSyncMissing"
+        />
     </section>
 </template>

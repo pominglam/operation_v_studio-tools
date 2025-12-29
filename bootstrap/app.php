@@ -13,7 +13,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Required for signed URLs to validate correctly behind reverse proxies / tunnels (cloudflared).
+        // Without this, Laravel thinks the request scheme is "http" and rejects "https"-signed URLs.
+        $middleware->trustProxies(at: '*');
+        $middleware->append(\App\Http\Middleware\ShopifyImagesOnlyMiddleware::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
