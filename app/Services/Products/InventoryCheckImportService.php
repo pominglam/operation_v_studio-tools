@@ -9,6 +9,7 @@ use App\DAL\Products\ProductRepository;
 use App\Models\InventoryCheck;
 use App\Models\InventoryCheckItem;
 use App\Models\Product;
+use App\Services\Inventory\InventoryFifoDeductionService;
 use App\Services\Products\Exceptions\InvalidProductImportFileException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +31,7 @@ final class InventoryCheckImportService
     public function __construct(
         private readonly ProductRepository $products,
         private readonly InventoryCheckRepository $inventoryChecks,
+        private readonly InventoryFifoDeductionService $fifo,
     ) {}
 
     /**
@@ -112,11 +114,15 @@ final class InventoryCheckImportService
                         ];
                     }
 
-                    $applied = $this->applyUpdates($match['product'], $row);
-                    if ($applied) {
+                    $apply = $this->applyUpdates($match['product'], $row, (string) $check->uuid);
+                    if ($apply['changed']) {
                         $item->applied = true;
                         $item->applied_at = now();
                         $counts['applied']++;
+                    }
+                    if ($apply['fifo_underflow'] > 0) {
+                        $msg = 'FIFO underflow: went negative by '.$apply['fifo_underflow'].'.';
+                        $item->match_error = trim(($item->match_error ? $item->match_error.'; ' : '').$msg);
                     }
                 } elseif ($match['status'] === 'ambiguous') {
                     $counts['ambiguous']++;
@@ -283,11 +289,19 @@ final class InventoryCheckImportService
      *   quantity_in_store_raw:string
      * }  $row
      */
-    private function applyUpdates(Product $product, array $row): bool
+    private function applyUpdates(Product $product, array $row, string $inventoryCheckUuid): array
     {
         $changed = false;
+        $underflow = 0;
 
         if ($row['quantity_in_store'] !== null && $row['quantity_in_store'] >= 0) {
+            $previous = (int) ($product->available_qty ?? 0);
+            $next = (int) $row['quantity_in_store'];
+            $delta = $previous - $next;
+            if ($delta > 0) {
+                $result = $this->fifo->deductForInventoryCheck((int) $product->id, $delta, $inventoryCheckUuid);
+                $underflow = (int) ($result['underflow'] ?? 0);
+            }
             if ($product->available_qty !== $row['quantity_in_store']) {
                 $product->available_qty = $row['quantity_in_store'];
                 $changed = true;
@@ -305,7 +319,7 @@ final class InventoryCheckImportService
             $this->products->save($product);
         }
 
-        return $changed;
+        return ['changed' => $changed, 'fifo_underflow' => $underflow];
     }
 
     /**

@@ -5,6 +5,7 @@ export type CreateProductPayload = {
     sku: string;
     barcode: string | null;
     description: string;
+    handle: string | null;
     type: string | null;
     vendor: string | null;
     price: string | null;
@@ -27,6 +28,7 @@ const form = ref<CreateProductPayload>({
     sku: '',
     barcode: null,
     description: '',
+    handle: null,
     type: null,
     vendor: 'Plamod',
     price: null,
@@ -62,6 +64,7 @@ async function submit(): Promise<void> {
         sku: form.value.sku.trim(),
         barcode: form.value.barcode?.trim() || null,
         description: form.value.description.trim(),
+        handle: form.value.handle?.trim() || null,
         type: form.value.type?.trim() || null,
         vendor: form.value.vendor?.trim() || null,
         price: form.value.price?.trim() || null,
@@ -75,6 +78,7 @@ async function submit(): Promise<void> {
         sku: '',
         barcode: null,
         description: '',
+        handle: null,
         type: null,
         vendor: 'Plamod',
         price: null,
@@ -128,6 +132,18 @@ async function submit(): Promise<void> {
                     v-model="form.description"
                     class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                     type="text"
+                />
+            </div>
+            <div class="md:col-span-6">
+                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                    >Handle</label
+                >
+                <input
+                    v-model="form.handle"
+                    class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="(optional Shopify handle / slug)"
                 />
             </div>
             <div class="md:col-span-3">

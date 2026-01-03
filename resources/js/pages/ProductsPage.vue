@@ -845,9 +845,7 @@ function resetListState(): void {
                                         <tr
                                             class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
                                         >
-                                            <th class="px-3 py-2">SKU</th>
-                                            <th class="px-3 py-2">Barcode</th>
-                                            <th class="px-3 py-2">Description</th>
+                                            <th class="px-3 py-2">Product</th>
                                         </tr>
                                     </thead>
                                     <tbody class="divide-y divide-slate-100">
@@ -856,14 +854,17 @@ function resetListState(): void {
                                             :key="p.id"
                                             class="hover:bg-slate-50"
                                         >
-                                            <td class="px-3 py-2 font-medium text-slate-900">
-                                                {{ p.sku }}
-                                            </td>
-                                            <td class="px-3 py-2 text-slate-700">
-                                                {{ p.barcode ?? '—' }}
-                                            </td>
-                                            <td class="px-3 py-2 text-slate-700">
-                                                {{ p.description }}
+                                            <td class="px-3 py-2">
+                                                <div
+                                                    class="max-w-[40rem] truncate font-medium text-slate-900"
+                                                    :title="p.description"
+                                                >
+                                                    {{ p.description }}
+                                                </div>
+                                                <div class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-600">
+                                                    <span class="font-mono">{{ p.sku }}</span>
+                                                    <span class="font-mono">{{ p.barcode ?? '—' }}</span>
+                                                </div>
                                             </td>
                                         </tr>
                                     </tbody>

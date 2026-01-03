@@ -23,4 +23,17 @@ final class EloquentProductSellingPriceRepository implements ProductSellingPrice
 
         return $row;
     }
+
+    public function productIdsWithSellingPriceSet(): array
+    {
+        /** @var array<int, int> $ids */
+        $ids = ProductSellingPrice::query()
+            ->whereNotNull('selling_price')
+            ->where('selling_price', '<>', '')
+            ->orderBy('product_id')
+            ->pluck('product_id')
+            ->all();
+
+        return array_values($ids);
+    }
 }

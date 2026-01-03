@@ -11,6 +11,23 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /** @extends JsonResource<ProductPriceQuote> */
 final class ProductPriceQuoteResource extends JsonResource
 {
+    private function money2OrOriginal(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $trimmed = trim((string) $value);
+        if ($trimmed === '') {
+            return null;
+        }
+        $clean = preg_replace('/[^0-9\.\-]/', '', $trimmed) ?? '';
+        if ($clean === '' || ! is_numeric($clean)) {
+            return $trimmed;
+        }
+
+        return number_format((float) $clean, 2, '.', '');
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -25,8 +42,8 @@ final class ProductPriceQuoteResource extends JsonResource
             'status' => $quote->status,
             'availability' => $quote->availability,
             'currency' => $quote->currency,
-            'price' => $quote->price,
-            'original_price' => $quote->original_price,
+            'price' => $this->money2OrOriginal($quote->price),
+            'original_price' => $this->money2OrOriginal($quote->original_price),
             'product_url' => $quote->product_url,
             'error_message' => $quote->error_message,
             'fetched_at' => $quote->fetched_at->toISOString(),

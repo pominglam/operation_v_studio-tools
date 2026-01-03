@@ -11,6 +11,23 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /** @extends JsonResource<InventoryCheckItem> */
 final class InventoryCheckItemResource extends JsonResource
 {
+    private function money2(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+        $clean = preg_replace('/[^0-9\.\-]/', '', $trimmed) ?? '';
+        if ($clean === '' || ! is_numeric($clean)) {
+            return $trimmed;
+        }
+
+        return number_format((float) $clean, 2, '.', '');
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -29,7 +46,7 @@ final class InventoryCheckItemResource extends JsonResource
             'product_name' => $item->product_name,
             'english_name' => $item->english_name,
             'available_amount' => $item->available_amount,
-            'selling_price' => $item->product?->price,
+            'selling_price' => $this->money2($item->product?->price),
             'quantity_in_store' => $item->quantity_in_store,
             'difference' => $item->difference,
             'notes' => $item->notes,

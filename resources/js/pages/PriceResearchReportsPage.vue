@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import { api } from '../lib/api';
 import { formatLocalDateTime } from '../lib/datetime';
+import { formatMoney2OrOriginal } from '../lib/money';
 import PaginationControls from '../components/ui/PaginationControls.vue';
 
 type QuoteReport = {
@@ -178,7 +179,7 @@ onMounted(() => void load());
                                 </div>
                             </td>
                             <td class="px-4 py-3 text-right tabular-nums text-slate-900">
-                                {{ r.price ?? '—' }}
+                                {{ formatMoney2OrOriginal(r.price) }}
                             </td>
                             <td class="px-4 py-3">
                                 <a

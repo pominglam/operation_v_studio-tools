@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router';
 import { api } from '../lib/api';
 import { formatLocalDateTime } from '../lib/datetime';
+import { formatMoney2, formatMoney2OrEmpty, formatMoney2OrOriginal, parseMoney } from '../lib/money';
 import { parseNonNegativeIntOrNull } from '../lib/numbers';
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
@@ -31,6 +32,12 @@ type ProductResearch = {
     filled: number | null;
     available: number | null;
     cost: string | null;
+    shipping_per_unit: string | null;
+    landed_cost: string | null;
+    cost_low: string | null;
+    cost_high: string | null;
+    landed_cost_low: string | null;
+    landed_cost_high: string | null;
     selling_price: string | null;
     quotes: Quote[];
 };
@@ -96,7 +103,7 @@ const pageTotals = computed(() => {
     for (const p of items.value) {
         shipped += p.filled ?? 0;
 
-        const c = parseMoney(p.cost);
+        const c = parseMoney(p.landed_cost ?? p.cost);
         if (c !== null) cost += c;
 
         const sp = parseMoney(p.selling_price);
@@ -105,8 +112,8 @@ const pageTotals = computed(() => {
 
     return {
         shipped,
-        cost: formatMoney(cost) ?? '0.00',
-        price: formatMoney(price) ?? '0.00',
+        cost: cost.toFixed(2),
+        price: price.toFixed(2),
     };
 });
 
@@ -255,19 +262,6 @@ async function submitReport(): Promise<void> {
     }
 }
 
-function parseMoney(value: string | null): number | null {
-    if (!value) return null;
-    const cleaned = value.replace(/[^0-9.-]/g, '');
-    if (!cleaned) return null;
-    const n = Number.parseFloat(cleaned);
-    return Number.isFinite(n) ? n : null;
-}
-
-function formatMoney(value: number | null): string | null {
-    if (value === null) return null;
-    return value.toFixed(2);
-}
-
 function averagePriceOnline(p: ProductResearch): string | null {
     const disabled = new Set(disabledSiteKeys.value);
     const nums = p.quotes
@@ -277,7 +271,7 @@ function averagePriceOnline(p: ProductResearch): string | null {
 
     if (nums.length === 0) return null;
     const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
-    return formatMoney(avg);
+    return avg.toFixed(2);
 }
 
 function hasWeirdPriceSpread(p: ProductResearch): boolean {
@@ -296,13 +290,13 @@ function hasWeirdPriceSpread(p: ProductResearch): boolean {
 }
 
 function costTimes(p: ProductResearch, factor: number): string | null {
-    const n = parseMoney(p.cost);
+    const n = parseMoney(p.landed_cost ?? p.cost);
     if (n === null) return null;
-    return formatMoney(n * factor);
+    return (n * factor).toFixed(2);
 }
 
 function marginMultiplier(p: ProductResearch): string | null {
-    const cost = parseMoney(p.cost);
+    const cost = parseMoney(p.landed_cost ?? p.cost);
     const selling = parseMoney(p.selling_price);
     if (cost === null || selling === null) return null;
     if (cost <= 0) return null;
@@ -1187,9 +1181,12 @@ function resetPageState(): void {
                                         class="hover:underline"
                                         @click="onSortChange('cost')"
                                     >
-                                        COST{{ sortIndicator('cost') }}
+                                        UNIT COST{{ sortIndicator('cost') }}
                                     </button>
                                 </th>
+                                <th class="px-4 py-3 text-right">SHIP/UNIT</th>
+                                <th class="px-4 py-3 text-right">LANDED</th>
+                                <th class="px-4 py-3 text-right">LANDED (LOW-HIGH)</th>
                                 <th class="px-4 py-3 text-right">1.5x</th>
                                 <th class="px-4 py-3 text-right">
                                     <div class="flex flex-col items-end">
@@ -1355,8 +1352,19 @@ function resetPageState(): void {
                                     />
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                                    <span class="font-medium text-slate-900">{{
-                                        p.cost ?? '—'
+                                    <span class="font-medium text-slate-900">{{ formatMoney2OrEmpty(p.cost) || '—' }}</span>
+                                </td>
+                                <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                    <span class="font-medium text-slate-900">{{ formatMoney2OrEmpty(p.shipping_per_unit) || '—' }}</span>
+                                </td>
+                                <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                    <span class="font-medium text-slate-900">{{ formatMoney2OrEmpty(p.landed_cost) || '—' }}</span>
+                                </td>
+                                <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                    <span class="text-slate-600">{{
+                                        p.landed_cost_low && p.landed_cost_high
+                                            ? `${formatMoney2(p.landed_cost_low)}–${formatMoney2(p.landed_cost_high)}`
+                                            : '—'
                                     }}</span>
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
@@ -1467,7 +1475,11 @@ function resetPageState(): void {
                                                         "
                                                         class="text-xs text-slate-500 line-through"
                                                     >
-                                                        {{ quoteFor(p, s.key)!.original_price }}
+                                                        {{
+                                                            formatMoney2OrOriginal(
+                                                                quoteFor(p, s.key)!.original_price,
+                                                            )
+                                                        }}
                                                     </span>
                                                     <a
                                                         v-if="quoteFor(p, s.key)!.product_url"
@@ -1482,7 +1494,11 @@ function resetPageState(): void {
                                                         target="_blank"
                                                         rel="noreferrer"
                                                     >
-                                                        {{ quoteFor(p, s.key)!.price ?? '—' }}
+                                                        {{
+                                                            formatMoney2OrOriginal(
+                                                                quoteFor(p, s.key)!.price,
+                                                            )
+                                                        }}
                                                     </a>
                                                     <span
                                                         v-else
@@ -1494,7 +1510,11 @@ function resetPageState(): void {
                                                                 : 'text-slate-900'
                                                         "
                                                     >
-                                                        {{ quoteFor(p, s.key)!.price ?? '—' }}
+                                                        {{
+                                                            formatMoney2OrOriginal(
+                                                                quoteFor(p, s.key)!.price,
+                                                            )
+                                                        }}
                                                     </span>
                                                 </div>
                                                 <div

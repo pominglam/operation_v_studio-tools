@@ -17,6 +17,7 @@ final class StoreProductRequest extends FormRequest
             'sku' => ['required', 'string', 'max:64'],
             'barcode' => ['nullable', 'string', 'max:64'],
             'description' => ['required', 'string', 'max:512'],
+            'handle' => ['nullable', 'string', 'max:255'],
             'type' => ['nullable', 'string', 'max:128'],
             'vendor' => ['nullable', 'string', 'max:128'],
             'price' => ['nullable', 'numeric'],

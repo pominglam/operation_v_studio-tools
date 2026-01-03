@@ -25,6 +25,7 @@ const localError = ref<string | null>(null);
 const sku = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const barcode = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const description = ref<BulkFieldState<string>>({ apply: false, value: '' });
+const handle = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const type = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const vendor = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const publishedOnShopify = ref<BulkFieldState<'true' | 'false'>>({ apply: false, value: 'false' });
@@ -39,6 +40,7 @@ const hasAnyApply = computed<boolean>(() => {
         sku.value.apply ||
         barcode.value.apply ||
         description.value.apply ||
+        handle.value.apply ||
         type.value.apply ||
         vendor.value.apply ||
         publishedOnShopify.value.apply ||
@@ -55,6 +57,7 @@ function reset(): void {
     sku.value = { apply: false, value: '' };
     barcode.value = { apply: false, value: '' };
     description.value = { apply: false, value: '' };
+    handle.value = { apply: false, value: '' };
     type.value = { apply: false, value: '' };
     vendor.value = { apply: false, value: '' };
     publishedOnShopify.value = { apply: false, value: 'false' };
@@ -77,7 +80,7 @@ function parseNullableInt(input: string): number | null {
 }
 
 watch(
-    [sku, barcode, description, type, vendor, publishedOnShopify, price, order, filled, extended],
+    [sku, barcode, description, handle, type, vendor, publishedOnShopify, price, order, filled, extended],
     () => {
         // Clear stale validation messages as the user edits fields
         if (localError.value !== null) {
@@ -128,6 +131,11 @@ function onConfirm(): void {
             return;
         }
         changes.description = nextDescription;
+    }
+
+    if (handle.value.apply) {
+        const nextHandle = handle.value.value.trim();
+        changes.handle = nextHandle === '' ? null : nextHandle;
     }
 
     if (type.value.apply) {
@@ -286,6 +294,20 @@ function onConfirm(): void {
                             class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                             type="text"
                             :disabled="!description.apply || busy"
+                        />
+                    </div>
+
+                    <div class="md:col-span-6">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input v-model="handle.apply" type="checkbox" class="h-4 w-4 rounded" />
+                            Handle
+                        </label>
+                        <input
+                            v-model="handle.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            type="text"
+                            :disabled="!handle.apply || busy"
+                            placeholder="(blank clears)"
                         />
                     </div>
 

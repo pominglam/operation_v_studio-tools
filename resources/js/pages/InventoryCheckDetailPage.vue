@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { api } from '../lib/api';
 import { formatTorontoDateTime } from '../lib/datetime';
+import { formatMoney2OrEmpty } from '../lib/money';
 
 type InventoryCheckItem = {
     id: number;
@@ -179,7 +180,7 @@ onMounted(() => {
                                 <td class="px-2 py-1">{{ it.type ?? '' }}</td>
                                 <td class="px-2 py-1">{{ it.english_name || it.product_name || '' }}</td>
                                 <td class="px-2 py-1 text-right">{{ it.available_amount ?? '' }}</td>
-                                <td class="px-2 py-1 text-right">{{ it.selling_price ?? '' }}</td>
+                                <td class="px-2 py-1 text-right">{{ formatMoney2OrEmpty(it.selling_price) }}</td>
                                 <td class="px-2 py-1 text-right">{{ it.quantity_in_store ?? '' }}</td>
                                 <td class="px-2 py-1 text-right">{{ it.difference ?? '' }}</td>
                                 <td class="px-2 py-1">{{ it.notes ?? '' }}</td>

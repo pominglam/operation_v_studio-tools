@@ -7,11 +7,19 @@ import PriceResearchReportsPage from './pages/PriceResearchReportsPage.vue';
 import SyncProgressPage from './pages/SyncProgressPage.vue';
 import InventoryCheckPage from './pages/InventoryCheckPage.vue';
 import InventoryCheckDetailPage from './pages/InventoryCheckDetailPage.vue';
+import PurchaseOrdersPage from './pages/PurchaseOrdersPage.vue';
+import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage.vue';
 
 const routes: RouteRecordRaw[] = [
     { path: '/', redirect: '/products' },
     { path: '/import', redirect: { path: '/products', hash: '#import' } },
     { path: '/products', name: 'products', component: ProductsPage },
+    { path: '/purchase-orders', name: 'purchase-orders', component: PurchaseOrdersPage },
+    {
+        path: '/purchase-orders/:id',
+        name: 'purchase-order-detail',
+        component: PurchaseOrderDetailPage,
+    },
     { path: '/inventory-check', name: 'inventory-check', component: InventoryCheckPage },
     {
         path: '/inventory-check/:id',

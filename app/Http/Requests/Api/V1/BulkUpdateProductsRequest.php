@@ -21,6 +21,7 @@ final class BulkUpdateProductsRequest extends FormRequest
             'changes.sku' => ['sometimes', 'required', 'string', 'max:64'],
             'changes.barcode' => ['sometimes', 'nullable', 'string', 'max:64'],
             'changes.description' => ['sometimes', 'required', 'string', 'max:512'],
+            'changes.handle' => ['sometimes', 'nullable', 'string', 'max:255'],
             'changes.type' => ['sometimes', 'nullable', 'string', 'max:128'],
             'changes.vendor' => ['sometimes', 'nullable', 'string', 'max:128'],
             'changes.published_on_shopify' => ['sometimes', 'required', 'boolean'],

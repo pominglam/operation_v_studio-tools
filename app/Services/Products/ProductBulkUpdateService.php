@@ -20,6 +20,7 @@ final class ProductBulkUpdateService
      *   sku?: string,
      *   barcode?: string|null,
      *   description?: string,
+     *   handle?: string|null,
      *   type?: string|null,
      *   vendor?: string|null,
  *   published_on_shopify?: bool,
@@ -49,6 +50,12 @@ final class ProductBulkUpdateService
 
         if (array_key_exists('description', $changes)) {
             $updates['description'] = trim($changes['description']);
+        }
+
+        if (array_key_exists('handle', $changes)) {
+            $handle = $changes['handle'];
+            $handle = $handle !== null ? trim($handle) : null;
+            $updates['handle'] = $handle !== '' ? $handle : null;
         }
 
         if (array_key_exists('type', $changes)) {

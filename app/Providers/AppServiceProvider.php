@@ -26,8 +26,12 @@ use App\DAL\Products\ProductExternalContentRepository;
 use App\DAL\Products\ProductSellingPriceRepository;
 use App\DAL\InventoryChecks\EloquentInventoryCheckRepository;
 use App\DAL\InventoryChecks\InventoryCheckRepository;
+use App\DAL\Inventory\EloquentInventoryRepository;
+use App\DAL\Inventory\InventoryRepository;
 use App\DAL\Jobs\EloquentJobBatchItemRepository;
 use App\DAL\Jobs\JobBatchItemRepository;
+use App\DAL\PurchaseOrders\EloquentPurchaseOrderRepository;
+use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\PriceResearch\Http\AliExpressScraperClient;
 use App\Services\PriceResearch\PriceResearchService;
@@ -72,6 +76,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(ProductExternalAssetRepository::class, EloquentProductExternalAssetRepository::class);
         $this->app->bind(JobBatchItemRepository::class, EloquentJobBatchItemRepository::class);
         $this->app->bind(InventoryCheckRepository::class, EloquentInventoryCheckRepository::class);
+        $this->app->bind(PurchaseOrderRepository::class, EloquentPurchaseOrderRepository::class);
+        $this->app->bind(InventoryRepository::class, EloquentInventoryRepository::class);
 
         $this->app->bind(ProductLookupRepository::class, EloquentProductLookupRepository::class);
         $this->app->bind(ProductPriceQuoteRepository::class, EloquentProductPriceQuoteRepository::class);

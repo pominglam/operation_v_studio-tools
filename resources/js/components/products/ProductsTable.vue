@@ -2,12 +2,14 @@
 import { computed, ref } from 'vue';
 import ConfirmDialog from '../ui/ConfirmDialog.vue';
 import BulkUpdateDialog from './BulkUpdateDialog.vue';
+import { formatMoney2 } from '../../lib/money';
 
 export type ProductRow = {
     id: string; // uuid
     sku: string;
     barcode: string | null;
     description: string;
+    handle: string | null;
     type: string | null;
     vendor: string | null;
     published_on_shopify?: boolean;
@@ -43,6 +45,7 @@ export type UpdateProductPayload = {
     sku: string;
     barcode: string | null;
     description: string;
+    handle: string | null;
     type: string | null;
     vendor: string | null;
     price: string | null;
@@ -56,6 +59,7 @@ export type BulkUpdateProductChanges = {
     sku?: string;
     barcode?: string | null;
     description?: string;
+    handle?: string | null;
     type?: string | null;
     vendor?: string | null;
     published_on_shopify?: boolean;
@@ -261,6 +265,7 @@ function startEdit(p: ProductRow): void {
         sku: p.sku,
         barcode: p.barcode,
         description: p.description,
+        handle: p.handle,
         type: p.type,
         vendor: p.vendor,
         price: p.price,
@@ -292,6 +297,7 @@ async function saveEdit(): Promise<void> {
             sku: draft.value.sku.trim(),
             barcode: draft.value.barcode?.trim() || null,
             description: draft.value.description.trim(),
+            handle: draft.value.handle?.trim() || null,
             type: draft.value.type?.trim() || null,
             vendor: draft.value.vendor?.trim() || null,
             price: draft.value.price?.trim() || null,
@@ -385,32 +391,13 @@ async function saveEdit(): Promise<void> {
                             <button
                                 type="button"
                                 class="hover:underline"
-                                :class="sortHeaderClass('sku')"
-                                @click="onSortChange('sku')"
-                            >
-                                {{ sortLabel('sku') }}{{ sortIndicator('sku') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('barcode')"
-                                @click="onSortChange('barcode')"
-                            >
-                                {{ sortLabel('barcode') }}{{ sortIndicator('barcode') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3">
-                            <button
-                                type="button"
-                                class="hover:underline"
                                 :class="sortHeaderClass('description')"
                                 @click="onSortChange('description')"
                             >
-                                {{ sortLabel('description') }}{{ sortIndicator('description') }}
+                                Product{{ sortIndicator('description') }}
                             </button>
                         </th>
+                        <th class="px-4 py-3">Handle</th>
                         <th class="px-4 py-3">
                             <button
                                 type="button"
@@ -488,7 +475,7 @@ async function saveEdit(): Promise<void> {
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     <tr v-if="products.length === 0">
-                        <td class="px-4 py-4 text-slate-600" colspan="14">
+                        <td class="px-4 py-4 text-slate-600" colspan="13">
                             No products yet. Import a CSV or add one manually above.
                         </td>
                     </tr>
@@ -505,37 +492,48 @@ async function saveEdit(): Promise<void> {
                             />
                         </td>
 
-                        <td class="px-4 py-3 font-medium text-slate-900">
+                        <td class="px-4 py-3">
                             <template v-if="editingId === p.id">
-                                <input
-                                    v-model="draft!.sku"
-                                    class="w-40 rounded-md border border-slate-200 px-2 py-1 text-sm"
-                                    type="text"
-                                />
+                                <div class="flex flex-col gap-2">
+                                    <input
+                                        v-model="draft!.description"
+                                        class="w-[28rem] rounded-md border border-slate-200 px-2 py-1 text-sm"
+                                        type="text"
+                                    />
+                                    <div class="flex flex-wrap gap-2">
+                                        <input
+                                            v-model="draft!.sku"
+                                            class="w-40 rounded-md border border-slate-200 px-2 py-1 font-mono text-xs"
+                                            type="text"
+                                        />
+                                        <input
+                                            v-model="draft!.barcode"
+                                            class="w-44 rounded-md border border-slate-200 px-2 py-1 font-mono text-xs"
+                                            type="text"
+                                        />
+                                    </div>
+                                </div>
                             </template>
-                            <template v-else>{{ p.sku }}</template>
+                            <template v-else>
+                                <div class="max-w-[28rem] truncate font-medium text-slate-900" :title="p.description">
+                                    {{ p.description }}
+                                </div>
+                                <div class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-600">
+                                    <span class="font-mono">{{ p.sku }}</span>
+                                    <span class="font-mono">{{ p.barcode ?? '—' }}</span>
+                                </div>
+                            </template>
                         </td>
 
                         <td class="px-4 py-3 text-slate-700">
                             <template v-if="editingId === p.id">
                                 <input
-                                    v-model="draft!.barcode"
-                                    class="w-44 rounded-md border border-slate-200 px-2 py-1 text-sm"
+                                    v-model="draft!.handle"
+                                    class="w-[18rem] rounded-md border border-slate-200 px-2 py-1 text-sm"
                                     type="text"
                                 />
                             </template>
-                            <template v-else>{{ p.barcode ?? '—' }}</template>
-                        </td>
-
-                        <td class="px-4 py-3 text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <input
-                                    v-model="draft!.description"
-                                    class="w-[28rem] rounded-md border border-slate-200 px-2 py-1 text-sm"
-                                    type="text"
-                                />
-                            </template>
-                            <template v-else>{{ p.description }}</template>
+                            <template v-else>{{ p.handle ?? '—' }}</template>
                         </td>
 
                         <td class="px-4 py-3 text-slate-700">
@@ -570,7 +568,7 @@ async function saveEdit(): Promise<void> {
                                     type="text"
                                 />
                             </template>
-                            <template v-else>{{ p.price ?? '—' }}</template>
+                            <template v-else>{{ p.price ? formatMoney2(p.price) : '—' }}</template>
                         </td>
 
                         <td class="px-4 py-3 text-right tabular-nums text-slate-700">
@@ -617,7 +615,7 @@ async function saveEdit(): Promise<void> {
                                     type="text"
                                 />
                             </template>
-                            <template v-else>{{ p.extended ?? '—' }}</template>
+                            <template v-else>{{ p.extended ? formatMoney2(p.extended) : '—' }}</template>
                         </td>
 
                         <td class="px-4 py-3">

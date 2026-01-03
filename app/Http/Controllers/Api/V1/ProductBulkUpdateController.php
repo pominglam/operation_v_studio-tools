@@ -25,6 +25,7 @@ final class ProductBulkUpdateController extends Controller
          *   sku?: string,
          *   barcode?: string|null,
          *   description?: string,
+         *   handle?: string|null,
          *   type?: string|null,
          *   vendor?: string|null,
          *   published_on_shopify?: bool,

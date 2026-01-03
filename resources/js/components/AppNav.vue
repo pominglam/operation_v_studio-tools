@@ -8,6 +8,9 @@ function isActive(name: string): boolean {
     if (name === 'inventory-check') {
         return route.path.startsWith('/inventory-check');
     }
+    if (name === 'purchase-orders') {
+        return route.path.startsWith('/purchase-orders');
+    }
     return route.name === name;
 }
 </script>
@@ -46,6 +49,17 @@ function isActive(name: string): boolean {
                     "
                 >
                     Inventory Check
+                </RouterLink>
+                <RouterLink
+                    to="/purchase-orders"
+                    class="rounded-md px-3 py-1.5 transition"
+                    :class="
+                        isActive('purchase-orders')
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-100'
+                    "
+                >
+                    Purchase Orders
                 </RouterLink>
                 <RouterLink
                     to="/price-research"

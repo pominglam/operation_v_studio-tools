@@ -11,6 +11,23 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /** @extends JsonResource<Product> */
 final class ProductResource extends JsonResource
 {
+    private function money2(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+        $clean = preg_replace('/[^0-9\.\-]/', '', $trimmed) ?? '';
+        if ($clean === '' || ! is_numeric($clean)) {
+            return $trimmed;
+        }
+
+        return number_format((float) $clean, 2, '.', '');
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -28,8 +45,8 @@ final class ProductResource extends JsonResource
             'type' => $product->type,
             'vendor' => $product->vendor,
             'published_on_shopify' => (bool) $product->published_on_shopify,
-            'price' => $product->price,
-            'selling_price' => $product->sellingPrice?->selling_price,
+            'price' => $this->money2($product->price),
+            'selling_price' => $this->money2($product->sellingPrice?->selling_price),
             'pdp' => [
                 'has_description' => $this->hasExternalDescription($product),
                 'plamod_image_count' => (int) ($product->plamod_image_assets_count ?? 0),
@@ -37,7 +54,7 @@ final class ProductResource extends JsonResource
             'order' => $product->order_qty,
             'filled' => $product->filled_qty,
             'available' => $product->available_qty,
-            'extended' => $product->extended,
+            'extended' => $this->money2($product->extended),
             'created_at' => optional($product->created_at)->toISOString(),
             'updated_at' => optional($product->updated_at)->toISOString(),
         ];
