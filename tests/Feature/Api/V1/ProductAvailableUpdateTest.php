@@ -9,7 +9,7 @@ it('updates product available quantity without requiring full product payload', 
         'description' => 'Available update test product',
         'type' => 'HG',
         'vendor' => 'Plamod',
-        'price' => '12.34',
+        'latest_unit_cost' => '12.34',
         'order_qty' => 2,
         'filled_qty' => 1,
         'available_qty' => 5,
@@ -29,7 +29,7 @@ it('updates product available quantity without requiring full product payload', 
         ->and($product->barcode)->toBeNull()
         ->and($product->type)->toBe('HG')
         ->and($product->vendor)->toBe('Plamod')
-        ->and((string) $product->price)->toBe('12.34');
+        ->and((string) $product->latest_unit_cost)->toBe('12.34');
 });
 
 

@@ -25,7 +25,6 @@ final class BulkUpdateProductsRequest extends FormRequest
             'changes.type' => ['sometimes', 'nullable', 'string', 'max:128'],
             'changes.vendor' => ['sometimes', 'nullable', 'string', 'max:128'],
             'changes.published_on_shopify' => ['sometimes', 'required', 'boolean'],
-            'changes.price' => ['sometimes', 'nullable', 'numeric'],
             'changes.order' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'changes.filled' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'changes.extended' => ['sometimes', 'nullable', 'numeric'],

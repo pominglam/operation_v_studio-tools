@@ -8,6 +8,7 @@ use App\DAL\Inventory\InventoryRepository;
 use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\Models\InventoryLot;
 use App\Models\PurchaseOrder;
+use App\Services\Products\ProductLatestCostCacheService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -16,6 +17,7 @@ final class PurchaseOrderUpdateService
     public function __construct(
         private readonly PurchaseOrderRepository $purchaseOrders,
         private readonly InventoryRepository $inventory,
+        private readonly ProductLatestCostCacheService $latestCosts,
     ) {}
 
     /**
@@ -100,6 +102,9 @@ final class PurchaseOrderUpdateService
             if ($shouldRecalc) {
                 $this->recomputeLotsForPo($po);
             }
+
+            $po->loadMissing('items');
+            $this->latestCosts->recomputeForSkus($po->items->pluck('sku')->all());
 
             return $po;
         });

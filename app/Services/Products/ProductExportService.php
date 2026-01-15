@@ -49,6 +49,33 @@ final class ProductExportService
     }
 
     /**
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, Product>
+     */
+    public function listSelectedForShopifyExport(array $uuids, ?string $sortBy, string $sortDir): Collection
+    {
+        return $this->products->listByUuidsForExport($uuids, $sortBy, $sortDir);
+    }
+
+    /**
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, Product>
+     */
+    public function listSelectedMissingBarcodeForExport(array $uuids, ?string $sortBy, string $sortDir): Collection
+    {
+        return $this->products->listMissingBarcodeByUuidsForExport($uuids, $sortBy, $sortDir);
+    }
+
+    /**
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, Product>
+     */
+    public function listSelectedBarcodedForExportSorted(array $uuids): Collection
+    {
+        return $this->products->listBarcodedByUuidsForExportSorted($uuids);
+    }
+
+    /**
      * @return array<int, string>
      */
     public function shopifyHeader(): array
@@ -77,7 +104,7 @@ final class ProductExportService
             'Variant Inventory Qty',
             'Variant Inventory Policy',
             'Variant Fulfillment Service',
-            'Variant Price',
+            'Price',
             'Variant Compare At Price',
             'Variant Requires Shipping',
             'Variant Taxable',
@@ -102,20 +129,33 @@ final class ProductExportService
 
     public function shopifyHandleForProduct(Product $product, array &$usedHandles): string
     {
-        $base = Str::slug((string) $product->description);
-        if ($base === '') {
-            $base = Str::slug((string) $product->sku);
-        }
-        if ($base === '') {
-            $base = 'product';
+        // Prefer stored handle so exports update the existing Shopify product (handle is the primary identifier in Shopify CSV imports).
+        $stored = $product->handle !== null ? trim((string) $product->handle) : '';
+        if ($stored !== '') {
+            $handle = $stored;
+        } else {
+            $base = Str::slug((string) $product->description);
+            if ($base === '') {
+                $base = Str::slug((string) $product->sku);
+            }
+            if ($base === '') {
+                $base = 'product';
+            }
+            $handle = $base;
         }
 
-        $handle = $base;
         if (isset($usedHandles[$handle])) {
+            $base = $stored !== '' ? $stored : Str::slug((string) $product->description);
+            if ($base === '') {
+                $base = Str::slug((string) $product->sku);
+            }
+            if ($base === '') {
+                $base = 'product';
+            }
             $handle = $base.'-'.Str::slug((string) $product->sku);
         }
         if ($handle === '' || isset($usedHandles[$handle])) {
-            $handle = $base.'-'.(string) $product->sku;
+            $handle = $handle.'-'.(string) $product->sku;
         }
 
         $usedHandles[$handle] = true;

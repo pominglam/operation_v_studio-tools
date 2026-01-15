@@ -19,11 +19,12 @@ use Illuminate\Support\Str;
  * @property string|null $type
  * @property string|null $vendor
  * @property bool $published_on_shopify
- * @property string|null $price
  * @property int|null $order_qty
  * @property int|null $filled_qty
  * @property int|null $available_qty
  * @property string|null $extended
+ * @property string|null $latest_unit_cost
+ * @property string|null $latest_landed_unit_cost
  * @property \Illuminate\Support\Carbon|null $price_researched_at
  */
 final class Product extends Model
@@ -38,21 +39,23 @@ final class Product extends Model
         'type',
         'vendor',
         'published_on_shopify',
-        'price',
         'order_qty',
         'filled_qty',
         'available_qty',
         'extended',
+        'latest_unit_cost',
+        'latest_landed_unit_cost',
     ];
 
     /** @var array<string, string> */
     protected $casts = [
-        'price' => 'decimal:2',
         'order_qty' => 'integer',
         'filled_qty' => 'integer',
         'available_qty' => 'integer',
         'published_on_shopify' => 'boolean',
         'extended' => 'decimal:2',
+        'latest_unit_cost' => 'decimal:2',
+        'latest_landed_unit_cost' => 'decimal:2',
         'price_researched_at' => 'datetime',
     ];
 

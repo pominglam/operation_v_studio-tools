@@ -128,4 +128,83 @@ it('prepares shopify content export and returns download_url + skipped lists', f
     expect($csv)->toMatch('/https:\\/\\/abc\\.trycloudflare\\.com\\/shopify-images\\/\\d+\\/\\d+\\/[a-f0-9]{64}\\//');
 });
 
+it('prepares shopify content export for selected product IDs only', function (): void {
+    Storage::fake('local');
+
+    app()->instance(CloudflaredTunnel::class, new class implements CloudflaredTunnel {
+        public function status(): array
+        {
+            return [
+                'running' => true,
+                'tunnel_url' => 'https://abc.trycloudflare.com',
+                'container_id' => 'cid',
+                'error' => null,
+            ];
+        }
+
+        public function start(): array
+        {
+            return ['ok' => true, 'tunnel_url' => 'https://abc.trycloudflare.com', 'error' => null];
+        }
+
+        public function stop(): array
+        {
+            return ['ok' => true, 'error' => null];
+        }
+    });
+
+    $p1 = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000090050',
+        'sku' => 'SKU-SEL-1',
+        'barcode' => '123',
+        'description' => 'Selected 1',
+        'handle' => 'selected-1',
+        'type' => 'MG',
+        'published_on_shopify' => true,
+        'filled_qty' => 1,
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $p1->id,
+        'product_uuid' => $p1->uuid,
+        'selling_price' => '55.99',
+    ]);
+    ProductExternalContent::query()->create([
+        'product_id' => $p1->id,
+        'source' => 'hlj',
+        'title' => 'HLJ',
+        'description_html' => '<p>desc</p>',
+        'attributes_json' => null,
+        'source_url' => 'https://www.hlj.com/x',
+    ]);
+
+    $p2 = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000090051',
+        'sku' => 'SKU-SEL-2',
+        'barcode' => '999',
+        'description' => 'Selected 2',
+        'handle' => 'selected-2',
+        'type' => 'MG',
+        'published_on_shopify' => false,
+        'filled_qty' => 1,
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $p2->id,
+        'product_uuid' => $p2->uuid,
+        'selling_price' => '10.00',
+    ]);
+
+    $res = $this->postJson('/api/v1/products/exports/shopify-content/prepare', [
+        'ids' => [$p1->uuid],
+    ]);
+    $res->assertOk();
+
+    /** @var string $exportId */
+    $exportId = $res->json('export_id');
+    $download = $this->get("/api/v1/products/exports/shopify-content/download/{$exportId}");
+    $download->assertOk();
+
+    $csv = (string) $download->streamedContent();
+    expect($csv)->toContain('SKU-SEL-1')->not->toContain('SKU-SEL-2');
+});
+
 

@@ -73,7 +73,7 @@ final class ProductPriceResearchResource extends JsonResource
         /** @var string|null $latestLanded */
         $latestLanded = $product->latest_landed_cost ?? null;
 
-        $cost = $latestUnitCost ?? $product->price;
+        $cost = $latestUnitCost;
         $landed = $latestLanded ?? ($cost !== null ? $this->addDecimals($cost, $this->addDecimals($latestShipping, $latestSurcharge, 6), 6) : null);
 
         return [

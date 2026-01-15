@@ -256,9 +256,9 @@ final class PriceResearchQueryService
 
         if ($sortBy === 'multiplier') {
             $q->orderByRaw(
-                'case when sps.selling_price is null or products.price is null or products.price = 0 then 1 else 0 end asc',
+                'case when sps.selling_price is null or products.latest_landed_unit_cost is null or products.latest_landed_unit_cost = 0 then 1 else 0 end asc',
             );
-            $q->orderByRaw('(sps.selling_price / products.price) '.$sortDir);
+            $q->orderByRaw('(sps.selling_price / products.latest_landed_unit_cost) '.$sortDir);
 
             return $q->paginate($perPage);
         }

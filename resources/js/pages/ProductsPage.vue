@@ -16,7 +16,9 @@ import ProductsTable, {
     type BulkUpdateProductChanges,
     type UpdateProductPayload,
 } from '../components/products/ProductsTable.vue';
+import type { ProductsBulkExportType } from '../components/products/BulkExportDialog.vue';
 import PlamodDrawer from '../components/products/PlamodDrawer.vue';
+import ProductPoLinesDrawer from '../components/products/ProductPoLinesDrawer.vue';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
 import ConfirmDialog from '../components/ui/ConfirmDialog.vue';
 import PaginationControls from '../components/ui/PaginationControls.vue';
@@ -91,6 +93,73 @@ function downloadBarcodedProductsCsv(): void {
     window.location.assign('/api/v1/products/export/barcoded');
 }
 
+function parseFilenameFromContentDisposition(header: string | undefined): string | null {
+    if (!header) return null;
+    // content-disposition: attachment; filename="foo.csv"
+    const m = /filename\*?=(?:UTF-8''|\"?)([^\";]+)\"?/i.exec(header);
+    if (!m) return null;
+    try {
+        return decodeURIComponent(m[1]);
+    } catch {
+        return m[1];
+    }
+}
+
+async function bulkExportSelected(ids: string[], exportType: ProductsBulkExportType): Promise<void> {
+    if (exportType === 'shopify_content') {
+        const res = await api.post<{
+            download_url: string;
+        }>(
+            '/api/v1/products/exports/shopify-content/prepare',
+            { ids },
+            { validateStatus: () => true },
+        );
+
+        if (res.status !== 200) {
+            throw new Error('export_failed');
+        }
+
+        const downloadUrl = res.data.download_url;
+        if (!downloadUrl) {
+            throw new Error('export_failed');
+        }
+
+        window.location.assign(downloadUrl);
+        return;
+    }
+
+    const res = await api.post(
+        '/api/v1/products/export/selected',
+        {
+            export_type: exportType,
+            ids,
+            sort_by: sortBy.value,
+            sort_dir: sortDir.value,
+        },
+        {
+            responseType: 'blob',
+            validateStatus: () => true,
+        },
+    );
+
+    if (res.status !== 200) {
+        throw new Error('export_failed');
+    }
+
+    const header = (res.headers as Record<string, string | undefined>)['content-disposition'];
+    const filename = parseFilenameFromContentDisposition(header) ?? `products-selected-${exportType}.csv`;
+
+    const blob = res.data as Blob;
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+}
+
 async function loadMissingSellingPrice(): Promise<void> {
     missingSellingPriceLoading.value = true;
     missingSellingPriceError.value = null;
@@ -128,6 +197,7 @@ const missingOptions = ref<MultiSelectOption[]>([
     { value: 'pdp_description', label: 'PDP description' },
     { value: 'selling_price', label: 'Selling price' },
     { value: 'barcode', label: 'Barcode' },
+    { value: 'handle', label: 'Handle' },
 ]);
 
 const syncMissingOpen = ref(false);
@@ -144,6 +214,11 @@ const plamodDrawerProductId = ref<string | null>(null);
 const plamodDrawerProductSku = ref<string | null>(null);
 const plamodDrawerProductPrice = ref<string | null>(null);
 
+const poLinesOpen = ref(false);
+const poLinesProductId = ref<string | null>(null);
+const poLinesProductSku = ref<string | null>(null);
+const poLinesProductName = ref<string | null>(null);
+
 function openPlamodDrawer(productId: string): void {
     plamodDrawerProductId.value = productId;
     const p = products.value.find((x) => x.id === productId) ?? null;
@@ -156,11 +231,51 @@ function closePlamodDrawer(): void {
     plamodDrawerOpen.value = false;
 }
 
+function openPoLinesDrawer(productId: string): void {
+    poLinesProductId.value = productId;
+    const p = products.value.find((x) => x.id === productId) ?? null;
+    poLinesProductSku.value = p?.sku ?? null;
+    poLinesProductName.value = p?.description ?? null;
+    poLinesOpen.value = true;
+}
+
+function closePoLinesDrawer(): void {
+    poLinesOpen.value = false;
+}
+
 const total = computed<number>(() => meta.value?.total ?? 0);
 const currentPage = computed<number>(() => meta.value?.current_page ?? page.value);
 const lastPage = computed<number>(() => meta.value?.last_page ?? 1);
 
+let inFlightLoadKey: string | null = null;
+let lastLoadedKey: string | null = null;
+let lastLoadedAt = 0;
+
+function buildLoadKey(): string {
+    const types = [...selectedTypes.value].map((t) => t.trim()).filter(Boolean).sort();
+    const vendors = [...selectedVendors.value].map((v) => v.trim()).filter(Boolean).sort();
+    const missing = [...selectedMissing.value].map((m) => m.trim()).filter(Boolean).sort();
+    return JSON.stringify({
+        per_page: perPage.value,
+        page: page.value,
+        search: search.value.trim() || null,
+        sort_by: sortBy.value,
+        sort_dir: sortDir.value,
+        types,
+        vendors,
+        missing,
+    });
+}
+
 async function load(): Promise<void> {
+    const key = buildLoadKey();
+    // Prevent duplicate concurrent loads (common during initial hydration + batch polling).
+    if (inFlightLoadKey === key) return;
+    // Prevent rapid sequential duplicate loads for the same query (common during initial page load).
+    const now = Date.now();
+    if (lastLoadedKey === key && now - lastLoadedAt < 1500) return;
+    inFlightLoadKey = key;
+
     loading.value = true;
     error.value = null;
 
@@ -186,6 +301,9 @@ async function load(): Promise<void> {
         error.value = 'Failed to load products.';
     } finally {
         loading.value = false;
+        if (inFlightLoadKey === key) inFlightLoadKey = null;
+        lastLoadedKey = key;
+        lastLoadedAt = Date.now();
     }
 }
 
@@ -284,9 +402,13 @@ async function pollSyncBatchOnce(): Promise<void> {
     }
 }
 
-function startSyncBatchPoll(): void {
+async function startSyncBatchPoll(): Promise<void> {
     stopSyncBatchPoll();
-    void pollSyncBatchOnce();
+    await pollSyncBatchOnce();
+    const s = syncBatchStatus.value;
+    if (s?.finished_at || s?.cancelled_at) {
+        return;
+    }
     syncBatchPollTimer = window.setInterval(() => void pollSyncBatchOnce(), 2000);
 }
 
@@ -348,7 +470,7 @@ async function confirmSyncMissing(): Promise<void> {
             } catch {
                 // ignore
             }
-            startSyncBatchPoll();
+            void startSyncBatchPoll();
         }
         syncMissingMessage.value = `Queued ${res.data.queued} product(s) for sync.`;
         syncMissingOpen.value = false;
@@ -390,7 +512,10 @@ watch(selectedMissing, () => {
     }
 }, { deep: true });
 
-watch(page, () => void load());
+watch(page, () => {
+    if (hydrating.value) return;
+    void load();
+});
 
 onMounted(() => {
     const saved = loadPageState<{
@@ -426,7 +551,7 @@ onMounted(() => {
         const last = window.localStorage.getItem('last_sync_batch_id');
         if (last && !syncBatchId.value) {
             syncBatchId.value = last;
-            startSyncBatchPoll();
+            void startSyncBatchPoll();
         }
     } catch {
         // ignore
@@ -708,8 +833,10 @@ function resetListState(): void {
                         :on-bulk-delete="bulkDelete"
                         :on-bulk-update="bulkUpdate"
                         :on-bulk-rename-plamod-assets="bulkRenamePlamodAssets"
+                        :on-bulk-export-selected="bulkExportSelected"
                         :on-update="updateProduct"
                         :on-open-plamod="openPlamodDrawer"
+                        :on-open-po-lines="openPoLinesDrawer"
                         :vendor-options="vendorOptions.map((v) => v.value)"
                     />
 
@@ -882,6 +1009,14 @@ function resetListState(): void {
             :product-sku="plamodDrawerProductSku"
             :product-price="plamodDrawerProductPrice"
             :on-close="closePlamodDrawer"
+        />
+
+        <ProductPoLinesDrawer
+            :open="poLinesOpen"
+            :product-id="poLinesProductId"
+            :product-sku="poLinesProductSku"
+            :product-name="poLinesProductName"
+            @close="closePoLinesDrawer"
         />
 
         <ConfirmDialog

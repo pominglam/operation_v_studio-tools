@@ -181,6 +181,21 @@ HTML;
     expect($urls)->toContain('https://www.canadiangundam.com/1144-scale/1447-hg-gundam-astray-blue-frame-13.html?search_query=HG+1%2F144+%2313+Gundam+Astray+Blue+Frame&results=3679');
 });
 
+it('extracts CanadaComputers PDP links from search results', function (): void {
+    $html = <<<'HTML'
+<div class="product">
+  <a href="/en/model-building-kits-14/255258/bandai-hobby-mgex-1-100-strike-freedom-gundam-model-kit-5063368.html">
+    BANDAI Hobby MGEX 1/100 Strike Freedom Gundam Model kit
+  </a>
+</div>
+HTML;
+
+    $parser = new HtmlPriceParser;
+    $urls = $parser->extractCandidateProductUrls($html, 'https://www.canadacomputers.com');
+
+    expect($urls)->toContain('https://www.canadacomputers.com/en/model-building-kits-14/255258/bandai-hobby-mgex-1-100-strike-freedom-gundam-model-kit-5063368.html');
+});
+
 it('extracts HobbyWholesale product PDP links and excludes category .html pages', function (): void {
     $html = <<<'HTML'
 <nav>

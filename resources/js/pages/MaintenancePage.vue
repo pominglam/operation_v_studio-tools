@@ -21,6 +21,7 @@ const recrawlingSites = ref(false);
 const forceRefreshingAll = ref(false);
 const backfillingTypes = ref(false);
 const recomputingTypes = ref(false);
+const refreshingLatestCosts = ref(false);
 const notesLoading = ref(false);
 const notesSaving = ref(false);
 const flushMessage = ref<string | null>(null);
@@ -39,6 +40,8 @@ const typeBackfillMessage = ref<string | null>(null);
 const typeBackfillError = ref<string | null>(null);
 const typeRecomputeMessage = ref<string | null>(null);
 const typeRecomputeError = ref<string | null>(null);
+const refreshLatestCostsMessage = ref<string | null>(null);
+const refreshLatestCostsError = ref<string | null>(null);
 const notesMessage = ref<string | null>(null);
 const notesError = ref<string | null>(null);
 const notesBody = ref<string>('');
@@ -115,6 +118,13 @@ type ConfirmState =
           variant: 'danger' | 'primary';
       }
     | {
+          kind: 'refresh_latest_costs';
+          title: string;
+          message: string;
+          confirmText: string;
+          variant: 'danger' | 'primary';
+      }
+    | {
           kind: 'restore_db';
           title: string;
           message: string;
@@ -177,6 +187,17 @@ function requestRecomputeProductTypes(): void {
     };
 }
 
+function requestRefreshLatestCosts(): void {
+    confirm.value = {
+        kind: 'refresh_latest_costs',
+        title: 'Refresh latest product costs',
+        message:
+            'This will recompute cached latest_unit_cost and latest_landed_unit_cost for ALL products from purchase order history. Continue?',
+        confirmText: 'Refresh',
+        variant: 'primary',
+    };
+}
+
 function requestRestoreDb(): void {
     if (!selectedRestoreUuid.value) return;
     const b = dbBackups.value.find((x) => x.uuid === selectedRestoreUuid.value) ?? null;
@@ -214,12 +235,33 @@ async function confirmAction(): Promise<void> {
         return;
     }
 
+    if (current.kind === 'refresh_latest_costs') {
+        await refreshLatestCosts();
+        return;
+    }
+
     if (current.kind === 'restore_db') {
         await restoreDb();
         return;
     }
 
     await forceRefreshAll();
+}
+
+async function refreshLatestCosts(): Promise<void> {
+    refreshingLatestCosts.value = true;
+    refreshLatestCostsMessage.value = null;
+    refreshLatestCostsError.value = null;
+
+    try {
+        const res = await api.post<{ matched: number; updated: number }>('/api/v1/maintenance/refresh-latest-costs');
+        refreshLatestCostsMessage.value = `Refreshed latest costs. Matched ${res.data.matched}, updated ${res.data.updated}.`;
+    } catch {
+        refreshLatestCostsError.value = 'Failed to refresh latest costs.';
+    } finally {
+        refreshingLatestCosts.value = false;
+        confirm.value = null;
+    }
 }
 
 function cancelConfirm(): void {
@@ -797,6 +839,40 @@ watch(
         <div class="rounded-lg border border-slate-200 bg-white p-4">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
+                    <div class="text-sm font-medium text-slate-900">Refresh latest product costs</div>
+                    <div class="mt-1 text-sm text-slate-600">
+                        Recompute cached latest unit and landed costs for all products based on purchase orders.
+                    </div>
+                </div>
+
+                <button
+                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    :disabled="refreshingLatestCosts"
+                    @click="requestRefreshLatestCosts"
+                >
+                    {{ refreshingLatestCosts ? 'Refreshing…' : 'Refresh costs' }}
+                </button>
+            </div>
+
+            <div
+                v-if="refreshLatestCostsError"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
+                {{ refreshLatestCostsError }}
+            </div>
+
+            <div
+                v-if="refreshLatestCostsMessage"
+                class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+                {{ refreshLatestCostsMessage }}
+            </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
                     <div class="text-sm font-medium text-slate-900">Backfill product types</div>
                     <div class="mt-1 text-sm text-slate-600">
                         Fill missing product types based on the product description (does not
@@ -1067,7 +1143,7 @@ watch(
             :message="confirm?.message ?? ''"
             :confirm-text="confirm?.confirmText ?? 'Confirm'"
             :variant="confirm?.variant ?? 'primary'"
-            :busy="flushing || resettingRun || backfillingTypes || recomputingTypes"
+            :busy="flushing || resettingRun || backfillingTypes || recomputingTypes || refreshingLatestCosts"
             @cancel="cancelConfirm"
             @confirm="confirmAction"
         />

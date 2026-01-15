@@ -682,6 +682,7 @@ final class HtmlPriceParser
         $isHobbyWholesale = Str::contains($base, 'hobbywholesale.com');
         $isMeeplemart = Str::contains($base, 'meeplemart.com');
         $isCanadianGundam = Str::contains($base, 'canadiangundam.com');
+        $isCanadaComputers = Str::contains($base, 'canadacomputers.com');
 
         // Find all href values.
         preg_match_all('/href=["\']([^"\']+)["\']/i', $html, $m);
@@ -725,8 +726,16 @@ final class HtmlPriceParser
                 && preg_match('/\\.html(?:\\?|$)/i', $url) === 1
                 && preg_match('/\\/\\d+-[^\\/\\?]+\\.html\\b/i', $url) === 1
                 && ! Str::contains(Str::lower($url), ['/search', '/cart', '/order', '/my-account', '/contact-us', '/sitemap']);
+            // CanadaComputers PDPs (example):
+            // /en/model-building-kits-14/255258/bandai-hobby-...-5063368.html
+            $ccPath = (string) (parse_url($url, PHP_URL_PATH) ?? '');
+            $isCanadaComputersProduct = $isCanadaComputers
+                && Str::startsWith($ccPath, '/en/')
+                && preg_match('/\\.html$/i', $ccPath) === 1
+                && preg_match('/\\/\\d+\\/[^\\/]+-\\d{6,}\\.html$/i', $ccPath) === 1
+                && ! Str::contains(Str::lower($url), ['/en/search', '/search', '/cart', '/checkout']);
 
-            if (! $isKnownPdpPath && ! $isHobbyWholesaleProduct && ! $isMeeplemartProduct && ! $isCanadianGundamProduct) {
+            if (! $isKnownPdpPath && ! $isHobbyWholesaleProduct && ! $isMeeplemartProduct && ! $isCanadianGundamProduct && ! $isCanadaComputersProduct) {
                 continue;
             }
 

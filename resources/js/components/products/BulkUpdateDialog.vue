@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue';
 
 import type { BulkUpdateProductChanges } from './ProductsTable.vue';
-import { parseNonNegativeIntOrNull } from '../../lib/numbers';
 
 const props = defineProps<{
     open: boolean;
@@ -29,9 +28,6 @@ const handle = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const type = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const vendor = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const publishedOnShopify = ref<BulkFieldState<'true' | 'false'>>({ apply: false, value: 'false' });
-const price = ref<BulkFieldState<string>>({ apply: false, value: '' });
-const order = ref<BulkFieldState<string>>({ apply: false, value: '' });
-const filled = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const extended = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const renamePlamodAssets = ref(false);
 
@@ -44,9 +40,6 @@ const hasAnyApply = computed<boolean>(() => {
         type.value.apply ||
         vendor.value.apply ||
         publishedOnShopify.value.apply ||
-        price.value.apply ||
-        order.value.apply ||
-        filled.value.apply ||
         extended.value.apply ||
         renamePlamodAssets.value
     );
@@ -61,9 +54,6 @@ function reset(): void {
     type.value = { apply: false, value: '' };
     vendor.value = { apply: false, value: '' };
     publishedOnShopify.value = { apply: false, value: 'false' };
-    price.value = { apply: false, value: '' };
-    order.value = { apply: false, value: '' };
-    filled.value = { apply: false, value: '' };
     extended.value = { apply: false, value: '' };
     renamePlamodAssets.value = false;
 }
@@ -75,12 +65,8 @@ watch(
     },
 );
 
-function parseNullableInt(input: string): number | null {
-    return parseNonNegativeIntOrNull(input);
-}
-
 watch(
-    [sku, barcode, description, handle, type, vendor, publishedOnShopify, price, order, filled, extended],
+    [sku, barcode, description, handle, type, vendor, publishedOnShopify, extended],
     () => {
         // Clear stale validation messages as the user edits fields
         if (localError.value !== null) {
@@ -150,33 +136,6 @@ function onConfirm(): void {
 
     if (publishedOnShopify.value.apply) {
         changes.published_on_shopify = publishedOnShopify.value.value === 'true';
-    }
-
-    if (price.value.apply) {
-        try {
-            changes.price = parseNullableNumericString(price.value.value);
-        } catch {
-            localError.value = 'Unit cost must be a number.';
-            return;
-        }
-    }
-
-    if (order.value.apply) {
-        try {
-            changes.order = parseNullableInt(order.value.value);
-        } catch {
-            localError.value = 'Ordered must be a whole number (0 or greater).';
-            return;
-        }
-    }
-
-    if (filled.value.apply) {
-        try {
-            changes.filled = parseNullableInt(filled.value.value);
-        } catch {
-            localError.value = 'Shipped must be a whole number (0 or greater).';
-            return;
-        }
     }
 
     if (extended.value.apply) {
@@ -326,20 +285,6 @@ function onConfirm(): void {
 
                     <div class="md:col-span-2">
                         <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                            <input v-model="price.apply" type="checkbox" class="h-4 w-4 rounded" />
-                            Unit cost
-                        </label>
-                        <input
-                            v-model="price.value"
-                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
-                            type="text"
-                            inputmode="decimal"
-                            :disabled="!price.apply || busy"
-                        />
-                    </div>
-
-                    <div class="md:col-span-2">
-                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
                             <input
                                 v-model="extended.apply"
                                 type="checkbox"
@@ -353,34 +298,6 @@ function onConfirm(): void {
                             type="text"
                             inputmode="decimal"
                             :disabled="!extended.apply || busy"
-                        />
-                    </div>
-
-                    <div class="md:col-span-1">
-                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                            <input v-model="order.apply" type="checkbox" class="h-4 w-4 rounded" />
-                            Ordered
-                        </label>
-                        <input
-                            v-model="order.value"
-                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
-                            type="text"
-                            inputmode="numeric"
-                            :disabled="!order.apply || busy"
-                        />
-                    </div>
-
-                    <div class="md:col-span-1">
-                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                            <input v-model="filled.apply" type="checkbox" class="h-4 w-4 rounded" />
-                            Shipped
-                        </label>
-                        <input
-                            v-model="filled.value"
-                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
-                            type="text"
-                            inputmode="numeric"
-                            :disabled="!filled.apply || busy"
                         />
                     </div>
                 </div>

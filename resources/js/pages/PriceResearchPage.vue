@@ -143,6 +143,7 @@ const allSites = [
     { key: 'aliexpress', name: 'AliExpress' },
     { key: 'argama_hobby', name: 'Argama Hobby' },
     { key: 'panda_hobby', name: 'Panda Hobby' },
+    { key: 'canada_computers', name: 'Canada Computers' },
     { key: 'canadian_gundam', name: 'Canadian Gundam' },
     { key: 'hobby_bee', name: 'Hobby Bee' },
     { key: 'hobby_wholesale', name: 'HobbyWholesale' },
@@ -156,6 +157,27 @@ const sites = computed(() => {
     const disabled = new Set(disabledSiteKeys.value);
     return allSites.filter((s) => !disabled.has(s.key));
 });
+
+function normalizeRunSites(): void {
+    const disabled = new Set(disabledSiteKeys.value);
+    const available = allSites
+        .filter((s) => s.key !== 'aliexpress' && !disabled.has(s.key))
+        .map((s) => s.key);
+
+    // Drop keys that are no longer available (disabled/removed).
+    runSites.value = runSites.value.filter((k) => available.includes(k));
+
+    // If user previously had "almost all" selected, auto-include newly added sites.
+    // This prevents new crawlers from silently never running due to persisted page state.
+    if (runSites.value.length >= Math.max(1, available.length - 1)) {
+        runSites.value = [...available];
+    }
+
+    // If empty, default to all (except AliExpress).
+    if (runSites.value.length === 0) {
+        runSites.value = [...available];
+    }
+}
 
 const quoteSiteOptions = computed<MultiSelectOption[]>(() => {
     return sites.value.map((s) => ({ value: s.key, label: s.name }));
@@ -777,6 +799,7 @@ async function loadPriceResearchFilterOptions(): Promise<void> {
         disabledSiteKeys.value = (json.data?.disabled_site_keys ?? []).filter(
             (t) => typeof t === 'string' && t.trim() !== '',
         );
+        normalizeRunSites();
     } catch {
         // ignore
     }
@@ -866,7 +889,7 @@ watch(
         if (hydrating.value) return;
         const disabled = new Set(disabledSiteKeys.value);
         quoteSites.value = quoteSites.value.filter((k) => !disabled.has(k));
-        runSites.value = runSites.value.filter((k) => !disabled.has(k));
+        normalizeRunSites();
     },
     { deep: true },
 );

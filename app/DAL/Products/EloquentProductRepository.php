@@ -53,7 +53,7 @@ final class EloquentProductRepository implements ProductRepository
             'description' => 'description',
             'type' => 'type',
             'vendor' => 'vendor',
-            'price' => 'price',
+            'latest_landed_unit_cost' => 'latest_landed_unit_cost',
             'order' => 'order_qty',
             'filled' => 'filled_qty',
             'available' => 'available_qty',
@@ -81,7 +81,7 @@ final class EloquentProductRepository implements ProductRepository
                 'description' => $row->description,
                 'type' => $row->type,
                 'vendor' => $row->vendor,
-                'price' => $row->price,
+                'latest_unit_cost' => $row->latestUnitCost,
                 'order_qty' => $row->orderQty,
                 'filled_qty' => $row->filledQty,
                 'extended' => $row->extended,
@@ -93,7 +93,7 @@ final class EloquentProductRepository implements ProductRepository
         Product::query()->upsert(
             $payload,
             uniqueBy: ['sku'],
-            update: ['barcode', 'description', 'type', 'vendor', 'price', 'order_qty', 'filled_qty', 'extended', 'updated_at'],
+            update: ['barcode', 'description', 'type', 'vendor', 'latest_unit_cost', 'order_qty', 'filled_qty', 'extended', 'updated_at'],
         );
 
         return count($rows);
@@ -145,6 +145,10 @@ final class EloquentProductRepository implements ProductRepository
                 $sub->whereNotNull('barcode')->where('barcode', '<>', '');
             });
 
+            $q->where(function ($sub): void {
+                $sub->whereNotNull('handle')->where('handle', '<>', '');
+            });
+
             $q->whereHas('sellingPrice', function ($q2): void {
                 $q2->whereNotNull('selling_price')->where('selling_price', '<>', '');
             });
@@ -166,6 +170,13 @@ final class EloquentProductRepository implements ProductRepository
             if ($flag === 'barcode') {
                 $q->where(function ($sub): void {
                     $sub->whereNull('barcode')->orWhere('barcode', '=', '');
+                });
+                continue;
+            }
+
+            if ($flag === 'handle') {
+                $q->where(function ($sub): void {
+                    $sub->whereNull('handle')->orWhere('handle', '=', '');
                 });
                 continue;
             }
@@ -243,6 +254,68 @@ final class EloquentProductRepository implements ProductRepository
             ->get();
     }
 
+    /**
+     * @param  array<int, string>  $uuids
+     */
+    public function listByUuidsForExport(array $uuids, ?string $sortBy = null, string $sortDir = 'asc'): Collection
+    {
+        [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+
+        $uuids = array_values(array_unique(array_filter(array_map('trim', $uuids), static fn (string $v): bool => $v !== '')));
+        if ($uuids === []) {
+            return collect();
+        }
+
+        return Product::query()
+            ->with(['sellingPrice'])
+            ->whereIn('uuid', $uuids)
+            ->orderBy($sortColumn, $sortDir)
+            ->get();
+    }
+
+    /**
+     * @param  array<int, string>  $uuids
+     */
+    public function listMissingBarcodeByUuidsForExport(array $uuids, ?string $sortBy = null, string $sortDir = 'asc'): Collection
+    {
+        [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+
+        $uuids = array_values(array_unique(array_filter(array_map('trim', $uuids), static fn (string $v): bool => $v !== '')));
+        if ($uuids === []) {
+            return collect();
+        }
+
+        return Product::query()
+            ->whereIn('uuid', $uuids)
+            ->where(function ($q): void {
+                $q->whereNull('barcode')
+                    ->orWhere('barcode', '=', '');
+            })
+            ->orderBy($sortColumn, $sortDir)
+            ->get();
+    }
+
+    /**
+     * @param  array<int, string>  $uuids
+     */
+    public function listBarcodedByUuidsForExportSorted(array $uuids): Collection
+    {
+        $uuids = array_values(array_unique(array_filter(array_map('trim', $uuids), static fn (string $v): bool => $v !== '')));
+        if ($uuids === []) {
+            return collect();
+        }
+
+        return Product::query()
+            ->with(['sellingPrice'])
+            ->whereIn('uuid', $uuids)
+            ->whereNotNull('barcode')
+            ->where('barcode', '<>', '')
+            ->orderByRaw('COALESCE(vendor, "") asc')
+            ->orderByRaw('COALESCE(type, "") asc')
+            ->orderBy('sku', 'asc')
+            ->get();
+    }
+
     public function listBarcodedForExportSorted(): Collection
     {
         return Product::query()
@@ -265,6 +338,33 @@ final class EloquentProductRepository implements ProductRepository
                 'externalContents',
                 'plamodImageAssets',
             ])
+            ->whereHas('sellingPrice', function ($q): void {
+                $q->whereNotNull('selling_price')->where('selling_price', '<>', '');
+            })
+            ->orderBy('sku', 'asc')
+            ->get();
+    }
+
+    /**
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, Product>
+     */
+    public function listForShopifyContentExportByUuids(array $uuids): Collection
+    {
+        $uuids = array_values(array_unique(array_filter(array_map('trim', $uuids), static fn (string $v): bool => $v !== '')));
+        if ($uuids === []) {
+            return collect();
+        }
+
+        return Product::query()
+            ->with([
+                'sellingPrice',
+                'hljExternalContent',
+                'plamodExternalContent',
+                'externalContents',
+                'plamodImageAssets',
+            ])
+            ->whereIn('uuid', $uuids)
             ->whereHas('sellingPrice', function ($q): void {
                 $q->whereNotNull('selling_price')->where('selling_price', '<>', '');
             })

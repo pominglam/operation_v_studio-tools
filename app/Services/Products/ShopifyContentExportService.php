@@ -32,7 +32,7 @@ final class ShopifyContentExportService
      *   images_enabled: bool
      * }
      */
-    public function prepare(?string $tunnelBaseUrl): array
+    public function prepare(?string $tunnelBaseUrl, array $productUuids = []): array
     {
         $exportId = (string) Str::uuid();
         $storagePath = "exports/shopify_content/{$exportId}.csv";
@@ -64,7 +64,11 @@ final class ShopifyContentExportService
         try {
             fputcsv($fh, $header);
 
-            foreach ($this->products->listForShopifyContentExport() as $product) {
+            $list = $productUuids === []
+                ? $this->products->listForShopifyContentExport()
+                : $this->products->listForShopifyContentExportByUuids($productUuids);
+
+            foreach ($list as $product) {
                 $handle = $this->ensureHandle($product, $usedHandles);
                 if ($handle === null) {
                     $skippedMissingHandle[] = [

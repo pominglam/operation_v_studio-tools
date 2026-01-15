@@ -9,7 +9,7 @@ it('updates product filled (shipped) quantity without requiring full product pay
         'description' => 'Filled test product',
         'type' => 'HG',
         'vendor' => 'Plamod',
-        'price' => '12.34',
+        'latest_unit_cost' => '12.34',
         'order_qty' => 2,
         'filled_qty' => 1,
         'extended' => '24.68',
@@ -28,7 +28,7 @@ it('updates product filled (shipped) quantity without requiring full product pay
         ->and($product->barcode)->toBeNull()
         ->and($product->type)->toBe('HG')
         ->and($product->vendor)->toBe('Plamod')
-        ->and((string) $product->price)->toBe('12.34');
+        ->and((string) $product->latest_unit_cost)->toBe('12.34');
 });
 
 

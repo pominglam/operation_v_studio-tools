@@ -59,6 +59,10 @@ return [
             'name' => 'Panda Hobby',
             'base_url' => 'https://pandahobby.ca',
         ],
+        'canada_computers' => [
+            'name' => 'Canada Computers',
+            'base_url' => 'https://www.canadacomputers.com',
+        ],
         'canadian_gundam' => [
             'name' => 'Canadian Gundam',
             'base_url' => 'https://canadiangundam.com',

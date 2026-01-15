@@ -8,6 +8,7 @@ use App\DAL\Inventory\InventoryRepository;
 use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Services\Products\ProductLatestCostCacheService;
 use App\Services\PurchaseOrders\Exceptions\PurchaseOrderItemUpdateException;
 use Illuminate\Support\Facades\DB;
 
@@ -16,15 +17,46 @@ final class PurchaseOrderItemUpdateService
     public function __construct(
         private readonly PurchaseOrderRepository $purchaseOrders,
         private readonly InventoryRepository $inventory,
+        private readonly ProductLatestCostCacheService $latestCosts,
     ) {}
 
-    public function updateItem(int $purchaseOrderItemId, bool $hasQtyShipped, ?int $qtyShipped, bool $hasQtyReceived, ?int $qtyReceived): PurchaseOrderItem
+    public function updateItem(
+        int $purchaseOrderItemId,
+        bool $hasQtyOrdered,
+        ?int $qtyOrdered,
+        bool $hasQtyShipped,
+        ?int $qtyShipped,
+        bool $hasQtyReceived,
+        ?int $qtyReceived,
+    ): PurchaseOrderItem
     {
-        return DB::transaction(function () use ($purchaseOrderItemId, $hasQtyShipped, $qtyShipped, $hasQtyReceived, $qtyReceived): PurchaseOrderItem {
+        return DB::transaction(function () use ($purchaseOrderItemId, $hasQtyOrdered, $qtyOrdered, $hasQtyShipped, $qtyShipped, $hasQtyReceived, $qtyReceived): PurchaseOrderItem {
             $item = $this->purchaseOrders->findItemByIdOrFail($purchaseOrderItemId);
 
             $issues = [];
-            $ordered = $item->qty_ordered;
+            $ordered = $hasQtyOrdered ? $qtyOrdered : $item->qty_ordered;
+            $shipped = $hasQtyShipped ? $qtyShipped : $item->qty_shipped;
+            $received = $hasQtyReceived ? $qtyReceived : $item->qty_received;
+
+            if ($hasQtyOrdered && $qtyOrdered !== null) {
+                if ($shipped !== null && $shipped > $qtyOrdered) {
+                    $issues[] = [
+                        'kind' => 'qty_shipped_exceeds_ordered',
+                        'purchase_order_item_id' => $purchaseOrderItemId,
+                        'qty_shipped' => $shipped,
+                        'qty_ordered' => $qtyOrdered,
+                    ];
+                }
+
+                if ($received !== null && $received > $qtyOrdered) {
+                    $issues[] = [
+                        'kind' => 'qty_received_exceeds_ordered',
+                        'purchase_order_item_id' => $purchaseOrderItemId,
+                        'qty_received' => $received,
+                        'qty_ordered' => $qtyOrdered,
+                    ];
+                }
+            }
 
             if ($hasQtyShipped) {
                 if ($ordered !== null && $qtyShipped !== null && $qtyShipped > $ordered) {
@@ -58,7 +90,6 @@ final class PurchaseOrderItemUpdateService
                         'qty_ordered' => $ordered,
                     ];
                 }
-                $shipped = $hasQtyShipped ? $qtyShipped : $item->qty_shipped;
                 if ($qtyReceived !== null && $shipped !== null && $qtyReceived > $shipped) {
                     $issues[] = [
                         'kind' => 'qty_received_exceeds_shipped',
@@ -77,7 +108,16 @@ final class PurchaseOrderItemUpdateService
                 throw new PurchaseOrderItemUpdateException('Update blocked due to validation errors.', $issues);
             }
 
+            if ($hasQtyOrdered) {
+                $item->qty_ordered = $qtyOrdered;
+            }
+
             $this->purchaseOrders->saveItem($item);
+
+            $po = $item->purchaseOrder()->with('items')->first();
+            if ($po instanceof PurchaseOrder) {
+                $this->latestCosts->recomputeForSkus($po->items->pluck('sku')->all());
+            }
 
             return $item->loadMissing('purchaseOrder');
         });
@@ -106,6 +146,8 @@ final class PurchaseOrderItemUpdateService
                     $this->purchaseOrders->saveItem($it);
                 }
 
+                $this->latestCosts->recomputeForSkus($po->items->pluck('sku')->all());
+
                 return $this->purchaseOrders->findByUuidOrFail($purchaseOrderUuid);
             }
 
@@ -128,6 +170,8 @@ final class PurchaseOrderItemUpdateService
                 if ($issues !== []) {
                     throw new PurchaseOrderItemUpdateException('Bulk update blocked due to validation errors.', $issues);
                 }
+
+                $this->latestCosts->recomputeForSkus($po->items->pluck('sku')->all());
 
                 return $this->purchaseOrders->findByUuidOrFail($purchaseOrderUuid);
             }
@@ -222,6 +266,8 @@ final class PurchaseOrderItemUpdateService
             if ($issues !== []) {
                 throw new PurchaseOrderItemUpdateException('Bulk update blocked due to validation errors.', $issues);
             }
+
+            $this->latestCosts->recomputeForSkus($po->items->pluck('sku')->all());
 
             return $this->purchaseOrders->findByUuidOrFail($purchaseOrderUuid);
         });

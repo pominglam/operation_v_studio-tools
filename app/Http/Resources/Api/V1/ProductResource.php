@@ -45,7 +45,8 @@ final class ProductResource extends JsonResource
             'type' => $product->type,
             'vendor' => $product->vendor,
             'published_on_shopify' => (bool) $product->published_on_shopify,
-            'price' => $this->money2($product->price),
+            'latest_unit_cost' => $this->money2($product->latest_unit_cost),
+            'latest_landed_unit_cost' => $this->money2($product->latest_landed_unit_cost),
             'selling_price' => $this->money2($product->sellingPrice?->selling_price),
             'pdp' => [
                 'has_description' => $this->hasExternalDescription($product),

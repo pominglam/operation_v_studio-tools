@@ -95,7 +95,7 @@ final class InventoryOpeningBalanceBackfillService
                     $item->product_id = (int) $p->id;
                     $item->sku = (string) $p->sku;
                     $item->vendor = (string) ($p->vendor ?? $vendor);
-                    $item->unit_cost = $p->price;
+                    $item->unit_cost = $p->latest_unit_cost;
                     $item->qty_ordered = $available > 0 ? $available : 0;
                     $item->qty_shipped = $available > 0 ? $available : 0;
                     $item->qty_received = $available > 0 ? $available : 0;
@@ -110,7 +110,7 @@ final class InventoryOpeningBalanceBackfillService
                     $lot->product_id = (int) $p->id;
                     $lot->purchase_order_item_id = $item->id;
                     $lot->source_type = 'opening_balance';
-                    $lot->unit_cost = $p->price;
+                    $lot->unit_cost = $p->latest_unit_cost;
                     $lot->shipping_per_unit = '0.000000';
                     $lot->qty_received = $available;
                     $lot->qty_remaining = $available;

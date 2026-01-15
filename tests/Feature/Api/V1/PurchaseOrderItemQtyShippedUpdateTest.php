@@ -36,6 +36,63 @@ it('updates qty_shipped for a purchase order item', function (): void {
     $this->assertDatabaseHas('purchase_order_items', ['id' => $item->id, 'qty_shipped' => 1]);
 });
 
+it('updates qty_ordered for a purchase order item', function (): void {
+    $product = Product::query()->create([
+        'sku' => 'ORD-1',
+        'description' => 'Ordered 1',
+        'vendor' => 'Dspiae',
+    ]);
+
+    $po = PurchaseOrder::query()->create([
+        'vendor' => 'Dspiae',
+    ]);
+
+    $item = PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => $product->sku,
+        'vendor' => 'Dspiae',
+        'unit_cost' => '1.0000',
+        'qty_ordered' => null,
+        'qty_shipped' => null,
+        'qty_received' => null,
+    ]);
+
+    $res = $this->patchJson("/api/v1/purchase-order-items/{$item->id}", [
+        'qty_ordered' => 7,
+    ]);
+
+    $res->assertOk()->assertJsonPath('data.qty_ordered', 7);
+    $this->assertDatabaseHas('purchase_order_items', ['id' => $item->id, 'qty_ordered' => 7]);
+});
+
+it('blocks qty_ordered lower than qty_shipped/qty_received', function (): void {
+    $product = Product::query()->create([
+        'sku' => 'ORD-2',
+        'description' => 'Ordered 2',
+        'vendor' => 'Dspiae',
+    ]);
+
+    $po = PurchaseOrder::query()->create([
+        'vendor' => 'Dspiae',
+    ]);
+
+    $item = PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => $product->sku,
+        'vendor' => 'Dspiae',
+        'unit_cost' => '1.0000',
+        'qty_ordered' => 10,
+        'qty_shipped' => 6,
+        'qty_received' => 4,
+    ]);
+
+    $this->patchJson("/api/v1/purchase-order-items/{$item->id}", [
+        'qty_ordered' => 3,
+    ])->assertStatus(422)->assertJsonPath('issues.0.kind', 'qty_shipped_exceeds_ordered');
+});
+
 it('blocks qty_shipped greater than qty_ordered', function (): void {
     $product = Product::query()->create([
         'sku' => 'SHIP-2',

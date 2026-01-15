@@ -6,6 +6,7 @@ namespace App\Services\PurchaseOrders;
 
 use App\DAL\Inventory\InventoryRepository;
 use App\DAL\PurchaseOrders\PurchaseOrderRepository;
+use App\Services\Products\ProductLatestCostCacheService;
 use App\Services\PurchaseOrders\Exceptions\PurchaseOrderDeleteException;
 use Illuminate\Support\Facades\DB;
 
@@ -14,6 +15,7 @@ final class PurchaseOrderDeleteService
     public function __construct(
         private readonly PurchaseOrderRepository $purchaseOrders,
         private readonly InventoryRepository $inventory,
+        private readonly ProductLatestCostCacheService $latestCosts,
     ) {}
 
     public function delete(string $uuid): void
@@ -24,6 +26,8 @@ final class PurchaseOrderDeleteService
             if (! $po->relationLoaded('items')) {
                 $po->load('items');
             }
+
+            $skus = $po->items->pluck('sku')->all();
 
             $itemIds = $po->items->pluck('id')->all();
             if ($itemIds === []) {
@@ -40,6 +44,8 @@ final class PurchaseOrderDeleteService
 
             $this->purchaseOrders->deleteItemsForPurchaseOrder((int) $po->id);
             $this->purchaseOrders->delete($po);
+
+            $this->latestCosts->recomputeForSkus($skus);
         });
     }
 }

@@ -78,7 +78,7 @@ it('imports Plamod products when the CSV uses the new UI-aligned column names', 
         'description' => 'Some random unmatched product',
         'vendor' => 'Plamod',
         'type' => 'Others',
-        'price' => '10.00',
+        'latest_unit_cost' => '10.00',
         'order_qty' => 2,
         'filled_qty' => 1,
         'extended' => '20.00',
@@ -127,7 +127,7 @@ it('updates an existing product (by SKU) during import', function (): void {
         'barcode' => '9999999999999',
         'description' => 'HG 1/144 #13 Gundam Astray Blue Frame (updated)',
         'vendor' => 'Plamod',
-        'price' => '12.34',
+        'latest_unit_cost' => '12.34',
         'order_qty' => 3,
         'filled_qty' => 1,
         'extended' => '37.02',
@@ -160,7 +160,7 @@ it('imports products from an order-details CSV and ignores the trailing summary 
         'barcode' => '4573102687074',
         'description' => 'MG 1/100 GUNDAM BARBATOS LUPUS',
         'type' => 'MG',
-        'price' => '66.28',
+        'latest_unit_cost' => '66.28',
         'order_qty' => 12,
         'filled_qty' => 12,
         'extended' => '795.36',
@@ -171,7 +171,7 @@ it('imports products from an order-details CSV and ignores the trailing summary 
         'barcode' => '4573102692153',
         'description' => 'RG 1/144 WING GUNDAM ZERO',
         'type' => 'RG',
-        'price' => '42.82',
+        'latest_unit_cost' => '42.82',
         'order_qty' => 2,
         'filled_qty' => 2,
         'extended' => '85.64',
@@ -203,14 +203,14 @@ it('imports Stedi products and computes selling price when multiplier is present
     $this->assertDatabaseHas('products', [
         'sku' => 'MS-104',
         'vendor' => 'Stedi',
-        'price' => '5.59',
+        'latest_unit_cost' => '5.59',
     ]);
 
     $this->assertDatabaseHas('products', [
         'sku' => 'MS-11',
         'vendor' => 'Stedi',
         'barcode' => '6975400111004',
-        'price' => '3.05',
+        'latest_unit_cost' => '3.05',
     ]);
 
     // 5.59 * 2.6 = 14.534 -> base 14.54 -> selling 14.99

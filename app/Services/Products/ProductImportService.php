@@ -98,7 +98,7 @@ final class ProductImportService
                         description: $description,
                         type: $type,
                         vendor: $vendor,
-                        price: $this->nullableMoneyAt($data, $map['PRICE']),
+                        latestUnitCost: $this->nullableMoneyAt($data, $map['PRICE']),
                         orderQty: $this->nullableIntAt($data, $map['ORDER']),
                         filledQty: $this->nullableIntAt($data, $map['FILLED']),
                         extended: $this->nullableMoneyAt($data, $map['EXTENDED']),
@@ -112,7 +112,7 @@ final class ProductImportService
                         description: $name,
                         type: $type,
                         vendor: $vendor,
-                        price: $this->nullableMoneyAt($data, $map['UNIT PRICE']),
+                        latestUnitCost: $this->nullableMoneyAt($data, $map['UNIT PRICE']),
                         orderQty: $this->nullableIntAt($data, $map['QTY ORDERED']),
                         filledQty: $this->nullableIntAt($data, $map['QTY FILLED']),
                         extended: $this->nullableMoneyAt($data, $map['LINE SUBTOTAL (BEFORE TAX)']),
@@ -260,7 +260,7 @@ final class ProductImportService
                     description: $name,
                     type: $type,
                     vendor: $vendor,
-                    price: $this->nullableMoneyAt($data, $map['WHOLESALE PRICE CAD']),
+                    latestUnitCost: $this->nullableMoneyAt($data, $map['WHOLESALE PRICE CAD']),
                     orderQty: $this->nullableIntAt($data, $map['ORDER QTY']),
                     filledQty: $this->nullableIntAt($data, $map['QUANTITY RECEIVED']),
                     extended: $this->nullableMoneyAt($data, $map['CAD']),
@@ -434,7 +434,7 @@ final class ProductImportService
                 continue;
             }
 
-            $selling = $this->computeCadSellingPriceX99($product->price, $multiplier);
+            $selling = $this->computeCadSellingPriceX99($product->latest_unit_cost, $multiplier);
             if ($selling === null) {
                 continue;
             }

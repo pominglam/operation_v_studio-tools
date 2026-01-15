@@ -528,12 +528,12 @@ it('can sort price research products by multiplier (selling_price / cost)', func
     $p1 = Product::query()->create([
         'sku' => 'PR-MULT-1',
         'description' => 'Multiplier 1',
-        'price' => '10.00',
+        'latest_landed_unit_cost' => '10.00',
     ]);
     $p2 = Product::query()->create([
         'sku' => 'PR-MULT-2',
         'description' => 'Multiplier 2',
-        'price' => '20.00',
+        'latest_landed_unit_cost' => '20.00',
     ]);
 
     ProductSellingPrice::query()->create([
@@ -561,17 +561,17 @@ it('can sort price research products by selling price (nulls last)', function ()
     $p1 = Product::query()->create([
         'sku' => 'PR-SP-1',
         'description' => 'Selling price 10',
-        'price' => '10.00',
+        'latest_landed_unit_cost' => '10.00',
     ]);
     $p2 = Product::query()->create([
         'sku' => 'PR-SP-2',
         'description' => 'Selling price missing',
-        'price' => '10.00',
+        'latest_landed_unit_cost' => '10.00',
     ]);
     $p3 = Product::query()->create([
         'sku' => 'PR-SP-3',
         'description' => 'Selling price 20',
-        'price' => '10.00',
+        'latest_landed_unit_cost' => '10.00',
     ]);
 
     ProductSellingPrice::query()->create([

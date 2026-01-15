@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import ConfirmDialog from '../ui/ConfirmDialog.vue';
 import BulkUpdateDialog from './BulkUpdateDialog.vue';
+import BulkExportDialog, { type ProductsBulkExportType } from './BulkExportDialog.vue';
 import { formatMoney2 } from '../../lib/money';
 
 export type ProductRow = {
@@ -13,14 +14,13 @@ export type ProductRow = {
     type: string | null;
     vendor: string | null;
     published_on_shopify?: boolean;
-    price: string | null;
+    latest_unit_cost?: string | null;
+    latest_landed_unit_cost?: string | null;
     selling_price?: string | null;
     pdp?: {
         has_description: boolean;
         plamod_image_count: number;
     };
-    order: number | null;
-    filled: number | null;
     available: number | null;
     extended: string | null;
 };
@@ -48,9 +48,6 @@ export type UpdateProductPayload = {
     handle: string | null;
     type: string | null;
     vendor: string | null;
-    price: string | null;
-    order: number | null;
-    filled: number | null;
     available: number | null;
     extended: string | null;
 };
@@ -63,9 +60,6 @@ export type BulkUpdateProductChanges = {
     type?: string | null;
     vendor?: string | null;
     published_on_shopify?: boolean;
-    price?: string | null;
-    order?: number | null;
-    filled?: number | null;
     // available intentionally omitted for now; add when needed
     extended?: string | null;
 };
@@ -76,9 +70,7 @@ export type ProductSortKey =
     | 'description'
     | 'type'
     | 'vendor'
-    | 'price'
-    | 'order'
-    | 'filled'
+    | 'latest_landed_unit_cost'
     | 'available'
     | 'extended';
 
@@ -92,8 +84,10 @@ const props = defineProps<{
     onBulkDelete: (ids: string[]) => Promise<number>;
     onBulkUpdate: (ids: string[], changes: BulkUpdateProductChanges) => Promise<number>;
     onBulkRenamePlamodAssets: (ids: string[]) => Promise<number>;
+    onBulkExportSelected: (ids: string[], exportType: ProductsBulkExportType) => Promise<void>;
     onUpdate: (id: string, payload: UpdateProductPayload) => Promise<void>;
     onOpenPlamod: (id: string) => void;
+    onOpenPoLines: (id: string) => void;
     vendorOptions?: string[];
 }>();
 
@@ -107,11 +101,13 @@ const vendorChoices = computed<string[]>(() => {
 const selected = ref<Set<string>>(new Set());
 const bulkDeleting = ref(false);
 const bulkUpdating = ref(false);
+const bulkExporting = ref(false);
 const bulkMessage = ref<string | null>(null);
 const bulkError = ref<string | null>(null);
 const confirmBulkDeleteOpen = ref(false);
 const confirmBulkDeleteCount = ref(0);
 const bulkUpdateOpen = ref(false);
+const bulkExportOpen = ref(false);
 
 const editingId = ref<string | null>(null);
 const draft = ref<UpdateProductPayload | null>(null);
@@ -129,9 +125,7 @@ function sortLabel(key: ProductSortKey): string {
         description: 'Name',
         type: 'Type',
         vendor: 'Vendor',
-        price: 'Unit cost',
-        order: 'Ordered',
-        filled: 'Shipped',
+        latest_landed_unit_cost: 'Unit Cost Total (Latest)',
         available: 'Available',
         extended: 'Total cost',
     };
@@ -192,6 +186,19 @@ function requestBulkUpdate(): void {
     }
 
     bulkUpdateOpen.value = true;
+}
+
+function requestBulkExport(): void {
+    bulkError.value = null;
+    bulkMessage.value = null;
+
+    const ids = Array.from(selected.value);
+    if (ids.length === 0) {
+        bulkError.value = 'No products selected.';
+        return;
+    }
+
+    bulkExportOpen.value = true;
 }
 
 async function confirmBulkDelete(): Promise<void> {
@@ -258,6 +265,28 @@ async function confirmBulkUpdate(payload: { changes: BulkUpdateProductChanges; r
     }
 }
 
+async function confirmBulkExport(payload: { exportType: ProductsBulkExportType }): Promise<void> {
+    bulkError.value = null;
+    bulkMessage.value = null;
+
+    const ids = Array.from(selected.value);
+    if (ids.length === 0) {
+        bulkError.value = 'No products selected.';
+        return;
+    }
+
+    bulkExporting.value = true;
+    try {
+        await props.onBulkExportSelected(ids, payload.exportType);
+        bulkMessage.value = 'Export started.';
+        bulkExportOpen.value = false;
+    } catch {
+        bulkError.value = 'Failed to export selected products.';
+    } finally {
+        bulkExporting.value = false;
+    }
+}
+
 function startEdit(p: ProductRow): void {
     rowError.value = null;
     editingId.value = p.id;
@@ -268,9 +297,6 @@ function startEdit(p: ProductRow): void {
         handle: p.handle,
         type: p.type,
         vendor: p.vendor,
-        price: p.price,
-        order: p.order,
-        filled: p.filled,
         available: p.available,
         extended: p.extended,
     };
@@ -300,9 +326,6 @@ async function saveEdit(): Promise<void> {
             handle: draft.value.handle?.trim() || null,
             type: draft.value.type?.trim() || null,
             vendor: draft.value.vendor?.trim() || null,
-            price: draft.value.price?.trim() || null,
-            order: draft.value.order,
-            filled: draft.value.filled,
             available: draft.value.available,
             extended: draft.value.extended?.trim() || null,
         });
@@ -332,7 +355,7 @@ async function saveEdit(): Promise<void> {
                     <button
                         class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
                         type="button"
-                        :disabled="bulkDeleting || bulkUpdating"
+                        :disabled="bulkDeleting || bulkUpdating || bulkExporting"
                         @click="selected = new Set()"
                     >
                         Clear
@@ -340,15 +363,23 @@ async function saveEdit(): Promise<void> {
                     <button
                         class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
                         type="button"
-                        :disabled="bulkDeleting || bulkUpdating"
+                        :disabled="bulkDeleting || bulkUpdating || bulkExporting"
                         @click="requestBulkUpdate"
                     >
                         {{ bulkUpdating ? 'Updating…' : 'Update selected' }}
                     </button>
                     <button
+                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                        type="button"
+                        :disabled="bulkDeleting || bulkUpdating || bulkExporting"
+                        @click="requestBulkExport"
+                    >
+                        {{ bulkExporting ? 'Exporting…' : 'Export selected' }}
+                    </button>
+                    <button
                         class="rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-rose-700 disabled:opacity-50"
                         type="button"
-                        :disabled="bulkDeleting || bulkUpdating"
+                        :disabled="bulkDeleting || bulkUpdating || bulkExporting"
                         @click="requestBulkDelete"
                     >
                         {{ bulkDeleting ? 'Deleting…' : 'Delete selected' }}
@@ -422,30 +453,10 @@ async function saveEdit(): Promise<void> {
                             <button
                                 type="button"
                                 class="hover:underline"
-                                :class="sortHeaderClass('price')"
-                                @click="onSortChange('price')"
+                                :class="sortHeaderClass('latest_landed_unit_cost')"
+                                @click="onSortChange('latest_landed_unit_cost')"
                             >
-                                {{ sortLabel('price') }}{{ sortIndicator('price') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3 text-right">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('order')"
-                                @click="onSortChange('order')"
-                            >
-                                {{ sortLabel('order') }}{{ sortIndicator('order') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3 text-right">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('filled')"
-                                @click="onSortChange('filled')"
-                            >
-                                {{ sortLabel('filled') }}{{ sortIndicator('filled') }}
+                                {{ sortLabel('latest_landed_unit_cost') }}{{ sortIndicator('latest_landed_unit_cost') }}
                             </button>
                         </th>
                         <th class="px-4 py-3 text-right">
@@ -475,7 +486,7 @@ async function saveEdit(): Promise<void> {
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     <tr v-if="products.length === 0">
-                        <td class="px-4 py-4 text-slate-600" colspan="13">
+                        <td class="px-4 py-4 text-slate-600" colspan="11">
                             No products yet. Import a CSV or add one manually above.
                         </td>
                     </tr>
@@ -522,6 +533,14 @@ async function saveEdit(): Promise<void> {
                                     <span class="font-mono">{{ p.sku }}</span>
                                     <span class="font-mono">{{ p.barcode ?? '—' }}</span>
                                 </div>
+                                <div class="mt-0.5 text-xs text-slate-500">
+                                    <span
+                                        class="font-mono"
+                                        :class="p.handle && p.handle.trim() !== '' ? 'text-slate-600' : 'text-slate-400'"
+                                    >
+                                        {{ p.handle && p.handle.trim() !== '' ? p.handle : '—' }}
+                                    </span>
+                                </div>
                             </template>
                         </td>
 
@@ -561,38 +580,7 @@ async function saveEdit(): Promise<void> {
                         </td>
 
                         <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <input
-                                    v-model="draft!.price"
-                                    class="w-24 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
-                                    type="text"
-                                />
-                            </template>
-                            <template v-else>{{ p.price ? formatMoney2(p.price) : '—' }}</template>
-                        </td>
-
-                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <input
-                                    v-model.number="draft!.order"
-                                    class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
-                                    type="number"
-                                    min="0"
-                                />
-                            </template>
-                            <template v-else>{{ p.order ?? '—' }}</template>
-                        </td>
-
-                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <input
-                                    v-model.number="draft!.filled"
-                                    class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
-                                    type="number"
-                                    min="0"
-                                />
-                            </template>
-                            <template v-else>{{ p.filled ?? '—' }}</template>
+                            {{ p.latest_landed_unit_cost ? formatMoney2(p.latest_landed_unit_cost) : '—' }}
                         </td>
 
                         <td class="px-4 py-3 text-right tabular-nums text-slate-700">
@@ -729,6 +717,13 @@ async function saveEdit(): Promise<void> {
                             </div>
                             <div v-else class="flex justify-end">
                                 <button
+                                    class="mr-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50"
+                                    type="button"
+                                    @click="props.onOpenPoLines(p.id)"
+                                >
+                                    PO Lines
+                                </button>
+                                <button
                                     class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50"
                                     type="button"
                                     @click="startEdit(p)"
@@ -760,5 +755,13 @@ async function saveEdit(): Promise<void> {
         :busy="bulkUpdating"
         @cancel="bulkUpdateOpen = false"
         @confirm="confirmBulkUpdate"
+    />
+
+    <BulkExportDialog
+        :open="bulkExportOpen"
+        :selected-count="selected.size"
+        :busy="bulkExporting"
+        @cancel="bulkExportOpen = false"
+        @confirm="confirmBulkExport"
     />
 </template>

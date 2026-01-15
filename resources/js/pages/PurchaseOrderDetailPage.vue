@@ -51,6 +51,10 @@ const reimporting = ref(false);
 const reimportFile = ref<File | null>(null);
 const reimportError = ref<string | null>(null);
 
+const savingQtyOrdered = ref<number | null>(null);
+const editingQtyOrderedId = ref<number | null>(null);
+const qtyOrderedDrafts = reactive<Record<number, string>>({});
+
 const savingQtyShipped = ref<number | null>(null);
 const editingQtyShippedId = ref<number | null>(null);
 const qtyShippedDrafts = reactive<Record<number, string>>({});
@@ -112,25 +116,50 @@ const allocationQtyNote = computed<string | null>(() => {
 });
 
 function moneyToCents(value: string | null | undefined): number | null {
-    const n = parseMoney(value ?? null);
-    if (n === null) return null;
-    return Math.round(n * 100);
+    if (value === null || value === undefined) return null;
+    const s = String(value).trim();
+    if (s === '') return null;
+
+    const clean = s.replace(/[^0-9.\-]/g, '');
+    if (clean === '' || clean === '-' || !/^-?\d+(\.\d+)?$/.test(clean)) return null;
+
+    const neg = clean.startsWith('-');
+    const raw = neg ? clean.slice(1) : clean;
+    const parts = raw.split('.', 2);
+    const whole = parts[0] === '' ? '0' : parts[0];
+    const frac = (parts[1] ?? '').padEnd(3, '0'); // need 3rd digit for rounding
+    const cents2 = frac.slice(0, 2);
+    const third = Number(frac[2] ?? '0');
+
+    let cents = Number(whole) * 100 + Number(cents2);
+    if (third >= 5) cents += 1;
+
+    return neg ? -cents : cents;
 }
 
-const shippingPerUnit = computed<number | null>(() => {
-    if (!po.value?.shipping_total) return null;
-    const total = Number(po.value.shipping_total);
-    if (!Number.isFinite(total)) return null;
-    if (totalUnitsForAllocation.value <= 0) return null;
-    return total / totalUnitsForAllocation.value;
+function centsToMoney(cents: number): string {
+    const sign = cents < 0 ? '-' : '';
+    const abs = Math.abs(cents);
+    const dollars = Math.floor(abs / 100);
+    const rem = abs % 100;
+    return `${sign}${dollars}.${String(rem).padStart(2, '0')}`;
+}
+
+function perUnitCents(totalCents: number | null, units: number): number | null {
+    if (totalCents === null) return null;
+    if (units <= 0) return null;
+    // half-up rounding for positive values (these totals are non-negative in our domain)
+    return Math.floor((totalCents + units / 2) / units);
+}
+
+const shippingPerUnitCents = computed<number | null>(() => {
+    const total = moneyToCents(po.value?.shipping_total ?? null);
+    return perUnitCents(total, totalUnitsForAllocation.value);
 });
 
-const surchargePerUnit = computed<number | null>(() => {
-    if (!po.value?.surcharge_total) return null;
-    const total = Number(po.value.surcharge_total);
-    if (!Number.isFinite(total)) return null;
-    if (totalUnitsForAllocation.value <= 0) return null;
-    return total / totalUnitsForAllocation.value;
+const surchargePerUnitCents = computed<number | null>(() => {
+    const total = moneyToCents(po.value?.surcharge_total ?? null);
+    return perUnitCents(total, totalUnitsForAllocation.value);
 });
 
 type TotalsCheck = {
@@ -212,11 +241,12 @@ function formatCentsDelta(cents: number | null): string {
     return `${sign}$${(abs / 100).toFixed(2)}`;
 }
 
-function landedFor(unitCost: string | null, shipPerUnit: number | null, surchargeUnit: number | null): string {
-    const c = parseMoney(unitCost);
-    if (c === null || shipPerUnit === null) return '';
-    const s = surchargeUnit ?? 0;
-    return (c + shipPerUnit + s).toFixed(2);
+function landedFor(unitCost: string | null, shipPerUnitCents: number | null, surchargeUnitCents: number | null): string {
+    const unitCents = moneyToCents(unitCost ?? null);
+    if (unitCents === null) return '';
+    const ship = shipPerUnitCents ?? 0;
+    const surcharge = surchargeUnitCents ?? 0;
+    return centsToMoney(unitCents + ship + surcharge);
 }
 
 async function load(): Promise<void> {
@@ -331,6 +361,25 @@ async function deletePo(): Promise<void> {
     }
 }
 
+function startQtyOrderedEdit(itemId: number, current: number | null): void {
+    editingQtyOrderedId.value = itemId;
+    if (qtyOrderedDrafts[itemId] === undefined) {
+        qtyOrderedDrafts[itemId] = current === null ? '' : String(current);
+    }
+}
+
+function updateQtyOrderedDraft(itemId: number, value: string): void {
+    qtyOrderedDrafts[itemId] = value;
+}
+
+function commitQtyOrderedEdit(itemId: number): void {
+    if (editingQtyOrderedId.value !== itemId) return;
+    editingQtyOrderedId.value = null;
+    const value = qtyOrderedDrafts[itemId] ?? '';
+    delete qtyOrderedDrafts[itemId];
+    void saveQtyOrdered(itemId, value);
+}
+
 function startQtyShippedEdit(itemId: number, current: number | null): void {
     editingQtyShippedId.value = itemId;
     if (qtyShippedDrafts[itemId] === undefined) {
@@ -356,6 +405,42 @@ function parseQtyOrNull(value: string): number | null {
     const n = Number(v);
     if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) return null;
     return n;
+}
+
+async function saveQtyOrdered(itemId: number, value: string): Promise<void> {
+    if (!po.value) return;
+    itemQtyError.value = null;
+    savingQtyOrdered.value = itemId;
+
+    const next = parseQtyOrNull(value);
+    const row = po.value.items.find((it) => it.id === itemId);
+    const previous = row?.qty_ordered ?? null;
+
+    try {
+        if (row) row.qty_ordered = next;
+
+        const res = await api.patch(
+            `/api/v1/purchase-order-items/${itemId}`,
+            { qty_ordered: next },
+            { validateStatus: () => true },
+        );
+
+        if (res.status < 200 || res.status >= 300) {
+            if (row) row.qty_ordered = previous;
+            itemQtyError.value = (res.data as any)?.message ?? 'Failed to save qty ordered.';
+            return;
+        }
+
+        const saved = (res.data as any)?.data as PurchaseOrderItem | undefined;
+        if (saved && row) {
+            row.qty_ordered = saved.qty_ordered ?? null;
+        }
+    } catch {
+        if (row) row.qty_ordered = previous;
+        itemQtyError.value = 'Failed to save qty ordered.';
+    } finally {
+        savingQtyOrdered.value = null;
+    }
 }
 
 async function saveQtyShipped(itemId: number, value: string): Promise<void> {
@@ -751,7 +836,7 @@ onMounted(() => {
                             <span class="font-medium">FX CAD→{{ po.vendor_currency_code }}:</span> {{ po.fx_rate_cad_to_vendor ?? '—' }}
                             <span v-if="po.vendor_currency_code !== 'CAD' && !po.fx_rate_cad_to_vendor" class="font-medium text-rose-700"> (missing)</span>
                         </div>
-                        <div><span class="font-medium">Ship/unit:</span> {{ shippingPerUnit === null ? '—' : shippingPerUnit.toFixed(2) }}</div>
+                        <div><span class="font-medium">Ship/unit:</span> {{ shippingPerUnitCents === null ? '—' : centsToMoney(shippingPerUnitCents) }}</div>
                         <div><span class="font-medium">Items:</span> {{ po.counts.items }}</div>
                     </div>
 
@@ -858,10 +943,23 @@ onMounted(() => {
                                 </td>
                                 <td class="px-2 py-1">{{ it.vendor }}</td>
                                 <td class="px-2 py-1 text-right">{{ formatMoney2OrEmpty(it.unit_cost) }}</td>
-                                <td class="px-2 py-1 text-right">{{ shippingPerUnit === null ? '' : shippingPerUnit.toFixed(2) }}</td>
-                                <td class="px-2 py-1 text-right">{{ surchargePerUnit === null ? '' : surchargePerUnit.toFixed(2) }}</td>
-                                <td class="px-2 py-1 text-right">{{ landedFor(it.unit_cost, shippingPerUnit, surchargePerUnit) }}</td>
-                                <td class="px-2 py-1 text-right">{{ it.qty_ordered ?? '' }}</td>
+                                <td class="px-2 py-1 text-right">{{ shippingPerUnitCents === null ? '' : centsToMoney(shippingPerUnitCents) }}</td>
+                                <td class="px-2 py-1 text-right">{{ surchargePerUnitCents === null ? '' : centsToMoney(surchargePerUnitCents) }}</td>
+                                <td class="px-2 py-1 text-right">{{ landedFor(it.unit_cost, shippingPerUnitCents, surchargePerUnitCents) }}</td>
+                                <td class="px-2 py-1 text-right">
+                                    <input
+                                        class="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-xs tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                                        type="text"
+                                        inputmode="numeric"
+                                        :value="qtyOrderedDrafts[it.id] ?? (it.qty_ordered === null ? '' : String(it.qty_ordered))"
+                                        :disabled="savingQtyOrdered === it.id"
+                                        placeholder=""
+                                        @focus="startQtyOrderedEdit(it.id, it.qty_ordered)"
+                                        @input="updateQtyOrderedDraft(it.id, ($event.target as HTMLInputElement).value)"
+                                        @keydown.enter.prevent="commitQtyOrderedEdit(it.id)"
+                                        @blur="commitQtyOrderedEdit(it.id)"
+                                    />
+                                </td>
                                 <td class="px-2 py-1 text-right">
                                     <input
                                         class="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-xs tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"

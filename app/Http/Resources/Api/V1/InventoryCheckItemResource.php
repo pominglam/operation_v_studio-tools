@@ -46,7 +46,7 @@ final class InventoryCheckItemResource extends JsonResource
             'product_name' => $item->product_name,
             'english_name' => $item->english_name,
             'available_amount' => $item->available_amount,
-            'selling_price' => $this->money2($item->product?->price),
+            'selling_price' => $this->money2($item->product?->sellingPrice?->selling_price),
             'quantity_in_store' => $item->quantity_in_store,
             'difference' => $item->difference,
             'notes' => $item->notes,

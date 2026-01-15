@@ -74,7 +74,7 @@ it('exports Shopify CSV for products with selling price only', function (): void
         'Variant Inventory Qty',
         'Variant Inventory Policy',
         'Variant Fulfillment Service',
-        'Variant Price',
+        'Price',
         'Variant Compare At Price',
         'Variant Requires Shipping',
         'Variant Taxable',
@@ -144,6 +144,42 @@ it('exports Published=TRUE when product is published_on_shopify', function (): v
     expect($publishedRow)->not->toBeNull();
     /** @var array<int, string> $publishedRow */
     expect($publishedRow[7])->toBe('TRUE');
+});
+
+it('uses stored handle when exporting Shopify CSV', function (): void {
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000000004',
+        'sku' => 'HANDLE-1',
+        'barcode' => '111',
+        'description' => 'Something with a handle',
+        'handle' => 'rg-1144-ms-06s-zakuii',
+        'type' => 'RG',
+        'published_on_shopify' => false,
+        'filled_qty' => 1,
+    ]);
+
+    ProductSellingPrice::query()->create([
+        'product_id' => $p->id,
+        'product_uuid' => $p->uuid,
+        'selling_price' => '9.99',
+        'currency' => 'CAD',
+    ]);
+
+    $res = $this->get('/api/v1/products/export?format=shopify');
+    $res->assertOk();
+
+    $csv = $res->streamedContent();
+    $lines = preg_split("/\r\n|\n|\r/", trim($csv)) ?: [];
+    expect(count($lines))->toBeGreaterThanOrEqual(2);
+
+    $rows = array_map('str_getcsv', $lines);
+    $row = collect($rows)->first(function (array $r): bool {
+        return ($r[17] ?? '') === 'HANDLE-1';
+    });
+
+    expect($row)->not->toBeNull();
+    /** @var array<int, string> $row */
+    expect($row[0])->toBe('rg-1144-ms-06s-zakuii');
 });
 
 it('lists products missing selling price for export UI', function (): void {

@@ -56,11 +56,43 @@ interface ProductRepository
     public function listBarcodedForExportSorted(): Collection;
 
     /**
+     * Selected products for export.
+     *
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, Product>
+     */
+    public function listByUuidsForExport(array $uuids, ?string $sortBy = null, string $sortDir = 'asc'): Collection;
+
+    /**
+     * Selected products missing barcode (same export shape as missing-barcode export).
+     *
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, Product>
+     */
+    public function listMissingBarcodeByUuidsForExport(array $uuids, ?string $sortBy = null, string $sortDir = 'asc'): Collection;
+
+    /**
+     * Selected barcoded products for operational export: sorted by type then SKU (same as the full barcoded export).
+     *
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, Product>
+     */
+    public function listBarcodedByUuidsForExportSorted(array $uuids): Collection;
+
+    /**
      * Products for Shopify content export (requires selling price and eager-loaded PDP content/assets).
      *
      * @return Collection<int, Product>
      */
     public function listForShopifyContentExport(): Collection;
+
+    /**
+     * Shopify content export for a selected set of products (requires selling price and eager-loaded PDP content/assets).
+     *
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, Product>
+     */
+    public function listForShopifyContentExportByUuids(array $uuids): Collection;
 
     /**
      * @return Collection<int, Product>

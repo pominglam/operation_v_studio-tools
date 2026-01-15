@@ -12,7 +12,7 @@ final readonly class ProductImportRowDTO
         public string $description,
         public ?string $type,
         public ?string $vendor,
-        public ?string $price,
+        public ?string $latestUnitCost,
         public ?int $orderQty,
         public ?int $filledQty,
         public ?string $extended,

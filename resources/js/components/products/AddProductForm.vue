@@ -8,9 +8,6 @@ export type CreateProductPayload = {
     handle: string | null;
     type: string | null;
     vendor: string | null;
-    price: string | null;
-    order: number | null;
-    filled: number | null;
     available: number | null;
     extended: string | null;
 };
@@ -31,9 +28,6 @@ const form = ref<CreateProductPayload>({
     handle: null,
     type: null,
     vendor: 'Plamod',
-    price: null,
-    order: null,
-    filled: null,
     available: null,
     extended: null,
 });
@@ -67,9 +61,6 @@ async function submit(): Promise<void> {
         handle: form.value.handle?.trim() || null,
         type: form.value.type?.trim() || null,
         vendor: form.value.vendor?.trim() || null,
-        price: form.value.price?.trim() || null,
-        order: form.value.order,
-        filled: form.value.filled,
         available: form.value.available,
         extended: form.value.extended?.trim() || null,
     });
@@ -81,9 +72,6 @@ async function submit(): Promise<void> {
         handle: null,
         type: null,
         vendor: 'Plamod',
-        price: null,
-        order: null,
-        filled: null,
         available: null,
         extended: null,
     };
@@ -171,44 +159,12 @@ async function submit(): Promise<void> {
 
             <div class="md:col-span-2">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
-                    >Unit cost</label
-                >
-                <input
-                    v-model="form.price"
-                    class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
-                    type="text"
-                />
-            </div>
-            <div class="md:col-span-2">
-                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                     >Total cost</label
                 >
                 <input
                     v-model="form.extended"
                     class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                     type="text"
-                />
-            </div>
-            <div class="md:col-span-2">
-                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
-                    >Ordered</label
-                >
-                <input
-                    v-model.number="form.order"
-                    class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
-                    type="number"
-                    min="0"
-                />
-            </div>
-            <div class="md:col-span-2">
-                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
-                    >Shipped</label
-                >
-                <input
-                    v-model.number="form.filled"
-                    class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
-                    type="number"
-                    min="0"
                 />
             </div>
             <div class="md:col-span-2">

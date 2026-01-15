@@ -57,18 +57,22 @@ use App\Http\Controllers\Api\V1\ProductsExportController;
 use App\Http\Controllers\Api\V1\ProductsExportMissingBarcodeController;
 use App\Http\Controllers\Api\V1\ProductsExportBarcodedController;
 use App\Http\Controllers\Api\V1\ProductsExportMissingSellingPriceController;
+use App\Http\Controllers\Api\V1\ProductsExportSelectedController;
 use App\Http\Controllers\Api\V1\ProductTypeBackfillController;
 use App\Http\Controllers\Api\V1\ProductTypeRecomputeController;
 use App\Http\Controllers\Api\V1\AliExpressCookiesController;
 use App\Http\Controllers\Api\V1\DatabaseBackupIndexController;
 use App\Http\Controllers\Api\V1\DatabaseBackupCreateController;
 use App\Http\Controllers\Api\V1\DatabaseBackupRestoreController;
+use App\Http\Controllers\Api\V1\ProductPoLinesController;
+use App\Http\Controllers\Api\V1\LatestProductCostsRefreshController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')
     ->group(function (): void {
         Route::get('/products', [ProductsController::class, 'index']);
         Route::get('/products/export', ProductsExportController::class);
+        Route::post('/products/export/selected', ProductsExportSelectedController::class);
         Route::get('/products/export/missing-barcode', ProductsExportMissingBarcodeController::class);
         Route::get('/products/export/barcoded', ProductsExportBarcodedController::class);
         Route::get('/products/export/missing-selling-price', ProductsExportMissingSellingPriceController::class);
@@ -79,6 +83,7 @@ Route::prefix('v1')
         Route::patch('/products/{id}/filled', ProductFilledController::class)->whereUuid('id');
         Route::patch('/products/{id}/available', ProductAvailableController::class)->whereUuid('id');
         Route::put('/products/{id}/selling-price', ProductSellingPriceController::class)->whereUuid('id');
+        Route::get('/products/{id}/po-lines', ProductPoLinesController::class)->whereUuid('id');
         Route::post('/products/sync-missing-info', ProductMissingInfoSyncController::class);
         Route::get('/job-batches', JobBatchIndexController::class);
         Route::get('/job-batches/{id}', JobBatchShowController::class);
@@ -123,6 +128,7 @@ Route::prefix('v1')
         Route::get('/maintenance/db-backups', DatabaseBackupIndexController::class);
         Route::post('/maintenance/db-backups', DatabaseBackupCreateController::class);
         Route::post('/maintenance/db-backups/restore', DatabaseBackupRestoreController::class);
+        Route::post('/maintenance/refresh-latest-costs', LatestProductCostsRefreshController::class);
 
         Route::get('/price-research/filter-options', PriceResearchFilterOptionsController::class);
         Route::get('/price-research/products', PriceResearchProductsController::class);

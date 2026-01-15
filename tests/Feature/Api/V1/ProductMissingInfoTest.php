@@ -16,6 +16,7 @@ it('filters products by missing flags', function (): void {
         'sku' => 'MISS-1',
         'barcode' => null,
         'description' => 'Missing everything',
+        'handle' => null,
     ]);
 
     $p2 = Product::query()->create([
@@ -23,6 +24,7 @@ it('filters products by missing flags', function (): void {
         'sku' => 'HAVE-1',
         'barcode' => '123',
         'description' => 'Has everything',
+        'handle' => 'have-1',
     ]);
 
     ProductSellingPrice::query()->create([
@@ -52,6 +54,11 @@ it('filters products by missing flags', function (): void {
     ]);
 
     $this->getJson('/api/v1/products?per_page=100&missing[]=barcode')
+        ->assertOk()
+        ->assertJsonPath('data.0.sku', 'MISS-1')
+        ->assertJsonMissing(['sku' => 'HAVE-1']);
+
+    $this->getJson('/api/v1/products?per_page=100&missing[]=handle')
         ->assertOk()
         ->assertJsonPath('data.0.sku', 'MISS-1')
         ->assertJsonMissing(['sku' => 'HAVE-1']);

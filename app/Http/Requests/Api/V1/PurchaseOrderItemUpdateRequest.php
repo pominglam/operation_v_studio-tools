@@ -14,6 +14,7 @@ final class PurchaseOrderItemUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'qty_ordered' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'qty_shipped' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'qty_received' => ['sometimes', 'nullable', 'integer', 'min:0'],
         ];
@@ -26,8 +27,8 @@ final class PurchaseOrderItemUpdateRequest extends FormRequest
     {
         return [
             function (\Illuminate\Validation\Validator $validator): void {
-                if (! $this->has('qty_shipped') && ! $this->has('qty_received')) {
-                    $validator->errors()->add('qty_shipped', 'Provide qty_shipped or qty_received.');
+                if (! $this->has('qty_ordered') && ! $this->has('qty_shipped') && ! $this->has('qty_received')) {
+                    $validator->errors()->add('qty_ordered', 'Provide qty_ordered, qty_shipped, or qty_received.');
                 }
             },
         ];

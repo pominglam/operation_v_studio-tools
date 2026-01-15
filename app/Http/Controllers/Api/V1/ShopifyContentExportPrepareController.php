@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\ShopifyContentExportPrepareRequest;
 use App\Services\Products\ShopifyContentExportService;
 use App\Services\Shopify\CloudflaredTunnel;
 use Illuminate\Http\JsonResponse;
@@ -16,11 +17,18 @@ final class ShopifyContentExportPrepareController extends Controller
         private readonly CloudflaredTunnel $tunnel,
     ) {}
 
-    public function __invoke(): JsonResponse
+    public function __invoke(ShopifyContentExportPrepareRequest $request): JsonResponse
     {
         $status = $this->tunnel->status();
         $tunnelUrl = $status['tunnel_url'] ?? null;
-        $result = $this->exports->prepare(is_string($tunnelUrl) ? $tunnelUrl : null);
+
+        /** @var array<int, string> $ids */
+        $ids = $request->validated('ids') ?? [];
+
+        $result = $this->exports->prepare(
+            tunnelBaseUrl: is_string($tunnelUrl) ? $tunnelUrl : null,
+            productUuids: $ids,
+        );
 
         return response()->json([
             ...$result,

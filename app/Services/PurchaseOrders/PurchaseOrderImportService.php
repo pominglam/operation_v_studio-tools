@@ -12,6 +12,7 @@ use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Services\Products\ProductTypeDerivationService;
+use App\Services\Products\ProductLatestCostCacheService;
 use App\Services\PurchaseOrders\Exceptions\PurchaseOrderImportException;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
@@ -34,6 +35,7 @@ final class PurchaseOrderImportService
         private readonly PurchaseOrderRepository $purchaseOrders,
         private readonly InventoryRepository $inventory,
         private readonly ProductTypeDerivationService $types,
+        private readonly ProductLatestCostCacheService $latestCosts,
     ) {}
 
     /**
@@ -197,6 +199,8 @@ final class PurchaseOrderImportService
                     $this->inventory->createLot($lot);
                     $lots++;
                 }
+
+                $this->latestCosts->recomputeForSkus(array_values(array_unique(array_map(static fn (array $r): string => (string) $r['sku'], $rows))));
 
                 return [
                     'purchase_order_uuid' => (string) $po->uuid,

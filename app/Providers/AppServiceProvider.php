@@ -37,6 +37,7 @@ use App\Services\PriceResearch\Http\AliExpressScraperClient;
 use App\Services\PriceResearch\PriceResearchService;
 use App\Services\PriceResearch\Providers\ArgamaHobbyProvider;
 use App\Services\PriceResearch\Providers\AliExpressProvider;
+use App\Services\PriceResearch\Providers\CanadaComputersProvider;
 use App\Services\PriceResearch\Providers\CanadianGundamProvider;
 use App\Services\PriceResearch\Providers\CompetitorPriceProvider;
 use App\Services\PriceResearch\Providers\GundamHangarProvider;
@@ -106,6 +107,7 @@ class AppServiceProvider extends ServiceProvider
             AliExpressProvider::class,
             GundamHangarProvider::class,
             PandaHobbyProvider::class,
+            CanadaComputersProvider::class,
             CanadianGundamProvider::class,
             HobbyBeeProvider::class,
             HobbyWholesaleProvider::class,

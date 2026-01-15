@@ -9,7 +9,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Validation\Rule;
 
-final class ProductsExportRequest extends FormRequest
+final class ProductsExportSelectedRequest extends FormRequest
 {
     protected function failedValidation(Validator $validator): void
     {
@@ -25,16 +25,16 @@ final class ProductsExportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'format' => ['required', 'string', Rule::in(['shopify'])],
-            'search' => ['sometimes', 'string', 'max:200'],
+            'export_type' => ['required', 'string', Rule::in(['shopify', 'missing_barcode', 'barcoded'])],
+            'ids' => ['required', 'array', 'min:1', 'max:500'],
+            'ids.*' => ['string', 'uuid'],
             'sort_by' => [
                 'sometimes',
                 'string',
                 Rule::in(['sku', 'barcode', 'description', 'type', 'latest_landed_unit_cost', 'order', 'filled', 'extended', 'updated_at', 'created_at']),
             ],
             'sort_dir' => ['sometimes', 'string', Rule::in(['asc', 'desc'])],
-            'types' => ['sometimes', 'array'],
-            'types.*' => ['string', 'max:40'],
         ];
     }
 }
+

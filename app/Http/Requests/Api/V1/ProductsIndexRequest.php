@@ -21,7 +21,7 @@ final class ProductsIndexRequest extends FormRequest
             'missing' => ['sometimes', 'array'],
             'missing.*' => [
                 'string',
-                Rule::in(['ok', 'pdp_description', 'pdp_images', 'barcode', 'selling_price']),
+                Rule::in(['ok', 'pdp_description', 'pdp_images', 'barcode', 'selling_price', 'handle']),
             ],
             'sort_by' => [
                 'sometimes',
@@ -32,7 +32,7 @@ final class ProductsIndexRequest extends FormRequest
                     'description',
                     'type',
                     'vendor',
-                    'price',
+                    'latest_landed_unit_cost',
                     'order',
                     'filled',
                     'available',
