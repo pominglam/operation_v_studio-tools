@@ -83,6 +83,7 @@ final class ProductPriceResearchResource extends JsonResource
             'description' => $product->description,
             'price_researched_at' => $product->price_researched_at?->toISOString(),
             'expired' => $expired,
+            'vendor' => $product->vendor,
             'filled' => $product->filled_qty,
             'available' => $product->available_qty,
             'cost' => $this->money2($cost),
@@ -92,6 +93,7 @@ final class ProductPriceResearchResource extends JsonResource
             'cost_high' => $this->money2($product->max_unit_cost ?? null),
             'landed_cost_low' => $this->money2($product->min_landed_cost ?? null),
             'landed_cost_high' => $this->money2($product->max_landed_cost ?? null),
+            'po_total_cost' => $this->money2($product->getAttribute('po_total_cost')),
             'selling_price' => $this->money2($product->sellingPrice?->selling_price),
             'quotes' => ProductPriceQuoteResource::collection($product->priceQuotes),
         ];

@@ -18,6 +18,7 @@ final class PriceResearchProductsIndexRequest extends FormRequest
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'search' => ['sometimes', 'string', 'max:200'],
+            'purchase_order_uuid' => ['sometimes', 'nullable', 'uuid'],
             'sort_by' => [
                 'sometimes',
                 'string',
@@ -35,6 +36,7 @@ final class PriceResearchProductsIndexRequest extends FormRequest
             'sort_dir' => ['sometimes', 'string', Rule::in(['asc', 'desc'])],
 
             'selling_price' => ['sometimes', 'string', Rule::in(['any', 'set', 'missing'])],
+            'shipping_per_unit' => ['sometimes', 'string', Rule::in(['any', 'set', 'missing'])],
             'barcode' => ['sometimes', 'string', Rule::in(['any', 'set', 'missing'])],
             'vendors' => ['sometimes', 'array'],
             'vendors.*' => ['string', 'max:128'],

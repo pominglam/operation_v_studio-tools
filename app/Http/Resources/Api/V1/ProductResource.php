@@ -11,12 +11,12 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /** @extends JsonResource<Product> */
 final class ProductResource extends JsonResource
 {
-    private function money2(?string $value): ?string
+    private function money2(string|int|float|null $value): ?string
     {
         if ($value === null) {
             return null;
         }
-        $trimmed = trim($value);
+        $trimmed = trim((string) $value);
         if ($trimmed === '') {
             return null;
         }
@@ -43,6 +43,11 @@ final class ProductResource extends JsonResource
             'description' => $product->description,
             'handle' => $product->handle,
             'type' => $product->type,
+            'grade' => $product->grade,
+            'series' => $product->series,
+            'scale' => $product->scale,
+            'yen_price' => $product->yen_price,
+            'bandai_launch_date' => optional($product->bandai_launch_date)->toDateString(),
             'vendor' => $product->vendor,
             'published_on_shopify' => (bool) $product->published_on_shopify,
             'latest_unit_cost' => $this->money2($product->latest_unit_cost),
@@ -56,6 +61,7 @@ final class ProductResource extends JsonResource
             'filled' => $product->filled_qty,
             'available' => $product->available_qty,
             'extended' => $this->money2($product->extended),
+            'po_total_cost' => $this->money2($product->getAttribute('po_total_cost')),
             'created_at' => optional($product->created_at)->toISOString(),
             'updated_at' => optional($product->updated_at)->toISOString(),
         ];

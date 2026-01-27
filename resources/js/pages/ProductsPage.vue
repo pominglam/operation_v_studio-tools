@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../lib/api';
+import { formatLocalDateTime } from '../lib/datetime';
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
 import AddProductForm, {
     type CreateProductPayload,
@@ -17,6 +18,7 @@ import ProductsTable, {
     type UpdateProductPayload,
 } from '../components/products/ProductsTable.vue';
 import type { ProductsBulkExportType } from '../components/products/BulkExportDialog.vue';
+import type { ProductsRecrawlSource } from '../components/products/BulkRecrawlDialog.vue';
 import PlamodDrawer from '../components/products/PlamodDrawer.vue';
 import ProductPoLinesDrawer from '../components/products/ProductPoLinesDrawer.vue';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
@@ -31,6 +33,13 @@ type Paginated<T> = {
         per_page: number;
         total: number;
     };
+};
+
+type PurchaseOrderOption = {
+    id: string;
+    vendor: string;
+    created_at: string | null;
+    counts: { items: number };
 };
 
 const loading = ref(false);
@@ -160,6 +169,18 @@ async function bulkExportSelected(ids: string[], exportType: ProductsBulkExportT
     window.URL.revokeObjectURL(url);
 }
 
+async function bulkRecrawlSelected(ids: string[], sources: ProductsRecrawlSource[]): Promise<void> {
+    const res = await api.post<{ ok: boolean; batch_id: string; queued: number }>(
+        '/api/v1/products/recrawl/selected',
+        { ids, sources },
+        { validateStatus: () => true },
+    );
+    if (res.status !== 202 || !res.data.batch_id) {
+        throw new Error('recrawl_failed');
+    }
+    await router.push({ name: 'sync-progress', query: { batch_id: res.data.batch_id } });
+}
+
 async function loadMissingSellingPrice(): Promise<void> {
     missingSellingPriceLoading.value = true;
     missingSellingPriceError.value = null;
@@ -190,6 +211,9 @@ const sortDir = ref<'asc' | 'desc'>('asc');
 const selectedTypes = ref<string[]>([]);
 const selectedVendors = ref<string[]>([]);
 const selectedMissing = ref<string[]>([]);
+const purchaseOrderUuid = ref<string>('');
+
+const purchaseOrders = ref<PurchaseOrderOption[]>([]);
 
 const missingOptions = ref<MultiSelectOption[]>([
     { value: 'ok', label: 'OK (complete)' },
@@ -255,6 +279,7 @@ function buildLoadKey(): string {
     const types = [...selectedTypes.value].map((t) => t.trim()).filter(Boolean).sort();
     const vendors = [...selectedVendors.value].map((v) => v.trim()).filter(Boolean).sort();
     const missing = [...selectedMissing.value].map((m) => m.trim()).filter(Boolean).sort();
+    const po = purchaseOrderUuid.value.trim() || null;
     return JSON.stringify({
         per_page: perPage.value,
         page: page.value,
@@ -264,6 +289,7 @@ function buildLoadKey(): string {
         types,
         vendors,
         missing,
+        purchase_order_uuid: po,
     });
 }
 
@@ -285,6 +311,7 @@ async function load(): Promise<void> {
                 per_page: perPage.value,
                 page: page.value,
                 search: search.value.trim() || undefined,
+                purchase_order_uuid: purchaseOrderUuid.value.trim() || undefined,
                 sort_by: sortBy.value,
                 sort_dir: sortDir.value,
                 types: selectedTypes.value.length > 0 ? selectedTypes.value : undefined,
@@ -316,6 +343,23 @@ async function loadFilterOptions(): Promise<void> {
         vendorOptions.value = (res.data.data.vendors ?? []).map((v) => ({ value: v, label: v }));
     } catch {
         // ignore; filter dropdown will just be empty
+    }
+}
+
+function poLabel(po: PurchaseOrderOption): string {
+    const date = po.created_at ? formatLocalDateTime(po.created_at) : '—';
+    const short = po.id.slice(0, 8);
+    return `${date} · ${po.vendor} · ${po.counts.items} items · ${short}`;
+}
+
+async function loadPurchaseOrders(): Promise<void> {
+    try {
+        const res = await api.get<Paginated<PurchaseOrderOption>>('/api/v1/purchase-orders', {
+            params: { per_page: 200, sort_dir: 'desc' },
+        });
+        purchaseOrders.value = res.data.data ?? [];
+    } catch {
+        purchaseOrders.value = [];
     }
 }
 
@@ -496,7 +540,7 @@ function onPageChange(next: number): void {
 }
 
 let searchTimer: number | null = null;
-watch([search, perPage, selectedTypes, selectedVendors, selectedMissing, sortBy, sortDir], () => {
+watch([search, perPage, selectedTypes, selectedVendors, selectedMissing, sortBy, sortDir, purchaseOrderUuid], () => {
     if (hydrating.value) return;
     page.value = 1;
     if (searchTimer) window.clearTimeout(searchTimer);
@@ -528,6 +572,7 @@ onMounted(() => {
         selectedTypes?: string[];
         selectedVendors?: string[];
         selectedMissing?: string[];
+        purchaseOrderUuid?: string;
     }>(STATE_KEY);
 
     if (saved) {
@@ -540,11 +585,13 @@ onMounted(() => {
         if (Array.isArray(saved.selectedTypes)) selectedTypes.value = saved.selectedTypes;
         if (Array.isArray(saved.selectedVendors)) selectedVendors.value = saved.selectedVendors;
         if (Array.isArray(saved.selectedMissing)) selectedMissing.value = saved.selectedMissing;
+        if (typeof saved.purchaseOrderUuid === 'string') purchaseOrderUuid.value = saved.purchaseOrderUuid;
     }
 
     hydrating.value = false;
 
     void loadFilterOptions();
+    void loadPurchaseOrders();
     void load();
 
     try {
@@ -581,7 +628,7 @@ watch(
 );
 
 watch(
-    [activeTab, search, perPage, page, selectedTypes, selectedVendors, selectedMissing, sortBy, sortDir],
+    [activeTab, search, perPage, page, selectedTypes, selectedVendors, selectedMissing, sortBy, sortDir, purchaseOrderUuid],
     () => {
         if (hydrating.value) return;
         savePageState(STATE_KEY, {
@@ -594,6 +641,7 @@ watch(
             selectedTypes: selectedTypes.value,
             selectedVendors: selectedVendors.value,
             selectedMissing: selectedMissing.value,
+            purchaseOrderUuid: purchaseOrderUuid.value,
         });
     },
     { deep: true },
@@ -609,6 +657,7 @@ function resetListState(): void {
     selectedTypes.value = [];
     selectedVendors.value = [];
     selectedMissing.value = [];
+    purchaseOrderUuid.value = '';
     void load();
 }
 </script>
@@ -737,6 +786,19 @@ function resetListState(): void {
                                 placeholder="All vendors"
                             />
 
+                            <div>
+                                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">PO</label>
+                                <select
+                                    v-model="purchaseOrderUuid"
+                                    class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                >
+                                    <option value="">All POs</option>
+                                    <option v-for="po in purchaseOrders" :key="po.id" :value="po.id">
+                                        {{ poLabel(po) }}
+                                    </option>
+                                </select>
+                            </div>
+
                             <MultiSelectFilter
                                 v-model="selectedMissing"
                                 label="Missing info"
@@ -834,6 +896,7 @@ function resetListState(): void {
                         :on-bulk-update="bulkUpdate"
                         :on-bulk-rename-plamod-assets="bulkRenamePlamodAssets"
                         :on-bulk-export-selected="bulkExportSelected"
+                        :on-bulk-recrawl-selected="bulkRecrawlSelected"
                         :on-update="updateProduct"
                         :on-open-plamod="openPlamodDrawer"
                         :on-open-po-lines="openPoLinesDrawer"

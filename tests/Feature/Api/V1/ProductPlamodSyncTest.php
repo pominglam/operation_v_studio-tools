@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Jobs\SyncPlamodAssetsJob;
+use App\Jobs\SyncProductInfoJob;
 use App\Models\Product;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
@@ -51,7 +52,7 @@ it('queues a product info sync job (force Plamod assets attempt) for a product',
     $res->assertJsonPath('ok', true);
     $res->assertJsonStructure(['sync_uuid']);
 
-    Bus::assertDispatched(SyncPlamodAssetsJob::class, function (SyncPlamodAssetsJob $job): bool {
+    Bus::assertDispatched(SyncProductInfoJob::class, function (SyncProductInfoJob $job): bool {
         return $job->productUuid === '00000000-0000-0000-0000-000000050002'
             && $job->attemptPlamodAssets === true;
     });

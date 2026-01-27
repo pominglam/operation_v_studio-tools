@@ -31,8 +31,14 @@ final class PriceResearchProductsController extends Controller
         /** @var string|null $sellingPrice */
         $sellingPrice = $request->validated('selling_price');
 
+        /** @var string|null $shippingPerUnit */
+        $shippingPerUnit = $request->validated('shipping_per_unit');
+
         /** @var string|null $barcode */
         $barcode = $request->validated('barcode');
+
+        /** @var string|null $purchaseOrderUuid */
+        $purchaseOrderUuid = $request->validated('purchase_order_uuid');
 
         /** @var array<int, string> $vendors */
         $vendors = $request->validated('vendors') ?? [];
@@ -55,7 +61,9 @@ final class PriceResearchProductsController extends Controller
                 sortBy: $sortBy,
                 sortDir: $sortDir,
                 sellingPrice: $sellingPrice,
+                shippingPerUnit: $shippingPerUnit,
                 barcode: $barcode,
+                purchaseOrderUuid: $purchaseOrderUuid,
                 vendors: $vendors,
                 freshness: $freshness,
                 types: $types,

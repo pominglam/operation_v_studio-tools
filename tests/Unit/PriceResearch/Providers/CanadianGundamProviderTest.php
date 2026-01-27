@@ -37,6 +37,11 @@ it('does not match a CanadianGundam PDP when the grade differs (HG vs MG)', func
             return null;
         }
 
+        public function listForProduct(int $productId): array
+        {
+            return [];
+        }
+
         public function updateSourceUrl(int $id, ?string $sourceUrl): void
         {
             //
@@ -64,6 +69,11 @@ it('does not match when barcode matches but the grade differs (HG vs MG)', funct
         public function findForProduct(int $productId, string $source): ?ProductExternalContent
         {
             return null;
+        }
+
+        public function listForProduct(int $productId): array
+        {
+            return [];
         }
 
         public function updateSourceUrl(int $id, ?string $sourceUrl): void
@@ -96,6 +106,11 @@ it('does not match when scale differs (1/144 vs 1/100)', function (): void {
             return null;
         }
 
+        public function listForProduct(int $productId): array
+        {
+            return [];
+        }
+
         public function updateSourceUrl(int $id, ?string $sourceUrl): void
         {
             //
@@ -123,6 +138,11 @@ it('matches when the grade group aligns (HG family)', function (): void {
         public function findForProduct(int $productId, string $source): ?ProductExternalContent
         {
             return null;
+        }
+
+        public function listForProduct(int $productId): array
+        {
+            return [];
         }
 
         public function updateSourceUrl(int $id, ?string $sourceUrl): void

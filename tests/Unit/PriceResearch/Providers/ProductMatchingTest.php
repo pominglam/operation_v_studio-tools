@@ -24,6 +24,11 @@ it('allows small wording differences in title matching (up to 2 missing tokens)'
             return null;
         }
 
+        public function listForProduct(int $productId): array
+        {
+            return [];
+        }
+
         public function updateSourceUrl(int $id, ?string $sourceUrl): void
         {
             //
@@ -75,6 +80,11 @@ it('matches short-but-meaningful tokens like RG + 144 + God (Argama example)', f
         public function findForProduct(int $productId, string $source): ?ProductExternalContent
         {
             return null;
+        }
+
+        public function listForProduct(int $productId): array
+        {
+            return [];
         }
 
         public function updateSourceUrl(int $id, ?string $sourceUrl): void
@@ -129,6 +139,11 @@ it('does not match when tokens only appear outside the PDP title (avoids false p
             return null;
         }
 
+        public function listForProduct(int $productId): array
+        {
+            return [];
+        }
+
         public function updateSourceUrl(int $id, ?string $sourceUrl): void
         {
             //
@@ -180,6 +195,11 @@ it('does not match based only on grade+scale tokens (RG 1/144) without the produ
         public function findForProduct(int $productId, string $source): ?ProductExternalContent
         {
             return null;
+        }
+
+        public function listForProduct(int $productId): array
+        {
+            return [];
         }
 
         public function updateSourceUrl(int $id, ?string $sourceUrl): void

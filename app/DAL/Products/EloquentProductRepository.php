@@ -10,6 +10,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\LazyCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 final class EloquentProductRepository implements ProductRepository
@@ -52,12 +53,16 @@ final class EloquentProductRepository implements ProductRepository
             'barcode' => 'barcode',
             'description' => 'description',
             'type' => 'type',
+            'grade' => 'grade',
+            'series' => 'series',
+            'scale' => 'scale',
             'vendor' => 'vendor',
             'latest_landed_unit_cost' => 'latest_landed_unit_cost',
             'order' => 'order_qty',
             'filled' => 'filled_qty',
             'available' => 'available_qty',
             'extended' => 'extended',
+            'po_total_cost' => 'po_total_cost',
             'updated_at' => 'updated_at',
             'created_at' => 'created_at',
         ];
@@ -104,13 +109,40 @@ final class EloquentProductRepository implements ProductRepository
      * @param  array<int, string>  $vendors
      * @param  array<int, string>  $missing
      */
-    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator
+    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', ?string $purchaseOrderUuid = null): LengthAwarePaginator
     {
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
 
         $q = Product::query()
             ->with(['sellingPrice', 'hljExternalContent', 'plamodExternalContent'])
             ->withCount(['plamodImageAssets as plamod_image_assets_count']);
+
+        $q->addSelect([
+            // Total cost across all PO lines for this product (sum of unit_cost * qty).
+            // Uses received qty when present (>0), otherwise ordered qty.
+            DB::raw("(
+                select sum(
+                    coalesce(poi.unit_cost, 0) *
+                    (case
+                        when coalesce(poi.qty_received, 0) > 0 then poi.qty_received
+                        else coalesce(poi.qty_ordered, 0)
+                    end)
+                )
+                from purchase_order_items poi
+                where poi.product_id = products.id and poi.unit_cost is not null
+            ) as po_total_cost"),
+        ]);
+
+        $purchaseOrderUuid = $purchaseOrderUuid !== null ? trim($purchaseOrderUuid) : null;
+        if ($purchaseOrderUuid !== null && $purchaseOrderUuid !== '') {
+            $q->whereExists(function ($sub) use ($purchaseOrderUuid): void {
+                $sub->select(DB::raw('1'))
+                    ->from('purchase_order_items as poi')
+                    ->join('purchase_orders as po', 'po.id', '=', 'poi.purchase_order_id')
+                    ->whereColumn('poi.product_id', 'products.id')
+                    ->where('po.uuid', '=', $purchaseOrderUuid);
+            });
+        }
         $this->applyListQueryFilters($q, $search, $types, $vendors);
         $this->applyMissingFilters($q, $missing);
 
@@ -454,6 +486,18 @@ final class EloquentProductRepository implements ProductRepository
         return Product::query()
             ->whereNotNull('barcode')
             ->whereIn('barcode', $barcodes)
+            ->get();
+    }
+
+    public function findByUuids(array $uuids): Collection
+    {
+        $uuids = array_values(array_unique(array_filter(array_map('trim', $uuids), static fn (string $v): bool => $v !== '')));
+        if ($uuids === []) {
+            return collect();
+        }
+
+        return Product::query()
+            ->whereIn('uuid', $uuids)
             ->get();
     }
 

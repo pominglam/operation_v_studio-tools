@@ -29,7 +29,10 @@ final class EloquentProductExternalAssetRepository implements ProductExternalAss
                     'filename' => $a['filename'],
                     'mime_type' => $a['mime_type'] ?? null,
                     'size_bytes' => $a['size_bytes'] ?? null,
-                    'checksum_sha256' => null,
+                    'origin_url' => $a['origin_url'] ?? null,
+                    'origin_width' => $a['origin_width'] ?? null,
+                    'origin_height' => $a['origin_height'] ?? null,
+                    'checksum_sha256' => $a['checksum_sha256'] ?? null,
                     'sort_order' => $order,
                 ]);
             }
@@ -46,6 +49,21 @@ final class EloquentProductExternalAssetRepository implements ProductExternalAss
             ->where('source', $source)
             // Keep explicit sort first; fall back to id for stability.
             // NULL sort_order should appear last.
+            ->orderByRaw('sort_order is null')
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->all();
+
+        return $assets;
+    }
+
+    public function listAllForProduct(int $productId): array
+    {
+        /** @var array<int, ProductExternalAsset> $assets */
+        $assets = ProductExternalAsset::query()
+            ->where('product_id', $productId)
+            ->orderBy('source')
             ->orderByRaw('sort_order is null')
             ->orderBy('sort_order')
             ->orderBy('id')

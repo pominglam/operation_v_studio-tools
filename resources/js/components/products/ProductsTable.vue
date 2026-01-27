@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import ConfirmDialog from '../ui/ConfirmDialog.vue';
 import BulkUpdateDialog from './BulkUpdateDialog.vue';
 import BulkExportDialog, { type ProductsBulkExportType } from './BulkExportDialog.vue';
+import BulkRecrawlDialog, { type ProductsRecrawlSource } from './BulkRecrawlDialog.vue';
 import { formatMoney2 } from '../../lib/money';
 
 export type ProductRow = {
@@ -12,6 +13,9 @@ export type ProductRow = {
     description: string;
     handle: string | null;
     type: string | null;
+    grade?: string | null;
+    series?: string | null;
+    scale?: string | null;
     vendor: string | null;
     published_on_shopify?: boolean;
     latest_unit_cost?: string | null;
@@ -22,7 +26,7 @@ export type ProductRow = {
         plamod_image_count: number;
     };
     available: number | null;
-    extended: string | null;
+    po_total_cost?: string | null;
 };
 
 function isMissingBarcode(p: ProductRow): boolean {
@@ -47,9 +51,11 @@ export type UpdateProductPayload = {
     description: string;
     handle: string | null;
     type: string | null;
+    grade?: string | null;
+    series?: string | null;
+    scale?: string | null;
     vendor: string | null;
     available: number | null;
-    extended: string | null;
 };
 
 export type BulkUpdateProductChanges = {
@@ -61,7 +67,6 @@ export type BulkUpdateProductChanges = {
     vendor?: string | null;
     published_on_shopify?: boolean;
     // available intentionally omitted for now; add when needed
-    extended?: string | null;
 };
 
 export type ProductSortKey =
@@ -69,10 +74,13 @@ export type ProductSortKey =
     | 'barcode'
     | 'description'
     | 'type'
+    | 'grade'
+    | 'series'
+    | 'scale'
     | 'vendor'
     | 'latest_landed_unit_cost'
     | 'available'
-    | 'extended';
+    | 'po_total_cost';
 
 const props = defineProps<{
     loading: boolean;
@@ -85,6 +93,7 @@ const props = defineProps<{
     onBulkUpdate: (ids: string[], changes: BulkUpdateProductChanges) => Promise<number>;
     onBulkRenamePlamodAssets: (ids: string[]) => Promise<number>;
     onBulkExportSelected: (ids: string[], exportType: ProductsBulkExportType) => Promise<void>;
+    onBulkRecrawlSelected: (ids: string[], sources: ProductsRecrawlSource[]) => Promise<void>;
     onUpdate: (id: string, payload: UpdateProductPayload) => Promise<void>;
     onOpenPlamod: (id: string) => void;
     onOpenPoLines: (id: string) => void;
@@ -108,6 +117,7 @@ const confirmBulkDeleteOpen = ref(false);
 const confirmBulkDeleteCount = ref(0);
 const bulkUpdateOpen = ref(false);
 const bulkExportOpen = ref(false);
+const bulkRecrawlOpen = ref(false);
 
 const editingId = ref<string | null>(null);
 const draft = ref<UpdateProductPayload | null>(null);
@@ -124,10 +134,13 @@ function sortLabel(key: ProductSortKey): string {
         barcode: 'Barcode',
         description: 'Name',
         type: 'Type',
+        grade: 'Grade',
+        series: 'Series',
+        scale: 'Scale',
         vendor: 'Vendor',
         latest_landed_unit_cost: 'Unit Cost Total (Latest)',
         available: 'Available',
-        extended: 'Total cost',
+        po_total_cost: 'Total cost',
     };
     return map[key];
 }
@@ -199,6 +212,19 @@ function requestBulkExport(): void {
     }
 
     bulkExportOpen.value = true;
+}
+
+function requestBulkRecrawl(): void {
+    bulkError.value = null;
+    bulkMessage.value = null;
+
+    const ids = Array.from(selected.value);
+    if (ids.length === 0) {
+        bulkError.value = 'No products selected.';
+        return;
+    }
+
+    bulkRecrawlOpen.value = true;
 }
 
 async function confirmBulkDelete(): Promise<void> {
@@ -287,6 +313,34 @@ async function confirmBulkExport(payload: { exportType: ProductsBulkExportType }
     }
 }
 
+async function confirmBulkRecrawl(payload: { sources: ProductsRecrawlSource[] }): Promise<void> {
+    bulkError.value = null;
+    bulkMessage.value = null;
+
+    const ids = Array.from(selected.value);
+    if (ids.length === 0) {
+        bulkError.value = 'No products selected.';
+        return;
+    }
+
+    const sources = payload.sources;
+    if (sources.length === 0) {
+        bulkError.value = 'Pick at least one recrawl source.';
+        return;
+    }
+
+    bulkExporting.value = true;
+    try {
+        await props.onBulkRecrawlSelected(ids, sources);
+        bulkMessage.value = 'Recrawl queued. Open Sync Progress to watch it.';
+        bulkRecrawlOpen.value = false;
+    } catch {
+        bulkError.value = 'Failed to queue recrawl.';
+    } finally {
+        bulkExporting.value = false;
+    }
+}
+
 function startEdit(p: ProductRow): void {
     rowError.value = null;
     editingId.value = p.id;
@@ -298,7 +352,6 @@ function startEdit(p: ProductRow): void {
         type: p.type,
         vendor: p.vendor,
         available: p.available,
-        extended: p.extended,
     };
 }
 
@@ -327,7 +380,6 @@ async function saveEdit(): Promise<void> {
             type: draft.value.type?.trim() || null,
             vendor: draft.value.vendor?.trim() || null,
             available: draft.value.available,
-            extended: draft.value.extended?.trim() || null,
         });
         await props.onRefresh();
         cancelEdit();
@@ -375,6 +427,14 @@ async function saveEdit(): Promise<void> {
                         @click="requestBulkExport"
                     >
                         {{ bulkExporting ? 'Exporting…' : 'Export selected' }}
+                    </button>
+                    <button
+                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                        type="button"
+                        :disabled="bulkDeleting || bulkUpdating || bulkExporting"
+                        @click="requestBulkRecrawl"
+                    >
+                        Recrawl selected
                     </button>
                     <button
                         class="rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-rose-700 disabled:opacity-50"
@@ -428,7 +488,6 @@ async function saveEdit(): Promise<void> {
                                 Product{{ sortIndicator('description') }}
                             </button>
                         </th>
-                        <th class="px-4 py-3">Handle</th>
                         <th class="px-4 py-3">
                             <button
                                 type="button"
@@ -437,6 +496,36 @@ async function saveEdit(): Promise<void> {
                                 @click="onSortChange('type')"
                             >
                                 {{ sortLabel('type') }}{{ sortIndicator('type') }}
+                            </button>
+                        </th>
+                        <th class="px-4 py-3">
+                            <button
+                                type="button"
+                                class="hover:underline"
+                                :class="sortHeaderClass('grade')"
+                                @click="onSortChange('grade')"
+                            >
+                                {{ sortLabel('grade') }}{{ sortIndicator('grade') }}
+                            </button>
+                        </th>
+                        <th class="px-4 py-3">
+                            <button
+                                type="button"
+                                class="hover:underline"
+                                :class="sortHeaderClass('scale')"
+                                @click="onSortChange('scale')"
+                            >
+                                {{ sortLabel('scale') }}{{ sortIndicator('scale') }}
+                            </button>
+                        </th>
+                        <th class="px-4 py-3">
+                            <button
+                                type="button"
+                                class="hover:underline"
+                                :class="sortHeaderClass('series')"
+                                @click="onSortChange('series')"
+                            >
+                                {{ sortLabel('series') }}{{ sortIndicator('series') }}
                             </button>
                         </th>
                         <th class="px-4 py-3">
@@ -473,10 +562,10 @@ async function saveEdit(): Promise<void> {
                             <button
                                 type="button"
                                 class="hover:underline"
-                                :class="sortHeaderClass('extended')"
-                                @click="onSortChange('extended')"
+                                :class="sortHeaderClass('po_total_cost')"
+                                @click="onSortChange('po_total_cost')"
                             >
-                                {{ sortLabel('extended') }}{{ sortIndicator('extended') }}
+                                {{ sortLabel('po_total_cost') }}{{ sortIndicator('po_total_cost') }}
                             </button>
                         </th>
                         <th class="px-4 py-3">Info</th>
@@ -486,7 +575,7 @@ async function saveEdit(): Promise<void> {
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     <tr v-if="products.length === 0">
-                        <td class="px-4 py-4 text-slate-600" colspan="11">
+                        <td class="px-4 py-4 text-slate-600" colspan="14">
                             No products yet. Import a CSV or add one manually above.
                         </td>
                     </tr>
@@ -547,23 +636,26 @@ async function saveEdit(): Promise<void> {
                         <td class="px-4 py-3 text-slate-700">
                             <template v-if="editingId === p.id">
                                 <input
-                                    v-model="draft!.handle"
-                                    class="w-[18rem] rounded-md border border-slate-200 px-2 py-1 text-sm"
-                                    type="text"
-                                />
-                            </template>
-                            <template v-else>{{ p.handle ?? '—' }}</template>
-                        </td>
-
-                        <td class="px-4 py-3 text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <input
                                     v-model="draft!.type"
                                     class="w-24 rounded-md border border-slate-200 px-2 py-1 text-sm"
                                     type="text"
                                 />
                             </template>
                             <template v-else>{{ p.type ?? '—' }}</template>
+                        </td>
+
+                        <td class="px-4 py-3 text-slate-700">
+                            <span class="font-semibold text-slate-900">{{ p.grade ?? '—' }}</span>
+                        </td>
+
+                        <td class="px-4 py-3 text-slate-700">
+                            <span class="font-mono text-xs">{{ p.scale ?? '—' }}</span>
+                        </td>
+
+                        <td class="px-4 py-3 text-slate-700">
+                            <div class="max-w-[16rem] truncate" :title="p.series ?? ''">
+                                {{ p.series ?? '—' }}
+                            </div>
                         </td>
 
                         <td class="px-4 py-3 text-slate-700">
@@ -596,14 +688,7 @@ async function saveEdit(): Promise<void> {
                         </td>
 
                         <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <input
-                                    v-model="draft!.extended"
-                                    class="w-24 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
-                                    type="text"
-                                />
-                            </template>
-                            <template v-else>{{ p.extended ? formatMoney2(p.extended) : '—' }}</template>
+                            {{ p.po_total_cost ? formatMoney2(p.po_total_cost) : '—' }}
                         </td>
 
                         <td class="px-4 py-3">
@@ -763,5 +848,13 @@ async function saveEdit(): Promise<void> {
         :busy="bulkExporting"
         @cancel="bulkExportOpen = false"
         @confirm="confirmBulkExport"
+    />
+
+    <BulkRecrawlDialog
+        :open="bulkRecrawlOpen"
+        :selected-count="selected.size"
+        :busy="bulkExporting"
+        @cancel="bulkRecrawlOpen = false"
+        @confirm="confirmBulkRecrawl"
     />
 </template>

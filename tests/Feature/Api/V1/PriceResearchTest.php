@@ -9,6 +9,8 @@ use App\DAL\PriceResearch\ProductPriceQuoteRepository;
 use App\Models\Product;
 use App\Models\ProductPriceQuote;
 use App\Models\ProductSellingPrice;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
 use App\Services\PriceResearch\DTOs\PriceLookupResult;
 use App\Services\PriceResearch\PriceResearchService;
 use App\Services\PriceResearch\Providers\CompetitorPriceProvider;
@@ -480,6 +482,112 @@ it('can filter price research products by selling price presence', function (): 
     $missingRes->assertOk()
         ->assertJsonPath('data.0.sku', 'PR-SELLING-2')
         ->assertJsonMissing(['sku' => 'PR-SELLING-1']);
+});
+
+it('can filter price research products by shipping_per_unit presence', function (): void {
+    bindFakePriceResearchService();
+
+    $with = Product::query()->create([
+        'sku' => 'PR-SHIP-1',
+        'description' => 'With shipping cost',
+        'vendor' => 'Vendor A',
+    ]);
+    $without = Product::query()->create([
+        'sku' => 'PR-SHIP-2',
+        'description' => 'Without shipping cost',
+        'vendor' => 'Vendor A',
+    ]);
+
+    // With shipping_total -> shipping_per_unit should be computed.
+    $poWith = PurchaseOrder::query()->create([
+        'vendor' => 'Vendor A',
+        'shipping_total' => '10.00',
+        'ordered_date' => '2025-12-31',
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $poWith->id,
+        'product_id' => $with->id,
+        'sku' => $with->sku,
+        'vendor' => 'Vendor A',
+        'unit_cost' => '10.00',
+        'qty_ordered' => 2,
+    ]);
+
+    // shipping_total=0 should yield null shipping_per_unit (treated as "missing").
+    $poWithout = PurchaseOrder::query()->create([
+        'vendor' => 'Vendor A',
+        'shipping_total' => '0.00',
+        'ordered_date' => '2025-12-30',
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $poWithout->id,
+        'product_id' => $without->id,
+        'sku' => $without->sku,
+        'vendor' => 'Vendor A',
+        'unit_cost' => '10.00',
+        'qty_ordered' => 2,
+    ]);
+
+    $setRes = $this->getJson('/api/v1/price-research/products?per_page=100&shipping_per_unit=set');
+    $setRes->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-SHIP-1')
+        ->assertJsonMissing(['sku' => 'PR-SHIP-2']);
+
+    $missingRes = $this->getJson('/api/v1/price-research/products?per_page=100&shipping_per_unit=missing');
+    $missingRes->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-SHIP-2')
+        ->assertJsonMissing(['sku' => 'PR-SHIP-1']);
+});
+
+it('does not leak vendor filter results when shipping_per_unit=missing is used', function (): void {
+    bindFakePriceResearchService();
+
+    // Included vendor
+    $included = Product::query()->create([
+        'sku' => 'PR-VEND-SHIP-1',
+        'description' => 'Included vendor',
+        'vendor' => 'Plamod',
+    ]);
+    $poIncluded = PurchaseOrder::query()->create([
+        'vendor' => 'Plamod',
+        'shipping_total' => '0.00', // => shipping_per_unit null => "missing"
+        'received_date' => '2025-12-31',
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $poIncluded->id,
+        'product_id' => $included->id,
+        'sku' => $included->sku,
+        'vendor' => 'Plamod',
+        'unit_cost' => '10.00',
+        'qty_received' => 1,
+        'qty_ordered' => 1,
+    ]);
+
+    // Excluded vendor (should never appear)
+    $excluded = Product::query()->create([
+        'sku' => 'PR-VEND-SHIP-2',
+        'description' => 'Excluded vendor',
+        'vendor' => 'Gaahleri',
+    ]);
+    $poExcluded = PurchaseOrder::query()->create([
+        'vendor' => 'Gaahleri',
+        'shipping_total' => '0.00', // => shipping_per_unit null => "missing"
+        'received_date' => '2025-12-31',
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $poExcluded->id,
+        'product_id' => $excluded->id,
+        'sku' => $excluded->sku,
+        'vendor' => 'Gaahleri',
+        'unit_cost' => '10.00',
+        'qty_received' => 1,
+        'qty_ordered' => 1,
+    ]);
+
+    $res = $this->getJson('/api/v1/price-research/products?per_page=100&shipping_per_unit=missing&vendors[]=Plamod');
+    $res->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-VEND-SHIP-1')
+        ->assertJsonMissing(['sku' => 'PR-VEND-SHIP-2']);
 });
 
 it('can filter price research products by product type', function (): void {

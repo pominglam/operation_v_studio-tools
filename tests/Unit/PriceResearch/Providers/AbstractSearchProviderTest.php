@@ -25,6 +25,11 @@ it('prefers SKU over barcode for the default search term', function (): void {
             return null;
         }
 
+        public function listForProduct(int $productId): array
+        {
+            return [];
+        }
+
         public function updateSourceUrl(int $id, ?string $sourceUrl): void
         {
             //
@@ -75,6 +80,11 @@ it('includes the product name as a fallback search term (URL-encoded by search U
         public function findForProduct(int $productId, string $source): ?ProductExternalContent
         {
             return null;
+        }
+
+        public function listForProduct(int $productId): array
+        {
+            return [];
         }
 
         public function updateSourceUrl(int $id, ?string $sourceUrl): void

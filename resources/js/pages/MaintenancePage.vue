@@ -45,6 +45,11 @@ const refreshLatestCostsError = ref<string | null>(null);
 const notesMessage = ref<string | null>(null);
 const notesError = ref<string | null>(null);
 const notesBody = ref<string>('');
+const externalHitsLoading = ref(false);
+const externalHitsSaving = ref(false);
+const externalHitsPerMinute = ref<number>(10);
+const externalHitsMessage = ref<string | null>(null);
+const externalHitsError = ref<string | null>(null);
 const availableSites = ref<Array<{ key: string; name: string }>>([]);
 const siteKeys = ref<string[]>([]);
 const recrawlStatus = ref<'any' | 'fresh' | 'expired'>('any');
@@ -506,6 +511,38 @@ async function loadMaintenanceNotes(): Promise<void> {
     }
 }
 
+async function loadExternalRateLimit(): Promise<void> {
+    externalHitsLoading.value = true;
+    externalHitsError.value = null;
+    try {
+        const res = await api.get<{ data: { hits_per_minute: number } }>('/api/v1/maintenance/external-rate-limit');
+        const v = Number(res.data.data.hits_per_minute);
+        externalHitsPerMinute.value = Number.isFinite(v) && v > 0 ? v : 10;
+    } catch {
+        externalHitsError.value = 'Failed to load external crawl rate limit.';
+    } finally {
+        externalHitsLoading.value = false;
+    }
+}
+
+async function saveExternalRateLimit(): Promise<void> {
+    externalHitsSaving.value = true;
+    externalHitsError.value = null;
+    externalHitsMessage.value = null;
+    try {
+        const res = await api.put<{ data: { hits_per_minute: number } }>('/api/v1/maintenance/external-rate-limit', {
+            hits_per_minute: externalHitsPerMinute.value,
+        });
+        const v = Number(res.data.data.hits_per_minute);
+        externalHitsPerMinute.value = Number.isFinite(v) && v > 0 ? v : externalHitsPerMinute.value;
+        externalHitsMessage.value = 'Saved.';
+    } catch {
+        externalHitsError.value = 'Failed to save external crawl rate limit.';
+    } finally {
+        externalHitsSaving.value = false;
+    }
+}
+
 async function saveMaintenanceNotes(): Promise<void> {
     notesSaving.value = true;
     notesMessage.value = null;
@@ -635,6 +672,7 @@ onMounted(() => {
     void loadProductFilterOptions();
     void loadMaintenanceNotes();
     void loadDbBackups();
+    void loadExternalRateLimit();
 });
 
 watch(
@@ -661,6 +699,48 @@ watch(
             <p class="mt-1 text-sm text-slate-600">
                 Admin utilities for maintaining imported data.
             </p>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div class="flex-1">
+                    <div class="text-sm font-medium text-slate-900">External crawl rate limit</div>
+                    <div class="mt-1 text-sm text-slate-600">
+                        Global throttle applied to external crawls (Bandai, HLJ, competitor sites). Approx hits per minute.
+                    </div>
+                </div>
+
+                <button
+                    class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    :disabled="externalHitsSaving || externalHitsLoading"
+                    @click="saveExternalRateLimit"
+                >
+                    {{ externalHitsSaving ? 'Saving…' : 'Save' }}
+                </button>
+            </div>
+
+            <div v-if="externalHitsError" class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                {{ externalHitsError }}
+            </div>
+            <div
+                v-if="externalHitsMessage"
+                class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+                {{ externalHitsMessage }}
+            </div>
+
+            <div class="mt-3 max-w-sm">
+                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Hits per minute</label>
+                <input
+                    v-model.number="externalHitsPerMinute"
+                    class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                    type="number"
+                    min="1"
+                    max="120"
+                />
+                <div class="mt-1 text-xs text-slate-500">Recommended: 10–20.</div>
+            </div>
         </div>
 
         <div class="rounded-lg border border-slate-200 bg-white p-4">

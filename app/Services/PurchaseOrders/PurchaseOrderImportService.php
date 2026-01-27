@@ -15,6 +15,7 @@ use App\Services\Products\ProductTypeDerivationService;
 use App\Services\Products\ProductLatestCostCacheService;
 use App\Services\PurchaseOrders\Exceptions\PurchaseOrderImportException;
 use Carbon\CarbonImmutable;
+use DateTimeInterface;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 
@@ -29,6 +30,11 @@ final class PurchaseOrderImportService
     private const COL_DSPIAE_REQUIRED_QTY = 'Required Quantity / pcs (Carton Multiple)';
     private const COL_DSPIAE_PRODUCT_NAME = 'Product name';
     private const COL_DSPIAE_BARCODE = 'Barcode';
+    private const COL_PLAMOD_ORDER_ID = 'Order ID';
+    private const COL_PLAMOD_PRODUCT_NAME = 'Product Name';
+    private const COL_PLAMOD_QTY_ORDERED = 'Qty Ordered';
+    private const COL_PLAMOD_QTY_FILLED = 'Qty Filled';
+    private const COL_PLAMOD_UNIT_PRICE = 'Unit Price';
 
     public function __construct(
         private readonly ProductRepository $products,
@@ -103,7 +109,7 @@ final class PurchaseOrderImportService
                         'product_name' => null,
                         'barcode' => null,
                     ];
-                } else {
+                } elseif ($format === 'dspiae') {
                     $sku = $this->stringAt($data, $map[self::COL_SKU] ?? -1);
                     if ($sku === '') {
                         continue;
@@ -123,6 +129,30 @@ final class PurchaseOrderImportService
                         'qty_ordered' => $qtyOrdered,
                         'qty_shipped' => null,
                         'qty_received' => null,
+                    ];
+                } else {
+                    // Plamod "Order details" export includes trailing SUMMARY/TOTALS sections that are not line items.
+                    $marker = strtoupper(trim((string) ($data[0] ?? '')));
+                    if (in_array($marker, ['SUMMARY', 'TOTALS', 'STATEMENT'], true)) {
+                        break;
+                    }
+
+                    $sku = $this->stringAt($data, $map[self::COL_SKU] ?? -1);
+                    if ($sku === '') {
+                        continue;
+                    }
+
+                    $qtyFilled = $this->nullableIntAt($data, $map[self::COL_PLAMOD_QTY_FILLED]);
+
+                    $rows[] = [
+                        'row' => $rowNumber,
+                        'sku' => $sku,
+                        'product_name' => $this->nullableStringAt($data, $map[self::COL_PLAMOD_PRODUCT_NAME] ?? -1),
+                        'barcode' => $this->nullableStringAt($data, $map[self::COL_DSPIAE_BARCODE] ?? -1),
+                        'unit_cost' => $this->nullableDecimalAt($data, $map[self::COL_PLAMOD_UNIT_PRICE]),
+                        'qty_ordered' => $this->nullableIntAt($data, $map[self::COL_PLAMOD_QTY_ORDERED]),
+                        'qty_shipped' => $qtyFilled,
+                        'qty_received' => $qtyFilled,
                     ];
                 }
             }
@@ -284,9 +314,13 @@ final class PurchaseOrderImportService
         return $po;
     }
 
-    private function resolveReceivedAt(?string $receivedDate, ?string $shippedDate, ?string $orderedDate): \DateTimeInterface
+    private function resolveReceivedAt(string|DateTimeInterface|null $receivedDate, string|DateTimeInterface|null $shippedDate, string|DateTimeInterface|null $orderedDate): DateTimeInterface
     {
         $candidate = $receivedDate ?? $shippedDate ?? $orderedDate;
+        if ($candidate instanceof DateTimeInterface) {
+            return CarbonImmutable::instance($candidate)->startOfDay();
+        }
+
         if ($candidate === null || trim($candidate) === '') {
             return now();
         }
@@ -339,13 +373,33 @@ final class PurchaseOrderImportService
             self::COL_DSPIAE_WHOLESALE_PRICE,
             self::COL_DSPIAE_REQUIRED_QTY,
         ];
+        $isDspiae = true;
         foreach ($dspiaeCols as $col) {
+            if (! array_key_exists($col, $map)) {
+                $isDspiae = false;
+                break;
+            }
+        }
+        if ($isDspiae) {
+            return 'dspiae';
+        }
+
+        $plamodCols = [
+            self::COL_PLAMOD_ORDER_ID,
+            self::COL_SKU,
+            self::COL_DSPIAE_BARCODE,
+            self::COL_PLAMOD_PRODUCT_NAME,
+            self::COL_PLAMOD_QTY_ORDERED,
+            self::COL_PLAMOD_QTY_FILLED,
+            self::COL_PLAMOD_UNIT_PRICE,
+        ];
+        foreach ($plamodCols as $col) {
             if (! array_key_exists($col, $map)) {
                 throw new PurchaseOrderImportException("Missing required column: {$col}");
             }
         }
 
-        return 'dspiae';
+        return 'plamod_order_details';
     }
 
     /**
@@ -365,7 +419,11 @@ final class PurchaseOrderImportService
 
             $maybeHeader = $this->headerMap($row);
             $looksHeader = array_key_exists(self::COL_SKU, $maybeHeader)
-                && (array_key_exists(self::COL_UNIT_COST, $maybeHeader) || array_key_exists(self::COL_DSPIAE_WHOLESALE_PRICE, $maybeHeader));
+                && (
+                    array_key_exists(self::COL_UNIT_COST, $maybeHeader)
+                    || array_key_exists(self::COL_DSPIAE_WHOLESALE_PRICE, $maybeHeader)
+                    || array_key_exists(self::COL_PLAMOD_UNIT_PRICE, $maybeHeader)
+                );
 
             if ($looksHeader) {
                 $map = $maybeHeader;

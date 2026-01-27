@@ -99,6 +99,28 @@ const totalUnitsReceived = computed<number>(() => {
     return po.value?.items.reduce((sum, it) => sum + (it.qty_received ?? 0), 0) ?? 0;
 });
 
+const totalQtyOrdered = computed<number>(() => {
+    return po.value?.items.reduce((sum, it) => sum + (it.qty_ordered ?? 0), 0) ?? 0;
+});
+
+const totalQtyShipped = computed<number>(() => {
+    return po.value?.items.reduce((sum, it) => sum + (it.qty_shipped ?? 0), 0) ?? 0;
+});
+
+const totalQtyReceived = computed<number>(() => {
+    return po.value?.items.reduce((sum, it) => sum + (it.qty_received ?? 0), 0) ?? 0;
+});
+
+const totalSkuCount = computed<number>(() => {
+    const items = po.value?.items ?? [];
+    const unique = new Set<string>();
+    for (const it of items) {
+        const sku = it.sku.trim();
+        if (sku !== '') unique.add(sku);
+    }
+    return unique.size;
+});
+
 const totalUnitsForAllocation = computed<number>(() => {
     // Default to ordered quantities so ship/unit + landed are stable while the PO is in-flight.
     // Only switch to received-based allocation once the PO is marked received.
@@ -990,6 +1012,26 @@ onMounted(() => {
                                 </td>
                             </tr>
                         </tbody>
+                        <tfoot>
+                            <tr class="border-t border-slate-200 bg-slate-50 text-slate-800">
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2 font-semibold">
+                                    Totals
+                                    <span class="font-normal text-slate-600">
+                                        ({{ totalSkuCount }} SKU{{ totalSkuCount === 1 ? '' : 's' }})
+                                    </span>
+                                </td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2 text-right font-semibold tabular-nums">{{ totalQtyOrdered }}</td>
+                                <td class="px-2 py-2 text-right font-semibold tabular-nums">{{ totalQtyShipped }}</td>
+                                <td class="px-2 py-2 text-right font-semibold tabular-nums">{{ totalQtyReceived }}</td>
+                            </tr>
+                        </tfoot>
                     </table>
                 </div>
             </section>

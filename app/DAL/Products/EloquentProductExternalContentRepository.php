@@ -41,6 +41,19 @@ final class EloquentProductExternalContentRepository implements ProductExternalC
         return $content;
     }
 
+    public function listForProduct(int $productId): array
+    {
+        /** @var array<int, ProductExternalContent> $rows */
+        $rows = ProductExternalContent::query()
+            ->where('product_id', $productId)
+            ->orderBy('source')
+            ->orderBy('id')
+            ->get()
+            ->all();
+
+        return $rows;
+    }
+
     public function updateSourceUrl(int $id, ?string $sourceUrl): void
     {
         ProductExternalContent::query()

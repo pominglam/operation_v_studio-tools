@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\SyncPlamodAssetsJob;
+use App\Jobs\SyncProductInfoJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Str;
 
@@ -16,7 +16,7 @@ final class ProductInfoSyncController extends Controller
         $syncUuid = (string) Str::uuid();
 
         // Manual “Get product info” should attempt Plamod assets even if the product vendor is not Plamod.
-        SyncPlamodAssetsJob::dispatch($syncUuid, $id, true);
+        SyncProductInfoJob::dispatch($syncUuid, $id, true);
 
         return response()->json([
             'ok' => true,

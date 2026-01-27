@@ -19,6 +19,11 @@ interface ProductExternalContentRepository
 
     public function findForProduct(int $productId, string $source): ?ProductExternalContent;
 
+    /**
+     * @return array<int, ProductExternalContent>
+     */
+    public function listForProduct(int $productId): array;
+
     public function updateSourceUrl(int $id, ?string $sourceUrl): void;
 }
 

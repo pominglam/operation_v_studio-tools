@@ -84,7 +84,9 @@ final class PriceResearchQueryService
         ?string $sortBy = null,
         string $sortDir = 'desc',
         ?string $sellingPrice = null,
+        ?string $shippingPerUnit = null,
         ?string $barcode = null,
+        ?string $purchaseOrderUuid = null,
         array $vendors = [],
         array $freshness = [],
         array $types = [],
@@ -114,39 +116,47 @@ final class PriceResearchQueryService
             ->leftJoin('product_selling_prices as sps', 'sps.product_id', '=', 'products.id')
             ->select('products.*')
             ->addSelect([
-                DB::raw("coalesce(
-                    (select il.unit_cost from inventory_lots il where il.product_id = products.id and il.source_type <> 'negative_balance' and il.unit_cost is not null order by il.received_at desc, il.id desc limit 1),
-                    (
-                        select poi.unit_cost
-                        from purchase_order_items poi
-                        join purchase_orders po on po.id = poi.purchase_order_id
-                        where poi.product_id = products.id and poi.unit_cost is not null
-                        order by coalesce(po.received_date, po.shipped_date, po.ordered_date) desc, po.id desc, poi.id desc
-                        limit 1
+                // Total cost across all PO lines for this product (sum of unit_cost * qty).
+                // Uses received qty when present (>0), otherwise ordered qty.
+                DB::raw("(
+                    select sum(
+                        coalesce(poi.unit_cost, 0) *
+                        (case
+                            when coalesce(poi.qty_received, 0) > 0 then poi.qty_received
+                            else coalesce(poi.qty_ordered, 0)
+                        end)
                     )
+                    from purchase_order_items poi
+                    where poi.product_id = products.id and poi.unit_cost is not null
+                ) as po_total_cost"),
+                // Price Research table should show latest PO costs (unit/ship/landed) to match the PO Lines drawer.
+                // Ranges (min/max) still come from inventory lots to show price spread.
+                DB::raw("(
+                    select poi.unit_cost
+                    from purchase_order_items poi
+                    join purchase_orders po on po.id = poi.purchase_order_id
+                    where poi.product_id = products.id and poi.unit_cost is not null
+                    order by po.created_at desc, po.id desc, poi.id desc
+                    limit 1
                 ) as latest_unit_cost"),
-                DB::raw("coalesce(
-                    (select il.shipping_per_unit from inventory_lots il where il.product_id = products.id and il.source_type <> 'negative_balance' and il.shipping_per_unit is not null order by il.received_at desc, il.id desc limit 1),
-                    (
-                        select
-                            case
-                                when coalesce(po.shipping_total,0) = 0 then null
-                                else
-                                    coalesce(po.shipping_total,0) /
-                                    (nullif(
-                                        case
-                                            when (select sum(coalesce(poi2.qty_received,0)) from purchase_order_items poi2 where poi2.purchase_order_id = po.id) > 0
-                                                then (select sum(coalesce(poi2.qty_received,0)) from purchase_order_items poi2 where poi2.purchase_order_id = po.id)
-                                            else (select sum(coalesce(poi2.qty_ordered,0)) from purchase_order_items poi2 where poi2.purchase_order_id = po.id)
-                                        end
-                                    ,0) * 1.0)
-                            end
-                        from purchase_order_items poi
-                        join purchase_orders po on po.id = poi.purchase_order_id
-                        where poi.product_id = products.id
-                        order by coalesce(po.received_date, po.shipped_date, po.ordered_date) desc, po.id desc, poi.id desc
-                        limit 1
-                    )
+                DB::raw("(
+                    select
+                        case
+                            when coalesce(po.shipping_total,0) = 0 then null
+                            else
+                                coalesce(po.shipping_total,0) /
+                                (nullif(
+                                    case
+                                        when po.received_date is not null then (select sum(coalesce(poi2.qty_received,0)) from purchase_order_items poi2 where poi2.purchase_order_id = po.id)
+                                        else (select sum(coalesce(poi2.qty_ordered,0)) from purchase_order_items poi2 where poi2.purchase_order_id = po.id)
+                                    end
+                                ,0) * 1.0)
+                        end
+                    from purchase_order_items poi
+                    join purchase_orders po on po.id = poi.purchase_order_id
+                    where poi.product_id = products.id
+                    order by po.created_at desc, po.id desc, poi.id desc
+                    limit 1
                 ) as latest_shipping_per_unit"),
                 DB::raw("(
                     select
@@ -156,8 +166,7 @@ final class PriceResearchQueryService
                                 coalesce(po.surcharge_total,0) /
                                 (nullif(
                                     case
-                                        when (select sum(coalesce(poi2.qty_received,0)) from purchase_order_items poi2 where poi2.purchase_order_id = po.id) > 0
-                                            then (select sum(coalesce(poi2.qty_received,0)) from purchase_order_items poi2 where poi2.purchase_order_id = po.id)
+                                        when po.received_date is not null then (select sum(coalesce(poi2.qty_received,0)) from purchase_order_items poi2 where poi2.purchase_order_id = po.id)
                                         else (select sum(coalesce(poi2.qty_ordered,0)) from purchase_order_items poi2 where poi2.purchase_order_id = po.id)
                                     end
                                 ,0) * 1.0)
@@ -165,15 +174,46 @@ final class PriceResearchQueryService
                     from purchase_order_items poi
                     join purchase_orders po on po.id = poi.purchase_order_id
                     where poi.product_id = products.id
-                    order by coalesce(po.received_date, po.shipped_date, po.ordered_date) desc, po.id desc, poi.id desc
+                    order by po.created_at desc, po.id desc, poi.id desc
                     limit 1
                 ) as latest_surcharge_per_unit"),
-                DB::raw("(select (coalesce(il.unit_cost,0) + coalesce(il.shipping_per_unit,0)) from inventory_lots il where il.product_id = products.id and il.source_type <> 'negative_balance' and il.unit_cost is not null order by il.received_at desc, il.id desc limit 1) as latest_landed_cost"),
                 DB::raw("(select min(il.unit_cost) from inventory_lots il where il.product_id = products.id and il.source_type <> 'negative_balance' and il.unit_cost is not null) as min_unit_cost"),
                 DB::raw("(select max(il.unit_cost) from inventory_lots il where il.product_id = products.id and il.source_type <> 'negative_balance' and il.unit_cost is not null) as max_unit_cost"),
                 DB::raw("(select min(coalesce(il.unit_cost,0) + coalesce(il.shipping_per_unit,0)) from inventory_lots il where il.product_id = products.id and il.source_type <> 'negative_balance' and il.unit_cost is not null) as min_landed_cost"),
                 DB::raw("(select max(coalesce(il.unit_cost,0) + coalesce(il.shipping_per_unit,0)) from inventory_lots il where il.product_id = products.id and il.source_type <> 'negative_balance' and il.unit_cost is not null) as max_landed_cost"),
             ]);
+
+        $purchaseOrderUuid = $purchaseOrderUuid !== null ? trim($purchaseOrderUuid) : null;
+        if ($purchaseOrderUuid !== null && $purchaseOrderUuid !== '') {
+            $q->whereExists(function ($sub) use ($purchaseOrderUuid): void {
+                $sub->select(DB::raw('1'))
+                    ->from('purchase_order_items as poi')
+                    ->join('purchase_orders as po', 'po.id', '=', 'poi.purchase_order_id')
+                    ->whereColumn('poi.product_id', 'products.id')
+                    ->where('po.uuid', '=', $purchaseOrderUuid);
+            });
+        }
+
+        // Note: avoid COALESCE(x) with 1 arg (SQLite errors); this expression already yields NULL when missing.
+        $latestShippingPerUnitExpr = "(
+            select
+                case
+                    when coalesce(po.shipping_total,0) = 0 then null
+                    else
+                        coalesce(po.shipping_total,0) /
+                        (nullif(
+                            case
+                                when po.received_date is not null then (select sum(coalesce(poi2.qty_received,0)) from purchase_order_items poi2 where poi2.purchase_order_id = po.id)
+                                else (select sum(coalesce(poi2.qty_ordered,0)) from purchase_order_items poi2 where poi2.purchase_order_id = po.id)
+                            end
+                        ,0) * 1.0)
+                end
+            from purchase_order_items poi
+            join purchase_orders po on po.id = poi.purchase_order_id
+            where poi.product_id = products.id
+            order by po.created_at desc, po.id desc, poi.id desc
+            limit 1
+        )";
 
         $sellingPrice = $sellingPrice !== null ? trim($sellingPrice) : null;
         if ($sellingPrice === 'set') {
@@ -187,6 +227,15 @@ final class PriceResearchQueryService
                         $sp->whereNull('selling_price');
                     });
             });
+        }
+
+        $shippingPerUnit = $shippingPerUnit !== null ? trim($shippingPerUnit) : null;
+        if ($shippingPerUnit === 'set') {
+            // Filter against the computed expression to support SQLite (tests) + MySQL (prod).
+            $q->whereRaw("({$latestShippingPerUnitExpr}) > 0");
+        } elseif ($shippingPerUnit === 'missing') {
+            // Important: wrap OR in parentheses so later AND filters (vendors/types/etc) don't change the logic.
+            $q->whereRaw("(({$latestShippingPerUnitExpr}) is null or ({$latestShippingPerUnitExpr}) = 0)");
         }
 
         $barcode = $barcode !== null ? trim($barcode) : null;

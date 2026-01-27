@@ -21,6 +21,11 @@ it('exposes correct site key', function (): void {
             return null;
         }
 
+        public function listForProduct(int $productId): array
+        {
+            return [];
+        }
+
         public function updateSourceUrl(int $id, ?string $sourceUrl): void
         {
             //
@@ -43,6 +48,11 @@ it('prefers candidate URLs that look like the intended product (RG God Gundam) o
         public function findForProduct(int $productId, string $source): ?ProductExternalContent
         {
             return null;
+        }
+
+        public function listForProduct(int $productId): array
+        {
+            return [];
         }
 
         public function updateSourceUrl(int $id, ?string $sourceUrl): void

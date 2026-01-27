@@ -26,9 +26,10 @@ final class ProductsQueryService
         array $missing = [],
         ?string $sortBy = null,
         string $sortDir = 'asc',
+        ?string $purchaseOrderUuid = null,
     ): LengthAwarePaginator
     {
-        return $this->products->paginate($perPage, $search, $types, $vendors, $missing, $sortBy, $sortDir);
+        return $this->products->paginate($perPage, $search, $types, $vendors, $missing, $sortBy, $sortDir, $purchaseOrderUuid);
     }
 
     /**

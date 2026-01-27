@@ -9,7 +9,17 @@ use App\Models\ProductExternalAsset;
 interface ProductExternalAssetRepository
 {
     /**
-     * @param  array<int, array{kind: string, storage_path: string, filename: string, mime_type?: string|null, size_bytes?: int|null}>  $assets
+     * @param  array<int, array{
+     *   kind: string,
+     *   storage_path: string,
+     *   filename: string,
+     *   mime_type?: string|null,
+     *   size_bytes?: int|null,
+     *   origin_url?: string|null,
+     *   origin_width?: int|null,
+     *   origin_height?: int|null,
+     *   checksum_sha256?: string|null
+     * }>  $assets
      * @return array<int, ProductExternalAsset>
      */
     public function replaceForProduct(int $productId, string $source, array $assets): array;
@@ -18,6 +28,11 @@ interface ProductExternalAssetRepository
      * @return array<int, ProductExternalAsset>
      */
     public function listForProduct(int $productId, string $source): array;
+
+    /**
+     * @return array<int, ProductExternalAsset>
+     */
+    public function listAllForProduct(int $productId): array;
 
     /**
      * @param  array<int, int>  $assetIdToSortOrder

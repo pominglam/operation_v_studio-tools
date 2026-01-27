@@ -51,6 +51,7 @@ use App\Http\Controllers\Api\V1\ProductPlamodShowController;
 use App\Http\Controllers\Api\V1\ProductPlamodSyncController;
 use App\Http\Controllers\Api\V1\ProductPlamodAssetOrderController;
 use App\Http\Controllers\Api\V1\ProductInfoSyncController;
+use App\Http\Controllers\Api\V1\ProductInfoShowController;
 use App\Http\Controllers\Api\V1\ProductsController;
 use App\Http\Controllers\Api\V1\ProductSellingPriceController;
 use App\Http\Controllers\Api\V1\ProductsExportController;
@@ -58,6 +59,7 @@ use App\Http\Controllers\Api\V1\ProductsExportMissingBarcodeController;
 use App\Http\Controllers\Api\V1\ProductsExportBarcodedController;
 use App\Http\Controllers\Api\V1\ProductsExportMissingSellingPriceController;
 use App\Http\Controllers\Api\V1\ProductsExportSelectedController;
+use App\Http\Controllers\Api\V1\ProductsRecrawlSelectedController;
 use App\Http\Controllers\Api\V1\ProductTypeBackfillController;
 use App\Http\Controllers\Api\V1\ProductTypeRecomputeController;
 use App\Http\Controllers\Api\V1\AliExpressCookiesController;
@@ -66,6 +68,8 @@ use App\Http\Controllers\Api\V1\DatabaseBackupCreateController;
 use App\Http\Controllers\Api\V1\DatabaseBackupRestoreController;
 use App\Http\Controllers\Api\V1\ProductPoLinesController;
 use App\Http\Controllers\Api\V1\LatestProductCostsRefreshController;
+use App\Http\Controllers\Api\V1\ExternalRateLimitShowController;
+use App\Http\Controllers\Api\V1\ExternalRateLimitUpdateController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')
@@ -73,6 +77,7 @@ Route::prefix('v1')
         Route::get('/products', [ProductsController::class, 'index']);
         Route::get('/products/export', ProductsExportController::class);
         Route::post('/products/export/selected', ProductsExportSelectedController::class);
+        Route::post('/products/recrawl/selected', ProductsRecrawlSelectedController::class);
         Route::get('/products/export/missing-barcode', ProductsExportMissingBarcodeController::class);
         Route::get('/products/export/barcoded', ProductsExportBarcodedController::class);
         Route::get('/products/export/missing-selling-price', ProductsExportMissingSellingPriceController::class);
@@ -91,6 +96,7 @@ Route::prefix('v1')
         Route::post('/job-batches/{id}/cancel', JobBatchCancelController::class);
         Route::post('/products/{id}/plamod/sync', ProductPlamodSyncController::class)->whereUuid('id');
         Route::post('/products/{id}/product-info/sync', ProductInfoSyncController::class)->whereUuid('id');
+        Route::get('/products/{id}/product-info', ProductInfoShowController::class)->whereUuid('id');
         Route::get('/products/{id}/plamod', ProductPlamodShowController::class)->whereUuid('id');
         Route::put('/products/{id}/plamod/assets/order', ProductPlamodAssetOrderController::class)->whereUuid('id');
         Route::get('/product-assets/{id}/download', ProductExternalAssetDownloadController::class)->whereNumber('id');
@@ -129,6 +135,8 @@ Route::prefix('v1')
         Route::post('/maintenance/db-backups', DatabaseBackupCreateController::class);
         Route::post('/maintenance/db-backups/restore', DatabaseBackupRestoreController::class);
         Route::post('/maintenance/refresh-latest-costs', LatestProductCostsRefreshController::class);
+        Route::get('/maintenance/external-rate-limit', ExternalRateLimitShowController::class);
+        Route::put('/maintenance/external-rate-limit', ExternalRateLimitUpdateController::class);
 
         Route::get('/price-research/filter-options', PriceResearchFilterOptionsController::class);
         Route::get('/price-research/products', PriceResearchProductsController::class);

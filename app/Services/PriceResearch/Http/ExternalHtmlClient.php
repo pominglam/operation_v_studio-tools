@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Services\PriceResearch\Http;
 
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -86,7 +88,7 @@ final class ExternalHtmlClient
 
     private function throttle(string $url, ?string $siteKey, string $traceId): void
     {
-        $defaultPerMinute = max(1, (int) config('price_research.rate_limit.per_site_per_minute', 10));
+        $defaultPerMinute = $this->globalHitsPerMinute();
         $override = null;
         if ($siteKey !== null && $siteKey !== '') {
             $v = config('price_research.rate_limit.per_site_overrides.'.$siteKey);
@@ -119,6 +121,29 @@ final class ExternalHtmlClient
         }
 
         RateLimiter::hit($key, $decaySeconds);
+    }
+
+    private function globalHitsPerMinute(): int
+    {
+        /** @var int $cached */
+        $cached = Cache::remember('settings:external_hits_per_minute', 60, static function (): int {
+            if (! Schema::hasTable('maintenance_notes')) {
+                return max(1, (int) config('price_research.rate_limit.per_site_per_minute', 10));
+            }
+
+            $raw = \Illuminate\Support\Facades\DB::table('maintenance_notes')
+                ->where('key', '=', \App\Services\Maintenance\ExternalRateLimitService::KEY)
+                ->value('body');
+
+            $raw = is_string($raw) ? trim($raw) : '';
+            if ($raw === '' || ! ctype_digit($raw)) {
+                return max(1, (int) config('price_research.rate_limit.per_site_per_minute', 10));
+            }
+
+            return max(1, min((int) $raw, 120));
+        });
+
+        return max(1, (int) $cached);
     }
 
     private function hostKeyForUrl(string $url): string

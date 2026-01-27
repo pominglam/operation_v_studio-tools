@@ -29,6 +29,7 @@ type ProductResearch = {
     description: string;
     price_researched_at: string | null;
     expired: boolean;
+    vendor: string | null;
     filled: number | null;
     available: number | null;
     cost: string | null;
@@ -38,6 +39,7 @@ type ProductResearch = {
     cost_high: string | null;
     landed_cost_low: string | null;
     landed_cost_high: string | null;
+    po_total_cost: string | null;
     selling_price: string | null;
     quotes: Quote[];
 };
@@ -191,6 +193,7 @@ const runSiteOptions = computed<MultiSelectOption[]>(() => {
 const runSites = ref<string[]>(allSites.filter((s) => s.key !== 'aliexpress').map((s) => s.key));
 
 const sellingPrice = ref<'any' | 'set' | 'missing'>('any');
+const shippingPerUnit = ref<'any' | 'set' | 'missing'>('any');
 const barcodeFilter = ref<'any' | 'set' | 'missing'>('any');
 
 const productTypes = ref<string[]>([]);
@@ -204,6 +207,16 @@ const vendorOptions = computed<MultiSelectOption[]>(() => {
     return productVendors.value.map((v) => ({ value: v, label: v }));
 });
 const vendors = ref<string[]>([]);
+
+type PurchaseOrderOption = {
+    id: string;
+    vendor: string;
+    created_at: string | null;
+    counts: { items: number };
+};
+
+const purchaseOrderUuid = ref<string>('');
+const purchaseOrders = ref<PurchaseOrderOption[]>([]);
 
 const STATE_KEY = 'page_state:price_research';
 const hydrating = ref(true);
@@ -325,6 +338,27 @@ function marginMultiplier(p: ProductResearch): string | null {
     return (selling / cost).toFixed(2);
 }
 
+function landedSpreadDisplay(p: ProductResearch): { main: string; delta: string | null } {
+    if (!p.landed_cost_low || !p.landed_cost_high) {
+        return { main: '—', delta: null };
+    }
+
+    if (p.landed_cost_low === p.landed_cost_high) {
+        return { main: formatMoney2(p.landed_cost_low), delta: null };
+    }
+
+    const low = parseMoney(p.landed_cost_low);
+    const high = parseMoney(p.landed_cost_high);
+    const main = `${formatMoney2(p.landed_cost_low)}–${formatMoney2(p.landed_cost_high)}`;
+
+    if (low === null || high === null || high <= low) {
+        return { main, delta: null };
+    }
+
+    const half = ((high - low) / 2).toFixed(2);
+    return { main, delta: `±${half}` };
+}
+
 function siteHeaderLine1(name: string): string {
     const trimmed = name.trim();
     const idx = trimmed.indexOf(' ');
@@ -349,8 +383,15 @@ function buildProductsUrl(): string {
     const s = search.value.trim();
     if (s) params.set('search', s);
 
+    const po = purchaseOrderUuid.value.trim();
+    if (po) params.set('purchase_order_uuid', po);
+
     if (sellingPrice.value !== 'any') {
         params.set('selling_price', sellingPrice.value);
+    }
+
+    if (shippingPerUnit.value !== 'any') {
+        params.set('shipping_per_unit', shippingPerUnit.value);
     }
 
     if (barcodeFilter.value !== 'any') {
@@ -418,6 +459,26 @@ async function loadProductFilterOptions(): Promise<void> {
         );
     } catch {
         // ignore
+    }
+}
+
+function poLabel(po: PurchaseOrderOption): string {
+    const date = po.created_at ? formatLocalDateTime(po.created_at) : '—';
+    const short = po.id.slice(0, 8);
+    return `${date} · ${po.vendor} · ${po.counts.items} items · ${short}`;
+}
+
+async function loadPurchaseOrders(): Promise<void> {
+    try {
+        const r = await fetch('/api/v1/purchase-orders?per_page=200&sort_dir=desc');
+        if (!r.ok) {
+            purchaseOrders.value = [];
+            return;
+        }
+        const json = (await r.json()) as { data?: PurchaseOrderOption[] };
+        purchaseOrders.value = Array.isArray(json.data) ? json.data : [];
+    } catch {
+        purchaseOrders.value = [];
     }
 }
 
@@ -812,7 +873,9 @@ onMounted(() => {
         page?: number;
         sortBy?: ResearchSortKey;
         sortDir?: 'asc' | 'desc';
+        purchaseOrderUuid?: string;
         sellingPrice?: 'any' | 'set' | 'missing';
+        shippingPerUnit?: 'any' | 'set' | 'missing';
         barcodeFilter?: 'any' | 'set' | 'missing';
         freshness?: string[];
         types?: string[];
@@ -828,7 +891,9 @@ onMounted(() => {
         if (typeof saved.page === 'number') page.value = saved.page;
         if (saved.sortBy) sortBy.value = saved.sortBy;
         if (saved.sortDir) sortDir.value = saved.sortDir;
+        if (typeof saved.purchaseOrderUuid === 'string') purchaseOrderUuid.value = saved.purchaseOrderUuid;
         if (saved.sellingPrice) sellingPrice.value = saved.sellingPrice;
+        if (saved.shippingPerUnit) shippingPerUnit.value = saved.shippingPerUnit;
         if (saved.barcodeFilter) barcodeFilter.value = saved.barcodeFilter;
         if (Array.isArray(saved.freshness)) freshness.value = saved.freshness;
         if (Array.isArray(saved.types)) types.value = saved.types;
@@ -844,6 +909,7 @@ onMounted(() => {
     void loadLatestRun();
     void loadProductFilterOptions();
     void loadPriceResearchFilterOptions();
+    void loadPurchaseOrders();
 });
 
 onBeforeUnmount(() => {
@@ -870,7 +936,7 @@ function onPageChange(next: number): void {
 
 let searchTimer: number | null = null;
 watch(
-    [search, perPage, sellingPrice, barcodeFilter, vendors, types, freshness, quoteSites, sortBy, sortDir],
+    [search, perPage, sellingPrice, shippingPerUnit, barcodeFilter, purchaseOrderUuid, vendors, types, freshness, quoteSites, sortBy, sortDir],
     () => {
     if (hydrating.value) return;
     page.value = 1;
@@ -895,7 +961,7 @@ watch(
 );
 
 watch(
-    [search, perPage, page, sortBy, sortDir, sellingPrice, barcodeFilter, vendors, types, freshness, quoteSites, runSites, disabledSiteKeys],
+    [search, perPage, page, sortBy, sortDir, purchaseOrderUuid, sellingPrice, shippingPerUnit, barcodeFilter, vendors, types, freshness, quoteSites, runSites, disabledSiteKeys],
     () => {
         if (hydrating.value) return;
         savePageState(STATE_KEY, {
@@ -904,7 +970,9 @@ watch(
             page: page.value,
             sortBy: sortBy.value,
             sortDir: sortDir.value,
+            purchaseOrderUuid: purchaseOrderUuid.value,
             sellingPrice: sellingPrice.value,
+            shippingPerUnit: shippingPerUnit.value,
             barcodeFilter: barcodeFilter.value,
             freshness: freshness.value,
             types: types.value,
@@ -924,7 +992,9 @@ function resetPageState(): void {
     page.value = 1;
     sortBy.value = 'price_researched_at';
     sortDir.value = 'desc';
+    purchaseOrderUuid.value = '';
     sellingPrice.value = 'any';
+    shippingPerUnit.value = 'any';
     barcodeFilter.value = 'any';
     freshness.value = [];
     types.value = [];
@@ -1086,6 +1156,19 @@ function resetPageState(): void {
                     />
                 </div>
 
+                <div class="min-w-[260px] flex-[2_1_360px]">
+                    <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">PO</label>
+                    <select
+                        v-model="purchaseOrderUuid"
+                        class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                    >
+                        <option value="">All POs</option>
+                        <option v-for="po in purchaseOrders" :key="po.id" :value="po.id">
+                            {{ poLabel(po) }}
+                        </option>
+                    </select>
+                </div>
+
                 <div class="min-w-[180px] flex-[1_1_220px]">
                     <label
                         class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
@@ -1098,6 +1181,20 @@ function resetPageState(): void {
                         <option value="any">All</option>
                         <option value="set">Has selling price</option>
                         <option value="missing">Missing selling price</option>
+                    </select>
+                </div>
+
+                <div class="min-w-[180px] flex-[1_1_220px]">
+                    <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                        >Shipping cost</label
+                    >
+                    <select
+                        v-model="shippingPerUnit"
+                        class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                    >
+                        <option value="any">All</option>
+                        <option value="set">Has shipping cost</option>
+                        <option value="missing">Missing shipping cost</option>
                     </select>
                 </div>
 
@@ -1180,6 +1277,7 @@ function resetPageState(): void {
                                         </button>
                                     </div>
                                 </th>
+                                <th class="px-4 py-3">VENDOR</th>
                                 <th class="px-4 py-3 text-right">
                                     <button
                                         type="button"
@@ -1255,7 +1353,7 @@ function resetPageState(): void {
                         </thead>
                         <tbody class="divide-y divide-slate-100">
                             <tr v-if="items.length === 0">
-                                <td class="px-4 py-4 text-slate-600" :colspan="8 + sites.length">
+                                <td class="px-4 py-4 text-slate-600" :colspan="9 + sites.length">
                                     No products found.
                                 </td>
                             </tr>
@@ -1330,6 +1428,9 @@ function resetPageState(): void {
                                         </div>
                                     </div>
                                 </td>
+                                <td class="px-4 py-3 text-slate-700">
+                                    {{ p.vendor ?? '—' }}
+                                </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
                                     <input
                                         class="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-sm tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
@@ -1385,10 +1486,14 @@ function resetPageState(): void {
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
                                     <span class="text-slate-600">{{
-                                        p.landed_cost_low && p.landed_cost_high
-                                            ? `${formatMoney2(p.landed_cost_low)}–${formatMoney2(p.landed_cost_high)}`
-                                            : '—'
+                                        landedSpreadDisplay(p).main
                                     }}</span>
+                                    <div
+                                        v-if="landedSpreadDisplay(p).delta"
+                                        class="mt-0.5 text-xs font-medium text-slate-500 tabular-nums"
+                                    >
+                                        {{ landedSpreadDisplay(p).delta }}
+                                    </div>
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
                                     <span class="font-medium text-slate-900">{{

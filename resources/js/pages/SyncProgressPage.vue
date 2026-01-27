@@ -342,8 +342,8 @@ onUnmounted(() => stopPolling());
                     <div class="mb-2 flex items-center justify-between">
                         <div class="text-sm font-semibold text-slate-900">Details</div>
                         <div v-if="items" class="text-xs text-slate-600 tabular-nums">
-                            Running: <span class="font-semibold text-slate-900">{{ items.counts.running }}</span>
-                            · Queued: <span class="font-semibold text-slate-900">{{ items.counts.queued }}</span>
+                            Queued: <span class="font-semibold text-slate-900">{{ items.counts.queued }}</span>
+                            · Running: <span class="font-semibold text-slate-900">{{ items.counts.running }}</span>
                             · Done: <span class="font-semibold text-slate-900">{{ items.counts.succeeded + items.counts.failed + items.counts.skipped }}</span>
                             <span v-if="items.counts.failed > 0" class="text-rose-700"> · failed {{ items.counts.failed }}</span>
                         </div>
@@ -356,6 +356,23 @@ onUnmounted(() => stopPolling());
                     <div v-else-if="itemsLoading && !items" class="text-sm text-slate-600">Loading item details…</div>
 
                     <div v-else-if="items" class="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                        <div class="rounded-md border border-slate-200 bg-white p-3">
+                            <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Queued</div>
+                            <div v-if="items.queued.length === 0" class="text-sm text-slate-600">—</div>
+                            <ul v-else class="space-y-2 text-sm">
+                                <li v-for="it in items.queued" :key="it.product_uuid" class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <div class="truncate font-medium text-slate-900">{{ it.sku ?? it.product_uuid }}</div>
+                                        <div class="text-xs text-slate-600">
+                                            <span v-if="it.vendor">{{ it.vendor }}</span>
+                                            <span v-else>—</span>
+                                        </div>
+                                    </div>
+                                    <div class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">queued</div>
+                                </li>
+                            </ul>
+                        </div>
+
                         <div class="rounded-md border border-slate-200 bg-white p-3">
                             <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Processing</div>
                             <div v-if="items.running.length === 0" class="text-sm text-slate-600">—</div>
@@ -375,23 +392,6 @@ onUnmounted(() => stopPolling());
                         </div>
 
                         <div class="rounded-md border border-slate-200 bg-white p-3">
-                            <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Queued</div>
-                            <div v-if="items.queued.length === 0" class="text-sm text-slate-600">—</div>
-                            <ul v-else class="space-y-2 text-sm">
-                                <li v-for="it in items.queued" :key="it.product_uuid" class="flex items-start justify-between gap-3">
-                                    <div class="min-w-0">
-                                        <div class="truncate font-medium text-slate-900">{{ it.sku ?? it.product_uuid }}</div>
-                                        <div class="text-xs text-slate-600">
-                                            <span v-if="it.vendor">{{ it.vendor }}</span>
-                                            <span v-else>—</span>
-                                        </div>
-                                    </div>
-                                    <div class="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">queued</div>
-                                </li>
-                            </ul>
-                        </div>
-
-                        <div class="rounded-md border border-slate-200 bg-white p-3">
                             <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Processed (recent)</div>
                             <div v-if="items.done.length === 0" class="text-sm text-slate-600">—</div>
                             <ul v-else class="space-y-2 text-sm">
@@ -400,7 +400,7 @@ onUnmounted(() => stopPolling());
                                         <div class="truncate font-medium text-slate-900">{{ it.sku ?? it.product_uuid }}</div>
                                         <div class="text-xs text-slate-600">
                                             <span v-if="it.finished_at">finished {{ formatTorontoDateTime(it.finished_at) }}</span>
-                                            <span v-if="it.last_error"> · <span class="text-rose-700">{{ it.last_error }}</span></span>
+                                            <span v-if="it.last_error && it.status !== 'skipped'"> · <span class="text-rose-700">{{ it.last_error }}</span></span>
                                         </div>
                                     </div>
                                     <div
@@ -410,10 +410,12 @@ onUnmounted(() => stopPolling());
                                                 ? 'bg-emerald-100 text-emerald-800'
                                                 : it.status === 'failed'
                                                   ? 'bg-rose-100 text-rose-800'
-                                                  : 'bg-slate-100 text-slate-700'
+                                                  : it.status === 'skipped'
+                                                    ? 'bg-amber-100 text-amber-800'
+                                                    : 'bg-slate-100 text-slate-700'
                                         "
                                     >
-                                        {{ it.status }}
+                                        {{ it.status === 'skipped' && it.last_error === 'no_sources_found' ? 'not found' : it.status }}
                                     </div>
                                 </li>
                             </ul>

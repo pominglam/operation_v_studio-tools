@@ -4,17 +4,101 @@ import { api } from '../../lib/api';
 import { decodeHtmlEntitiesDeep } from '../../lib/html';
 import { descriptionSourceUrl } from '../../lib/pdpSources';
 
-type PlamodAsset = {
+type ProductInfoAsset = {
     id: number;
+    source: string;
     kind: string;
     filename: string;
     mime_type: string | null;
     size_bytes: number | null;
+    origin_url?: string | null;
+    origin_width?: number | null;
+    origin_height?: number | null;
+    checksum_sha256?: string | null;
     download_url: string;
     view_url: string;
 };
 
+type ProductInfoContent = {
+    source: string;
+    source_url: string | null;
+    title: string | null;
+    description_html: string | null;
+    attributes: Record<string, unknown> | null;
+    updated_at: string | null;
+};
+
+type ProductInfoPayload = {
+    contents: ProductInfoContent[];
+    assets: ProductInfoAsset[];
+};
+
+type SourceKey = 'bandai' | 'hlj' | 'plamod' | 'other';
+
+type SelectedSourceState = {
+    contentSource: SourceKey;
+    imageSource: SourceKey;
+};
+
+const SOURCE_LABELS: Record<SourceKey, string> = {
+    bandai: 'Bandai',
+    hlj: 'HLJ',
+    plamod: 'Plamod',
+    other: 'Other',
+};
+
+function normalizeSourceKey(source: string): SourceKey {
+    const s = source.trim().toLowerCase();
+    if (s === 'bandai') return 'bandai';
+    if (s === 'hlj') return 'hlj';
+    if (s === 'plamod') return 'plamod';
+    return 'other';
+}
+
+function preferredContentSource(available: Set<SourceKey>): SourceKey {
+    if (available.has('bandai')) return 'bandai';
+    if (available.has('hlj')) return 'hlj';
+    if (available.has('other')) return 'other';
+    return 'plamod';
+}
+
+function preferredImageSource(available: Set<SourceKey>): SourceKey {
+    if (available.has('bandai')) return 'bandai';
+    if (available.has('hlj')) return 'hlj';
+    if (available.has('plamod')) return 'plamod';
+    return 'other';
+}
+
+function isImage(a: ProductInfoAsset): boolean {
+    if (a.kind === 'image') return true;
+    return (a.mime_type ?? '').startsWith('image/');
+}
+
+function isBlank(s: string | null | undefined): boolean {
+    return !s || s.trim() === '';
+}
+
+function contentForSource(contents: ProductInfoContent[], source: SourceKey): ProductInfoContent | null {
+    const src = source === 'other' ? null : source;
+    const candidates = src ? contents.filter((c) => normalizeSourceKey(c.source) === source) : contents.filter((c) => normalizeSourceKey(c.source) === 'other');
+    if (candidates.length === 0) return null;
+
+    // Prefer one with description, then most recently updated.
+    const withDesc = candidates.filter((c) => !isBlank(c.description_html));
+    const list = withDesc.length > 0 ? withDesc : candidates;
+    return (
+        list
+            .slice()
+            .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))[0] ?? null
+    );
+}
+
+function assetsForSource(assets: ProductInfoAsset[], source: SourceKey): ProductInfoAsset[] {
+    return assets.filter((a) => normalizeSourceKey(a.source) === source).filter(isImage);
+}
+
 type PlamodPayload = {
+    // legacy, kept for backward compatibility if needed later
     source: 'plamod';
     content: null | {
         source: string;
@@ -24,7 +108,7 @@ type PlamodPayload = {
         attributes: Record<string, string> | null;
         updated_at: string | null;
     };
-    assets: PlamodAsset[];
+    assets: ProductInfoAsset[];
 };
 
 const props = defineProps<{
@@ -38,30 +122,61 @@ const props = defineProps<{
 const loading = ref(false);
 const error = ref<string | null>(null);
 const message = ref<string | null>(null);
-const data = ref<PlamodPayload | null>(null);
+const data = ref<ProductInfoPayload | null>(null);
 const syncing = ref(false);
 
-const title = computed<string>(() => data.value?.content?.title || props.productSku || 'Plamod');
+const availableSources = computed<Set<SourceKey>>(() => {
+    const s = new Set<SourceKey>();
+    const contents = data.value?.contents ?? [];
+    for (const c of contents) s.add(normalizeSourceKey(c.source));
+    const assets = data.value?.assets ?? [];
+    for (const a of assets) {
+        if (isImage(a)) s.add(normalizeSourceKey(a.source));
+    }
+    return s;
+});
+
+const selectedSource = ref<SelectedSourceState>({
+    contentSource: 'plamod',
+    imageSource: 'plamod',
+});
+
+watch(
+    () => availableSources.value,
+    (avail) => {
+        selectedSource.value = {
+            contentSource: preferredContentSource(avail),
+            imageSource: preferredImageSource(avail),
+        };
+    },
+    { immediate: true },
+);
+
+const selectedContent = computed<ProductInfoContent | null>(() => {
+    return contentForSource(data.value?.contents ?? [], selectedSource.value.contentSource);
+});
+
+const title = computed<string>(() => selectedContent.value?.title || props.productSku || 'Product info');
+
 const attributes = computed<[string, string][]>(() => {
-    const attrs = data.value?.content?.attributes ?? null;
+    const attrs = selectedContent.value?.attributes ?? null;
     if (!attrs) return [];
-    return Object.entries(attrs);
+    return Object.entries(attrs)
+        .map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)] as [string, string])
+        .filter(([, v]) => v.trim() !== '');
 });
 
 const descriptionHtml = computed<string | null>(() => {
-    const raw = data.value?.content?.description_html ?? null;
+    const raw = selectedContent.value?.description_html ?? null;
     if (!raw) return null;
     const decoded = decodeHtmlEntitiesDeep(raw);
     const trimmed = decoded.trim();
     return trimmed !== '' ? trimmed : null;
 });
 
-const imageAssets = computed<PlamodAsset[]>(() => {
-    const assets = data.value?.assets ?? [];
-    return assets.filter((a) => {
-        if (a.kind === 'image') return true;
-        return (a.mime_type ?? '').startsWith('image/');
-    });
+const imageAssets = computed<ProductInfoAsset[]>(() => {
+    const src = selectedSource.value.imageSource;
+    return assetsForSource(data.value?.assets ?? [], src);
 });
 
 const plamodPdpUrl = computed<string | null>(() => {
@@ -73,7 +188,7 @@ const plamodPdpUrl = computed<string | null>(() => {
 const searchQuery = computed<string>(() => {
     const sku = (props.productSku ?? '').trim();
     if (sku) return sku;
-    const t = (data.value?.content?.title ?? '').trim();
+    const t = (selectedContent.value?.title ?? '').trim();
     return t;
 });
 
@@ -90,7 +205,7 @@ const argamaSearchUrl = computed<string | null>(() => {
 });
 
 const descriptionSource = computed<string | null>(() => {
-    const c = data.value?.content ?? null;
+    const c = selectedContent.value ?? null;
     return descriptionSourceUrl(
         c
             ? {
@@ -103,7 +218,16 @@ const descriptionSource = computed<string | null>(() => {
 });
 
 const activeImageIndex = ref(0);
-const activeImage = computed<PlamodAsset | null>(() => imageAssets.value[activeImageIndex.value] ?? null);
+const activeImage = computed<ProductInfoAsset | null>(() => imageAssets.value[activeImageIndex.value] ?? null);
+const activeImageDebug = computed<string | null>(() => {
+    const img = activeImage.value;
+    if (!img) return null;
+
+    const parts: string[] = [];
+    if (img.origin_width && img.origin_height) parts.push(`${img.origin_width}×${img.origin_height}`);
+    if (img.checksum_sha256) parts.push(img.checksum_sha256.slice(0, 12));
+    return parts.length > 0 ? parts.join(' · ') : null;
+});
 const savingOrder = ref(false);
 const dragIndex = ref<number | null>(null);
 
@@ -115,8 +239,9 @@ function reorder<T>(arr: T[], from: number, to: number): T[] {
     return copy;
 }
 
-async function persistImageOrder(orderedImages: PlamodAsset[]): Promise<void> {
+async function persistImageOrder(orderedImages: ProductInfoAsset[]): Promise<void> {
     if (!props.productId) return;
+    if (selectedSource.value.imageSource !== 'plamod') return;
 
     savingOrder.value = true;
     error.value = null;
@@ -138,20 +263,28 @@ async function onDropThumbnail(toIndex: number): Promise<void> {
     dragIndex.value = null;
     if (from === null) return;
     if (from === toIndex) return;
+    if (selectedSource.value.imageSource !== 'plamod') return;
 
     const beforeActiveId = activeImage.value?.id ?? null;
     const reorderedImages = reorder(imageAssets.value, from, toIndex);
 
-    // Update the underlying `data.assets` ordering so the computed `imageAssets` reflects the new order immediately.
-    // Keep non-image assets stable; only reorder the image subset.
+    // Update the underlying `data.assets` ordering so the computed `imageAssets` reflects the new order immediately,
+    // but only within the Plamod image subset.
     const currentAssets = data.value?.assets ?? [];
-    const nextAssets: PlamodAsset[] = [];
+    const plamodNonImages: ProductInfoAsset[] = [];
+    const otherSourceAssets: ProductInfoAsset[] = [];
     for (const a of currentAssets) {
-        const isImage = a.kind === 'image' || (a.mime_type ?? '').startsWith('image/');
-        if (!isImage) nextAssets.push(a);
+        if (normalizeSourceKey(a.source) !== 'plamod') {
+            otherSourceAssets.push(a);
+            continue;
+        }
+        if (!isImage(a)) {
+            plamodNonImages.push(a);
+        }
     }
-    // Insert images first, in new order, then the non-image assets.
-    data.value = data.value ? { ...data.value, assets: [...reorderedImages, ...nextAssets] } : data.value;
+    data.value = data.value
+        ? { ...data.value, assets: [...otherSourceAssets, ...reorderedImages, ...plamodNonImages] }
+        : data.value;
 
     // Keep current active image if possible.
     if (beforeActiveId !== null) {
@@ -193,10 +326,10 @@ async function load(): Promise<void> {
     loading.value = true;
     error.value = null;
     try {
-        const res = await api.get<{ data: PlamodPayload }>(`/api/v1/products/${props.productId}/plamod`);
+        const res = await api.get<{ data: ProductInfoPayload }>(`/api/v1/products/${props.productId}/product-info`);
         data.value = res.data.data;
     } catch {
-        error.value = 'Failed to load Plamod data.';
+        error.value = 'Failed to load product info.';
     } finally {
         loading.value = false;
     }
@@ -240,7 +373,7 @@ watch(
                     <div>
                         <h2 class="text-base font-semibold text-slate-900">{{ title }}</h2>
                         <p class="mt-0.5 text-xs text-slate-600">
-                            Plamod assets & description (downloaded ZIP + extracted files)
+                            PDP content & assets (Plamod/HLJ/Bandai) with source attribution
                         </p>
                     </div>
 
@@ -282,6 +415,37 @@ watch(
 
                     <div v-if="loading" class="text-sm text-slate-600">Loading…</div>
 
+                    <div v-if="!loading" class="rounded-md border border-slate-200 bg-white p-3">
+                        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Sources</div>
+                        <div class="mt-2 grid gap-3 sm:grid-cols-2">
+                            <div>
+                                <div class="text-xs font-semibold text-slate-700">Description source</div>
+                                <select
+                                    v-model="selectedSource.contentSource"
+                                    class="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900"
+                                >
+                                    <option v-for="s in Array.from(availableSources)" :key="s" :value="s">
+                                        {{ SOURCE_LABELS[s] }}
+                                    </option>
+                                </select>
+                            </div>
+                            <div>
+                                <div class="text-xs font-semibold text-slate-700">Image source</div>
+                                <select
+                                    v-model="selectedSource.imageSource"
+                                    class="mt-1 w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900"
+                                >
+                                    <option v-for="s in Array.from(availableSources)" :key="s" :value="s">
+                                        {{ SOURCE_LABELS[s] }}
+                                    </option>
+                                </select>
+                                <div v-if="selectedSource.imageSource !== 'plamod'" class="mt-1 text-xs text-slate-500">
+                                    Drag-reorder is only available for Plamod images.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="rounded-md border border-slate-200 bg-white p-3">
                         <div class="flex items-center justify-between gap-3">
                             <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Assets</div>
@@ -316,7 +480,8 @@ watch(
                                         {{ a.filename }}
                                     </div>
                                     <div class="text-xs text-slate-500">
-                                        {{ a.kind }}<span v-if="a.size_bytes"> · {{ a.size_bytes }} bytes</span>
+                                        <span class="font-semibold text-slate-700">{{ a.source }}</span>
+                                        · {{ a.kind }}<span v-if="a.size_bytes"> · {{ a.size_bytes }} bytes</span>
                                     </div>
                                 </div>
 
@@ -338,13 +503,21 @@ watch(
                         <div class="mt-2 grid gap-3">
                             <div class="grid gap-1">
                                 <div class="text-base font-semibold text-slate-900">
-                                    {{ data?.content?.title ?? productSku ?? '—' }}
+                                    {{ selectedContent?.title ?? productSku ?? '—' }}
                                 </div>
                                 <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
                                     <div><span class="font-semibold text-slate-700">SKU:</span> {{ productSku ?? '—' }}</div>
                                     <div>
                                         <span class="font-semibold text-slate-700">Selling price:</span>
                                         {{ formatCad(productPrice) ?? (productPrice ?? '—') }}
+                                    </div>
+                                    <div>
+                                        <span class="font-semibold text-slate-700">Source:</span>
+                                        {{ SOURCE_LABELS[normalizeSourceKey(selectedContent?.source ?? '')] ?? (selectedContent?.source ?? '—') }}
+                                    </div>
+                                    <div>
+                                        <span class="font-semibold text-slate-700">Image source:</span>
+                                        {{ SOURCE_LABELS[selectedSource.imageSource] ?? selectedSource.imageSource }}
                                     </div>
                                 </div>
                             </div>
@@ -357,6 +530,9 @@ watch(
                                         :alt="activeImage.filename"
                                         class="h-72 w-full rounded-md object-contain"
                                     />
+                                    <div v-if="activeImageDebug" class="absolute bottom-2 right-2 rounded bg-white/90 px-2 py-1 text-xs text-slate-700">
+                                        {{ activeImageDebug }}
+                                    </div>
 
                                     <button
                                         v-if="imageAssets.length > 1"
@@ -392,6 +568,7 @@ watch(
                                         @dragstart="dragIndex = idx"
                                         @dragover.prevent
                                         @drop.prevent="onDropThumbnail(idx)"
+                                        :title="img.origin_url ? `${img.filename}\n${img.origin_url}\n${img.checksum_sha256?.slice(0, 12) ?? ''}`.trim() : img.filename"
                                     >
                                         <img :src="img.view_url" :alt="img.filename" class="h-12 w-12 rounded object-cover" />
                                     </button>
@@ -410,9 +587,9 @@ watch(
                                 target="_blank"
                                 rel="noopener noreferrer"
                             >
-                                {{ data?.content?.source ?? 'source' }}
+                                {{ selectedContent?.source ?? 'source' }}
                             </a>
-                            <span v-else>{{ data?.content?.source ?? '—' }}</span>
+                            <span v-else>{{ selectedContent?.source ?? '—' }}</span>
                         </div>
 
                         <div v-if="descriptionHtml" class="prose prose-slate mt-2 max-w-none" v-html="descriptionHtml" />

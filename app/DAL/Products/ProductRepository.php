@@ -22,7 +22,7 @@ interface ProductRepository
      * @param  array<int, string>  $vendors
      * @param  array<int, string>  $missing
      */
-    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc'): LengthAwarePaginator;
+    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', ?string $purchaseOrderUuid = null): LengthAwarePaginator;
 
     /**
      * @param  array<int, string>  $types
@@ -125,6 +125,12 @@ interface ProductRepository
      * @return Collection<int, Product>
      */
     public function findByBarcodes(array $barcodes): Collection;
+
+    /**
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, Product>
+     */
+    public function findByUuids(array $uuids): Collection;
 
     /**
      * @return Collection<int, Product>

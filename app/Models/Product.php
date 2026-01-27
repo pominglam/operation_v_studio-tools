@@ -17,6 +17,11 @@ use Illuminate\Support\Str;
  * @property string $description
  * @property string|null $handle
  * @property string|null $type
+ * @property string|null $grade
+ * @property string|null $series
+ * @property string|null $scale
+ * @property int|null $yen_price
+ * @property \Illuminate\Support\Carbon|null $bandai_launch_date
  * @property string|null $vendor
  * @property bool $published_on_shopify
  * @property int|null $order_qty
@@ -37,6 +42,11 @@ final class Product extends Model
         'description',
         'handle',
         'type',
+        'grade',
+        'series',
+        'scale',
+        'yen_price',
+        'bandai_launch_date',
         'vendor',
         'published_on_shopify',
         'order_qty',
@@ -52,6 +62,8 @@ final class Product extends Model
         'order_qty' => 'integer',
         'filled_qty' => 'integer',
         'available_qty' => 'integer',
+        'yen_price' => 'integer',
+        'bandai_launch_date' => 'date',
         'published_on_shopify' => 'boolean',
         'extended' => 'decimal:2',
         'latest_unit_cost' => 'decimal:2',
