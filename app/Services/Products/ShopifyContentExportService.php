@@ -88,7 +88,7 @@ final class ShopifyContentExportService
                 }
                 $usedHandles[$handle] = $product->uuid;
 
-                $bodyHtml = $this->resolveBodyHtml($product);
+                $bodyHtml = $this->normalizeBodyHtmlForShopify($this->resolveBodyHtml($product));
 
                 $row = $this->exports->shopifyRow($product, $handle);
                 $row[$idx['Body (HTML)']] = $bodyHtml;
@@ -165,6 +165,32 @@ final class ShopifyContentExportService
      */
     private function resolveBodyHtml(Product $product): string
     {
+        $preferred = is_string($product->preferred_description_source) ? trim($product->preferred_description_source) : '';
+        if ($preferred !== '') {
+            // If user has a preference, use it when it has non-empty HTML.
+            if ($preferred === 'hlj') {
+                $hlj = $product->hljExternalContent?->description_html;
+                if (is_string($hlj) && trim($hlj) !== '') {
+                    return $hlj;
+                }
+            }
+            if ($preferred === 'plamod') {
+                $plamod = $product->plamodExternalContent?->description_html;
+                if (is_string($plamod) && trim($plamod) !== '') {
+                    return $plamod;
+                }
+            }
+
+            /** @var array<int, ProductExternalContent> $contents */
+            $contents = $product->externalContents?->all() ?? [];
+            foreach ($contents as $c) {
+                if (! $c instanceof ProductExternalContent) continue;
+                if ($c->source !== $preferred) continue;
+                if (! is_string($c->description_html) || trim($c->description_html) === '') continue;
+                return (string) $c->description_html;
+            }
+        }
+
         $hlj = $product->hljExternalContent?->description_html;
         if (is_string($hlj) && trim($hlj) !== '') {
             return $hlj;
@@ -200,12 +226,32 @@ final class ShopifyContentExportService
         return '';
     }
 
+    private function normalizeBodyHtmlForShopify(string $html): string
+    {
+        $html = trim($html);
+        if ($html === '') {
+            return '';
+        }
+
+        // Shopify already renders <p> blocks with spacing; <br> tends to create extra blank lines.
+        $html = preg_replace('#<\s*br\s*/?\s*>#i', '', $html) ?? $html;
+
+        // Common encoding artifact: "Â " (NBSP mis-decoded) – replace with a regular space.
+        $html = str_replace("Â ", ' ', $html);
+
+        // Clean up excessive whitespace between tags.
+        $html = preg_replace("/[ \\t\\r\\n]+/", ' ', $html) ?? $html;
+        $html = trim($html);
+
+        return $html;
+    }
+
     /**
      * @return array<int, ProductExternalAsset>
      */
     private function imagesForProduct(Product $product): array
     {
-        $imgs = $product->plamodImageAssets?->all() ?? [];
+        $imgs = $product->shopifyImageAssets?->all() ?? [];
         /** @var array<int, ProductExternalAsset> $out */
         $out = [];
         foreach ($imgs as $a) {

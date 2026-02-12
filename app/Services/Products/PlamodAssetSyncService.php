@@ -270,7 +270,7 @@ final class PlamodAssetSyncService
 
     /**
      * @param  array<int, string>  $extractedStoragePaths
-     * @return array<int, array{kind: string, storage_path: string, filename: string, mime_type?: string|null, size_bytes?: int|null}>
+     * @return array<int, array{kind: string, storage_path: string, filename: string, mime_type?: string|null, size_bytes?: int|null, checksum_sha256?: string|null}>
      */
     private function buildAssetRows(string $zipStoragePath, array $extractedStoragePaths): array
     {
@@ -286,12 +286,19 @@ final class PlamodAssetSyncService
         ];
 
         foreach ($extractedStoragePaths as $p) {
+            $kind = $this->kindFromPath($p);
+            $sha = null;
+            if ($kind === 'image' && $disk->exists($p)) {
+                $abs = $disk->path($p);
+                $sha = is_string($abs) && $abs !== '' ? (hash_file('sha256', $abs) ?: null) : null;
+            }
             $rows[] = [
-                'kind' => $this->kindFromPath($p),
+                'kind' => $kind,
                 'storage_path' => $p,
                 'filename' => basename($p),
                 'mime_type' => $disk->mimeType($p) ?: null,
                 'size_bytes' => $disk->size($p) ?: null,
+                'checksum_sha256' => $sha,
             ];
         }
 

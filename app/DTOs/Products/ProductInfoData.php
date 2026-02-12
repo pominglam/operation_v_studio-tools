@@ -16,6 +16,7 @@ final class ProductInfoData
     public function __construct(
         public array $contents,
         public array $assets,
+        public ?string $preferredDescriptionSource = null,
     ) {}
 }
 

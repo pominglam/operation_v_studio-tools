@@ -33,6 +33,7 @@ it('returns per-product batch item details (queued/running/done)', function (): 
             'attempts' => 0,
             'sync_uuid' => null,
             'last_error' => null,
+            'debug_log' => null,
             'started_at' => null,
             'finished_at' => null,
             'created_at' => now(),
@@ -47,6 +48,7 @@ it('returns per-product batch item details (queued/running/done)', function (): 
             'attempts' => 1,
             'sync_uuid' => '00000000-0000-0000-0000-000000070099',
             'last_error' => null,
+            'debug_log' => null,
             'started_at' => now()->subMinute(),
             'finished_at' => null,
             'created_at' => now(),
@@ -61,6 +63,7 @@ it('returns per-product batch item details (queued/running/done)', function (): 
             'attempts' => 1,
             'sync_uuid' => '00000000-0000-0000-0000-000000070098',
             'last_error' => 'timeout',
+            'debug_log' => "line1\nline2",
             'started_at' => now()->subMinutes(2),
             'finished_at' => now()->subMinute(),
             'created_at' => now(),
@@ -82,6 +85,10 @@ it('returns per-product batch item details (queued/running/done)', function (): 
             'queued',
             'done',
         ],
+    ]);
+    $res->assertJsonFragment([
+        'product_uuid' => '00000000-0000-0000-0000-000000070003',
+        'debug_log' => "line1\nline2",
     ]);
 });
 

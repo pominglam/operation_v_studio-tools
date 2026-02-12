@@ -34,6 +34,8 @@ final class EloquentProductExternalAssetRepository implements ProductExternalAss
                     'origin_height' => $a['origin_height'] ?? null,
                     'checksum_sha256' => $a['checksum_sha256'] ?? null,
                     'sort_order' => $order,
+                    // Default: export images unless user disables in UI.
+                    'shopify_enabled' => true,
                 ]);
             }
 
@@ -63,7 +65,6 @@ final class EloquentProductExternalAssetRepository implements ProductExternalAss
         /** @var array<int, ProductExternalAsset> $assets */
         $assets = ProductExternalAsset::query()
             ->where('product_id', $productId)
-            ->orderBy('source')
             ->orderByRaw('sort_order is null')
             ->orderBy('sort_order')
             ->orderBy('id')
@@ -100,6 +101,13 @@ final class EloquentProductExternalAssetRepository implements ProductExternalAss
         $asset = ProductExternalAsset::query()->find($id);
 
         return $asset;
+    }
+
+    public function setShopifyEnabled(int $id, bool $enabled): void
+    {
+        ProductExternalAsset::query()
+            ->where('id', '=', $id)
+            ->update(['shopify_enabled' => $enabled]);
     }
 }
 

@@ -91,7 +91,7 @@ services:
       [
         "sh",
         "-lc",
-        "chmod -R a+rX storage/app/private/plamod storage/app/private/exports 2>/dev/null || true; exec php-fpm",
+        "mkdir -p storage/framework/views storage/framework/cache storage/framework/sessions storage/logs bootstrap/cache 2>/dev/null || true; chmod -R a+rwX storage bootstrap/cache 2>/dev/null || true; chmod -R a+rX storage/app/private/plamod storage/app/private/exports 2>/dev/null || true; exec php-fpm",
       ]
 
   # Cloudflare quick tunnel (trycloudflare). Fully managed by the Web UI via Docker Engine API.

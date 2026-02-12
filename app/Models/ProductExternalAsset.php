@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $origin_height
  * @property string|null $checksum_sha256
  * @property int|null $sort_order
+ * @property bool $shopify_enabled
  */
 final class ProductExternalAsset extends Model
 {
@@ -38,6 +39,7 @@ final class ProductExternalAsset extends Model
         'origin_height',
         'checksum_sha256',
         'sort_order',
+        'shopify_enabled',
     ];
 
     /** @var array<string, string> */
@@ -46,6 +48,7 @@ final class ProductExternalAsset extends Model
         'origin_width' => 'integer',
         'origin_height' => 'integer',
         'sort_order' => 'integer',
+        'shopify_enabled' => 'boolean',
     ];
 
     /** @return BelongsTo<Product, ProductExternalAsset> */

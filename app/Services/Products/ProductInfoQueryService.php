@@ -21,10 +21,18 @@ final class ProductInfoQueryService
     {
         $product = $this->products->findByUuidOrFail($productUuid);
 
-        $contents = $this->contents->listForProduct((int) $product->id);
+        $allContents = $this->contents->listForProduct((int) $product->id);
+
+        $preferred = is_string($product->preferred_description_source) ? trim((string) $product->preferred_description_source) : '';
+        if ($preferred === '' && $this->hasNonEmptyDescriptionForSource($allContents, 'hlj')) {
+            $product->preferred_description_source = 'hlj';
+            $this->products->save($product);
+            $preferred = 'hlj';
+        }
+
         // Filter out "empty" source rows (e.g. after a recrawl could not resolve a PDP and we cleared the record),
         // so the frontend doesn't treat them as selectable sources.
-        $contents = array_values(array_filter($contents, static function ($c): bool {
+        $contents = array_values(array_filter($allContents, static function ($c): bool {
             if (! $c instanceof \App\Models\ProductExternalContent) {
                 return false;
             }
@@ -48,7 +56,36 @@ final class ProductInfoQueryService
         }));
         $assets = $this->assets->listAllForProduct((int) $product->id);
 
-        return new ProductInfoData($contents, $assets);
+        return new ProductInfoData(
+            contents: $contents,
+            assets: $assets,
+            preferredDescriptionSource: $preferred !== '' ? $preferred : null,
+        );
+    }
+
+    /**
+     * @param  array<int, mixed>  $contents
+     */
+    private function hasNonEmptyDescriptionForSource(array $contents, string $source): bool
+    {
+        $source = strtolower(trim($source));
+        if ($source === '') {
+            return false;
+        }
+
+        foreach ($contents as $c) {
+            if (! $c instanceof \App\Models\ProductExternalContent) {
+                continue;
+            }
+            if (strtolower((string) $c->source) !== $source) {
+                continue;
+            }
+            if (is_string($c->description_html) && trim($c->description_html) !== '') {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 

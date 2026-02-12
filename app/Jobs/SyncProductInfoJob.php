@@ -7,7 +7,9 @@ namespace App\Jobs;
 use App\DAL\Products\ProductRepository;
 use App\Services\Jobs\JobBatchItemService;
 use App\Services\Products\Bandai\BandaiContentSyncService;
+use App\Services\Products\GundamPlanet\GundamPlanetContentSyncService;
 use App\Services\Products\Hlj\HljContentSync;
+use App\Services\Products\Newtype\NewtypeContentSyncService;
 use App\Services\Products\PlamodAssetSyncService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
@@ -47,6 +49,8 @@ final class SyncProductInfoJob implements ShouldQueue
         PlamodAssetSyncService $plamod,
         HljContentSync $hlj,
         BandaiContentSyncService $bandai,
+        GundamPlanetContentSyncService $gundamplanet,
+        NewtypeContentSyncService $newtype,
         JobBatchItemService $batchItems,
     ): void {
         $batchId = $this->batch()?->id;
@@ -69,10 +73,54 @@ final class SyncProductInfoJob implements ShouldQueue
             } else {
                 $product = $products->findByUuidOrFail($this->productUuid);
                 $hlj->syncForProduct($product);
+                $trace = null;
+                if (is_string($batchId) && $batchId !== '') {
+                    $trace = function (string $line) use ($batchItems, $batchId): void {
+                        $batchItems->appendDebugLog($batchId, $this->productUuid, $line);
+                    };
+                }
+                // Best-effort: keep sources isolated (one failing source should not block others).
+                try {
+                    $gundamplanet->syncForProduct($product, $this->syncUuid, $trace);
+                } catch (\Throwable $e) {
+                    if (is_string($batchId) && $batchId !== '') {
+                        $batchItems->appendDebugLog($batchId, $this->productUuid, '[gundamplanet][error] message='.$e->getMessage());
+                    }
+                }
+                try {
+                    $newtype->syncForProduct($product, $this->syncUuid, $trace);
+                } catch (\Throwable $e) {
+                    if (is_string($batchId) && $batchId !== '') {
+                        $batchItems->appendDebugLog($batchId, $this->productUuid, '[newtype][error] message='.$e->getMessage());
+                    }
+                }
                 $didWork = true;
             }
 
             $didWork = $bandai->syncByProductUuid($this->productUuid) || $didWork;
+            if ($this->attemptPlamodAssets) {
+                $product = $products->findByUuidOrFail($this->productUuid);
+                $trace = null;
+                if (is_string($batchId) && $batchId !== '') {
+                    $trace = function (string $line) use ($batchItems, $batchId): void {
+                        $batchItems->appendDebugLog($batchId, $this->productUuid, $line);
+                    };
+                }
+                try {
+                    $gundamplanet->syncForProduct($product, $this->syncUuid, $trace);
+                } catch (\Throwable $e) {
+                    if (is_string($batchId) && $batchId !== '') {
+                        $batchItems->appendDebugLog($batchId, $this->productUuid, '[gundamplanet][error] message='.$e->getMessage());
+                    }
+                }
+                try {
+                    $newtype->syncForProduct($product, $this->syncUuid, $trace);
+                } catch (\Throwable $e) {
+                    if (is_string($batchId) && $batchId !== '') {
+                        $batchItems->appendDebugLog($batchId, $this->productUuid, '[newtype][error] message='.$e->getMessage());
+                    }
+                }
+            }
 
             if (is_string($batchId) && $batchId !== '') {
                 if ($didWork) {

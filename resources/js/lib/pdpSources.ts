@@ -15,6 +15,12 @@ export function buildPlamodPdpUrl(sku: string): string | null {
   return `https://plamod.com/retailer/products/${encodeURIComponent(s)}`;
 }
 
+export function buildNewtypeSearchUrl(query: string): string | null {
+  const q = query.trim();
+  if (!q) return null;
+  return `https://newtype.us/search?q=${encodeURIComponent(q)}`;
+}
+
 export function descriptionSourceUrl(
   content: ContentSource | null,
   opts: { sku: string | null; query: string },
@@ -25,6 +31,10 @@ export function descriptionSourceUrl(
 
   if (content.source === 'plamod' && opts.sku) {
     return buildPlamodPdpUrl(opts.sku);
+  }
+
+  if (content.source === 'newtype') {
+    return buildNewtypeSearchUrl(opts.query);
   }
 
   return null;

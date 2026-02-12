@@ -48,6 +48,7 @@ it('prepares shopify content export and returns download_url + skipped lists', f
         'filled_qty' => 5,
         'available_qty' => 2,
         'extended' => null,
+        'preferred_description_source' => 'plamod',
     ]);
 
     ProductSellingPrice::query()->create([
@@ -65,7 +66,19 @@ it('prepares shopify content export and returns download_url + skipped lists', f
         'source_url' => 'https://www.hlj.com/x',
     ]);
 
-    Storage::disk('local')->put('plamod/extracted/x/1.png', 'img');
+    ProductExternalContent::query()->create([
+        'product_id' => $p1->id,
+        'source' => 'plamod',
+        'title' => 'Plamod',
+        'description_html' => "<p>This is a posable, high-grade kit.</p>\n<br>\n<p>Second paragraph.Â </p>",
+        'attributes_json' => null,
+        'source_url' => 'https://plamod.com/retailer/products/SKU-EXP-1',
+    ]);
+
+    Storage::disk('local')->put('plamod/extracted/x/1.png', 'img1');
+    Storage::disk('local')->put('hlj/images/x/2.png', 'img2');
+    Storage::disk('local')->put('gundamplanet/images/x/3.png', 'img3');
+
     ProductExternalAsset::query()->create([
         'product_id' => $p1->id,
         'source' => 'plamod',
@@ -75,6 +88,32 @@ it('prepares shopify content export and returns download_url + skipped lists', f
         'mime_type' => 'image/png',
         'size_bytes' => 3,
         'checksum_sha256' => null,
+        'sort_order' => 2,
+        'shopify_enabled' => true,
+    ]);
+    ProductExternalAsset::query()->create([
+        'product_id' => $p1->id,
+        'source' => 'hlj',
+        'kind' => 'image',
+        'storage_path' => 'hlj/images/x/2.png',
+        'filename' => '2.png',
+        'mime_type' => 'image/png',
+        'size_bytes' => 4,
+        'checksum_sha256' => null,
+        'sort_order' => 1,
+        'shopify_enabled' => true,
+    ]);
+    ProductExternalAsset::query()->create([
+        'product_id' => $p1->id,
+        'source' => 'gundamplanet',
+        'kind' => 'image',
+        'storage_path' => 'gundamplanet/images/x/3.png',
+        'filename' => '3.png',
+        'mime_type' => 'image/png',
+        'size_bytes' => 5,
+        'checksum_sha256' => null,
+        'sort_order' => 3,
+        'shopify_enabled' => false,
     ]);
 
     // Product with duplicate existing handle (should be skipped)
@@ -126,6 +165,21 @@ it('prepares shopify content export and returns download_url + skipped lists', f
     expect($csv)->toContain('https://abc.trycloudflare.com/shopify-images/');
     expect($csv)->not->toContain('?expires=');
     expect($csv)->toMatch('/https:\\/\\/abc\\.trycloudflare\\.com\\/shopify-images\\/\\d+\\/\\d+\\/[a-f0-9]{64}\\//');
+
+    // Respects preferred description source when available and normalizes HTML for Shopify.
+    expect($csv)->toContain('This is a posable, high-grade kit.');
+    expect($csv)->toContain('Second paragraph.');
+    expect($csv)->not->toContain('<br');
+    expect($csv)->not->toContain('Â');
+    expect($csv)->not->toContain('HLJ desc');
+
+    // Respects chosen image ordering (sort_order) and skips disabled images.
+    // sort_order: HLJ (1) then Plamod (2); GundamPlanet is disabled.
+    $pos2 = strpos($csv, '/2.png,1,');
+    $pos1 = strpos($csv, '/1.png,2,');
+    expect($pos2)->not->toBeFalse();
+    expect($pos1)->not->toBeFalse();
+    expect((int) $pos2)->toBeLessThan((int) $pos1);
 });
 
 it('prepares shopify content export for selected product IDs only', function (): void {

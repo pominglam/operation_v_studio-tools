@@ -45,13 +45,18 @@ use App\Http\Controllers\Api\V1\JobBatchShowController;
 use App\Http\Controllers\Api\V1\JobBatchIndexController;
 use App\Http\Controllers\Api\V1\JobBatchCancelController;
 use App\Http\Controllers\Api\V1\JobBatchItemsController;
+use App\Http\Controllers\Api\V1\JobBatchResumeController;
 use App\Http\Controllers\Api\V1\ProductExternalAssetDownloadController;
+use App\Http\Controllers\Api\V1\ProductExternalAssetShopifyEnabledController;
 use App\Http\Controllers\Api\V1\ProductExternalAssetViewController;
+use App\Http\Controllers\Api\V1\ProductImageAssetOrderController;
 use App\Http\Controllers\Api\V1\ProductPlamodShowController;
 use App\Http\Controllers\Api\V1\ProductPlamodSyncController;
 use App\Http\Controllers\Api\V1\ProductPlamodAssetOrderController;
 use App\Http\Controllers\Api\V1\ProductInfoSyncController;
 use App\Http\Controllers\Api\V1\ProductInfoShowController;
+use App\Http\Controllers\Api\V1\ProductPreferredDescriptionSourceController;
+use App\Http\Controllers\Api\V1\ProductReadyController;
 use App\Http\Controllers\Api\V1\ProductsController;
 use App\Http\Controllers\Api\V1\ProductSellingPriceController;
 use App\Http\Controllers\Api\V1\ProductsExportController;
@@ -70,6 +75,8 @@ use App\Http\Controllers\Api\V1\ProductPoLinesController;
 use App\Http\Controllers\Api\V1\LatestProductCostsRefreshController;
 use App\Http\Controllers\Api\V1\ExternalRateLimitShowController;
 use App\Http\Controllers\Api\V1\ExternalRateLimitUpdateController;
+use App\Http\Controllers\Api\V1\ExternalAccessShowController;
+use App\Http\Controllers\Api\V1\ExternalAccessUpdateController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')
@@ -87,6 +94,7 @@ Route::prefix('v1')
         Route::patch('/products/{id}/barcode', ProductBarcodeController::class)->whereUuid('id');
         Route::patch('/products/{id}/filled', ProductFilledController::class)->whereUuid('id');
         Route::patch('/products/{id}/available', ProductAvailableController::class)->whereUuid('id');
+        Route::patch('/products/{id}/ready', ProductReadyController::class)->whereUuid('id');
         Route::put('/products/{id}/selling-price', ProductSellingPriceController::class)->whereUuid('id');
         Route::get('/products/{id}/po-lines', ProductPoLinesController::class)->whereUuid('id');
         Route::post('/products/sync-missing-info', ProductMissingInfoSyncController::class);
@@ -94,13 +102,17 @@ Route::prefix('v1')
         Route::get('/job-batches/{id}', JobBatchShowController::class);
         Route::get('/job-batches/{id}/items', JobBatchItemsController::class);
         Route::post('/job-batches/{id}/cancel', JobBatchCancelController::class);
+        Route::post('/job-batches/{id}/resume', JobBatchResumeController::class);
         Route::post('/products/{id}/plamod/sync', ProductPlamodSyncController::class)->whereUuid('id');
         Route::post('/products/{id}/product-info/sync', ProductInfoSyncController::class)->whereUuid('id');
         Route::get('/products/{id}/product-info', ProductInfoShowController::class)->whereUuid('id');
+        Route::patch('/products/{id}/preferred-description-source', ProductPreferredDescriptionSourceController::class)->whereUuid('id');
         Route::get('/products/{id}/plamod', ProductPlamodShowController::class)->whereUuid('id');
         Route::put('/products/{id}/plamod/assets/order', ProductPlamodAssetOrderController::class)->whereUuid('id');
+        Route::put('/products/{id}/assets/order', ProductImageAssetOrderController::class)->whereUuid('id');
         Route::get('/product-assets/{id}/download', ProductExternalAssetDownloadController::class)->whereNumber('id');
         Route::get('/product-assets/{id}/view', ProductExternalAssetViewController::class)->whereNumber('id');
+        Route::patch('/product-assets/{id}/shopify-enabled', ProductExternalAssetShopifyEnabledController::class)->whereNumber('id');
         Route::post('/products/import', ProductImportController::class);
         Route::post('/products/import-inventory', ProductInventoryImportController::class);
         Route::post('/products/import-handles', ProductHandleImportController::class);
@@ -137,6 +149,8 @@ Route::prefix('v1')
         Route::post('/maintenance/refresh-latest-costs', LatestProductCostsRefreshController::class);
         Route::get('/maintenance/external-rate-limit', ExternalRateLimitShowController::class);
         Route::put('/maintenance/external-rate-limit', ExternalRateLimitUpdateController::class);
+        Route::get('/maintenance/external-access', ExternalAccessShowController::class);
+        Route::put('/maintenance/external-access', ExternalAccessUpdateController::class);
 
         Route::get('/price-research/filter-options', PriceResearchFilterOptionsController::class);
         Route::get('/price-research/products', PriceResearchProductsController::class);

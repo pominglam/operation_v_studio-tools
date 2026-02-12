@@ -8,6 +8,7 @@ use App\DAL\Jobs\JobBatchItemRepository;
 use App\DAL\Products\ProductRepository;
 use App\DTOs\Products\ProductsRecrawlSelectedResultDTO;
 use App\Jobs\RecrawlSelectedProductJob;
+use App\Services\Products\Newtype\NewtypeHtmlParser;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
 
@@ -16,6 +17,7 @@ final class ProductsRecrawlSelectedService
     public function __construct(
         private readonly ProductRepository $products,
         private readonly JobBatchItemRepository $batchItems,
+        private readonly ProductPdpSearchTermsService $terms,
     ) {}
 
     /**
@@ -33,6 +35,9 @@ final class ProductsRecrawlSelectedService
 
         $jobs = [];
         $itemProducts = [];
+        $sourcesLine = '[job] sources='.implode(',', $sources);
+        $wantGundamPlanet = in_array('gundamplanet', $sources, true);
+        $wantNewtype = in_array('newtype', $sources, true);
 
         $existing = $this->products->findByUuids($productUuids)->keyBy('uuid');
         foreach ($productUuids as $uuid) {
@@ -42,10 +47,21 @@ final class ProductsRecrawlSelectedService
             }
 
             $jobs[] = new RecrawlSelectedProductJob((string) Str::uuid(), (string) $uuid, $sources);
+
+            $debug = $sourcesLine;
+            if ($wantGundamPlanet) {
+                $debug = $this->appendGundamPlanetPlan($debug, $p);
+            }
+            if ($wantNewtype) {
+                $debug = $this->appendNewtypePlan($debug, $p);
+            }
+
             $itemProducts[] = [
                 'product_uuid' => (string) $uuid,
                 'sku' => is_string($p->sku ?? null) ? (string) $p->sku : null,
                 'vendor' => is_string($p->vendor ?? null) ? (string) $p->vendor : null,
+                // Ensure the UI can show selected sources immediately (even if a worker hasn't picked up newer code yet).
+                'debug_log' => $debug,
             ];
         }
 
@@ -65,6 +81,61 @@ final class ProductsRecrawlSelectedService
             queued: count($itemProducts),
             batchId: $batch->id,
         );
+    }
+
+    private function appendGundamPlanetPlan(string $debug, object $product): string
+    {
+        $lines = [$debug];
+
+        $terms = $this->terms->termsForProduct($product);
+
+        $lines[] = '[gundamplanet][plan] terms_count='.count($terms);
+
+        $limit = 10;
+        foreach (array_slice($terms, 0, $limit) as $t) {
+            $q = trim((string) $t);
+            if ($q === '') continue;
+            $url = $this->gundamPlanetSearchUrl($q);
+            $lines[] = "[gundamplanet][plan] q={$q} url={$url}";
+        }
+        if (count($terms) > $limit) {
+            $lines[] = '[gundamplanet][plan] (truncated)';
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function appendNewtypePlan(string $debug, object $product): string
+    {
+        $lines = [$debug];
+
+        $terms = $this->terms->termsForProduct($product);
+        $lines[] = '[newtype][plan] terms_count='.count($terms);
+
+        $limit = 10;
+        foreach (array_slice($terms, 0, $limit) as $t) {
+            $q = trim((string) $t);
+            if ($q === '') continue;
+            $url = $this->newtypeSearchUrl($q);
+            $lines[] = "[newtype][plan] q={$q} url={$url}";
+        }
+        if (count($terms) > $limit) {
+            $lines[] = '[newtype][plan] (truncated)';
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function gundamPlanetSearchUrl(string $query): string
+    {
+        $q = rawurlencode(trim($query));
+        return 'https://www.gundamplanet.com/search?q='.$q.'&options%5Bprefix%5D=last';
+    }
+
+    private function newtypeSearchUrl(string $query): string
+    {
+        $qs = http_build_query(['q' => trim($query)]);
+        return NewtypeHtmlParser::BASE_URL.'/search?'.$qs;
     }
 }
 

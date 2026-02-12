@@ -24,6 +24,11 @@ interface JobBatchItemRepository
     public function markSkipped(string $batchId, string $productUuid, string $reason): void;
 
     /**
+     * Append a single debug line to the item’s `debug_log` (best-effort; may be truncated).
+     */
+    public function appendDebugLog(string $batchId, string $productUuid, string $line): void;
+
+    /**
      * @return array{
      *   counts: array{queued:int,running:int,succeeded:int,failed:int,skipped:int},
      *   running: array<int, array<string, mixed>>,
@@ -38,6 +43,17 @@ interface JobBatchItemRepository
      * Safe to call repeatedly.
      */
     public function backfillFromQueueTables(string $batchId): void;
+
+    /**
+     * @param  array<int, string>  $statuses
+     * @return array<int, string> product UUIDs
+     */
+    public function listProductUuidsByStatus(string $batchId, array $statuses): array;
+
+    /**
+     * Best-effort: get any debug log text for this batch (to infer sources).
+     */
+    public function getAnyDebugLog(string $batchId): ?string;
 }
 
 

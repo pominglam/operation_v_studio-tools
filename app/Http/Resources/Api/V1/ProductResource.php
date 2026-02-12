@@ -49,7 +49,9 @@ final class ProductResource extends JsonResource
             'yen_price' => $product->yen_price,
             'bandai_launch_date' => optional($product->bandai_launch_date)->toDateString(),
             'vendor' => $product->vendor,
+            'brand' => $product->brand,
             'published_on_shopify' => (bool) $product->published_on_shopify,
+            'is_ready' => (bool) $product->is_ready,
             'latest_unit_cost' => $this->money2($product->latest_unit_cost),
             'latest_landed_unit_cost' => $this->money2($product->latest_landed_unit_cost),
             'selling_price' => $this->money2($product->sellingPrice?->selling_price),
@@ -69,10 +71,25 @@ final class ProductResource extends JsonResource
 
     private function hasExternalDescription(Product $product): bool
     {
+        $computed = $product->getAttribute('pdp_has_description');
+        if ($computed !== null) {
+            return (bool) $computed;
+        }
+
         $hlj = $product->hljExternalContent?->description_html;
         if (is_string($hlj) && trim($hlj) !== '') return true;
 
         $plamod = $product->plamodExternalContent?->description_html;
-        return is_string($plamod) && trim($plamod) !== '';
+        if (is_string($plamod) && trim($plamod) !== '') return true;
+
+        // If other sources were eager-loaded, consider them as well (avoid extra DB queries).
+        $contents = $product->externalContents?->all() ?? [];
+        foreach ($contents as $c) {
+            if (! $c instanceof \App\Models\ProductExternalContent) continue;
+            if (! is_string($c->description_html) || trim($c->description_html) === '') continue;
+            return true;
+        }
+
+        return false;
     }
 }

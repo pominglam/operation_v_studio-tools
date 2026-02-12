@@ -104,7 +104,7 @@ it('exports Shopify CSV for products with selling price only', function (): void
     expect($row[7])->toBe('FALSE');
     expect($row[17])->toBe('ABC123');
     expect($row[20])->toBe('2');
-    expect($row[21])->toBe('continue');
+    expect($row[21])->toBe('deny');
     expect($row[22])->toBe('manual');
     expect($row[23])->toBe('28.99');
     expect($row[31])->toBe('0123456789012');

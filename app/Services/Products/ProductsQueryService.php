@@ -17,6 +17,7 @@ final class ProductsQueryService
      * @param  array<int, string>  $types
      * @param  array<int, string>  $vendors
      * @param  array<int, string>  $missing
+     * @param  array<int, string>  $searchTerms
      */
     public function paginate(
         int $perPage,
@@ -27,9 +28,10 @@ final class ProductsQueryService
         ?string $sortBy = null,
         string $sortDir = 'asc',
         ?string $purchaseOrderUuid = null,
+        array $searchTerms = [],
     ): LengthAwarePaginator
     {
-        return $this->products->paginate($perPage, $search, $types, $vendors, $missing, $sortBy, $sortDir, $purchaseOrderUuid);
+        return $this->products->paginate($perPage, $search, $types, $vendors, $missing, $sortBy, $sortDir, $purchaseOrderUuid, $searchTerms);
     }
 
     /**

@@ -15,6 +15,7 @@ use Illuminate\Support\Str;
  * @property string $sku
  * @property string|null $barcode
  * @property string $description
+ * @property string|null $preferred_description_source
  * @property string|null $handle
  * @property string|null $type
  * @property string|null $grade
@@ -23,7 +24,9 @@ use Illuminate\Support\Str;
  * @property int|null $yen_price
  * @property \Illuminate\Support\Carbon|null $bandai_launch_date
  * @property string|null $vendor
+ * @property string|null $brand
  * @property bool $published_on_shopify
+ * @property bool $is_ready
  * @property int|null $order_qty
  * @property int|null $filled_qty
  * @property int|null $available_qty
@@ -40,6 +43,7 @@ final class Product extends Model
         'sku',
         'barcode',
         'description',
+        'preferred_description_source',
         'handle',
         'type',
         'grade',
@@ -48,7 +52,9 @@ final class Product extends Model
         'yen_price',
         'bandai_launch_date',
         'vendor',
+        'brand',
         'published_on_shopify',
+        'is_ready',
         'order_qty',
         'filled_qty',
         'available_qty',
@@ -65,6 +71,7 @@ final class Product extends Model
         'yen_price' => 'integer',
         'bandai_launch_date' => 'date',
         'published_on_shopify' => 'boolean',
+        'is_ready' => 'boolean',
         'extended' => 'decimal:2',
         'latest_unit_cost' => 'decimal:2',
         'latest_landed_unit_cost' => 'decimal:2',
@@ -121,6 +128,20 @@ final class Product extends Model
     {
         return $this->hasMany(ProductExternalAsset::class)
             ->where('source', '=', 'plamod')
+            ->where(function ($q): void {
+                $q->where('kind', '=', 'image')
+                    ->orWhere('mime_type', 'like', 'image/%');
+            })
+            ->orderByRaw('sort_order is null')
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    /** @return HasMany<ProductExternalAsset> */
+    public function shopifyImageAssets(): HasMany
+    {
+        return $this->hasMany(ProductExternalAsset::class)
+            ->where('shopify_enabled', '=', true)
             ->where(function ($q): void {
                 $q->where('kind', '=', 'image')
                     ->orWhere('mime_type', 'like', 'image/%');

@@ -194,7 +194,7 @@ final class ProductExportService
             '0.0', // Variant Grams
             'shopify', // Variant Inventory Tracker
             (string) max(0, (int) $filledQty), // Variant Inventory Qty
-            'continue', // Variant Inventory Policy
+            'deny', // Variant Inventory Policy (stop selling when out of stock)
             'manual', // Variant Fulfillment Service
             (string) ($selling ?? ''), // Variant Price
             '', // Variant Compare At Price

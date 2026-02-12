@@ -2,6 +2,11 @@
 
 use Illuminate\Support\Facades\Route;
 
+Route::get('/external-login', [\App\Http\Controllers\ExternalLoginController::class, 'show']);
+Route::post('/external-login', [\App\Http\Controllers\ExternalLoginController::class, 'submit'])
+    // Minimal external password gate (no Laravel session auth). Avoid CSRF token complexity here.
+    ->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class]);
+
 Route::get('/shopify-images/{id}', \App\Http\Controllers\ShopifyImageController::class)
     ->whereNumber('id')
     // Shopify fetches these as raw assets; avoid cookies/sessions/CSRF so responses are cacheable and stable.

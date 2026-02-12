@@ -6,6 +6,7 @@ import ProductsTable from '../ProductsTable.vue';
 describe('ProductsTable', () => {
     it('renames columns and opens Plamod drawer from Info cell; removes Plamod button', async () => {
         const onOpenPlamod = vi.fn();
+        const onToggleReady = vi.fn(async () => undefined);
 
         const wrapper = mount(ProductsTable, {
             props: {
@@ -24,6 +25,7 @@ describe('ProductsTable', () => {
                         available: null,
                         extended: null,
                         published_on_shopify: true,
+                        is_ready: false,
                         selling_price: '55.99',
                         pdp: { has_description: true, plamod_image_count: 1 },
                     },
@@ -35,13 +37,19 @@ describe('ProductsTable', () => {
                 onBulkDelete: async () => 0,
                 onBulkUpdate: async () => 0,
                 onBulkRenamePlamodAssets: async () => 0,
+                onBulkExportSelected: async () => undefined,
+                onBulkRecrawlSelected: async () => undefined,
                 onUpdate: async () => undefined,
+                onToggleReady,
                 onOpenPlamod,
+                onOpenPoLines: () => undefined,
             },
             global: {
                 stubs: {
                     ConfirmDialog: true,
                     BulkUpdateDialog: true,
+                    BulkExportDialog: true,
+                    BulkRecrawlDialog: true,
                 },
             },
         });
@@ -79,6 +87,7 @@ describe('ProductsTable', () => {
                         available: null,
                         extended: null,
                         published_on_shopify: false,
+                        is_ready: true,
                         selling_price: null,
                         pdp: { has_description: false, plamod_image_count: 0 },
                     },
@@ -90,13 +99,19 @@ describe('ProductsTable', () => {
                 onBulkDelete: async () => 0,
                 onBulkUpdate: async () => 0,
                 onBulkRenamePlamodAssets: async () => 0,
+                onBulkExportSelected: async () => undefined,
+                onBulkRecrawlSelected: async () => undefined,
                 onUpdate: async () => undefined,
                 onOpenPlamod: () => undefined,
+                onToggleReady: async () => undefined,
+                onOpenPoLines: () => undefined,
             },
             global: {
                 stubs: {
                     ConfirmDialog: true,
                     BulkUpdateDialog: true,
+                    BulkExportDialog: true,
+                    BulkRecrawlDialog: true,
                 },
             },
         });
@@ -108,6 +123,56 @@ describe('ProductsTable', () => {
         const selects = wrapper.findAll('select');
         expect(selects.length).toBeGreaterThan(0);
         expect(wrapper.text()).toContain('Stedi');
+    });
+
+    it('calls onToggleReady when ready checkbox is toggled', async () => {
+        const onToggleReady = vi.fn(async () => undefined);
+
+        const wrapper = mount(ProductsTable, {
+            props: {
+                loading: false,
+                products: [
+                    {
+                        id: 'p-1',
+                        sku: 'SKU-1',
+                        barcode: null,
+                        description: 'Test',
+                        type: null,
+                        vendor: null,
+                        published_on_shopify: false,
+                        is_ready: false,
+                        available: null,
+                        pdp: { has_description: false, plamod_image_count: 0 },
+                    },
+                ],
+                sortBy: 'sku',
+                sortDir: 'asc',
+                onSortChange: () => undefined,
+                onRefresh: async () => undefined,
+                onBulkDelete: async () => 0,
+                onBulkUpdate: async () => 0,
+                onBulkRenamePlamodAssets: async () => 0,
+                onBulkExportSelected: async () => undefined,
+                onBulkRecrawlSelected: async () => undefined,
+                onUpdate: async () => undefined,
+                onToggleReady,
+                onOpenPlamod: () => undefined,
+                onOpenPoLines: () => undefined,
+            },
+            global: {
+                stubs: {
+                    ConfirmDialog: true,
+                    BulkUpdateDialog: true,
+                    BulkExportDialog: true,
+                    BulkRecrawlDialog: true,
+                },
+            },
+        });
+
+        const cb = wrapper.find('[data-testid="product-ready-toggle"]');
+        expect(cb.exists()).toBe(true);
+        await cb.setValue(true);
+        expect(onToggleReady).toHaveBeenCalledWith('p-1', true);
     });
 });
 

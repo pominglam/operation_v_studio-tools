@@ -18,6 +18,7 @@ export type ProductRow = {
     scale?: string | null;
     vendor: string | null;
     published_on_shopify?: boolean;
+    is_ready?: boolean;
     latest_unit_cost?: string | null;
     latest_landed_unit_cost?: string | null;
     selling_price?: string | null;
@@ -26,7 +27,6 @@ export type ProductRow = {
         plamod_image_count: number;
     };
     available: number | null;
-    po_total_cost?: string | null;
 };
 
 function isMissingBarcode(p: ProductRow): boolean {
@@ -79,8 +79,7 @@ export type ProductSortKey =
     | 'scale'
     | 'vendor'
     | 'latest_landed_unit_cost'
-    | 'available'
-    | 'po_total_cost';
+    | 'available';
 
 const props = defineProps<{
     loading: boolean;
@@ -95,6 +94,7 @@ const props = defineProps<{
     onBulkExportSelected: (ids: string[], exportType: ProductsBulkExportType) => Promise<void>;
     onBulkRecrawlSelected: (ids: string[], sources: ProductsRecrawlSource[]) => Promise<void>;
     onUpdate: (id: string, payload: UpdateProductPayload) => Promise<void>;
+    onToggleReady: (id: string, isReady: boolean) => Promise<void>;
     onOpenPlamod: (id: string) => void;
     onOpenPoLines: (id: string) => void;
     vendorOptions?: string[];
@@ -123,6 +123,39 @@ const editingId = ref<string | null>(null);
 const draft = ref<UpdateProductPayload | null>(null);
 const saving = ref(false);
 const rowError = ref<string | null>(null);
+const togglingReady = ref<Record<string, true>>({});
+
+function isTogglingReady(id: string): boolean {
+    return togglingReady.value[id] === true;
+}
+
+async function toggleReady(id: string, isReady: boolean): Promise<void> {
+    if (isTogglingReady(id)) return;
+    togglingReady.value = { ...togglingReady.value, [id]: true };
+    try {
+        await props.onToggleReady(id, isReady);
+    } catch (e: unknown) {
+        rowError.value = formatBulkError(e, 'Failed to update ready flag.');
+    } finally {
+        const { [id]: _omit, ...rest } = togglingReady.value;
+        togglingReady.value = rest;
+    }
+}
+
+function formatBulkError(e: unknown, fallback: string): string {
+    const anyErr = e as any;
+    const status: unknown = anyErr?.response?.status;
+    const statusNum = typeof status === 'number' ? status : null;
+
+    const data = anyErr?.response?.data;
+    const msg = data?.message ?? data?.error ?? anyErr?.message ?? null;
+    const msgStr = typeof msg === 'string' ? msg.trim() : msg !== null && msg !== undefined ? String(msg).trim() : '';
+
+    if (statusNum !== null) {
+        return msgStr !== '' ? `${fallback} (HTTP ${statusNum}). ${msgStr}` : `${fallback} (HTTP ${statusNum}).`;
+    }
+    return msgStr !== '' ? `${fallback} ${msgStr}` : fallback;
+}
 
 const allSelected = computed(
     () => props.products.length > 0 && selected.value.size === props.products.length,
@@ -140,7 +173,6 @@ function sortLabel(key: ProductSortKey): string {
         vendor: 'Vendor',
         latest_landed_unit_cost: 'Unit Cost Total (Latest)',
         available: 'Available',
-        po_total_cost: 'Total cost',
     };
     return map[key];
 }
@@ -246,7 +278,7 @@ async function confirmBulkDelete(): Promise<void> {
         await props.onRefresh();
         syncSelection();
     } catch (e: unknown) {
-        bulkError.value = 'Failed to delete selected products.';
+        bulkError.value = formatBulkError(e, 'Failed to delete selected products.');
     } finally {
         bulkDeleting.value = false;
         confirmBulkDeleteOpen.value = false;
@@ -334,8 +366,10 @@ async function confirmBulkRecrawl(payload: { sources: ProductsRecrawlSource[] })
         await props.onBulkRecrawlSelected(ids, sources);
         bulkMessage.value = 'Recrawl queued. Open Sync Progress to watch it.';
         bulkRecrawlOpen.value = false;
-    } catch {
-        bulkError.value = 'Failed to queue recrawl.';
+    } catch (e: unknown) {
+        const anyErr = e as any;
+        const msg = typeof anyErr?.message === 'string' ? anyErr.message.trim() : '';
+        bulkError.value = msg !== '' ? msg : 'Failed to queue recrawl.';
     } finally {
         bulkExporting.value = false;
     }
@@ -558,17 +592,8 @@ async function saveEdit(): Promise<void> {
                                 {{ sortLabel('available') }}{{ sortIndicator('available') }}
                             </button>
                         </th>
-                        <th class="px-4 py-3 text-right">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('po_total_cost')"
-                                @click="onSortChange('po_total_cost')"
-                            >
-                                {{ sortLabel('po_total_cost') }}{{ sortIndicator('po_total_cost') }}
-                            </button>
-                        </th>
                         <th class="px-4 py-3">Info</th>
+                        <th class="px-4 py-3">Ready</th>
                         <th class="px-4 py-3">Published on Shopify</th>
                         <th class="px-4 py-3 text-right">Actions</th>
                     </tr>
@@ -687,10 +712,6 @@ async function saveEdit(): Promise<void> {
                             <template v-else>{{ p.available ?? '—' }}</template>
                         </td>
 
-                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                            {{ p.po_total_cost ? formatMoney2(p.po_total_cost) : '—' }}
-                        </td>
-
                         <td class="px-4 py-3">
                             <button
                                 v-if="editingId !== p.id"
@@ -766,6 +787,20 @@ async function saveEdit(): Promise<void> {
                                     ok
                                 </span>
                             </div>
+                        </td>
+
+                        <td class="px-4 py-3">
+                            <label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-700">
+                                <input
+                                    class="h-4 w-4 rounded border-slate-300"
+                                    type="checkbox"
+                                    :checked="p.is_ready ?? false"
+                                    :disabled="editingId === p.id || isTogglingReady(p.id)"
+                                    @change="toggleReady(p.id, ($event.target as HTMLInputElement).checked)"
+                                    data-testid="product-ready-toggle"
+                                />
+                                <span class="select-none">{{ (p.is_ready ?? false) ? 'ready' : 'not ready' }}</span>
+                            </label>
                         </td>
 
                         <td class="px-4 py-3">

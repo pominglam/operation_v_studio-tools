@@ -22,6 +22,7 @@ final class JobBatchItem extends Model
         'attempts',
         'sync_uuid',
         'last_error',
+        'debug_log',
         'started_at',
         'finished_at',
     ];

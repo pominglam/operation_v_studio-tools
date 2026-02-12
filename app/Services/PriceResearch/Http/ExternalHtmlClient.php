@@ -41,20 +41,12 @@ final class ExternalHtmlClient
                 'Accept-Language' => 'en-CA,en;q=0.9',
             ];
 
-            $response = Http::connectTimeout(3)
-                ->timeout(20)
-                ->retry(1, 200)
-                ->withOptions([
-                    'allow_redirects' => [
-                        'max' => 10,
-                        'strict' => true,
-                    ],
-                ])
-                ->withHeaders([
-                    ...$baseHeaders,
-                    ...$headers,
-                ])
-                ->get($url);
+            $response = $this->sendWithRetry(
+                url: $url,
+                headers: [...$baseHeaders, ...$headers],
+                siteKey: $siteKey,
+                traceId: $traceId,
+            );
 
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
 
@@ -84,6 +76,67 @@ final class ExternalHtmlClient
 
             throw $e;
         }
+    }
+
+    /**
+     * Respect remote rate-limits (429/503) by waiting and retrying.
+     *
+     * @param  array<string, string>  $headers
+     */
+    private function sendWithRetry(string $url, array $headers, ?string $siteKey, string $traceId): Response
+    {
+        $maxAttempts = 5;
+        $attempt = 0;
+        $sleepSeconds = 0;
+
+        while (true) {
+            $attempt++;
+            if ($sleepSeconds > 0) {
+                Log::channel('external_api')->warning('external_retry_sleep', [
+                    'trace_id' => $traceId,
+                    'url' => $url,
+                    'site_key' => $siteKey,
+                    'attempt' => $attempt,
+                    'sleep_seconds' => $sleepSeconds,
+                    'updated_at' => now()->toISOString(),
+                ]);
+                sleep($sleepSeconds);
+            }
+
+            $response = Http::connectTimeout(3)
+                ->timeout(20)
+                ->withOptions([
+                    'allow_redirects' => [
+                        'max' => 10,
+                        'strict' => true,
+                    ],
+                ])
+                ->withHeaders($headers)
+                ->get($url);
+
+            $status = $response->status();
+            if (! in_array($status, [429, 503, 520, 521, 522, 524], true)) {
+                return $response;
+            }
+
+            if ($attempt >= $maxAttempts) {
+                return $response;
+            }
+
+            $sleepSeconds = $this->sleepSecondsForRetry($response, $attempt);
+        }
+    }
+
+    private function sleepSecondsForRetry(Response $response, int $attempt): int
+    {
+        $retryAfter = $response->header('Retry-After');
+        if (is_string($retryAfter) && trim($retryAfter) !== '' && ctype_digit(trim($retryAfter))) {
+            return max(1, min((int) trim($retryAfter), 60));
+        }
+
+        // Exponential backoff, capped (attempt starts at 1).
+        $base = 2 ** max(0, $attempt - 1);
+        return max(1, min((int) $base, 30));
     }
 
     private function throttle(string $url, ?string $siteKey, string $traceId): void

@@ -17,11 +17,23 @@ final class EloquentProductRepository implements ProductRepository
 {
     /**
      * @param  array<int, string>  $types
+     * @param  array<int, string>  $searchTerms
      */
-    private function applyListQueryFilters($q, ?string $search, array $types, array $vendors = []): void
+    private function applyListQueryFilters($q, ?string $search, array $types, array $vendors = [], array $searchTerms = []): void
     {
         $search = $search !== null ? trim($search) : null;
-        if ($search !== null && $search !== '') {
+        $searchTerms = array_values(array_unique(array_filter(array_map('trim', $searchTerms), static fn (string $v): bool => $v !== '')));
+        if ($searchTerms !== []) {
+            $q->where(function ($outer) use ($searchTerms): void {
+                foreach ($searchTerms as $term) {
+                    $outer->orWhere(function ($sub) use ($term): void {
+                        $sub->where('sku', 'like', "%{$term}%")
+                            ->orWhere('barcode', 'like', "%{$term}%")
+                            ->orWhere('description', 'like', "%{$term}%");
+                    });
+                }
+            });
+        } elseif ($search !== null && $search !== '') {
             $q->where(function ($sub) use ($search): void {
                 $sub->where('sku', 'like', "%{$search}%")
                     ->orWhere('barcode', 'like', "%{$search}%")
@@ -108,8 +120,9 @@ final class EloquentProductRepository implements ProductRepository
      * @param  array<int, string>  $types
      * @param  array<int, string>  $vendors
      * @param  array<int, string>  $missing
+     * @param  array<int, string>  $searchTerms
      */
-    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', ?string $purchaseOrderUuid = null): LengthAwarePaginator
+    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', ?string $purchaseOrderUuid = null, array $searchTerms = []): LengthAwarePaginator
     {
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
 
@@ -118,6 +131,14 @@ final class EloquentProductRepository implements ProductRepository
             ->withCount(['plamodImageAssets as plamod_image_assets_count']);
 
         $q->addSelect([
+            // Used by ProductResource to avoid N+1 checks and to align missing PDP logic
+            // with the intuitive rule: any source with a non-empty description counts.
+            DB::raw("EXISTS(
+                select 1 from product_external_contents pec
+                where pec.product_id = products.id
+                  and pec.description_html is not null
+                  and pec.description_html <> ''
+            ) as pdp_has_description"),
             // Total cost across all PO lines for this product (sum of unit_cost * qty).
             // Uses received qty when present (>0), otherwise ordered qty.
             DB::raw("(
@@ -143,7 +164,7 @@ final class EloquentProductRepository implements ProductRepository
                     ->where('po.uuid', '=', $purchaseOrderUuid);
             });
         }
-        $this->applyListQueryFilters($q, $search, $types, $vendors);
+        $this->applyListQueryFilters($q, $search, $types, $vendors, $searchTerms);
         $this->applyMissingFilters($q, $missing);
 
         return $q->orderBy($sortColumn, $sortDir)->paginate(perPage: $perPage);
@@ -154,6 +175,15 @@ final class EloquentProductRepository implements ProductRepository
         $q = Product::query()
             ->with(['sellingPrice', 'hljExternalContent', 'plamodExternalContent'])
             ->withCount(['plamodImageAssets as plamod_image_assets_count']);
+
+        $q->addSelect([
+            DB::raw("EXISTS(
+                select 1 from product_external_contents pec
+                where pec.product_id = products.id
+                  and pec.description_html is not null
+                  and pec.description_html <> ''
+            ) as pdp_has_description"),
+        ]);
 
         $this->applyListQueryFilters($q, $search, $types, $vendors);
         $this->applyMissingFilters($q, $missing);
@@ -188,9 +218,7 @@ final class EloquentProductRepository implements ProductRepository
             $q->whereHas('plamodImageAssets');
 
             $q->where(function ($sub): void {
-                $sub->whereHas('hljExternalContent', function ($q2): void {
-                    $q2->whereNotNull('description_html')->where('description_html', '<>', '');
-                })->orWhereHas('plamodExternalContent', function ($q2): void {
+                $sub->whereHas('externalContents', function ($q2): void {
                     $q2->whereNotNull('description_html')->where('description_html', '<>', '');
                 });
             });
@@ -230,13 +258,15 @@ final class EloquentProductRepository implements ProductRepository
             if ($flag === 'pdp_description') {
                 $q->where(function ($sub): void {
                     $sub
-                        ->whereDoesntHave('hljExternalContent', function ($q2): void {
-                            $q2->whereNotNull('description_html')->where('description_html', '<>', '');
-                        })
-                        ->whereDoesntHave('plamodExternalContent', function ($q2): void {
+                        ->whereDoesntHave('externalContents', function ($q2): void {
                             $q2->whereNotNull('description_html')->where('description_html', '<>', '');
                         });
                 });
+                continue;
+            }
+
+            if ($flag === 'not_ready') {
+                $q->where('is_ready', '=', false);
                 continue;
             }
         }
@@ -368,7 +398,7 @@ final class EloquentProductRepository implements ProductRepository
                 'hljExternalContent',
                 'plamodExternalContent',
                 'externalContents',
-                'plamodImageAssets',
+                'shopifyImageAssets',
             ])
             ->whereHas('sellingPrice', function ($q): void {
                 $q->whereNotNull('selling_price')->where('selling_price', '<>', '');
@@ -394,7 +424,7 @@ final class EloquentProductRepository implements ProductRepository
                 'hljExternalContent',
                 'plamodExternalContent',
                 'externalContents',
-                'plamodImageAssets',
+                'shopifyImageAssets',
             ])
             ->whereIn('uuid', $uuids)
             ->whereHas('sellingPrice', function ($q): void {
@@ -555,13 +585,49 @@ final class EloquentProductRepository implements ProductRepository
 
     public function deleteByUuids(array $uuids): int
     {
+        $uuids = array_values(array_unique(array_filter(array_map('trim', $uuids), static fn (string $v): bool => $v !== '')));
         if ($uuids === []) {
             return 0;
         }
 
-        return Product::query()
-            ->whereIn('uuid', $uuids)
-            ->delete();
+        return (int) DB::transaction(function () use ($uuids): int {
+            /** @var \Illuminate\Support\Collection<int, array{id:int,uuid:string}> $rows */
+            $rows = Product::query()
+                ->whereIn('uuid', $uuids)
+                ->get(['id', 'uuid'])
+                ->map(static fn (Product $p): array => ['id' => (int) $p->id, 'uuid' => (string) $p->uuid]);
+
+            $productIds = $rows->pluck('id')->all();
+            if ($productIds === []) {
+                return 0;
+            }
+
+            // Safety guard: do not allow deleting products with purchase order or inventory history.
+            // (These are operational records; deleting them is too risky.)
+            $hasPurchaseOrderItems = DB::table('purchase_order_items')->whereIn('product_id', $productIds)->exists();
+            $hasInventoryLots = DB::table('inventory_lots')->whereIn('product_id', $productIds)->exists();
+            $hasInventoryMovements = DB::table('inventory_movements')->whereIn('product_id', $productIds)->exists();
+
+            if ($hasPurchaseOrderItems || $hasInventoryLots || $hasInventoryMovements) {
+                throw new \Symfony\Component\HttpKernel\Exception\ConflictHttpException(
+                    'Cannot delete products that have purchase order or inventory history.',
+                );
+            }
+
+            // Detach or delete dependent records that have FK restrictions.
+            DB::table('product_selling_prices')->whereIn('product_id', $productIds)->delete();
+            DB::table('product_external_assets')->whereIn('product_id', $productIds)->delete();
+            DB::table('product_external_contents')->whereIn('product_id', $productIds)->delete();
+
+            DB::table('product_price_quotes')->whereIn('product_id', $productIds)->delete();
+            DB::table('price_research_quote_reports')->whereIn('product_id', $productIds)->delete();
+            DB::table('price_research_run_logs')->whereIn('product_id', $productIds)->delete();
+
+            // Keep inventory check history, but unlink from deleted products.
+            DB::table('inventory_check_items')->whereIn('product_id', $productIds)->update(['product_id' => null]);
+
+            return Product::query()->whereIn('uuid', $uuids)->delete();
+        });
     }
 
     public function updateByUuids(array $uuids, array $updates): int

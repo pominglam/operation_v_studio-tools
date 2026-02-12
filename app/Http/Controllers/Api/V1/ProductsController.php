@@ -32,6 +32,9 @@ final class ProductsController extends Controller
         /** @var string|null $search */
         $search = $request->validated('search');
 
+        /** @var array<int, string> $searchTerms */
+        $searchTerms = $request->validated('search_terms') ?? [];
+
         /** @var string|null $purchaseOrderUuid */
         $purchaseOrderUuid = $request->validated('purchase_order_uuid');
 
@@ -51,7 +54,7 @@ final class ProductsController extends Controller
         $sortDir = $request->validated('sort_dir') ?? 'asc';
 
         return ProductResource::collection(
-            $this->products->paginate($perPage, $search, $types, $vendors, $missing, $sortBy, $sortDir, $purchaseOrderUuid),
+            $this->products->paginate($perPage, $search, $types, $vendors, $missing, $sortBy, $sortDir, $purchaseOrderUuid, $searchTerms),
         );
     }
 

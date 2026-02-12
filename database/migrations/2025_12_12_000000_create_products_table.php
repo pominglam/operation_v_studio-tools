@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('sku', 64)->unique('unique_products_sku');
             $table->string('barcode', 64)->nullable()->index('idx_products_barcode');
             $table->string('description', 512);
+            $table->string('preferred_description_source', 50)->nullable();
             $table->string('type', 128)->nullable();
 
             $table->decimal('price', 12, 2)->nullable();

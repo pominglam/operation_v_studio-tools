@@ -82,4 +82,14 @@ final class ProductUpdateService
 
         return $this->products->save($product);
     }
+
+    public function updateReady(string $uuid, bool $isReady): Product
+    {
+        $product = $this->products->findByUuidOrFail($uuid);
+        $product->fill([
+            'is_ready' => $isReady,
+        ]);
+
+        return $this->products->save($product);
+    }
 }

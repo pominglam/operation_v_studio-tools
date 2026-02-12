@@ -50,6 +50,28 @@ const externalHitsSaving = ref(false);
 const externalHitsPerMinute = ref<number>(10);
 const externalHitsMessage = ref<string | null>(null);
 const externalHitsError = ref<string | null>(null);
+const externalAccessLoading = ref(false);
+const externalAccessBusy = ref(false);
+const externalAccessEnabled = ref(false);
+const externalAccessPasswordConfigured = ref(false);
+const externalAccessTunnel = ref<{
+    running: boolean;
+    tunnel_url: string | null;
+    error: string | null;
+    reachable?: boolean | null;
+    reachable_http_status?: number | null;
+    reachable_checked_at?: string | null;
+    reachable_error?: string | null;
+} | null>(null);
+const externalAccessMessage = ref<string | null>(null);
+const externalAccessError = ref<string | null>(null);
+
+const canStartExternalAccessTunnel = computed(() => {
+    if (externalAccessLoading.value || externalAccessBusy.value) return false;
+    if (!externalAccessPasswordConfigured.value) return false;
+    // Allow starting/updating tunnel even if already running (quick tunnel URLs can rotate).
+    return true;
+});
 const availableSites = ref<Array<{ key: string; name: string }>>([]);
 const siteKeys = ref<string[]>([]);
 const recrawlStatus = ref<'any' | 'fresh' | 'expired'>('any');
@@ -525,6 +547,71 @@ async function loadExternalRateLimit(): Promise<void> {
     }
 }
 
+async function loadExternalAccess(): Promise<void> {
+    externalAccessLoading.value = true;
+    externalAccessError.value = null;
+    try {
+        const res = await api.get<{
+            data: {
+                enabled: boolean;
+                password_configured: boolean;
+                tunnel: any;
+            };
+        }>('/api/v1/maintenance/external-access');
+
+        externalAccessEnabled.value = !!res.data.data.enabled;
+        externalAccessPasswordConfigured.value = !!res.data.data.password_configured;
+        externalAccessTunnel.value = res.data.data.tunnel ?? null;
+    } catch {
+        externalAccessError.value = 'Failed to load external access status.';
+    } finally {
+        externalAccessLoading.value = false;
+    }
+}
+
+async function setExternalAccessEnabled(enabled: boolean): Promise<void> {
+    externalAccessBusy.value = true;
+    externalAccessError.value = null;
+    externalAccessMessage.value = null;
+    try {
+        const res = await api.put<{ data: { enabled: boolean; tunnel: any } }>(
+            '/api/v1/maintenance/external-access',
+            { enabled },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const err = (res.data as any)?.error;
+            externalAccessError.value = typeof err === 'string' && err.trim() !== '' ? err : 'Failed to update external access.';
+            return;
+        }
+        externalAccessEnabled.value = !!res.data.data.enabled;
+        externalAccessTunnel.value = res.data.data.tunnel ?? null;
+        if (enabled && !externalAccessTunnel.value?.tunnel_url) {
+            externalAccessMessage.value = 'External access enabled. Tunnel URL may take a few seconds — click Refresh.';
+        } else {
+            externalAccessMessage.value = enabled ? 'External access enabled.' : 'External access disabled.';
+        }
+    } catch {
+        // This action can take a bit (cloudflared startup / URL propagation).
+        // If the request times out, refresh status and show a best-effort message.
+        try {
+            await loadExternalAccess();
+            if (externalAccessEnabled.value === enabled) {
+                externalAccessError.value = null;
+                externalAccessMessage.value = enabled
+                    ? 'External access updated. Tunnel URL may take a few seconds — click Refresh.'
+                    : 'External access disabled.';
+            } else {
+                externalAccessError.value = 'Failed to update external access.';
+            }
+        } catch {
+            externalAccessError.value = 'Failed to update external access.';
+        }
+    } finally {
+        externalAccessBusy.value = false;
+    }
+}
+
 async function saveExternalRateLimit(): Promise<void> {
     externalHitsSaving.value = true;
     externalHitsError.value = null;
@@ -673,6 +760,7 @@ onMounted(() => {
     void loadMaintenanceNotes();
     void loadDbBackups();
     void loadExternalRateLimit();
+    void loadExternalAccess();
 });
 
 watch(
@@ -740,6 +828,91 @@ watch(
                     max="120"
                 />
                 <div class="mt-1 text-xs text-slate-500">Recommended: 10–20.</div>
+            </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div class="flex-1">
+                    <div class="text-sm font-medium text-slate-900">External access</div>
+                    <div class="mt-1 text-sm text-slate-600">
+                        Expose the full app through a Cloudflare quick tunnel (<span class="font-mono text-xs">trycloudflare.com</span>)
+                        protected by a simple password. Local access is unaffected.
+                    </div>
+                    <div class="mt-2 text-xs text-amber-800">
+                        Warning: this is not a full auth system. Use only for temporary access.
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2">
+                    <button
+                        class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        type="button"
+                        :disabled="externalAccessLoading || externalAccessBusy"
+                        @click="loadExternalAccess"
+                    >
+                        {{ externalAccessLoading ? 'Refreshing…' : 'Refresh' }}
+                    </button>
+                    <button
+                        class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        type="button"
+                        :disabled="externalAccessLoading || externalAccessBusy || !canStartExternalAccessTunnel"
+                        @click="setExternalAccessEnabled(true)"
+                    >
+                        {{
+                            externalAccessBusy
+                                ? 'Working…'
+                                : externalAccessEnabled
+                                  ? 'Start / Update tunnel'
+                                  : 'Enable external access'
+                        }}
+                    </button>
+                    <button
+                        class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        type="button"
+                        :disabled="externalAccessLoading || externalAccessBusy || !externalAccessEnabled"
+                        @click="setExternalAccessEnabled(false)"
+                    >
+                        Disable
+                    </button>
+                </div>
+            </div>
+
+            <div v-if="!externalAccessPasswordConfigured" class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                Missing <span class="font-mono text-xs">EXTERNAL_ACCESS_PASSWORD</span> in <span class="font-mono text-xs">.env</span>. Configure it to enable external access.
+            </div>
+
+            <div v-if="externalAccessError" class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                {{ externalAccessError }}
+            </div>
+            <div
+                v-if="externalAccessMessage"
+                class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+                {{ externalAccessMessage }}
+            </div>
+
+            <div class="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                    <div class="text-slate-700">
+                        Status:
+                        <span class="font-semibold text-slate-900">{{ externalAccessEnabled ? 'Enabled' : 'Disabled' }}</span>
+                        <span v-if="externalAccessTunnel?.running" class="text-emerald-700"> · Tunnel running</span>
+                        <span v-else class="text-slate-600"> · Tunnel stopped</span>
+                        <span v-if="externalAccessTunnel?.error" class="text-rose-700"> · {{ externalAccessTunnel.error }}</span>
+                    </div>
+
+                    <div v-if="externalAccessTunnel?.tunnel_url" class="text-slate-700">
+                        URL:
+                        <a class="font-mono text-xs text-slate-900 underline" :href="externalAccessTunnel.tunnel_url" target="_blank">
+                            {{ externalAccessTunnel.tunnel_url }}
+                        </a>
+                    </div>
+                </div>
+
+                <div v-if="externalAccessTunnel?.tunnel_url" class="mt-1 text-xs text-slate-600">
+                    Quick tunnel URLs rotate; if you use an older URL it may show <span class="font-mono">404</span>. Always use the URL shown here.
+                </div>
             </div>
         </div>
 

@@ -21,8 +21,9 @@ interface ProductRepository
      * @param  array<int, string>  $types
      * @param  array<int, string>  $vendors
      * @param  array<int, string>  $missing
+     * @param  array<int, string>  $searchTerms
      */
-    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', ?string $purchaseOrderUuid = null): LengthAwarePaginator;
+    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', ?string $purchaseOrderUuid = null, array $searchTerms = []): LengthAwarePaginator;
 
     /**
      * @param  array<int, string>  $types

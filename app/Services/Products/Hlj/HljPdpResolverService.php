@@ -58,6 +58,17 @@ final class HljPdpResolverService
     }
 
     /**
+     * Exposes the exact HLJ query-variant generation logic so other crawlers
+     * can reuse the same search term variations (barcode/SKU should be handled by callers).
+     *
+     * @return array<int, string>
+     */
+    public function queryVariantsForName(string $name): array
+    {
+        return $this->queryVariants($name);
+    }
+
+    /**
      * @param  array{grade?:string|null}|null  $constraints
      */
     private function resolveBestPdpUrlForQuery(string $query, ?string $expectedJanCode, ?array $constraints): ?string

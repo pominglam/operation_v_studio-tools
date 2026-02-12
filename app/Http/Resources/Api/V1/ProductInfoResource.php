@@ -24,6 +24,7 @@ final class ProductInfoResource extends JsonResource
         $data = $this->resource;
 
         return [
+            'preferred_description_source' => $data->preferredDescriptionSource,
             'contents' => array_map(
                 static function (ProductExternalContent $c): array {
                     return [
@@ -50,6 +51,8 @@ final class ProductInfoResource extends JsonResource
                         'origin_width' => $a->origin_width,
                         'origin_height' => $a->origin_height,
                         'checksum_sha256' => $a->checksum_sha256,
+                        'sort_order' => $a->sort_order,
+                        'shopify_enabled' => (bool) ($a->shopify_enabled ?? true),
                         'download_url' => '/api/v1/product-assets/'.$a->id.'/download',
                         'view_url' => '/api/v1/product-assets/'.$a->id.'/view',
                     ];

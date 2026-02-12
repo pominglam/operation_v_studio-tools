@@ -8,7 +8,9 @@ use App\DAL\Products\ProductRepository;
 use App\Services\Jobs\JobBatchItemService;
 use App\Services\PriceResearch\PriceResearchService;
 use App\Services\Products\Bandai\BandaiContentSyncService;
+use App\Services\Products\GundamPlanet\GundamPlanetContentSyncService;
 use App\Services\Products\Hlj\HljContentSync;
+use App\Services\Products\Newtype\NewtypeContentSyncService;
 use App\Services\Products\PlamodAssetSyncService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
@@ -50,6 +52,8 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         ProductRepository $products,
         PlamodAssetSyncService $plamod,
         HljContentSync $hlj,
+        GundamPlanetContentSyncService $gundamplanet,
+        NewtypeContentSyncService $newtype,
         BandaiContentSyncService $bandai,
         PriceResearchService $prices,
         JobBatchItemService $batchItems,
@@ -65,54 +69,165 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         $sources = array_values(array_unique(array_filter(array_map('strval', $this->sources), static fn (string $v): bool => trim($v) !== '')));
         if (is_string($batchId) && $batchId !== '') {
             $batchItems->markRunning($batchId, $this->productUuid, $this->syncUuid);
+            $batchItems->appendDebugLog($batchId, $this->productUuid, '[job] sources='.implode(',', $sources));
+        }
+
+        $trace = null;
+        if (is_string($batchId) && $batchId !== '') {
+            $trace = function (string $line) use ($batchItems, $batchId): void {
+                $batchItems->appendDebugLog($batchId, $this->productUuid, $line);
+            };
         }
 
         $didWork = false;
-        try {
-            $wantPlamod = in_array('plamod', $sources, true);
-            $wantHlj = in_array('hlj', $sources, true);
-            $wantBandai = in_array('bandai', $sources, true);
-            $wantPrices = in_array('competitor_price_research', $sources, true);
+        $failedSources = [];
 
-            if ($wantPlamod) {
-                $plamod->syncByProductUuid($this->productUuid, true);
-                $didWork = true;
+        $append = function (string $source, string $event, array $fields = []) use ($trace): void {
+            if (! is_callable($trace)) return;
+
+            $parts = [];
+            foreach ($fields as $k => $v) {
+                if (! is_string($k) || trim($k) === '') continue;
+                if ($v === null) continue;
+                $val = is_string($v) ? $v : (is_bool($v) ? ($v ? 'true' : 'false') : (string) $v);
+                $val = trim($val);
+                if ($val === '') continue;
+                $val = str_replace(["\r", "\n"], ' ', $val);
+                if (mb_strlen($val) > 400) {
+                    $val = mb_substr($val, 0, 400).'…';
+                }
+                $parts[] = "{$k}={$val}";
             }
+            $suffix = $parts !== [] ? (' '.implode(' ', $parts)) : '';
+            $trace("[{$source}][{$event}]{$suffix}");
+        };
 
-            if ($wantHlj) {
-                $product = $products->findByUuidOrFail($this->productUuid);
+        $runSource = function (string $source, callable $fn) use (&$didWork, &$failedSources, $append): void {
+            $t0 = microtime(true);
+            $append($source, 'start');
+            try {
+                $out = $fn();
+                $durationMs = (int) round((microtime(true) - $t0) * 1000);
+
+                $extra = [];
+                if (is_array($out)) {
+                    $extra = $out;
+                } elseif (is_bool($out)) {
+                    $extra = ['result' => $out ? 'ok' : 'skipped'];
+                } elseif ($out !== null) {
+                    $extra = ['result' => (string) $out];
+                }
+                $append($source, 'done', [...$extra, 'duration_ms' => (string) $durationMs]);
+                if (($extra['result'] ?? 'ok') !== 'skipped') {
+                    $didWork = true;
+                }
+            } catch (\Throwable $e) {
+                $durationMs = (int) round((microtime(true) - $t0) * 1000);
+                $failedSources[] = $source;
+                $append($source, 'error', [
+                    'duration_ms' => (string) $durationMs,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+        };
+
+        $wantPlamod = in_array('plamod', $sources, true);
+        $wantHlj = in_array('hlj', $sources, true);
+        $wantGundamPlanet = in_array('gundamplanet', $sources, true);
+        $wantNewtype = in_array('newtype', $sources, true);
+        $wantBandai = in_array('bandai', $sources, true);
+        $wantPrices = in_array('competitor_price_research', $sources, true);
+
+        $product = null;
+        if ($wantHlj || $wantGundamPlanet || $wantNewtype) {
+            $product = $products->findByUuidOrFail($this->productUuid);
+        }
+
+        if ($wantPlamod) {
+            $runSource('plamod', function () use ($plamod): array {
+                $res = $plamod->syncByProductUuid($this->productUuid, true);
+                $assetCount = is_array($res->assets ?? null) ? count($res->assets) : 0;
+                $desc = $res->content?->description_html;
+                $hasDesc = is_string($desc) && trim($desc) !== '';
+                return [
+                    'result' => 'ok',
+                    'assets' => (string) $assetCount,
+                    'has_description' => $hasDesc ? 'true' : 'false',
+                ];
+            });
+        }
+
+        if ($wantHlj && $product !== null) {
+            $runSource('hlj', function () use ($hlj, $product): array {
                 $hlj->syncForProduct($product);
-                $didWork = true;
-            }
+                return ['result' => 'ok'];
+            });
+        }
 
-            if ($wantBandai) {
-                $didWork = $bandai->syncByProductUuid($this->productUuid) || $didWork;
-            }
+        if ($wantGundamPlanet && $product !== null) {
+            $runSource('gundamplanet', function () use ($gundamplanet, $product, $trace): array {
+                $gundamplanet->syncForProduct($product, $this->syncUuid, $trace);
+                return ['result' => 'ok'];
+            });
+        }
 
-            if ($wantPrices) {
-                $prices->run([$this->productUuid], true, null, null);
-                $didWork = true;
-            }
+        if ($wantNewtype && $product !== null) {
+            $runSource('newtype', function () use ($newtype, $product, $trace): array {
+                $newtype->syncForProduct($product, $this->syncUuid, $trace);
+                return ['result' => 'ok'];
+            });
+        }
 
-            if (is_string($batchId) && $batchId !== '') {
-                if ($didWork) {
-                    $batchItems->markSucceeded($batchId, $this->productUuid);
+        if ($wantBandai) {
+            $runSource('bandai', function () use ($bandai): array {
+                $ok = $bandai->syncByProductUuid($this->productUuid);
+                return ['result' => $ok ? 'ok' : 'skipped'];
+            });
+        }
+
+        if ($wantPrices) {
+            $runSource('competitor_price_research', function () use ($prices): array {
+                $res = $prices->run([$this->productUuid], true, null, null);
+                return [
+                    'result' => 'ok',
+                    'processed' => (string) ($res['processed'] ?? 0),
+                    'quotes_written' => (string) ($res['quotes_written'] ?? 0),
+                ];
+            });
+        }
+
+        if (is_string($batchId) && $batchId !== '') {
+            if ($didWork) {
+                if ($failedSources !== []) {
+                    $append('job', 'summary', [
+                        'result' => 'partial',
+                        'failed_sources' => implode(',', array_values(array_unique($failedSources))),
+                    ]);
                 } else {
+                    $append('job', 'summary', ['result' => 'ok']);
+                }
+                $batchItems->markSucceeded($batchId, $this->productUuid);
+            } else {
+                if ($failedSources !== []) {
+                    $append('job', 'summary', [
+                        'result' => 'failed',
+                        'failed_sources' => implode(',', array_values(array_unique($failedSources))),
+                    ]);
+                    $batchItems->markFailed($batchId, $this->productUuid, 'all_sources_failed');
+                } else {
+                    $append('job', 'summary', ['result' => 'skipped']);
                     $batchItems->markSkipped($batchId, $this->productUuid, 'no_sources_found');
                 }
             }
-        } catch (\Throwable $e) {
-            if (is_string($batchId) && $batchId !== '') {
-                $batchItems->markFailed($batchId, $this->productUuid, $e->getMessage());
-            }
-            throw $e;
-        } finally {
-            Log::info('products.recrawl.completed', [
-                'sync_uuid' => $this->syncUuid,
-                'product_uuid' => $this->productUuid,
-                'sources' => $sources,
-            ]);
         }
+
+        Log::info('products.recrawl.completed', [
+            'sync_uuid' => $this->syncUuid,
+            'product_uuid' => $this->productUuid,
+            'sources' => $sources,
+            'did_work' => $didWork,
+            'failed_sources' => array_values(array_unique($failedSources)),
+        ]);
     }
 }
 

@@ -27,6 +27,7 @@ type ProductResearch = {
     sku: string;
     barcode: string | null;
     description: string;
+    handle: string | null;
     price_researched_at: string | null;
     expired: boolean;
     vendor: string | null;
@@ -1382,6 +1383,12 @@ function resetPageState(): void {
                                 <td class="px-4 py-3 text-slate-700">
                                     <div class="font-medium text-slate-900">
                                         {{ p.description }}
+                                    </div>
+                                    <div
+                                        v-if="p.handle && p.handle.trim() !== ''"
+                                        class="mt-0.5 font-mono text-xs text-slate-500"
+                                    >
+                                        {{ p.handle }}
                                     </div>
                                     <div class="mt-1 flex items-start justify-between gap-2">
                                         <div class="text-xs text-slate-500">

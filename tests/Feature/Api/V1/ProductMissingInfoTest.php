@@ -42,6 +42,38 @@ it('filters products by missing flags', function (): void {
         'attributes_json' => [],
     ]);
 
+    // A product that only has a description from a non-HLJ/Plamod source should still count as "has description".
+    $p3 = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000060003',
+        'sku' => 'HAVE-OTHER-DESC-1',
+        'barcode' => '999',
+        'description' => 'Has external desc (other source)',
+        'handle' => 'have-other-desc-1',
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $p3->id,
+        'product_uuid' => $p3->uuid,
+        'selling_price' => '10.00',
+        'currency' => 'CAD',
+    ]);
+    ProductExternalContent::query()->create([
+        'product_id' => $p3->id,
+        'source' => 'meeplemart',
+        'title' => 'Meeplemart',
+        'description_html' => '<p>desc</p>',
+        'attributes_json' => [],
+    ]);
+    ProductExternalAsset::query()->create([
+        'product_id' => $p3->id,
+        'source' => 'plamod',
+        'kind' => 'image',
+        'storage_path' => 'plamod/extracted/z.png',
+        'filename' => 'z.png',
+        'mime_type' => 'image/png',
+        'size_bytes' => 1,
+        'checksum_sha256' => null,
+    ]);
+
     ProductExternalAsset::query()->create([
         'product_id' => $p2->id,
         'source' => 'plamod',
@@ -71,7 +103,8 @@ it('filters products by missing flags', function (): void {
     $this->getJson('/api/v1/products?per_page=100&missing[]=pdp_description')
         ->assertOk()
         ->assertJsonPath('data.0.sku', 'MISS-1')
-        ->assertJsonMissing(['sku' => 'HAVE-1']);
+        ->assertJsonMissing(['sku' => 'HAVE-1'])
+        ->assertJsonMissing(['sku' => 'HAVE-OTHER-DESC-1']);
 
     $this->getJson('/api/v1/products?per_page=100&missing[]=pdp_images')
         ->assertOk()

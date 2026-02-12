@@ -40,6 +40,8 @@ interface ProductExternalAssetRepository
     public function updateSortOrders(array $assetIdToSortOrder): void;
 
     public function findById(int $id): ?ProductExternalAsset;
+
+    public function setShopifyEnabled(int $id, bool $enabled): void;
 }
 
 

@@ -30,6 +30,8 @@ use App\DAL\Inventory\EloquentInventoryRepository;
 use App\DAL\Inventory\InventoryRepository;
 use App\DAL\Jobs\EloquentJobBatchItemRepository;
 use App\DAL\Jobs\JobBatchItemRepository;
+use App\DAL\RuntimeSettings\EloquentRuntimeSettingRepository;
+use App\DAL\RuntimeSettings\RuntimeSettingRepository;
 use App\DAL\PurchaseOrders\EloquentPurchaseOrderRepository;
 use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
@@ -54,6 +56,7 @@ use App\Services\Maintenance\DatabaseBackupManager;
 use App\Services\Maintenance\DatabaseBackupManagerService;
 use App\Services\Maintenance\DatabaseRestore;
 use App\Services\Maintenance\DatabaseRestoreService;
+use App\Services\Maintenance\CloudflareQuickTunnelVerifier as MaintenanceQuickTunnelVerifier;
 use App\Services\Shopify\CloudflaredTunnel;
 use App\Services\Shopify\CloudflaredTunnelService;
 use App\Services\Shopify\CloudflareQuickTunnelVerifier;
@@ -76,6 +79,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(ProductExternalContentRepository::class, EloquentProductExternalContentRepository::class);
         $this->app->bind(ProductExternalAssetRepository::class, EloquentProductExternalAssetRepository::class);
         $this->app->bind(JobBatchItemRepository::class, EloquentJobBatchItemRepository::class);
+        $this->app->bind(RuntimeSettingRepository::class, EloquentRuntimeSettingRepository::class);
         $this->app->bind(InventoryCheckRepository::class, EloquentInventoryCheckRepository::class);
         $this->app->bind(PurchaseOrderRepository::class, EloquentPurchaseOrderRepository::class);
         $this->app->bind(InventoryRepository::class, EloquentInventoryRepository::class);
@@ -99,6 +103,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(PlamodScraper::class, PlamodScraperClient::class);
         $this->app->bind(HljContentSync::class, HljContentSyncService::class);
         $this->app->singleton(CloudflareQuickTunnelVerifier::class);
+        $this->app->singleton(MaintenanceQuickTunnelVerifier::class);
         $this->app->bind(CloudflaredTunnel::class, function ($app): CloudflaredTunnelService {
             return new CloudflaredTunnelService($app->make(CloudflareQuickTunnelVerifier::class));
         });

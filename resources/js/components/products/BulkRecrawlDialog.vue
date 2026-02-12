@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 
-export type ProductsRecrawlSource = 'bandai' | 'hlj' | 'plamod' | 'competitor_price_research';
+export type ProductsRecrawlSource = 'bandai' | 'hlj' | 'gundamplanet' | 'newtype' | 'plamod' | 'competitor_price_research';
 
 const props = defineProps<{
   open: boolean;
@@ -17,6 +17,8 @@ const emit = defineEmits<{
 const sources = ref<Record<ProductsRecrawlSource, boolean>>({
   bandai: true,
   hlj: true,
+  gundamplanet: true,
+  newtype: true,
   plamod: true,
   competitor_price_research: true,
 });
@@ -28,6 +30,8 @@ watch(
     sources.value = {
       bandai: true,
       hlj: true,
+      gundamplanet: true,
+      newtype: true,
       plamod: true,
       competitor_price_research: true,
     };
@@ -85,6 +89,21 @@ function onConfirm(): void {
           </label>
 
           <label class="flex items-center gap-2 text-sm text-slate-800">
+            <input
+              v-model="sources.gundamplanet"
+              type="checkbox"
+              class="h-4 w-4 rounded border-slate-300"
+              :disabled="busy"
+            />
+            GundamPlanet PDP (images)
+          </label>
+
+          <label class="flex items-center gap-2 text-sm text-slate-800">
+            <input v-model="sources.newtype" type="checkbox" class="h-4 w-4 rounded border-slate-300" :disabled="busy" />
+            Newtype PDP (images + description + facts)
+          </label>
+
+          <label class="flex items-center gap-2 text-sm text-slate-800">
             <input v-model="sources.plamod" type="checkbox" class="h-4 w-4 rounded border-slate-300" :disabled="busy" />
             Plamod (ZIP images)
           </label>
@@ -102,7 +121,7 @@ function onConfirm(): void {
           </label>
 
           <div class="text-xs text-slate-500">
-            Tip: open a product’s <span class="font-semibold text-slate-700">Info</span> drawer to compare images by source (Bandai/HLJ/Plamod).
+            Tip: open a product’s <span class="font-semibold text-slate-700">Info</span> drawer to compare images by source (Bandai/HLJ/GundamPlanet/Newtype/Plamod).
           </div>
         </div>
 

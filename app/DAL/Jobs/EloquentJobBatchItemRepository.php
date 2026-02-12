@@ -26,6 +26,7 @@ final class EloquentJobBatchItemRepository implements JobBatchItemRepository
                 'attempts' => 0,
                 'sync_uuid' => null,
                 'last_error' => null,
+                'debug_log' => isset($p['debug_log']) && is_string($p['debug_log']) && trim($p['debug_log']) !== '' ? trim((string) $p['debug_log']) : null,
                 'started_at' => null,
                 'finished_at' => null,
                 'created_at' => $now,
@@ -37,64 +38,184 @@ final class EloquentJobBatchItemRepository implements JobBatchItemRepository
         DB::table('job_batch_items')->upsert(
             $rows,
             uniqueBy: ['batch_id', 'product_uuid'],
-            update: ['sku', 'vendor', 'status', 'attempts', 'sync_uuid', 'last_error', 'started_at', 'finished_at', 'updated_at'],
+            update: ['sku', 'vendor', 'status', 'attempts', 'sync_uuid', 'last_error', 'debug_log', 'started_at', 'finished_at', 'updated_at'],
         );
     }
 
     public function markRunning(string $batchId, string $productUuid, ?string $syncUuid = null): void
     {
-        DB::table('job_batch_items')->updateOrInsert(
-            ['batch_id' => $batchId, 'product_uuid' => $productUuid],
-            [
+        $now = Carbon::now();
+
+        // First try update (most common path: row already created by insertQueued()).
+        $updated = DB::table('job_batch_items')
+            ->where('batch_id', '=', $batchId)
+            ->where('product_uuid', '=', $productUuid)
+            ->update([
                 'status' => 'running',
                 'sync_uuid' => $syncUuid,
                 'attempts' => DB::raw('COALESCE(attempts, 0) + 1'),
-                'started_at' => DB::raw('COALESCE(started_at, NOW())'),
-                'updated_at' => Carbon::now(),
-                'created_at' => DB::raw('COALESCE(created_at, NOW())'),
-            ],
-        );
+                // Reset per-run trace so the UI shows the current attempt clearly.
+                'debug_log' => null,
+                // Portable across MySQL/SQLite:
+                'started_at' => DB::raw('COALESCE(started_at, CURRENT_TIMESTAMP)'),
+                'updated_at' => $now,
+            ]);
+
+        if ($updated > 0) {
+            return;
+        }
+
+        // Fallback insert path (portable for SQLite tests; avoids referencing column names in VALUES).
+        DB::table('job_batch_items')->insert([
+            'batch_id' => $batchId,
+            'product_uuid' => $productUuid,
+            'sku' => null,
+            'vendor' => null,
+            'status' => 'running',
+            'attempts' => 1,
+            'sync_uuid' => $syncUuid,
+            'last_error' => null,
+            'debug_log' => null,
+            'started_at' => $now,
+            'finished_at' => null,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
     }
 
     public function markSucceeded(string $batchId, string $productUuid): void
     {
-        DB::table('job_batch_items')->updateOrInsert(
-            ['batch_id' => $batchId, 'product_uuid' => $productUuid],
-            [
+        $now = Carbon::now();
+
+        $updated = DB::table('job_batch_items')
+            ->where('batch_id', '=', $batchId)
+            ->where('product_uuid', '=', $productUuid)
+            ->update([
                 'status' => 'succeeded',
-                'finished_at' => Carbon::now(),
+                'finished_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+        if ($updated > 0) {
+            return;
+        }
+
+        DB::table('job_batch_items')->insert([
+            'batch_id' => $batchId,
+            'product_uuid' => $productUuid,
+            'sku' => null,
+            'vendor' => null,
+            'status' => 'succeeded',
+            'attempts' => 1,
+            'sync_uuid' => null,
+            'last_error' => null,
+            'debug_log' => null,
+            'started_at' => null,
+            'finished_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+    }
+
+    public function appendDebugLog(string $batchId, string $productUuid, string $line): void
+    {
+        $line = trim((string) $line);
+        if ($line === '') return;
+
+        // Portable across MySQL/SQLite used by tests: read -> append -> update.
+        $existing = DB::table('job_batch_items')
+            ->where('batch_id', '=', $batchId)
+            ->where('product_uuid', '=', $productUuid)
+            ->value('debug_log');
+
+        $prev = is_string($existing) ? $existing : '';
+        $next = $prev === '' ? $line : ($prev."\n".$line);
+
+        // Avoid unbounded growth (keep the most recent tail).
+        $maxLen = 12000;
+        if (mb_strlen($next) > $maxLen) {
+            $next = mb_substr($next, -$maxLen);
+        }
+
+        DB::table('job_batch_items')
+            ->where('batch_id', '=', $batchId)
+            ->where('product_uuid', '=', $productUuid)
+            ->update([
+                'debug_log' => $next,
                 'updated_at' => Carbon::now(),
-                'created_at' => DB::raw('COALESCE(created_at, NOW())'),
-            ],
-        );
+            ]);
     }
 
     public function markFailed(string $batchId, string $productUuid, string $error): void
     {
-        DB::table('job_batch_items')->updateOrInsert(
-            ['batch_id' => $batchId, 'product_uuid' => $productUuid],
-            [
+        $now = Carbon::now();
+        $err = mb_substr($error, 0, 4000);
+
+        $updated = DB::table('job_batch_items')
+            ->where('batch_id', '=', $batchId)
+            ->where('product_uuid', '=', $productUuid)
+            ->update([
                 'status' => 'failed',
-                'last_error' => mb_substr($error, 0, 4000),
-                'finished_at' => Carbon::now(),
-                'updated_at' => Carbon::now(),
-                'created_at' => DB::raw('COALESCE(created_at, NOW())'),
-            ],
-        );
+                'last_error' => $err,
+                'finished_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+        if ($updated > 0) {
+            return;
+        }
+
+        DB::table('job_batch_items')->insert([
+            'batch_id' => $batchId,
+            'product_uuid' => $productUuid,
+            'sku' => null,
+            'vendor' => null,
+            'status' => 'failed',
+            'attempts' => 1,
+            'sync_uuid' => null,
+            'last_error' => $err,
+            'debug_log' => null,
+            'started_at' => null,
+            'finished_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
     }
 
     public function markSkipped(string $batchId, string $productUuid, string $reason): void
     {
-        DB::table('job_batch_items')->updateOrInsert(
-            ['batch_id' => $batchId, 'product_uuid' => $productUuid],
-            [
+        $now = Carbon::now();
+        $err = mb_substr($reason, 0, 4000);
+
+        $updated = DB::table('job_batch_items')
+            ->where('batch_id', '=', $batchId)
+            ->where('product_uuid', '=', $productUuid)
+            ->update([
                 'status' => 'skipped',
-                'last_error' => mb_substr($reason, 0, 4000),
-                'finished_at' => Carbon::now(),
-                'updated_at' => Carbon::now(),
-                'created_at' => DB::raw('COALESCE(created_at, NOW())'),
-            ],
-        );
+                'last_error' => $err,
+                'finished_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+        if ($updated > 0) {
+            return;
+        }
+
+        DB::table('job_batch_items')->insert([
+            'batch_id' => $batchId,
+            'product_uuid' => $productUuid,
+            'sku' => null,
+            'vendor' => null,
+            'status' => 'skipped',
+            'attempts' => 1,
+            'sync_uuid' => null,
+            'last_error' => $err,
+            'debug_log' => null,
+            'started_at' => null,
+            'finished_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
     }
 
     public function getSummary(string $batchId, int $limitPerSection = 25): array
@@ -123,28 +244,49 @@ final class EloquentJobBatchItemRepository implements JobBatchItemRepository
             }
         }
 
-        $running = DB::table('job_batch_items')
-            ->where('batch_id', '=', $batchId)
-            ->where('status', '=', 'running')
-            ->orderByDesc('started_at')
+        // Enrich list items with product "name" (products.description) for better UI readability.
+        $select = [
+            'j.product_uuid',
+            'j.sku',
+            'j.vendor',
+            'j.status',
+            'j.attempts',
+            'j.sync_uuid',
+            'j.last_error',
+            'j.debug_log',
+            'j.started_at',
+            'j.finished_at',
+            'p.description as product_name',
+        ];
+
+        $running = DB::table('job_batch_items as j')
+            ->leftJoin('products as p', 'p.uuid', '=', 'j.product_uuid')
+            ->select($select)
+            ->where('j.batch_id', '=', $batchId)
+            ->where('j.status', '=', 'running')
+            ->orderByDesc('j.started_at')
             ->limit($limitPerSection)
             ->get()
             ->map(static fn (object $r): array => self::rowToArray($r))
             ->all();
 
-        $queued = DB::table('job_batch_items')
-            ->where('batch_id', '=', $batchId)
-            ->where('status', '=', 'queued')
-            ->orderBy('id')
+        $queued = DB::table('job_batch_items as j')
+            ->leftJoin('products as p', 'p.uuid', '=', 'j.product_uuid')
+            ->select($select)
+            ->where('j.batch_id', '=', $batchId)
+            ->where('j.status', '=', 'queued')
+            ->orderBy('j.id')
             ->limit($limitPerSection)
             ->get()
             ->map(static fn (object $r): array => self::rowToArray($r))
             ->all();
 
-        $done = DB::table('job_batch_items')
-            ->where('batch_id', '=', $batchId)
-            ->whereIn('status', ['succeeded', 'failed', 'skipped'])
-            ->orderByDesc('finished_at')
+        $done = DB::table('job_batch_items as j')
+            ->leftJoin('products as p', 'p.uuid', '=', 'j.product_uuid')
+            ->select($select)
+            ->where('j.batch_id', '=', $batchId)
+            ->whereIn('j.status', ['succeeded', 'failed', 'skipped'])
+            ->orderByDesc('j.finished_at')
             ->limit($limitPerSection)
             ->get()
             ->map(static fn (object $r): array => self::rowToArray($r))
@@ -363,14 +505,44 @@ final class EloquentJobBatchItemRepository implements JobBatchItemRepository
         return [
             'product_uuid' => (string) $r->product_uuid,
             'sku' => $r->sku !== null ? (string) $r->sku : null,
+            'product_name' => $r->product_name !== null ? (string) $r->product_name : null,
             'vendor' => $r->vendor !== null ? (string) $r->vendor : null,
             'status' => (string) $r->status,
             'attempts' => (int) $r->attempts,
             'sync_uuid' => $r->sync_uuid !== null ? (string) $r->sync_uuid : null,
             'last_error' => $r->last_error !== null ? (string) $r->last_error : null,
+            'debug_log' => $r->debug_log !== null ? (string) $r->debug_log : null,
             'started_at' => $r->started_at !== null ? Carbon::parse((string) $r->started_at)->toISOString() : null,
             'finished_at' => $r->finished_at !== null ? Carbon::parse((string) $r->finished_at)->toISOString() : null,
         ];
+    }
+
+    public function listProductUuidsByStatus(string $batchId, array $statuses): array
+    {
+        $statuses = array_values(array_unique(array_filter(array_map('strval', $statuses), static fn (string $v): bool => trim($v) !== '')));
+        if ($statuses === []) return [];
+
+        /** @var array<int, string> $rows */
+        $rows = DB::table('job_batch_items')
+            ->where('batch_id', '=', $batchId)
+            ->whereIn('status', $statuses)
+            ->orderBy('updated_at', 'desc')
+            ->pluck('product_uuid')
+            ->all();
+
+        return array_values(array_unique(array_filter(array_map('strval', $rows), static fn (string $v): bool => trim($v) !== '')));
+    }
+
+    public function getAnyDebugLog(string $batchId): ?string
+    {
+        $row = DB::table('job_batch_items')
+            ->where('batch_id', '=', $batchId)
+            ->whereNotNull('debug_log')
+            ->orderBy('updated_at', 'desc')
+            ->value('debug_log');
+
+        $s = is_string($row) ? trim($row) : '';
+        return $s !== '' ? $s : null;
     }
 }
 

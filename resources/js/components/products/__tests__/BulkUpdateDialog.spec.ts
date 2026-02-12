@@ -26,11 +26,11 @@ describe('BulkUpdateDialog', () => {
         expect(wrapper.text()).toContain('Select at least one field to update.');
 
         // Any edit should clear the stale validation message
-        const shippedCheckbox = wrapper
+        const skuCheckbox = wrapper
             .findAll('label')
-            .find((l) => l.text().trim() === 'Shipped')!
+            .find((l) => l.text().trim() === 'SKU')!
             .find('input[type="checkbox"]');
-        await shippedCheckbox.setValue(true);
+        await skuCheckbox.setValue(true);
         await wrapper.vm.$nextTick();
 
         expect(wrapper.text()).not.toContain('Select at least one field to update.');

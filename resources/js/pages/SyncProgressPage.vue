@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../lib/api';
 import { formatTorontoDateTime, formatTorontoEpochSeconds } from '../lib/datetime';
+import DebugLogDialog from '../components/jobs/DebugLogDialog.vue';
 
 type JobBatchListItem = {
     id: string;
@@ -31,11 +32,13 @@ type JobBatchStatus = {
 type JobBatchItem = {
     product_uuid: string;
     sku: string | null;
+    product_name?: string | null;
     vendor: string | null;
     status: 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped';
     attempts: number;
     sync_uuid: string | null;
     last_error: string | null;
+    debug_log?: string | null;
     started_at: string | null;
     finished_at: string | null;
 };
@@ -71,8 +74,37 @@ const itemsError = ref<string | null>(null);
 const items = ref<JobBatchItemsSummary | null>(null);
 const cancelBusy = ref(false);
 const cancelMessage = ref<string | null>(null);
+const resumeBusy = ref(false);
+const resumeMessage = ref<string | null>(null);
+const resumeError = ref<string | null>(null);
 
 let pollTimer: number | null = null;
+
+const debugDialogOpen = ref(false);
+const debugDialogTitle = ref<string>('');
+const debugDialogSubtitle = ref<string | null>(null);
+const debugDialogLog = ref<string>('');
+
+function openDebugDialog(it: JobBatchItem): void {
+    const sku = it.sku ?? it.product_uuid;
+    debugDialogTitle.value = `Debug log · ${sku}`;
+    const bits: string[] = [];
+    if (it.product_name) bits.push(it.product_name);
+    if (it.vendor) bits.push(it.vendor);
+    bits.push(it.status);
+    if (it.sync_uuid) bits.push(`sync ${it.sync_uuid.slice(0, 8)}`);
+    debugDialogSubtitle.value = bits.join(' · ');
+    debugDialogLog.value = it.debug_log ?? '';
+    debugDialogOpen.value = true;
+}
+
+function closeDebugDialog(): void {
+    debugDialogOpen.value = false;
+}
+
+function hasDebugLog(it: JobBatchItem): boolean {
+    return typeof it.debug_log === 'string' && it.debug_log.trim() !== '';
+}
 
 function stopPolling(): void {
     if (pollTimer !== null) {
@@ -100,6 +132,8 @@ async function loadStatus(id: string): Promise<void> {
     statusLoading.value = true;
     statusError.value = null;
     cancelMessage.value = null;
+    resumeMessage.value = null;
+    resumeError.value = null;
     try {
         const res = await api.get<{ ok: boolean; data: JobBatchStatus }>(`/api/v1/job-batches/${id}`);
         status.value = res.data.data;
@@ -144,6 +178,45 @@ async function cancelBatch(): Promise<void> {
     }
 }
 
+const canResume = computed(() => {
+    if (!selectedId.value) return false;
+    if (!status.value) return false;
+    if (status.value.cancelled || status.value.cancelled_at) return false;
+    const hasPending = (status.value.pending_jobs ?? 0) > 0;
+    const hasFailed = (items.value?.counts?.failed ?? 0) > 0;
+    if (!hasPending && !hasFailed) return false;
+    if ((items.value?.counts?.running ?? 0) > 0) return false;
+    if (status.value.name !== 'recrawl_selected_products') return false;
+    return true;
+});
+
+async function resumeBatch(): Promise<void> {
+    if (!selectedId.value) return;
+    resumeBusy.value = true;
+    resumeMessage.value = null;
+    resumeError.value = null;
+    try {
+        const res = await api.post<{
+            ok: boolean;
+            data: { resumed: boolean; new_batch_id: string | null; queued: number; reason: string | null };
+        }>(`/api/v1/job-batches/${selectedId.value}/resume`);
+
+        const out = res.data.data;
+        if (!out.resumed || !out.new_batch_id) {
+            resumeMessage.value = out.reason ? `Nothing to resume (${out.reason}).` : 'Nothing to resume.';
+            return;
+        }
+
+        resumeMessage.value = `Resumed: queued ${out.queued} item(s) in new batch ${out.new_batch_id.slice(0, 8)}…`;
+        selectBatch(out.new_batch_id);
+    } catch (e: any) {
+        const msg = typeof e?.response?.data?.error === 'string' ? e.response.data.error : null;
+        resumeError.value = msg ? `Failed to resume: ${msg}` : 'Failed to resume batch.';
+    } finally {
+        resumeBusy.value = false;
+    }
+}
+
 function startPolling(): void {
     stopPolling();
     pollTimer = window.setInterval(() => {
@@ -179,6 +252,8 @@ watch(
         statusError.value = null;
         items.value = null;
         itemsError.value = null;
+        resumeMessage.value = null;
+        resumeError.value = null;
         if (!id) return;
         void Promise.all([loadStatus(id), loadItems(id)]).then(() => {
             if (!isDone.value) startPolling();
@@ -291,6 +366,12 @@ onUnmounted(() => stopPolling());
                 <div v-if="cancelMessage" class="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
                     {{ cancelMessage }}
                 </div>
+                <div v-if="resumeMessage" class="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    {{ resumeMessage }}
+                </div>
+                <div v-if="resumeError" class="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                    {{ resumeError }}
+                </div>
 
                 <div v-if="status" class="space-y-3">
                     <div class="flex items-center justify-between text-sm text-slate-700">
@@ -317,15 +398,26 @@ onUnmounted(() => stopPolling());
                         <div class="text-xs text-slate-600">
                             <span v-if="status.cancelled || status.cancelled_at" class="text-rose-700 font-semibold">Cancelled</span>
                         </div>
-                        <button
-                            v-if="!isDone"
-                            class="rounded-md border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-50 disabled:opacity-50"
-                            type="button"
-                            :disabled="cancelBusy"
-                            @click="cancelBatch"
-                        >
-                            {{ cancelBusy ? 'Cancelling…' : 'Cancel batch' }}
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button
+                                v-if="canResume"
+                                class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                                type="button"
+                                :disabled="resumeBusy"
+                                @click="resumeBatch"
+                            >
+                                {{ resumeBusy ? 'Resuming…' : 'Resume batch' }}
+                            </button>
+                            <button
+                                v-if="!isDone"
+                                class="rounded-md border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-50 disabled:opacity-50"
+                                type="button"
+                                :disabled="cancelBusy"
+                                @click="cancelBatch"
+                            >
+                                {{ cancelBusy ? 'Cancelling…' : 'Cancel batch' }}
+                            </button>
+                        </div>
                     </div>
 
                     <div v-if="status.finished_at" class="text-xs text-emerald-700">
@@ -363,6 +455,9 @@ onUnmounted(() => stopPolling());
                                 <li v-for="it in items.queued" :key="it.product_uuid" class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
                                         <div class="truncate font-medium text-slate-900">{{ it.sku ?? it.product_uuid }}</div>
+                                        <div v-if="it.product_name" class="truncate text-xs text-slate-700">
+                                            {{ it.product_name }}
+                                        </div>
                                         <div class="text-xs text-slate-600">
                                             <span v-if="it.vendor">{{ it.vendor }}</span>
                                             <span v-else>—</span>
@@ -380,10 +475,22 @@ onUnmounted(() => stopPolling());
                                 <li v-for="it in items.running" :key="it.product_uuid" class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
                                         <div class="truncate font-medium text-slate-900">{{ it.sku ?? it.product_uuid }}</div>
+                                        <div v-if="it.product_name" class="truncate text-xs text-slate-700">
+                                            {{ it.product_name }}
+                                        </div>
                                         <div class="text-xs text-slate-600">
                                             <span v-if="it.vendor">{{ it.vendor }} · </span>
                                             attempts {{ it.attempts }}
                                             <span v-if="it.started_at"> · started {{ formatTorontoDateTime(it.started_at) }}</span>
+                                        </div>
+                                        <div v-if="hasDebugLog(it)" class="mt-1">
+                                            <button
+                                                type="button"
+                                                class="text-xs font-semibold text-slate-700 underline underline-offset-2 hover:text-slate-900"
+                                                @click="openDebugDialog(it)"
+                                            >
+                                                View details
+                                            </button>
                                         </div>
                                     </div>
                                     <div class="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800">running</div>
@@ -398,9 +505,21 @@ onUnmounted(() => stopPolling());
                                 <li v-for="it in items.done" :key="it.product_uuid" class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
                                         <div class="truncate font-medium text-slate-900">{{ it.sku ?? it.product_uuid }}</div>
+                                        <div v-if="it.product_name" class="truncate text-xs text-slate-700">
+                                            {{ it.product_name }}
+                                        </div>
                                         <div class="text-xs text-slate-600">
                                             <span v-if="it.finished_at">finished {{ formatTorontoDateTime(it.finished_at) }}</span>
                                             <span v-if="it.last_error && it.status !== 'skipped'"> · <span class="text-rose-700">{{ it.last_error }}</span></span>
+                                        </div>
+                                        <div v-if="hasDebugLog(it)" class="mt-1">
+                                            <button
+                                                type="button"
+                                                class="text-xs font-semibold text-slate-700 underline underline-offset-2 hover:text-slate-900"
+                                                @click="openDebugDialog(it)"
+                                            >
+                                                View details
+                                            </button>
                                         </div>
                                     </div>
                                     <div
@@ -431,6 +550,14 @@ onUnmounted(() => stopPolling());
             </div>
         </div>
     </section>
+
+    <DebugLogDialog
+        :open="debugDialogOpen"
+        :title="debugDialogTitle"
+        :subtitle="debugDialogSubtitle"
+        :debug-log="debugDialogLog"
+        :on-close="closeDebugDialog"
+    />
 </template>
 
 

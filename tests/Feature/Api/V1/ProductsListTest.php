@@ -43,3 +43,23 @@ it('filters products by vendor', function (): void {
         ->assertJsonPath('data.0.sku', 'VEND-2')
         ->assertJsonMissing(['sku' => 'VEND-1']);
 });
+
+it('filters products by not-ready flag', function (): void {
+    \App\Models\Product::query()->create([
+        'sku' => 'READY-1',
+        'description' => 'Ready product',
+        'vendor' => 'Plamod',
+        'is_ready' => true,
+    ]);
+    \App\Models\Product::query()->create([
+        'sku' => 'NOTREADY-1',
+        'description' => 'Not ready product',
+        'vendor' => 'Plamod',
+        'is_ready' => false,
+    ]);
+
+    $res = $this->getJson('/api/v1/products?per_page=100&missing[]=not_ready');
+    $res->assertOk()
+        ->assertJsonPath('data.0.sku', 'NOTREADY-1')
+        ->assertJsonMissing(['sku' => 'READY-1']);
+});

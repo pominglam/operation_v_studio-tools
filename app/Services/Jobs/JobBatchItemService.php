@@ -29,6 +29,11 @@ final class JobBatchItemService
     {
         $this->repo->markSkipped($batchId, $productUuid, $reason);
     }
+
+    public function appendDebugLog(string $batchId, string $productUuid, string $line): void
+    {
+        $this->repo->appendDebugLog($batchId, $productUuid, $line);
+    }
 }
 
 

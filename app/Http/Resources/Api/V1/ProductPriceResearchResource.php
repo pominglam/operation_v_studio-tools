@@ -81,6 +81,7 @@ final class ProductPriceResearchResource extends JsonResource
             'sku' => $product->sku,
             'barcode' => $product->barcode,
             'description' => $product->description,
+            'handle' => $product->handle,
             'price_researched_at' => $product->price_researched_at?->toISOString(),
             'expired' => $expired,
             'vendor' => $product->vendor,

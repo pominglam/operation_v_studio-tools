@@ -9,6 +9,7 @@ use App\DAL\Products\ProductExternalContentRepository;
 use App\DAL\Products\ProductRepository;
 use App\Models\Product;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
+use App\Services\Products\ProductPdpSearchTermsService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -20,6 +21,7 @@ final class BandaiContentSyncService
     public function __construct(
         private readonly ExternalHtmlClient $http,
         private readonly BandaiHtmlParser $parser,
+        private readonly ProductPdpSearchTermsService $terms,
         private readonly ProductRepository $products,
         private readonly ProductExternalContentRepository $contents,
         private readonly ProductExternalAssetRepository $assets,
@@ -33,12 +35,7 @@ final class BandaiContentSyncService
 
     public function syncForProduct(Product $product): bool
     {
-        $query = $this->buildSearchQuery($product);
-        if ($query === null) {
-            return false;
-        }
-
-        $best = $this->findBestPdpFromCmsApi($query);
+        $best = $this->resolvePdpFromTerms($product);
         if ($best === null) {
             return false;
         }
@@ -81,6 +78,72 @@ final class BandaiContentSyncService
         });
 
         return true;
+    }
+
+    /**
+     * Try multiple search terms (barcode/sku/name variants) and pick the PDP that matches the product name best.
+     *
+     * @return array{url: string, title: string}|null
+     */
+    private function resolvePdpFromTerms(Product $product): ?array
+    {
+        $name = is_string($product->description) ? trim($product->description) : '';
+        $terms = $this->terms->termsForProduct($product);
+
+        // Bandai search is name-based; drop pure digits (barcodes) and very short tokens.
+        $terms = array_values(array_filter($terms, static function (string $t): bool {
+            $t = trim($t);
+            if ($t === '') return false;
+            if (ctype_digit($t)) return false;
+            return mb_strlen($t) >= 4;
+        }));
+
+        if ($terms === []) {
+            $q = $this->buildSearchQuery($product);
+            return $q !== null ? $this->findBestPdpFromCmsApi($q) : null;
+        }
+
+        $best = null;
+        $bestScore = -1.0;
+        foreach ($terms as $q) {
+            $cand = $this->findBestPdpFromCmsApi($q);
+            if ($cand === null) continue;
+
+            $score = $name !== '' ? $this->titleScore($cand['title'], $name) : 0.0;
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $best = $cand;
+            }
+
+            // Perfect-ish match: stop early.
+            if ($bestScore >= 0.95) break;
+        }
+
+        return $best;
+    }
+
+    private function titleScore(string $title, string $name): float
+    {
+        $a = $this->tokens($title);
+        $b = $this->tokens($name);
+        if ($a === [] || $b === []) return 0.0;
+        $hits = 0;
+        foreach ($a as $t) {
+            if (in_array($t, $b, true)) $hits++;
+        }
+        return $hits / max(1, count($b));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function tokens(string $s): array
+    {
+        $s = mb_strtolower($s);
+        $s = preg_replace('/[^a-z0-9]+/u', ' ', $s) ?? $s;
+        $s = trim(preg_replace('/\\s+/u', ' ', $s) ?? $s);
+        if ($s === '') return [];
+        return array_values(array_filter(explode(' ', $s), static fn (string $t): bool => $t !== ''));
     }
 
     private function buildSearchQuery(Product $product): ?string
@@ -237,7 +300,7 @@ final class BandaiContentSyncService
 
     /**
      * @param  array<int, string>  $imageUrls
-     * @return array<int, array{kind: string, storage_path: string, filename: string, mime_type?: string|null, size_bytes?: int|null}>
+     * @return array<int, array{kind: string, storage_path: string, filename: string, mime_type?: string|null, size_bytes?: int|null, checksum_sha256?: string|null}>
      */
     private function downloadImageAssets(Product $product, array $imageUrls, string $pdpUrl): array
     {
@@ -282,6 +345,7 @@ final class BandaiContentSyncService
                 continue;
             }
 
+            $sha = hash('sha256', $body);
             $disk->put($storagePath, $body);
 
             $rows[] = [
@@ -290,6 +354,7 @@ final class BandaiContentSyncService
                 'filename' => $filename,
                 'mime_type' => $mime,
                 'size_bytes' => strlen($body),
+                'checksum_sha256' => $sha,
             ];
         }
 
