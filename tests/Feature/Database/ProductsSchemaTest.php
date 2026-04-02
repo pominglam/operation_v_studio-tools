@@ -12,4 +12,10 @@ it('has handle column on products table', function (): void {
     expect(Schema::hasColumn('products', 'handle'))->toBeTrue();
 });
 
+it('has latest_arrival column on products table', function (): void {
+    expect(Schema::hasColumn('products', 'latest_arrival'))->toBeTrue();
+});
 
+it('has maintain_qty column on products table', function (): void {
+    expect(Schema::hasColumn('products', 'maintain_qty'))->toBeTrue();
+});

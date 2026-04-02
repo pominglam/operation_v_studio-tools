@@ -29,13 +29,28 @@ interface PurchaseOrderRepository
     /**
      * @return LengthAwarePaginator<PurchaseOrder>
      */
-    public function paginate(int $perPage, string $sortDir = 'desc'): LengthAwarePaginator;
+    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created'): LengthAwarePaginator;
+
+    /**
+     * @return array<int, string>
+     */
+    public function distinctVendors(): array;
 
     public function findByUuidOrFail(string $uuid): PurchaseOrder;
 
     public function countItems(int $purchaseOrderId): int;
 
     public function deleteItemsForPurchaseOrder(int $purchaseOrderId): int;
+
+    /**
+     * @return array<int, string>
+     */
+    public function listItemSkusByUuid(string $uuid): array;
+
+    /**
+     * @return array<int, int>
+     */
+    public function listProductIdsByUuid(string $uuid): array;
 
     public function delete(PurchaseOrder $po): void;
 }

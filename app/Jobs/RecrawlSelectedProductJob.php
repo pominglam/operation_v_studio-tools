@@ -8,6 +8,7 @@ use App\DAL\Products\ProductRepository;
 use App\Services\Jobs\JobBatchItemService;
 use App\Services\PriceResearch\PriceResearchService;
 use App\Services\Products\Bandai\BandaiContentSyncService;
+use App\Services\Products\GundamHangar\GundamHangarContentSyncService;
 use App\Services\Products\GundamPlanet\GundamPlanetContentSyncService;
 use App\Services\Products\Hlj\HljContentSync;
 use App\Services\Products\Newtype\NewtypeContentSyncService;
@@ -54,6 +55,7 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         HljContentSync $hlj,
         GundamPlanetContentSyncService $gundamplanet,
         NewtypeContentSyncService $newtype,
+        GundamHangarContentSyncService $gundamhangar,
         BandaiContentSyncService $bandai,
         PriceResearchService $prices,
         JobBatchItemService $batchItems,
@@ -135,11 +137,12 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         $wantHlj = in_array('hlj', $sources, true);
         $wantGundamPlanet = in_array('gundamplanet', $sources, true);
         $wantNewtype = in_array('newtype', $sources, true);
+        $wantGundamHangar = in_array('gundamhangar', $sources, true);
         $wantBandai = in_array('bandai', $sources, true);
         $wantPrices = in_array('competitor_price_research', $sources, true);
 
         $product = null;
-        if ($wantHlj || $wantGundamPlanet || $wantNewtype) {
+        if ($wantHlj || $wantGundamPlanet || $wantNewtype || $wantGundamHangar) {
             $product = $products->findByUuidOrFail($this->productUuid);
         }
 
@@ -174,6 +177,13 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         if ($wantNewtype && $product !== null) {
             $runSource('newtype', function () use ($newtype, $product, $trace): array {
                 $newtype->syncForProduct($product, $this->syncUuid, $trace);
+                return ['result' => 'ok'];
+            });
+        }
+
+        if ($wantGundamHangar && $product !== null) {
+            $runSource('gundamhangar', function () use ($gundamhangar, $product, $trace): array {
+                $gundamhangar->syncForProduct($product, $this->syncUuid, $trace);
                 return ['result' => 'ok'];
             });
         }

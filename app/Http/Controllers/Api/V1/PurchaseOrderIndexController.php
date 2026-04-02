@@ -21,12 +21,19 @@ final class PurchaseOrderIndexController extends Controller
         $perPage = (int) ($request->query('per_page') ?? 50);
         $perPage = max(1, min($perPage, 200));
 
+        /** @var string $sortBy */
+        $sortBy = (string) ($request->query('sort_by') ?? 'created');
+        $sortBy = strtolower(trim($sortBy));
+        if (! in_array($sortBy, ['created', 'ordered'], true)) {
+            $sortBy = 'created';
+        }
+
         /** @var string $sortDir */
         $sortDir = (string) ($request->query('sort_dir') ?? 'desc');
         $sortDir = strtolower(trim($sortDir)) === 'asc' ? 'asc' : 'desc';
 
         return PurchaseOrderResource::collection(
-            $this->purchaseOrders->paginate($perPage, $sortDir),
+            $this->purchaseOrders->paginate($perPage, $sortDir, $sortBy),
         );
     }
 }

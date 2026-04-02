@@ -13,6 +13,7 @@ it('creates a product', function (): void {
         'order' => 2,
         'filled' => 1,
         'available' => 7,
+        'maintain' => 12,
         'extended' => 20.26,
     ]);
 
@@ -25,6 +26,7 @@ it('creates a product', function (): void {
         'type' => 'HG',
         'vendor' => 'Plamod',
         'available_qty' => 7,
+        'maintain_qty' => 12,
     ]);
 });
 

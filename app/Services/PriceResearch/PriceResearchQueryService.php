@@ -86,7 +86,7 @@ final class PriceResearchQueryService
         ?string $sellingPrice = null,
         ?string $shippingPerUnit = null,
         ?string $barcode = null,
-        ?string $purchaseOrderUuid = null,
+        array $purchaseOrderUuids = [],
         array $vendors = [],
         array $freshness = [],
         array $types = [],
@@ -183,14 +183,17 @@ final class PriceResearchQueryService
                 DB::raw("(select max(coalesce(il.unit_cost,0) + coalesce(il.shipping_per_unit,0)) from inventory_lots il where il.product_id = products.id and il.source_type <> 'negative_balance' and il.unit_cost is not null) as max_landed_cost"),
             ]);
 
-        $purchaseOrderUuid = $purchaseOrderUuid !== null ? trim($purchaseOrderUuid) : null;
-        if ($purchaseOrderUuid !== null && $purchaseOrderUuid !== '') {
-            $q->whereExists(function ($sub) use ($purchaseOrderUuid): void {
+        $purchaseOrderUuids = array_values(array_unique(array_filter(array_map(
+            static fn (string $v): string => trim($v),
+            $purchaseOrderUuids,
+        ), static fn (string $v): bool => $v !== '')));
+        if ($purchaseOrderUuids !== []) {
+            $q->whereExists(function ($sub) use ($purchaseOrderUuids): void {
                 $sub->select(DB::raw('1'))
                     ->from('purchase_order_items as poi')
                     ->join('purchase_orders as po', 'po.id', '=', 'poi.purchase_order_id')
                     ->whereColumn('poi.product_id', 'products.id')
-                    ->where('po.uuid', '=', $purchaseOrderUuid);
+                    ->whereIn('po.uuid', $purchaseOrderUuids);
             });
         }
 

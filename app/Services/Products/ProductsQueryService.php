@@ -14,6 +14,7 @@ final class ProductsQueryService
     ) {}
 
     /**
+     * @param  array<int, string>  $mainTypes
      * @param  array<int, string>  $types
      * @param  array<int, string>  $vendors
      * @param  array<int, string>  $missing
@@ -22,16 +23,42 @@ final class ProductsQueryService
     public function paginate(
         int $perPage,
         ?string $search = null,
+        array $mainTypes = [],
         array $types = [],
         array $vendors = [],
         array $missing = [],
         ?string $sortBy = null,
         string $sortDir = 'asc',
-        ?string $purchaseOrderUuid = null,
+        array $purchaseOrderUuids = [],
         array $searchTerms = [],
+        bool $includeArchived = false,
+        ?string $poProductNovelty = null,
+        ?string $ready = null,
+        ?int $available = null,
+        ?int $notArrived = null,
+        ?int $reorder = null,
+        bool $reorderGtOne = false,
     ): LengthAwarePaginator
     {
-        return $this->products->paginate($perPage, $search, $types, $vendors, $missing, $sortBy, $sortDir, $purchaseOrderUuid, $searchTerms);
+        return $this->products->paginate(
+            $perPage,
+            $search,
+            $mainTypes,
+            $types,
+            $vendors,
+            $missing,
+            $sortBy,
+            $sortDir,
+            $purchaseOrderUuids,
+            $searchTerms,
+            $includeArchived,
+            $poProductNovelty,
+            $ready,
+            $available,
+            $notArrived,
+            $reorder,
+            $reorderGtOne,
+        );
     }
 
     /**
@@ -45,8 +72,40 @@ final class ProductsQueryService
     /**
      * @return array<int, string>
      */
+    public function distinctMainTypes(): array
+    {
+        return $this->products->distinctMainTypes();
+    }
+
+    /**
+     * @return array<int, string>
+     */
     public function distinctVendors(): array
     {
         return $this->products->distinctVendors();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function distinctGrades(): array
+    {
+        return $this->products->distinctGrades();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function distinctScales(): array
+    {
+        return $this->products->distinctScales();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function distinctSeries(): array
+    {
+        return $this->products->distinctSeries();
     }
 }

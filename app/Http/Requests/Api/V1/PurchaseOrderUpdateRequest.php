@@ -17,6 +17,7 @@ final class PurchaseOrderUpdateRequest extends FormRequest
             'vendor' => ['sometimes', 'string', 'max:128'],
             'ordered_date' => ['nullable', 'date'],
             'shipped_date' => ['nullable', 'date'],
+            'estimated_arrival_date' => ['nullable', 'date'],
             'received_date' => ['nullable', 'date'],
             'fully_on_shelves_date' => ['nullable', 'date'],
             'shipping_total' => ['nullable', 'numeric'],
@@ -25,6 +26,7 @@ final class PurchaseOrderUpdateRequest extends FormRequest
             'vendor_currency_code' => ['string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'vendor_product_total' => ['nullable', 'numeric'],
             'notes' => ['nullable', 'string'],
+            'is_done' => ['sometimes', 'boolean'],
         ];
     }
 }

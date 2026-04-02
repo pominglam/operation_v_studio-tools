@@ -30,11 +30,20 @@ final class PurchaseOrderImportService
     private const COL_DSPIAE_REQUIRED_QTY = 'Required Quantity / pcs (Carton Multiple)';
     private const COL_DSPIAE_PRODUCT_NAME = 'Product name';
     private const COL_DSPIAE_BARCODE = 'Barcode';
+    private const COL_STEDI_WHOLESALE_PRICE_HKD = 'Wholesale price HKD';
+    private const COL_STEDI_ORDER_QTY = 'Order qty';
+    private const COL_STEDI_QTY = 'Qty';
+    private const COL_STEDI_UNIT_PRICE_HKD = 'Unit Price (HK$)';
+    private const COL_UNIT_PRICE_HKD = 'Unit Price (HKD)';
+    private const COL_AMOUNT_HKD = 'Amount (HKD)';
+    private const COL_STEDI_AMOUNT_HKD = 'Amount (HK$)';
     private const COL_PLAMOD_ORDER_ID = 'Order ID';
     private const COL_PLAMOD_PRODUCT_NAME = 'Product Name';
     private const COL_PLAMOD_QTY_ORDERED = 'Qty Ordered';
     private const COL_PLAMOD_QTY_FILLED = 'Qty Filled';
     private const COL_PLAMOD_UNIT_PRICE = 'Unit Price';
+    private const COL_PLAMOD_ORDER_TYPE = 'Order Type';
+    private const COL_JS_PDF_TEXT_HEADER = 'Item Description Quantity Price Per Unit Total';
 
     public function __construct(
         private readonly ProductRepository $products,
@@ -48,11 +57,14 @@ final class PurchaseOrderImportService
      * @param  array{
      *   vendor:string,
      *   purchase_order_uuid?:string,
+     *   import_mode?:string,
      *   ordered_date?:string|null,
      *   shipped_date?:string|null,
+     *   estimated_arrival_date?:string|null,
      *   received_date?:string|null,
      *   fully_on_shelves_date?:string|null,
      *   shipping_total?:string|null,
+     *   shipping_currency_mode?:string,
      *   product_total?:string|null,
      *   surcharge_total?:string|null,
      *   notes?:string|null
@@ -81,79 +93,158 @@ final class PurchaseOrderImportService
             [$header, $preambleMeta] = $this->readToHeaderAndPreambleMeta($fh, $encodingIssues);
             $map = $this->headerMap($header);
             $format = $this->detectFormat($map);
+            $preambleMeta = $this->mergeFormatCurrencyFallback($preambleMeta, $format);
 
             $rows = [];
             $rowNumber = 1; // header row
-            while (($data = fgetcsv($fh)) !== false) {
-                $rowNumber++;
-                $data = $this->sanitizeCsvRow($data, $rowNumber, $encodingIssues);
-                if ($this->isBlankRow($data)) {
-                    continue;
-                }
-
-                if ($format === 'standard') {
-                    $sku = $this->stringAt($data, $map[self::COL_SKU] ?? -1);
-                    if ($sku === '') {
-                        throw new PurchaseOrderImportException('Missing SKU value.', [
-                            ['row' => $rowNumber, 'kind' => 'missing_sku'],
-                        ]);
-                    }
-
-                    $rows[] = [
-                        'row' => $rowNumber,
-                        'sku' => $sku,
-                        'unit_cost' => $this->nullableDecimalAt($data, $map[self::COL_UNIT_COST]),
-                        'qty_ordered' => $this->nullableIntAt($data, $map[self::COL_QTY_ORDERED]),
-                        'qty_shipped' => $this->nullableIntAt($data, $map[self::COL_QTY_SHIPPED]),
-                        'qty_received' => $this->nullableIntAt($data, $map[self::COL_QTY_RECEIVED]),
-                        'product_name' => null,
-                        'barcode' => null,
-                    ];
-                } elseif ($format === 'dspiae') {
-                    $sku = $this->stringAt($data, $map[self::COL_SKU] ?? -1);
-                    if ($sku === '') {
+            if ($format === 'js_pdf_text') {
+                $rows = $this->parseJsPdfTextRows($fh, $rowNumber, $encodingIssues);
+            } else {
+                while (($data = fgetcsv($fh)) !== false) {
+                    $rowNumber++;
+                    $data = $this->sanitizeCsvRow($data, $rowNumber, $encodingIssues);
+                    if ($this->isBlankRow($data)) {
                         continue;
                     }
 
-                    $qtyOrdered = $this->nullableIntAt($data, $map[self::COL_DSPIAE_REQUIRED_QTY]);
-                    if (($qtyOrdered ?? 0) <= 0) {
-                        continue;
+                    if ($format === 'standard') {
+                        $sku = $this->stringAt($data, $map[self::COL_SKU] ?? -1);
+                        if ($sku === '') {
+                            throw new PurchaseOrderImportException('Missing SKU value.', [
+                                ['row' => $rowNumber, 'kind' => 'missing_sku'],
+                            ]);
+                        }
+
+                        $rows[] = [
+                            'row' => $rowNumber,
+                            'sku' => $sku,
+                            'unit_cost' => $this->nullableDecimalAt($data, $map[self::COL_UNIT_COST]),
+                            'qty_ordered' => $this->nullableIntAt($data, $map[self::COL_QTY_ORDERED]),
+                            'qty_shipped' => $this->nullableIntAt($data, $map[self::COL_QTY_SHIPPED]),
+                            'qty_received' => $this->nullableIntAt($data, $map[self::COL_QTY_RECEIVED]),
+                            'product_name' => null,
+                            'barcode' => null,
+                            'vendor_line_total' => null,
+                        ];
+                    } elseif ($format === 'dspiae') {
+                        $sku = $this->stringAt($data, $map[self::COL_SKU] ?? -1);
+                        if ($sku === '') {
+                            continue;
+                        }
+
+                        $qtyOrdered = $this->nullableIntAt($data, $map[self::COL_DSPIAE_REQUIRED_QTY]);
+                        if (($qtyOrdered ?? 0) <= 0) {
+                            continue;
+                        }
+
+                        $rows[] = [
+                            'row' => $rowNumber,
+                            'sku' => $sku,
+                            'product_name' => $this->nullableStringAt($data, $map[self::COL_DSPIAE_PRODUCT_NAME] ?? -1),
+                            'barcode' => $this->nullableStringAt($data, $map[self::COL_DSPIAE_BARCODE] ?? -1),
+                            'unit_cost' => $this->nullableDecimalAt($data, $map[self::COL_DSPIAE_WHOLESALE_PRICE]),
+                            'qty_ordered' => $qtyOrdered,
+                            'qty_shipped' => null,
+                            'qty_received' => null,
+                            'vendor_line_total' => null,
+                        ];
+                    } elseif ($format === 'stedi_tools') {
+                        $sku = $this->stringAt($data, $map[self::COL_SKU] ?? -1);
+                        if ($sku === '') {
+                            continue;
+                        }
+
+                        $qtyOrdered = $this->nullableIntAt($data, $map[self::COL_STEDI_ORDER_QTY] ?? -1);
+                        if (($qtyOrdered ?? 0) <= 0) {
+                            continue;
+                        }
+
+                        $rows[] = [
+                            'row' => $rowNumber,
+                            'sku' => $sku,
+                            // Stedi file is HKD-priced; we treat it as "vendor unit cost" by using the shared unit_cost field,
+                            // and rely on vendor_currency_code + FX to convert to CAD (same behavior as DSPIAE).
+                            'unit_cost' => $this->nullableDecimalAt($data, $map[self::COL_STEDI_WHOLESALE_PRICE_HKD] ?? -1),
+                            'qty_ordered' => $qtyOrdered,
+                            'qty_shipped' => null,
+                            'qty_received' => null,
+                            'product_name' => null,
+                            'barcode' => null,
+                            'vendor_line_total' => null,
+                        ];
+                    } elseif ($format === 'stedi_simple') {
+                        $sku = $this->stringAt($data, $map[self::COL_SKU] ?? -1);
+                        if ($sku === '') {
+                            continue;
+                        }
+
+                        $qtyOrdered = $this->nullableIntAt($data, $map[self::COL_STEDI_QTY] ?? -1);
+                        if (($qtyOrdered ?? 0) <= 0) {
+                            continue;
+                        }
+
+                        $rows[] = [
+                            'row' => $rowNumber,
+                            'sku' => $sku,
+                            // Stedi file is HKD-priced; we treat it as "vendor unit cost" by using the shared unit_cost field,
+                            // and rely on vendor_currency_code + FX to convert to CAD (same behavior as DSPIAE).
+                            'unit_cost' => $this->nullableDecimalAt($data, $map[self::COL_STEDI_UNIT_PRICE_HKD] ?? -1),
+                            'qty_ordered' => $qtyOrdered,
+                            'qty_shipped' => null,
+                            'qty_received' => null,
+                            'product_name' => null,
+                            'barcode' => null,
+                            'vendor_line_total' => $this->nullableDecimalAt($data, $map[self::COL_STEDI_AMOUNT_HKD] ?? -1),
+                        ];
+                    } elseif ($format === 'simple_hkd') {
+                        $sku = $this->stringAt($data, $map[self::COL_SKU] ?? -1);
+                        if ($sku === '') {
+                            continue;
+                        }
+
+                        $qtyOrdered = $this->nullableIntAt($data, $map[self::COL_STEDI_QTY] ?? -1);
+                        if (($qtyOrdered ?? 0) <= 0) {
+                            continue;
+                        }
+
+                        $rows[] = [
+                            'row' => $rowNumber,
+                            'sku' => $sku,
+                            // Compact DSPIAE/Stedi HKD format.
+                            'unit_cost' => $this->nullableDecimalAt($data, $map[self::COL_UNIT_PRICE_HKD] ?? -1),
+                            'qty_ordered' => $qtyOrdered,
+                            'qty_shipped' => null,
+                            'qty_received' => null,
+                            'product_name' => null,
+                            'barcode' => null,
+                            'vendor_line_total' => $this->nullableDecimalAt($data, $map[self::COL_AMOUNT_HKD] ?? -1),
+                        ];
+                    } else {
+                        // Plamod "Order details" export includes trailing SUMMARY/TOTALS sections that are not line items.
+                        $marker = strtoupper(trim((string) ($data[0] ?? '')));
+                        if (in_array($marker, ['SUMMARY', 'TOTALS', 'STATEMENT'], true)) {
+                            break;
+                        }
+
+                        $sku = $this->stringAt($data, $map[self::COL_SKU] ?? -1);
+                        if ($sku === '') {
+                            continue;
+                        }
+
+                        $qtyFilled = $this->nullableIntAt($data, $map[self::COL_PLAMOD_QTY_FILLED]);
+
+                        $rows[] = [
+                            'row' => $rowNumber,
+                            'sku' => $sku,
+                            'product_name' => $this->nullableStringAt($data, $map[self::COL_PLAMOD_PRODUCT_NAME] ?? -1),
+                            'barcode' => $this->nullableStringAt($data, $map[self::COL_DSPIAE_BARCODE] ?? -1),
+                            'unit_cost' => $this->nullableDecimalAt($data, $map[self::COL_PLAMOD_UNIT_PRICE]),
+                            'qty_ordered' => $this->nullableIntAt($data, $map[self::COL_PLAMOD_QTY_ORDERED]),
+                            'qty_shipped' => $qtyFilled,
+                            'qty_received' => $qtyFilled,
+                            'vendor_line_total' => null,
+                        ];
                     }
-
-                    $rows[] = [
-                        'row' => $rowNumber,
-                        'sku' => $sku,
-                        'product_name' => $this->nullableStringAt($data, $map[self::COL_DSPIAE_PRODUCT_NAME] ?? -1),
-                        'barcode' => $this->nullableStringAt($data, $map[self::COL_DSPIAE_BARCODE] ?? -1),
-                        'unit_cost' => $this->nullableDecimalAt($data, $map[self::COL_DSPIAE_WHOLESALE_PRICE]),
-                        'qty_ordered' => $qtyOrdered,
-                        'qty_shipped' => null,
-                        'qty_received' => null,
-                    ];
-                } else {
-                    // Plamod "Order details" export includes trailing SUMMARY/TOTALS sections that are not line items.
-                    $marker = strtoupper(trim((string) ($data[0] ?? '')));
-                    if (in_array($marker, ['SUMMARY', 'TOTALS', 'STATEMENT'], true)) {
-                        break;
-                    }
-
-                    $sku = $this->stringAt($data, $map[self::COL_SKU] ?? -1);
-                    if ($sku === '') {
-                        continue;
-                    }
-
-                    $qtyFilled = $this->nullableIntAt($data, $map[self::COL_PLAMOD_QTY_FILLED]);
-
-                    $rows[] = [
-                        'row' => $rowNumber,
-                        'sku' => $sku,
-                        'product_name' => $this->nullableStringAt($data, $map[self::COL_PLAMOD_PRODUCT_NAME] ?? -1),
-                        'barcode' => $this->nullableStringAt($data, $map[self::COL_DSPIAE_BARCODE] ?? -1),
-                        'unit_cost' => $this->nullableDecimalAt($data, $map[self::COL_PLAMOD_UNIT_PRICE]),
-                        'qty_ordered' => $this->nullableIntAt($data, $map[self::COL_PLAMOD_QTY_ORDERED]),
-                        'qty_shipped' => $qtyFilled,
-                        'qty_received' => $qtyFilled,
-                    ];
                 }
             }
 
@@ -161,30 +252,33 @@ final class PurchaseOrderImportService
                 throw new PurchaseOrderImportException('No rows found in CSV.');
             }
 
-            $productsBySku = $this->resolveOrCreateProductsBySku($vendor, $rows);
+            if (! array_key_exists('vendor_product_total', $preambleMeta) || trim((string) ($preambleMeta['vendor_product_total'] ?? '')) === '') {
+                $derivedVendorTotal = $this->deriveVendorProductTotalFromRows($rows);
+                if ($derivedVendorTotal !== null) {
+                    $preambleMeta['vendor_product_total'] = $derivedVendorTotal;
+                }
+            }
 
-            return DB::transaction(function () use ($meta, $vendor, $rows, $productsBySku, $preambleMeta): array {
-                $po = $this->resolveOrCreatePurchaseOrder($meta, $vendor, $preambleMeta);
+            $productsBySku = $this->resolveOrCreateProductsBySku($vendor, $rows);
+            $importMode = array_key_exists('import_mode', $meta)
+                ? strtolower(trim((string) $meta['import_mode']))
+                : 'replace';
+
+            return DB::transaction(function () use ($meta, $vendor, $rows, $productsBySku, $preambleMeta, $importMode): array {
+                $po = $this->resolveOrCreatePurchaseOrder($meta, $vendor, $preambleMeta, $importMode);
                 $po->fx_rate_to_cad = $this->deriveFxRateToCad(
                     $po->product_total !== null ? (string) $po->product_total : null,
                     $po->vendor_product_total !== null ? (string) $po->vendor_product_total : null,
                     (string) $po->vendor_currency_code,
                 );
+                $po->shipping_total = $this->normalizeShippingTotalToCad(
+                    shippingTotal: $po->shipping_total !== null ? (string) $po->shipping_total : null,
+                    mode: array_key_exists('shipping_currency_mode', $meta) ? (string) $meta['shipping_currency_mode'] : 'auto',
+                    vendorCurrencyCode: (string) ($po->vendor_currency_code ?? 'CAD'),
+                    fxRateToCad: $po->fx_rate_to_cad !== null ? (string) $po->fx_rate_to_cad : null,
+                    productTotalCad: $po->product_total !== null ? (string) $po->product_total : null,
+                );
                 $this->purchaseOrders->save($po);
-
-                $totalReceived = 0;
-                foreach ($rows as $r) {
-                    $qtyReceived = (int) ($r['qty_received'] ?? 0);
-                    if ($qtyReceived > 0) {
-                        $totalReceived += $qtyReceived;
-                    }
-                }
-
-                $shippingPerUnit = null;
-                $shippingTotal = $po->shipping_total !== null ? trim((string) $po->shipping_total) : null;
-                if ($shippingTotal !== null && $shippingTotal !== '' && $totalReceived > 0) {
-                    $shippingPerUnit = $this->divideDecimal($shippingTotal, $totalReceived, 6);
-                }
 
                 $items = 0;
                 $lots = 0;
@@ -218,7 +312,7 @@ final class PurchaseOrderImportService
                     $lot->purchase_order_item_id = $item->id;
                     $lot->source_type = 'po';
                     $lot->unit_cost = $item->unit_cost;
-                    $lot->shipping_per_unit = $shippingPerUnit;
+                    $lot->shipping_per_unit = null;
                     $lot->qty_received = $qtyReceived;
                     $lot->qty_remaining = $qtyReceived;
                     $lot->received_at = $this->resolveReceivedAt(
@@ -230,6 +324,7 @@ final class PurchaseOrderImportService
                     $lots++;
                 }
 
+                $shippingPerUnit = $this->recomputePurchaseOrderDerivedTotalsAndLots($po);
                 $this->latestCosts->recomputeForSkus(array_values(array_unique(array_map(static fn (array $r): string => (string) $r['sku'], $rows))));
 
                 return [
@@ -244,12 +339,83 @@ final class PurchaseOrderImportService
         }
     }
 
+    private function normalizeShippingTotalToCad(
+        ?string $shippingTotal,
+        string $mode,
+        string $vendorCurrencyCode,
+        ?string $fxRateToCad,
+        ?string $productTotalCad,
+    ): ?string {
+        if ($shippingTotal === null || trim($shippingTotal) === '') {
+            return null;
+        }
+
+        $mode = strtolower(trim($mode));
+        if (! in_array($mode, ['auto', 'cad', 'vendor'], true)) {
+            $mode = 'auto';
+        }
+
+        $vendorCurrencyCode = strtoupper(trim($vendorCurrencyCode));
+        if ($vendorCurrencyCode === '' || $vendorCurrencyCode === 'CAD') {
+            return $shippingTotal;
+        }
+
+        if ($mode === 'cad') {
+            return $shippingTotal;
+        }
+
+        if ($mode === 'vendor') {
+            if ($fxRateToCad === null || trim($fxRateToCad) === '' || ! is_numeric($fxRateToCad)) {
+                throw new PurchaseOrderImportException('Shipping currency set to vendor currency, but FX rate to CAD is unavailable. Provide Product total (CAD) so FX can be derived, or import shipping as CAD.');
+            }
+
+            return $this->mulDecimalRounded($shippingTotal, $fxRateToCad, 2);
+        }
+
+        if ($this->shouldTreatAutoShippingAsVendorCurrency($shippingTotal, $fxRateToCad, $productTotalCad)) {
+            return $this->mulDecimalRounded($shippingTotal, (string) $fxRateToCad, 2);
+        }
+
+        return $shippingTotal;
+    }
+
+    private function shouldTreatAutoShippingAsVendorCurrency(
+        string $shippingTotal,
+        ?string $fxRateToCad,
+        ?string $productTotalCad,
+    ): bool {
+        if ($fxRateToCad === null || trim($fxRateToCad) === '' || ! is_numeric($fxRateToCad)) {
+            return false;
+        }
+        if ($productTotalCad === null || trim($productTotalCad) === '' || ! is_numeric($productTotalCad)) {
+            return false;
+        }
+        if (! is_numeric($shippingTotal)) {
+            return false;
+        }
+
+        $shipping = (float) $shippingTotal;
+        $productCad = (float) $productTotalCad;
+        $shippingAsVendorToCad = $shipping * (float) $fxRateToCad;
+
+        if ($productCad <= 0 || $shipping <= 0) {
+            return false;
+        }
+
+        // High-confidence conversion signal:
+        // - as-entered shipping is bigger than full product CAD total (unlikely),
+        // - but converted shipping lands below product CAD total (plausible).
+        return $shipping > $productCad && $shippingAsVendorToCad <= $productCad;
+    }
+
     /**
      * @param  array{
      *   vendor:string,
      *   purchase_order_uuid?:string,
+     *   import_mode?:string,
      *   ordered_date?:string|null,
      *   shipped_date?:string|null,
+     *   estimated_arrival_date?:string|null,
      *   received_date?:string|null,
      *   fully_on_shelves_date?:string|null,
      *   shipping_total?:string|null,
@@ -259,34 +425,40 @@ final class PurchaseOrderImportService
      * } $meta
      * @param  array{vendor_currency_code?:string,vendor_product_total?:string|null}  $preambleMeta
      */
-    private function resolveOrCreatePurchaseOrder(array $meta, string $vendor, array $preambleMeta): PurchaseOrder
+    private function resolveOrCreatePurchaseOrder(array $meta, string $vendor, array $preambleMeta, string $importMode = 'replace'): PurchaseOrder
     {
         $uuid = array_key_exists('purchase_order_uuid', $meta) ? trim((string) $meta['purchase_order_uuid']) : '';
+        $appendMode = $importMode === 'append';
 
-            if ($uuid !== '') {
+        if ($uuid !== '') {
             $po = $this->purchaseOrders->findByUuidOrFail($uuid);
             if (! $po->relationLoaded('items')) {
                 $po->load('items');
             }
 
-            $itemIds = $po->items->pluck('id')->all();
-            $hasReceived = $po->items->contains(static fn ($it): bool => ((int) ($it->qty_received ?? 0)) > 0);
-            $lots = $this->inventory->countLotsForPurchaseOrderItems($itemIds);
-            if ($hasReceived || $lots > 0) {
-                throw new PurchaseOrderImportException('Re-import blocked: this PO has received inventory/lots. Create a new PO instead.', [
-                    ['kind' => 'reimport_not_allowed', 'purchase_order_uuid' => (string) $po->uuid],
-                ]);
-            }
+            if (! $appendMode) {
+                $itemIds = $po->items->pluck('id')->all();
+                $hasReceived = $po->items->contains(static fn ($it): bool => ((int) ($it->qty_received ?? 0)) > 0);
+                $lots = $this->inventory->countLotsForPurchaseOrderItems($itemIds);
+                if ($hasReceived || $lots > 0) {
+                    throw new PurchaseOrderImportException('Re-import blocked: this PO has received inventory/lots. Create a new PO instead.', [
+                        ['kind' => 'reimport_not_allowed', 'purchase_order_uuid' => (string) $po->uuid],
+                    ]);
+                }
 
-            // Replace all items for a clean re-import.
-            $this->purchaseOrders->deleteItemsForPurchaseOrder((int) $po->id);
+                // Replace all items for a clean re-import.
+                $this->purchaseOrders->deleteItemsForPurchaseOrder((int) $po->id);
+            }
 
             // Update header fields (only when present in request).
             $po->vendor = $vendor;
-            $po->vendor_currency_code = $preambleMeta['vendor_currency_code'] ?? $po->vendor_currency_code ?? 'CAD';
-            $po->vendor_product_total = $preambleMeta['vendor_product_total'] ?? $po->vendor_product_total;
+            if (! $appendMode) {
+                $po->vendor_currency_code = $preambleMeta['vendor_currency_code'] ?? $po->vendor_currency_code ?? 'CAD';
+                $po->vendor_product_total = $preambleMeta['vendor_product_total'] ?? $po->vendor_product_total;
+            }
             if (array_key_exists('ordered_date', $meta)) $po->ordered_date = $meta['ordered_date'];
             if (array_key_exists('shipped_date', $meta)) $po->shipped_date = $meta['shipped_date'];
+            if (array_key_exists('estimated_arrival_date', $meta)) $po->estimated_arrival_date = $meta['estimated_arrival_date'];
             if (array_key_exists('received_date', $meta)) $po->received_date = $meta['received_date'];
             if (array_key_exists('fully_on_shelves_date', $meta)) $po->fully_on_shelves_date = $meta['fully_on_shelves_date'];
             if (array_key_exists('shipping_total', $meta)) $po->shipping_total = $meta['shipping_total'];
@@ -303,6 +475,7 @@ final class PurchaseOrderImportService
         $po->vendor_product_total = $preambleMeta['vendor_product_total'] ?? null;
         $po->ordered_date = array_key_exists('ordered_date', $meta) ? $meta['ordered_date'] : null;
         $po->shipped_date = array_key_exists('shipped_date', $meta) ? $meta['shipped_date'] : null;
+        $po->estimated_arrival_date = array_key_exists('estimated_arrival_date', $meta) ? $meta['estimated_arrival_date'] : null;
         $po->received_date = array_key_exists('received_date', $meta) ? $meta['received_date'] : null;
         $po->fully_on_shelves_date = array_key_exists('fully_on_shelves_date', $meta) ? $meta['fully_on_shelves_date'] : null;
         $po->shipping_total = array_key_exists('shipping_total', $meta) ? $meta['shipping_total'] : null;
@@ -328,6 +501,104 @@ final class PurchaseOrderImportService
         return CarbonImmutable::parse($candidate)->startOfDay();
     }
 
+    private function recomputePurchaseOrderDerivedTotalsAndLots(PurchaseOrder $po): ?string
+    {
+        $items = $this->purchaseOrders->itemsForPurchaseOrderId((int) $po->id);
+
+        $totalReceived = 0;
+        $productTotalCents = 0;
+        $hasCadUnitCosts = false;
+        foreach ($items as $item) {
+            $qtyReceived = (int) ($item->qty_received ?? 0);
+            if ($qtyReceived > 0) {
+                $totalReceived += $qtyReceived;
+            }
+
+            $qtyForProductTotal = $qtyReceived > 0 ? $qtyReceived : (int) ($item->qty_ordered ?? 0);
+            if ($qtyForProductTotal <= 0) {
+                continue;
+            }
+
+            $unitCostCents = $item->unit_cost !== null ? $this->moneyToCentsOrNull((string) $item->unit_cost) : null;
+            if ($unitCostCents === null) {
+                continue;
+            }
+
+            $hasCadUnitCosts = true;
+            $productTotalCents += ($unitCostCents * $qtyForProductTotal);
+        }
+
+        $shippingPerUnit = null;
+        $shippingTotal = $po->shipping_total !== null ? trim((string) $po->shipping_total) : null;
+        if ($shippingTotal !== null && $shippingTotal !== '' && $totalReceived > 0) {
+            $shippingPerUnit = $this->divideDecimal($shippingTotal, $totalReceived, 6);
+        }
+
+        // For foreign-currency imports without a known FX rate yet, unit_cost (CAD)
+        // can be null for all lines. In that case, preserve user-provided product_total
+        // instead of forcing it to 0.00.
+        if ($hasCadUnitCosts) {
+            $po->product_total = $this->centsToMoney($productTotalCents);
+        }
+        $this->purchaseOrders->save($po);
+
+        $itemIds = $items->pluck('id')->all();
+        if ($itemIds !== []) {
+            InventoryLot::query()
+                ->whereIn('purchase_order_item_id', $itemIds)
+                ->where('source_type', '=', 'po')
+                ->update([
+                    'shipping_per_unit' => $shippingPerUnit,
+                    'received_at' => $this->resolveReceivedAt(
+                        $po->received_date,
+                        $po->shipped_date,
+                        $po->ordered_date,
+                    ),
+                    'updated_at' => now(),
+                ]);
+        }
+
+        return $shippingPerUnit;
+    }
+
+    private function moneyToCentsOrNull(string $value): ?int
+    {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $clean = preg_replace('/[^0-9\.\-]/', '', $trimmed) ?? '';
+        if ($clean === '' || $clean === '-' || ! preg_match('/^-?\d+(\.\d+)?$/', $clean)) {
+            return null;
+        }
+
+        $negative = str_starts_with($clean, '-');
+        $raw = $negative ? substr($clean, 1) : $clean;
+        $parts = explode('.', $raw, 2);
+        $whole = $parts[0] === '' ? '0' : $parts[0];
+        $fraction = str_pad((string) ($parts[1] ?? ''), 3, '0');
+        $cents2 = substr($fraction, 0, 2);
+        $third = (int) substr($fraction, 2, 1);
+
+        $cents = ((int) $whole) * 100 + ((int) $cents2);
+        if ($third >= 5) {
+            $cents += 1;
+        }
+
+        return $negative ? -$cents : $cents;
+    }
+
+    private function centsToMoney(int $cents): string
+    {
+        $negative = $cents < 0;
+        $abs = abs($cents);
+        $dollars = intdiv($abs, 100);
+        $remainder = $abs % 100;
+
+        return sprintf('%s%d.%02d', $negative ? '-' : '', $dollars, $remainder);
+    }
+
     /**
      * @param  array<int, string>  $header
      * @return array<string, int>
@@ -344,9 +615,48 @@ final class PurchaseOrderImportService
                 continue;
             }
             $map[$key] = $i;
+            $this->addHeaderAliases($map, $key, $i);
         }
 
         return $map;
+    }
+
+    /**
+     * Add case/format-insensitive aliases for known column names.
+     *
+     * @param  array<string, int>  $map
+     */
+    private function addHeaderAliases(array &$map, string $key, int $index): void
+    {
+        $normalized = strtolower(trim($key));
+        $normalized = preg_replace('/\s+/u', ' ', $normalized) ?? $normalized;
+        $normalized = str_replace(['（', '）'], ['(', ')'], $normalized);
+        $compactParens = preg_replace('/\s*\(\s*/u', '(', $normalized) ?? $normalized;
+        $compactParens = preg_replace('/\s*\)\s*/u', ')', $compactParens) ?? $compactParens;
+
+        $aliases = [
+            'sku' => self::COL_SKU,
+            'qty' => self::COL_STEDI_QTY,
+            'order qty' => self::COL_STEDI_ORDER_QTY,
+            'wholesale price hkd' => self::COL_STEDI_WHOLESALE_PRICE_HKD,
+            'unit price(hk$)' => self::COL_STEDI_UNIT_PRICE_HKD,
+            'amount(hk$)' => self::COL_STEDI_AMOUNT_HKD,
+            'unit price(hkd)' => self::COL_UNIT_PRICE_HKD,
+            'amount(hkd)' => self::COL_AMOUNT_HKD,
+        ];
+
+        $aliasKey = $aliases[$compactParens] ?? null;
+        if ($aliasKey !== null && ! array_key_exists($aliasKey, $map)) {
+            $map[$aliasKey] = $index;
+        }
+
+        // Treat HKD/HK$ simple Stedi variants as equivalent so either parser path can read amounts.
+        if ($compactParens === 'unit price(hkd)' && ! array_key_exists(self::COL_STEDI_UNIT_PRICE_HKD, $map)) {
+            $map[self::COL_STEDI_UNIT_PRICE_HKD] = $index;
+        }
+        if ($compactParens === 'amount(hkd)' && ! array_key_exists(self::COL_STEDI_AMOUNT_HKD, $map)) {
+            $map[self::COL_STEDI_AMOUNT_HKD] = $index;
+        }
     }
 
     /**
@@ -354,6 +664,10 @@ final class PurchaseOrderImportService
      */
     private function detectFormat(array $map): string
     {
+        if ($this->looksLikeJsPdfHeader($map)) {
+            return 'js_pdf_text';
+        }
+
         $standardCols = [self::COL_SKU, self::COL_UNIT_COST, self::COL_QTY_ORDERED, self::COL_QTY_SHIPPED, self::COL_QTY_RECEIVED];
         $isStandard = true;
         foreach ($standardCols as $col) {
@@ -384,6 +698,54 @@ final class PurchaseOrderImportService
             return 'dspiae';
         }
 
+        $stediCols = [
+            self::COL_SKU,
+            self::COL_STEDI_WHOLESALE_PRICE_HKD,
+            self::COL_STEDI_ORDER_QTY,
+        ];
+        $isStedi = true;
+        foreach ($stediCols as $col) {
+            if (! array_key_exists($col, $map)) {
+                $isStedi = false;
+                break;
+            }
+        }
+        if ($isStedi) {
+            return 'stedi_tools';
+        }
+
+        $stediSimpleCols = [
+            self::COL_SKU,
+            self::COL_STEDI_QTY,
+            self::COL_STEDI_UNIT_PRICE_HKD,
+        ];
+        $isStediSimple = true;
+        foreach ($stediSimpleCols as $col) {
+            if (! array_key_exists($col, $map)) {
+                $isStediSimple = false;
+                break;
+            }
+        }
+        if ($isStediSimple) {
+            return 'stedi_simple';
+        }
+
+        $simpleHkdCols = [
+            self::COL_SKU,
+            self::COL_STEDI_QTY,
+            self::COL_UNIT_PRICE_HKD,
+        ];
+        $isSimpleHkd = true;
+        foreach ($simpleHkdCols as $col) {
+            if (! array_key_exists($col, $map)) {
+                $isSimpleHkd = false;
+                break;
+            }
+        }
+        if ($isSimpleHkd) {
+            return 'simple_hkd';
+        }
+
         $plamodCols = [
             self::COL_PLAMOD_ORDER_ID,
             self::COL_SKU,
@@ -403,7 +765,27 @@ final class PurchaseOrderImportService
     }
 
     /**
-     * @return array{0:array<int,string>,1:array{vendor_currency_code?:string,vendor_product_total?:string|null}}
+     * @param  array<string, int>  $map
+     */
+    private function looksLikeJsPdfHeader(array $map): bool
+    {
+        foreach (array_keys($map) as $k) {
+            $line = strtolower(trim((string) $k));
+            if ($line === '') continue;
+            if (str_contains($line, strtolower(self::COL_JS_PDF_TEXT_HEADER))) {
+                return true;
+            }
+            $line = preg_replace('/\s+/u', ' ', $line) ?? $line;
+            if ($line === 'item description quantity price per unit total') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array{0:array<int,string>,1:array{vendor_currency_code?:string,vendor_product_total?:string|null,format_vendor_currency_code?:string|null}}
      */
     private function readToHeaderAndPreambleMeta($fh, array &$encodingIssues): array
     {
@@ -417,11 +799,18 @@ final class PurchaseOrderImportService
                 continue;
             }
 
+            if ($this->looksLikeJsHeaderRow($row)) {
+                return [$row, $meta];
+            }
+
             $maybeHeader = $this->headerMap($row);
             $looksHeader = array_key_exists(self::COL_SKU, $maybeHeader)
                 && (
                     array_key_exists(self::COL_UNIT_COST, $maybeHeader)
                     || array_key_exists(self::COL_DSPIAE_WHOLESALE_PRICE, $maybeHeader)
+                    || array_key_exists(self::COL_STEDI_WHOLESALE_PRICE_HKD, $maybeHeader)
+                    || array_key_exists(self::COL_STEDI_UNIT_PRICE_HKD, $maybeHeader)
+                    || array_key_exists(self::COL_UNIT_PRICE_HKD, $maybeHeader)
                     || array_key_exists(self::COL_PLAMOD_UNIT_PRICE, $maybeHeader)
                 );
 
@@ -442,6 +831,114 @@ final class PurchaseOrderImportService
         }
 
         throw new PurchaseOrderImportException('Could not find a valid CSV header row.');
+    }
+
+    /**
+     * @param  array<int, string>  $row
+     */
+    private function looksLikeJsHeaderRow(array $row): bool
+    {
+        $joined = trim(implode(' ', array_map(static fn ($x): string => trim((string) $x), $row)));
+        if ($joined === '') return false;
+        $joined = preg_replace('/\s+/u', ' ', $joined) ?? $joined;
+
+        return strtolower($joined) === strtolower(self::COL_JS_PDF_TEXT_HEADER);
+    }
+
+    /**
+     * @param  resource  $fh
+     * @param  array<int, array{kind:string,row:int,col:int}>  $encodingIssues
+     * @return array<int, array{
+     *   row:int,
+     *   sku:string,
+     *   unit_cost:string|null,
+     *   qty_ordered:int|null,
+     *   qty_shipped:int|null,
+     *   qty_received:int|null,
+     *   product_name:string|null,
+     *   barcode:string|null,
+     *   vendor_line_total?:string|null
+     * }>
+     */
+    private function parseJsPdfTextRows($fh, int &$rowNumber, array &$encodingIssues): array
+    {
+        $rows = [];
+        $descBuffer = [];
+
+        while (($data = fgetcsv($fh)) !== false) {
+            $rowNumber++;
+            $data = $this->sanitizeCsvRow($data, $rowNumber, $encodingIssues);
+            $line = trim(implode(' ', array_map(static fn ($x): string => trim((string) $x), $data)));
+            $line = preg_replace('/\s+/u', ' ', $line) ?? $line;
+            if ($line === '') {
+                continue;
+            }
+
+            if (preg_match('/^(\d+)\s+([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)$/', $line, $m) === 1) {
+                if ($descBuffer === []) {
+                    continue;
+                }
+                $description = trim(implode(' ', $descBuffer));
+                $descBuffer = [];
+                $rows[] = $this->buildJsRow($rowNumber, $description, (int) $m[1], $m[2]);
+                continue;
+            }
+
+            if (preg_match('/^(.*\S)\s+(\d+)\s+([0-9]+(?:\.[0-9]+)?)\s+([0-9]+(?:\.[0-9]+)?)$/', $line, $m) === 1) {
+                $description = trim((string) $m[1]);
+                if ($descBuffer !== []) {
+                    $description = trim(implode(' ', $descBuffer).' '.$description);
+                    $descBuffer = [];
+                }
+                $rows[] = $this->buildJsRow($rowNumber, $description, (int) $m[2], $m[3]);
+                continue;
+            }
+
+            $descBuffer[] = $line;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return array{
+     *   row:int,
+     *   sku:string,
+     *   unit_cost:string|null,
+     *   qty_ordered:int|null,
+     *   qty_shipped:int|null,
+     *   qty_received:int|null,
+     *   product_name:string|null,
+     *   barcode:string|null,
+     *   vendor_line_total?:string|null
+     * }
+     */
+    private function buildJsRow(int $rowNumber, string $description, int $qty, string $unitCost): array
+    {
+        $description = trim(preg_replace('/\s+/u', ' ', $description) ?? $description);
+
+        return [
+            'row' => $rowNumber,
+            'sku' => $this->jsSkuForDescription($description),
+            'product_name' => $description !== '' ? $description : null,
+            'barcode' => null,
+            'unit_cost' => trim($unitCost),
+            'qty_ordered' => max(0, $qty),
+            'qty_shipped' => null,
+            'qty_received' => null,
+            'vendor_line_total' => null,
+        ];
+    }
+
+    private function jsSkuForDescription(string $description): string
+    {
+        $norm = mb_strtolower(trim($description));
+        $compact = preg_replace('/[^a-z0-9]+/u', '', $norm) ?? '';
+        $compact = strtoupper(substr($compact, 0, 16));
+        if ($compact === '') $compact = 'ITEM';
+        $hash = strtoupper(substr(hash('crc32b', $norm !== '' ? $norm : $description), 0, 8));
+
+        return "JS-{$compact}-{$hash}";
     }
 
     /**
@@ -544,6 +1041,70 @@ final class PurchaseOrderImportService
         }
 
         return null;
+    }
+
+    /**
+     * @param  array{vendor_currency_code?:string,vendor_product_total?:string|null,format_vendor_currency_code?:string|null}  $preambleMeta
+     * @return array{vendor_currency_code?:string,vendor_product_total?:string|null,format_vendor_currency_code?:string|null}
+     */
+    private function mergeFormatCurrencyFallback(array $preambleMeta, string $format): array
+    {
+        if (array_key_exists('vendor_currency_code', $preambleMeta) && trim((string) ($preambleMeta['vendor_currency_code'] ?? '')) !== '') {
+            return $preambleMeta;
+        }
+
+        if (in_array($format, ['dspiae', 'stedi_tools', 'stedi_simple', 'simple_hkd'], true)) {
+            $preambleMeta['vendor_currency_code'] = 'HKD';
+            $preambleMeta['format_vendor_currency_code'] = 'HKD';
+        }
+
+        return $preambleMeta;
+    }
+
+    /**
+     * @param  array<int, array{
+     *   row:int,
+     *   sku:string,
+     *   unit_cost:string|null,
+     *   qty_ordered:int|null,
+     *   qty_shipped:int|null,
+     *   qty_received:int|null,
+     *   product_name:string|null,
+     *   barcode:string|null,
+     *   vendor_line_total?:string|null
+     * }>  $rows
+     */
+    private function deriveVendorProductTotalFromRows(array $rows): ?string
+    {
+        $sum = 0.0;
+        $hasAny = false;
+
+        foreach ($rows as $r) {
+            $lineTotalRaw = array_key_exists('vendor_line_total', $r) ? $r['vendor_line_total'] : null;
+            if (is_string($lineTotalRaw) && trim($lineTotalRaw) !== '' && is_numeric($lineTotalRaw)) {
+                $sum += (float) $lineTotalRaw;
+                $hasAny = true;
+                continue;
+            }
+
+            $unit = $r['unit_cost'] ?? null;
+            $qty = $r['qty_ordered'] ?? null;
+            if (! is_string($unit) || trim($unit) === '' || ! is_numeric($unit)) {
+                continue;
+            }
+            if (! is_int($qty) || $qty <= 0) {
+                continue;
+            }
+
+            $sum += ((float) $unit) * $qty;
+            $hasAny = true;
+        }
+
+        if (! $hasAny) {
+            return null;
+        }
+
+        return number_format($sum, 2, '.', '');
     }
 
     private function deriveFxRateToCad(?string $productTotalCad, ?string $vendorProductTotal, string $vendorCurrencyCode): ?string
@@ -726,7 +1287,8 @@ final class PurchaseOrderImportService
      *   qty_shipped:int|null,
      *   qty_received:int|null,
      *   product_name:string|null,
-     *   barcode:string|null
+     *   barcode:string|null,
+     *   vendor_line_total?:string|null
      * }>  $rows
      * @return array<string, Product>
      */

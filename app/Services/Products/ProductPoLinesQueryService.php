@@ -21,6 +21,8 @@ final class ProductPoLinesQueryService
      *   ordered_date:string|null,
      *   shipped_date:string|null,
      *   received_date:string|null,
+     *   qty_shipped:int|null,
+     *   qty_received:int|null,
      *   unit_cost:string|null,
      *   ship_per_unit:string,
      *   surcharge_per_unit:string,
@@ -37,6 +39,13 @@ final class ProductPoLinesQueryService
         $rows = DB::table('purchase_order_items as poi')
             ->join('purchase_orders as po', 'po.id', '=', 'poi.purchase_order_id')
             ->where('poi.sku', '=', $sku)
+            // Sort rule for PO Lines:
+            // 1) Not arrived first (received_date is null), sorted by estimated_arrival_date desc.
+            // 2) Arrived next, sorted by received_date desc.
+            // 3) Stable fallback by creation/id.
+            ->orderByRaw('CASE WHEN po.received_date IS NULL THEN 0 ELSE 1 END ASC')
+            ->orderByRaw('CASE WHEN po.received_date IS NULL THEN po.estimated_arrival_date END DESC')
+            ->orderByRaw('CASE WHEN po.received_date IS NOT NULL THEN po.received_date END DESC')
             ->orderByDesc('po.created_at')
             ->orderByDesc('po.id')
             ->orderByDesc('poi.id')
@@ -50,6 +59,8 @@ final class ProductPoLinesQueryService
                 'po.received_date as received_date',
                 'po.shipping_total as shipping_total',
                 'po.surcharge_total as surcharge_total',
+                'poi.qty_shipped as qty_shipped',
+                'poi.qty_received as qty_received',
                 'poi.unit_cost as unit_cost',
             ]);
 
@@ -66,7 +77,11 @@ final class ProductPoLinesQueryService
 
             $sumReceived = $alloc[$poId]['sum_received'] ?? 0;
             $sumOrdered = $alloc[$poId]['sum_ordered'] ?? 0;
-            $units = $receivedDate !== null && $receivedDate !== '' ? $sumReceived : $sumOrdered;
+            // Align with PO detail page behavior:
+            // only switch to received-based allocation when there is at least one received unit.
+            $units = ($receivedDate !== null && $receivedDate !== '' && $sumReceived > 0)
+                ? $sumReceived
+                : $sumOrdered;
 
             $unitCents = $this->moneyToCentsOrNull($r->unit_cost);
             $shipPerUnit = $this->perUnitOrZero($r->shipping_total, $units);
@@ -87,6 +102,8 @@ final class ProductPoLinesQueryService
                 'ordered_date' => $r->ordered_date !== null ? (string) $r->ordered_date : null,
                 'shipped_date' => $r->shipped_date !== null ? (string) $r->shipped_date : null,
                 'received_date' => $r->received_date !== null ? (string) $r->received_date : null,
+                'qty_shipped' => $r->qty_shipped !== null ? (int) $r->qty_shipped : null,
+                'qty_received' => $r->qty_received !== null ? (int) $r->qty_received : null,
                 'unit_cost' => $unitCost,
                 'ship_per_unit' => $shipPerUnit,
                 'surcharge_per_unit' => $surchargePerUnit,

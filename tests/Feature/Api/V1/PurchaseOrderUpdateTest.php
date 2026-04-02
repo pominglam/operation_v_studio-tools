@@ -49,14 +49,18 @@ it('updates purchase order header and recomputes related po lots shipping_per_un
         'shipping_total' => 100,
         'surcharge_total' => 12.34,
         'product_total' => 250.5,
+        'estimated_arrival_date' => '2025-12-08',
         'received_date' => '2025-12-10',
+        'is_done' => true,
         'notes' => 'Updated',
     ])->assertOk()
         ->assertJsonPath('data.id', $po->uuid)
         ->assertJsonPath('data.shipping_total', '100.00')
         ->assertJsonPath('data.surcharge_total', '12.34')
         ->assertJsonPath('data.product_total', '250.50')
+        ->assertJsonPath('data.estimated_arrival_date', '2025-12-08')
         ->assertJsonPath('data.received_date', '2025-12-10')
+        ->assertJsonPath('data.is_done', true)
         ->assertJsonPath('data.notes', 'Updated');
 
     $lot->refresh();

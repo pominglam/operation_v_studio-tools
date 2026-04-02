@@ -25,6 +25,9 @@ final class InventoryCheckResource extends JsonResource
             'source' => $check->source,
             'notes' => $check->notes,
             'uploaded_file_path' => $check->uploaded_file_path,
+            'workflow_state' => $check->workflow_state,
+            'created_by_role' => $check->created_by_role,
+            'applied_at' => optional($check->applied_at)->toISOString(),
             'counts' => [
                 'items' => (int) ($check->items_count ?? 0),
                 'matched' => (int) ($check->matched_count ?? 0),

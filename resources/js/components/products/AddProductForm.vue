@@ -6,9 +6,11 @@ export type CreateProductPayload = {
     barcode: string | null;
     description: string;
     handle: string | null;
+    main_type: string | null;
     type: string | null;
     vendor: string | null;
     available: number | null;
+    maintain: number | null;
     extended: string | null;
 };
 
@@ -26,9 +28,11 @@ const form = ref<CreateProductPayload>({
     barcode: null,
     description: '',
     handle: null,
+    main_type: 'model kit',
     type: null,
     vendor: 'Plamod',
     available: null,
+    maintain: null,
     extended: null,
 });
 
@@ -59,9 +63,11 @@ async function submit(): Promise<void> {
         barcode: form.value.barcode?.trim() || null,
         description: form.value.description.trim(),
         handle: form.value.handle?.trim() || null,
+        main_type: form.value.main_type?.trim() || null,
         type: form.value.type?.trim() || null,
         vendor: form.value.vendor?.trim() || null,
         available: form.value.available,
+        maintain: form.value.maintain,
         extended: form.value.extended?.trim() || null,
     });
 
@@ -70,9 +76,11 @@ async function submit(): Promise<void> {
         barcode: null,
         description: '',
         handle: null,
+        main_type: 'model kit',
         type: null,
         vendor: 'Plamod',
         available: null,
+        maintain: null,
         extended: null,
     };
 }
@@ -148,6 +156,17 @@ async function submit(): Promise<void> {
             </div>
             <div class="md:col-span-3">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                    >Main type</label
+                >
+                <input
+                    v-model="form.main_type"
+                    class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    type="text"
+                    placeholder="model kit"
+                />
+            </div>
+            <div class="md:col-span-3">
+                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                     >Type</label
                 >
                 <input
@@ -173,6 +192,17 @@ async function submit(): Promise<void> {
                 >
                 <input
                     v-model.number="form.available"
+                    class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    type="number"
+                    min="0"
+                />
+            </div>
+            <div class="md:col-span-2">
+                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                    >Maintain qty</label
+                >
+                <input
+                    v-model.number="form.maintain"
                     class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                     type="number"
                     min="0"

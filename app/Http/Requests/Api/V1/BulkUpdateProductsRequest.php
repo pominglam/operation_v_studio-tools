@@ -22,15 +22,20 @@ final class BulkUpdateProductsRequest extends FormRequest
             'changes.barcode' => ['sometimes', 'nullable', 'string', 'max:64'],
             'changes.description' => ['sometimes', 'required', 'string', 'max:512'],
             'changes.handle' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'changes.main_type' => ['sometimes', 'nullable', 'string', 'max:64'],
             'changes.type' => ['sometimes', 'nullable', 'string', 'max:128'],
+            'changes.grade' => ['sometimes', 'nullable', 'string', 'max:128'],
+            'changes.scale' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'changes.series' => ['sometimes', 'nullable', 'string', 'max:255'],
             'changes.vendor' => ['sometimes', 'nullable', 'string', 'max:128'],
             'changes.published_on_shopify' => ['sometimes', 'required', 'boolean'],
+            'changes.latest_arrival' => ['sometimes', 'required', 'boolean'],
+            'changes.archived' => ['sometimes', 'required', 'boolean'],
             'changes.order' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'changes.filled' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'changes.available' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'changes.maintain' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'changes.extended' => ['sometimes', 'nullable', 'numeric'],
         ];
     }
 }
-
-
-

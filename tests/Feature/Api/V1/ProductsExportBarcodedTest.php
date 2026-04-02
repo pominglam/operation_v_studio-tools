@@ -75,6 +75,7 @@ it('exports barcoded products sorted by vendor then type then sku with available
         'Handle',
         'Vendor',
         'SKU',
+        'Barcode',
         'Type',
         'Product Name',
         'English name',
@@ -97,9 +98,7 @@ it('exports barcoded products sorted by vendor then type then sku with available
     // Sorted by vendor then type then sku:
     // MSMN HG A-001, MSMN HG A-010, Plamod MG B-002
     expect($rows)->toHaveCount(3);
-    expect($rows[0])->toBe(['', 'MSMN', 'A-001', 'HG', 'Prod A1', '', '', '', '', '', '']);
-    expect($rows[1])->toBe(['', 'MSMN', 'A-010', 'HG', 'Prod A10', '', '2', '9.50', '', '', '']);
-    expect($rows[2])->toBe(['', 'Plamod', 'B-002', 'MG', 'Prod B2', '', '5', '19.99', '', '', '']);
+    expect($rows[0])->toBe(['', 'MSMN', 'A-001', '333', 'HG', 'Prod A1', '', '', '', '', '', '']);
+    expect($rows[1])->toBe(['', 'MSMN', 'A-010', '111', 'HG', 'Prod A10', '', '2', '9.50', '', '', '']);
+    expect($rows[2])->toBe(['', 'Plamod', 'B-002', '222', 'MG', 'Prod B2', '', '5', '19.99', '', '', '']);
 });
-
-

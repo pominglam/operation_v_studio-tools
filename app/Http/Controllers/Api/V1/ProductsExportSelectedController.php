@@ -40,20 +40,24 @@ final class ProductsExportSelectedController extends Controller
             }
 
             $exportedCount = 0;
+            $includeMissingSellingPrice = (bool) $request->validated('include_missing_selling_price', false);
 
-            if ($exportType === 'shopify') {
+            if ($exportType === 'shopify' || $exportType === 'shopify_no_inventory') {
                 $usedHandles = [];
                 $products = $this->exports->listSelectedForShopifyExport($uuids, $sortBy, $sortDir);
-                fputcsv($tmp, $this->exports->shopifyHeader());
+                $isNoInventory = $exportType === 'shopify_no_inventory';
+                fputcsv($tmp, $isNoInventory ? $this->exports->shopifyHeaderNoInventory() : $this->exports->shopifyHeader());
 
                 foreach ($products as $product) {
                     $selling = $product->sellingPrice?->selling_price;
                     $hasSellingPrice = $selling !== null && trim((string) $selling) !== '';
-                    if (! $hasSellingPrice) {
+                    if (! $hasSellingPrice && ! $includeMissingSellingPrice) {
                         continue;
                     }
                     $handle = $this->exports->shopifyHandleForProduct($product, $usedHandles);
-                    fputcsv($tmp, $this->exports->shopifyRow($product, $handle));
+                    fputcsv($tmp, $isNoInventory
+                        ? $this->exports->shopifyRowNoInventory($product, $handle)
+                        : $this->exports->shopifyRow($product, $handle));
                     $exportedCount++;
                 }
             } elseif ($exportType === 'missing_barcode') {
@@ -70,6 +74,7 @@ final class ProductsExportSelectedController extends Controller
                     'Handle',
                     'Vendor',
                     'SKU',
+                    'Barcode',
                     'Type',
                     'Product Name',
                     'English name',
@@ -87,6 +92,7 @@ final class ProductsExportSelectedController extends Controller
                         (string) ($p->handle ?? ''),
                         (string) ($p->vendor ?? ''),
                         (string) $p->sku,
+                        (string) ($p->barcode ?? ''),
                         (string) ($p->type ?? ''),
                         (string) $p->description,
                         '',
@@ -123,4 +129,3 @@ final class ProductsExportSelectedController extends Controller
         }
     }
 }
-

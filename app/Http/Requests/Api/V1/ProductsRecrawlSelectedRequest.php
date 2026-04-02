@@ -15,12 +15,12 @@ final class ProductsRecrawlSelectedRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'ids' => ['required', 'array', 'min:1', 'max:1000'],
+            'ids' => ['required', 'array', 'min:1', 'max:5000'],
             'ids.*' => ['string', 'uuid'],
             'sources' => ['required', 'array', 'min:1'],
             'sources.*' => [
                 'string',
-                Rule::in(['bandai', 'hlj', 'gundamplanet', 'newtype', 'plamod', 'competitor_price_research']),
+                Rule::in(['bandai', 'hlj', 'gundamplanet', 'newtype', 'gundamhangar', 'plamod', 'competitor_price_research']),
             ],
         ];
     }

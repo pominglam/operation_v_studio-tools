@@ -16,8 +16,11 @@ final class ProductPreferredDescriptionSourceController extends Controller
         $source = $request->validated('preferred_description_source');
         $source = is_string($source) ? trim($source) : null;
         $source = $source !== '' ? $source : null;
+        $manualDescriptionHtml = $request->validated('manual_description_html');
+        $manualDescriptionHtml = is_string($manualDescriptionHtml) ? trim($manualDescriptionHtml) : null;
+        $manualDescriptionHtml = $manualDescriptionHtml !== '' ? $manualDescriptionHtml : null;
 
-        $product = $service->setForProduct($id, $source);
+        $product = $service->setForProduct($id, $source, $manualDescriptionHtml);
 
         return response()->json([
             'ok' => true,

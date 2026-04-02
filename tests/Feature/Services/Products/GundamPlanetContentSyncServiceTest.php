@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\Products\GundamPlanet\GundamPlanetContentSyncService;
 use App\Services\Products\GundamPlanet\GundamPlanetHtmlParser;
+use App\Services\Products\ProductPdpSearchTermsService;
 use App\Services\Products\Hlj\HljPdpResolverService;
 use App\Services\Products\Hlj\HljHtmlParser;
 use Illuminate\Support\Facades\Http;
@@ -72,6 +73,8 @@ it('syncs gundamplanet images strictly from <product-gallery> and replaces asset
         public function listAllForProduct(int $productId): array { return []; }
         public function updateSortOrders(array $assetIdToSortOrder): void { }
         public function findById(int $id): ?\App\Models\ProductExternalAsset { return null; }
+        public function setShopifyEnabled(int $id, bool $enabled): void { }
+        public function createForProduct(int $productId, string $source, array $assets): array { return []; }
     };
 
     $product = new Product();
@@ -83,7 +86,8 @@ it('syncs gundamplanet images strictly from <product-gallery> and replaces asset
 
     $http = new ExternalHtmlClient();
     $hlj = new HljPdpResolverService($http, new HljHtmlParser());
-    $service = new GundamPlanetContentSyncService($http, new GundamPlanetHtmlParser(), $assetsRepo, $hlj);
+    $terms = new ProductPdpSearchTermsService($hlj);
+    $service = new GundamPlanetContentSyncService($http, new GundamPlanetHtmlParser(), $assetsRepo, $terms);
 
     $service->syncForProduct($product);
 

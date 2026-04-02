@@ -14,10 +14,6 @@ it('can sync Bandai PDP for a product by dropping model-code tokens from the sea
         'vendor' => 'Plamod',
     ]);
 
-    $expectedQuery = 'MG GUNDAM ASTRAY TURN RED';
-
-    $searchUrl = 'https://global.bandai-hobby.net/en-us/search/?title='.urlencode($expectedQuery).'&all=on';
-
     $pdpUrl = 'https://global.bandai-hobby.net/en-us/item/00_0000/';
     $cmsApiBase = 'https://cmsapi-global-frontend.bandai-hobby.net/site/api/hobby/Product/list';
     $imageUrl = 'https://global.bandai-hobby.net/images/test-bandai.jpg';
@@ -38,12 +34,13 @@ it('can sync Bandai PDP for a product by dropping model-code tokens from the sea
 </html>
 HTML;
 
-    Http::fake(function (Illuminate\Http\Client\Request $req) use ($searchUrl, $cmsApiBase, $pdpUrl, $pdpHtml, $imageUrl) {
+    Http::fake(function (Illuminate\Http\Client\Request $req) use ($cmsApiBase, $pdpUrl, $pdpHtml, $imageUrl) {
         $url = (string) $req->url();
 
         // Ensure we never hit Bandai search with MBF-02VV (it should be removed).
         if (str_starts_with($url, 'https://global.bandai-hobby.net/en-us/search/?')) {
-            expect($url)->toBe($searchUrl);
+            expect($url)->not->toContain('MBF-02VV');
+            expect($url)->not->toContain('1%2F100');
             return Http::response('<html><body>token=deadbeefdeadbeefdeadbeefdeadbeef</body></html>', 200);
         }
 

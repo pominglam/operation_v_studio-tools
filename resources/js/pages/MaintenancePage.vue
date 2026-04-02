@@ -686,17 +686,30 @@ async function createDbBackup(): Promise<void> {
         const res = await api.post(
             '/api/v1/maintenance/db-backups',
             { description: dbBackupDescription.value },
-            { validateStatus: () => true },
+            { validateStatus: () => true, timeout: 0 },
         );
         if (res.status !== 201) {
-            dbBackupError.value = 'Failed to create database backup.';
+            const anyData = res.data as any;
+            const msgRaw: unknown = anyData?.message ?? anyData?.error ?? anyData?.errors;
+            let details = '';
+            if (typeof msgRaw === 'string') details = msgRaw.trim();
+            else if (msgRaw !== null && msgRaw !== undefined) {
+                try {
+                    details = JSON.stringify(msgRaw);
+                } catch {
+                    details = String(msgRaw);
+                }
+            }
+            dbBackupError.value = `Failed to create DB + images backup (HTTP ${res.status}).${details ? ` ${details}` : ''}`;
             return;
         }
-        dbBackupMessage.value = 'Backup created.';
+        dbBackupMessage.value = 'Backup created (DB + images).';
         dbBackupDescription.value = '';
         await loadDbBackups();
-    } catch {
-        dbBackupError.value = 'Failed to create database backup.';
+    } catch (e: unknown) {
+        const anyErr = e as any;
+        const msg = typeof anyErr?.message === 'string' ? anyErr.message.trim() : '';
+        dbBackupError.value = msg !== '' ? `Failed to create DB + images backup. ${msg}` : 'Failed to create DB + images backup.';
     } finally {
         creatingDbBackup.value = false;
     }
@@ -710,16 +723,27 @@ async function restoreDb(): Promise<void> {
         const res = await api.post(
             '/api/v1/maintenance/db-backups/restore',
             { backup_uuid: selectedRestoreUuid.value },
-            { validateStatus: () => true },
+            { validateStatus: () => true, timeout: 0 },
         );
         if (res.status !== 200) {
-            dbRestoreError.value = res.data?.message ?? 'Failed to restore database.';
+            const anyData = res.data as any;
+            const msgRaw: unknown = anyData?.message ?? anyData?.error ?? anyData?.errors;
+            let details = '';
+            if (typeof msgRaw === 'string') details = msgRaw.trim();
+            else if (msgRaw !== null && msgRaw !== undefined) {
+                try {
+                    details = JSON.stringify(msgRaw);
+                } catch {
+                    details = String(msgRaw);
+                }
+            }
+            dbRestoreError.value = `Failed to restore DB + images (HTTP ${res.status}).${details ? ` ${details}` : ''}`;
             return;
         }
-        dbRestoreMessage.value = 'Restore started/completed. Refresh the page if things look stale.';
+        dbRestoreMessage.value = 'Restore started/completed (DB + images). Refresh the page if things look stale.';
         confirm.value = null;
     } catch {
-        dbRestoreError.value = 'Failed to restore database.';
+        dbRestoreError.value = 'Failed to restore DB + images.';
     } finally {
         restoringDb.value = false;
     }
@@ -992,7 +1016,7 @@ watch(
                             :disabled="creatingDbBackup"
                             @click="createDbBackup"
                         >
-                            {{ creatingDbBackup ? 'Creating…' : 'Backup DB' }}
+                            {{ creatingDbBackup ? 'Creating…' : 'Backup DB + images' }}
                         </button>
                     </div>
                     <div
@@ -1036,7 +1060,7 @@ watch(
                             :disabled="restoringDb || !selectedRestoreUuid"
                             @click="requestRestoreDb"
                         >
-                            {{ restoringDb ? 'Restoring…' : 'Restore DB' }}
+                            {{ restoringDb ? 'Restoring…' : 'Restore DB + images' }}
                         </button>
                     </div>
                     <div

@@ -18,8 +18,12 @@ final class ProductFilterOptionsController extends Controller
     {
         return response()->json([
             'data' => [
+                'main_types' => $this->products->distinctMainTypes(),
                 'types' => $this->products->distinctTypes(),
                 'vendors' => $this->products->distinctVendors(),
+                'grades' => $this->products->distinctGrades(),
+                'scales' => $this->products->distinctScales(),
+                'series' => $this->products->distinctSeries(),
             ],
         ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }

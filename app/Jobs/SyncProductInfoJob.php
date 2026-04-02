@@ -7,6 +7,7 @@ namespace App\Jobs;
 use App\DAL\Products\ProductRepository;
 use App\Services\Jobs\JobBatchItemService;
 use App\Services\Products\Bandai\BandaiContentSyncService;
+use App\Services\Products\GundamHangar\GundamHangarContentSyncService;
 use App\Services\Products\GundamPlanet\GundamPlanetContentSyncService;
 use App\Services\Products\Hlj\HljContentSync;
 use App\Services\Products\Newtype\NewtypeContentSyncService;
@@ -51,6 +52,7 @@ final class SyncProductInfoJob implements ShouldQueue
         BandaiContentSyncService $bandai,
         GundamPlanetContentSyncService $gundamplanet,
         NewtypeContentSyncService $newtype,
+        GundamHangarContentSyncService $gundamhangar,
         JobBatchItemService $batchItems,
     ): void {
         $batchId = $this->batch()?->id;
@@ -94,6 +96,13 @@ final class SyncProductInfoJob implements ShouldQueue
                         $batchItems->appendDebugLog($batchId, $this->productUuid, '[newtype][error] message='.$e->getMessage());
                     }
                 }
+                try {
+                    $gundamhangar->syncForProduct($product, $this->syncUuid, $trace);
+                } catch (\Throwable $e) {
+                    if (is_string($batchId) && $batchId !== '') {
+                        $batchItems->appendDebugLog($batchId, $this->productUuid, '[gundamhangar][error] message='.$e->getMessage());
+                    }
+                }
                 $didWork = true;
             }
 
@@ -118,6 +127,13 @@ final class SyncProductInfoJob implements ShouldQueue
                 } catch (\Throwable $e) {
                     if (is_string($batchId) && $batchId !== '') {
                         $batchItems->appendDebugLog($batchId, $this->productUuid, '[newtype][error] message='.$e->getMessage());
+                    }
+                }
+                try {
+                    $gundamhangar->syncForProduct($product, $this->syncUuid, $trace);
+                } catch (\Throwable $e) {
+                    if (is_string($batchId) && $batchId !== '') {
+                        $batchItems->appendDebugLog($batchId, $this->productUuid, '[gundamhangar][error] message='.$e->getMessage());
                     }
                 }
             }

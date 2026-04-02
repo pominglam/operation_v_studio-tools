@@ -85,6 +85,38 @@ it('filters products by missing flags', function (): void {
         'checksum_sha256' => null,
     ]);
 
+    // Images from non-plamod sources should still count as PDP images.
+    $p4 = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000060004',
+        'sku' => 'HAVE-OTHER-IMAGE-1',
+        'barcode' => '998',
+        'description' => 'Has image from other source',
+        'handle' => 'have-other-image-1',
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $p4->id,
+        'product_uuid' => $p4->uuid,
+        'selling_price' => '10.00',
+        'currency' => 'CAD',
+    ]);
+    ProductExternalContent::query()->create([
+        'product_id' => $p4->id,
+        'source' => 'hlj',
+        'title' => 'HLJ',
+        'description_html' => '<p>desc</p>',
+        'attributes_json' => [],
+    ]);
+    ProductExternalAsset::query()->create([
+        'product_id' => $p4->id,
+        'source' => 'hlj',
+        'kind' => 'image',
+        'storage_path' => 'hlj/extracted/a.png',
+        'filename' => 'a.png',
+        'mime_type' => 'image/png',
+        'size_bytes' => 1,
+        'checksum_sha256' => null,
+    ]);
+
     $this->getJson('/api/v1/products?per_page=100&missing[]=barcode')
         ->assertOk()
         ->assertJsonPath('data.0.sku', 'MISS-1')
@@ -109,7 +141,8 @@ it('filters products by missing flags', function (): void {
     $this->getJson('/api/v1/products?per_page=100&missing[]=pdp_images')
         ->assertOk()
         ->assertJsonPath('data.0.sku', 'MISS-1')
-        ->assertJsonMissing(['sku' => 'HAVE-1']);
+        ->assertJsonMissing(['sku' => 'HAVE-1'])
+        ->assertJsonMissing(['sku' => 'HAVE-OTHER-IMAGE-1']);
 
     $this->getJson('/api/v1/products?per_page=100&missing[]=ok')
         ->assertOk()

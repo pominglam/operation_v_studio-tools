@@ -18,7 +18,13 @@ final class ProductPreferredDescriptionSourceRequest extends FormRequest
             'preferred_description_source' => [
                 'nullable',
                 'string',
-                Rule::in(['bandai', 'hlj', 'plamod', 'gundamplanet', 'newtype', 'other']),
+                Rule::in(['bandai', 'hlj', 'plamod', 'gundamplanet', 'newtype', 'gundamhangar', 'other']),
+            ],
+            'manual_description_html' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'max:65535',
             ],
         ];
     }

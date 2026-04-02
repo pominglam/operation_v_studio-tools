@@ -14,7 +14,7 @@ final class DatabaseBackupCommand extends Command
         {--description= : Description for this backup (shown in Maintenance UI)}
         {--created-by=manual : created_by for this backup (manual|system|cursor)}';
 
-    protected $description = 'Create a database backup (schema + data) into storage/backups.';
+    protected $description = 'Create a database + images backup bundle into storage/backups.';
 
     public function handle(\App\Services\Maintenance\DatabaseBackupManagerService $service): int
     {
@@ -22,7 +22,7 @@ final class DatabaseBackupCommand extends Command
         $description = (string) ($this->option('description') ?? '');
         $createdBy = (string) ($this->option('created-by') ?? 'manual');
 
-        $this->warn('This will create a database backup (schema + data) into storage/backups.');
+        $this->warn('This will create a database + images backup bundle into storage/backups.');
 
         if (! $yes && ! $this->confirm('Proceed?', false)) {
             $this->info('Cancelled.');

@@ -27,6 +27,7 @@ pnpm-debug.log*
 /storage/framework/sessions
 /storage/framework/testing
 /storage/framework/views
+/storage/backups
 /vendor
 /coverage
 /coverage-clover.xml

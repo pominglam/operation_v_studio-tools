@@ -38,8 +38,22 @@ final class ProductsController extends Controller
         /** @var string|null $purchaseOrderUuid */
         $purchaseOrderUuid = $request->validated('purchase_order_uuid');
 
+        /** @var array<int, string> $purchaseOrderUuids */
+        $purchaseOrderUuids = $request->validated('purchase_order_uuids') ?? [];
+        $purchaseOrderUuids = array_values(array_unique(array_filter(array_map('trim', $purchaseOrderUuids), static fn (string $v): bool => $v !== '')));
+        $single = is_string($purchaseOrderUuid) ? trim($purchaseOrderUuid) : '';
+        if ($single !== '') {
+            $purchaseOrderUuids[] = $single;
+            $purchaseOrderUuids = array_values(array_unique($purchaseOrderUuids));
+        }
+        /** @var string|null $poProductNovelty */
+        $poProductNovelty = $request->validated('po_product_novelty');
+
         /** @var array<int, string> $types */
         $types = $request->validated('types') ?? [];
+
+        /** @var array<int, string> $mainTypes */
+        $mainTypes = $request->validated('main_types') ?? [];
 
         /** @var array<int, string> $vendors */
         $vendors = $request->validated('vendors') ?? [];
@@ -47,14 +61,45 @@ final class ProductsController extends Controller
         /** @var array<int, string> $missing */
         $missing = $request->validated('missing') ?? [];
 
+        /** @var string|null $ready */
+        $ready = $request->validated('ready');
+
+        $availableFilter = $request->validated('available');
+        $availableFilter = is_numeric($availableFilter) ? (int) $availableFilter : null;
+        $notArrivedFilter = $request->validated('not_arrived');
+        $notArrivedFilter = is_numeric($notArrivedFilter) ? (int) $notArrivedFilter : null;
+        $reorderFilter = $request->validated('reorder');
+        $reorderFilter = is_numeric($reorderFilter) ? (int) $reorderFilter : null;
+        $reorderGtOne = (bool) ($request->validated('reorder_gt_one') ?? false);
+
         /** @var string|null $sortBy */
         $sortBy = $request->validated('sort_by');
 
         /** @var string $sortDir */
         $sortDir = $request->validated('sort_dir') ?? 'asc';
 
+        $includeArchived = (bool) ($request->validated('include_archived') ?? false);
+
         return ProductResource::collection(
-            $this->products->paginate($perPage, $search, $types, $vendors, $missing, $sortBy, $sortDir, $purchaseOrderUuid, $searchTerms),
+            $this->products->paginate(
+                $perPage,
+                $search,
+                $mainTypes,
+                $types,
+                $vendors,
+                $missing,
+                $sortBy,
+                $sortDir,
+                $purchaseOrderUuids,
+                $searchTerms,
+                $includeArchived,
+                $poProductNovelty,
+                $ready,
+                $availableFilter,
+                $notArrivedFilter,
+                $reorderFilter,
+                $reorderGtOne,
+            ),
         );
     }
 

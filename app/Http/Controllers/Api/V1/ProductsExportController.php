@@ -6,8 +6,8 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\ProductsExportRequest;
-use App\Models\Product;
 use App\Services\Products\ProductExportService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Response;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -18,7 +18,7 @@ final class ProductsExportController extends Controller
         private readonly ProductExportService $exports,
     ) {}
 
-    public function __invoke(ProductsExportRequest $request): StreamedResponse
+    public function __invoke(ProductsExportRequest $request): StreamedResponse|JsonResponse
     {
         /** @var string $format */
         $format = $request->validated('format');
@@ -34,8 +34,9 @@ final class ProductsExportController extends Controller
         try {
             $exportedCount = 0;
 
-            if ($format === 'shopify') {
+            if ($format === 'shopify' || $format === 'shopify_no_inventory') {
                 $usedHandles = [];
+                $isNoInventory = $format === 'shopify_no_inventory';
 
                 $products = $this->exports->listForExport(search: null, types: [], sortBy: $sortBy, sortDir: $sortDir);
                 $tmp = fopen('php://temp', 'w+b');
@@ -43,7 +44,7 @@ final class ProductsExportController extends Controller
                     throw new RuntimeException('Failed to create export stream.');
                 }
 
-                fputcsv($tmp, $this->exports->shopifyHeader());
+                fputcsv($tmp, $isNoInventory ? $this->exports->shopifyHeaderNoInventory() : $this->exports->shopifyHeader());
 
                 foreach ($products as $product) {
                     $selling = $product->sellingPrice?->selling_price;
@@ -52,7 +53,9 @@ final class ProductsExportController extends Controller
                         continue;
                     }
                     $handle = $this->exports->shopifyHandleForProduct($product, $usedHandles);
-                    fputcsv($tmp, $this->exports->shopifyRow($product, $handle));
+                    fputcsv($tmp, $isNoInventory
+                        ? $this->exports->shopifyRowNoInventory($product, $handle)
+                        : $this->exports->shopifyRow($product, $handle));
                     $exportedCount++;
                 }
 

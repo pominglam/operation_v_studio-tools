@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Products;
 
+use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\DAL\Products\ProductRepository;
 use App\Services\Products\Exceptions\InvalidProductImportFileException;
 use Illuminate\Http\UploadedFile;
@@ -15,6 +16,7 @@ final class ProductHandleImportService
 
     public function __construct(
         private readonly ProductRepository $products,
+        private readonly PurchaseOrderRepository $purchaseOrders,
     ) {}
 
     /**
@@ -29,7 +31,7 @@ final class ProductHandleImportService
      *   missing_handle_rows: int
      * }
      */
-    public function import(UploadedFile $file): array
+    public function import(UploadedFile $file, ?string $purchaseOrderUuid = null): array
     {
         $uploadedFilePath = $this->storeUploadedFile($file);
 
@@ -37,6 +39,23 @@ final class ProductHandleImportService
         $skuToHandle = $parsed['sku_to_handle'];
         $missingSkuRows = $parsed['missing_sku_rows'];
         $missingHandleRows = $parsed['missing_handle_rows'];
+
+        $purchaseOrderUuid = is_string($purchaseOrderUuid) ? trim($purchaseOrderUuid) : null;
+        $purchaseOrderUuid = $purchaseOrderUuid !== '' ? $purchaseOrderUuid : null;
+
+        if ($purchaseOrderUuid !== null) {
+            $allowed = $this->purchaseOrders->listItemSkusByUuid($purchaseOrderUuid);
+            if ($allowed === []) {
+                $skuToHandle = [];
+            } else {
+                $allowedSet = array_fill_keys($allowed, true);
+                $skuToHandle = array_filter(
+                    $skuToHandle,
+                    static fn (string $handle, string $sku): bool => array_key_exists($sku, $allowedSet),
+                    ARRAY_FILTER_USE_BOTH,
+                );
+            }
+        }
 
         $skus = array_keys($skuToHandle);
         $missingInSystem = [];
@@ -82,6 +101,7 @@ final class ProductHandleImportService
             'missing_in_system' => $missingInSystem,
             'missing_sku_rows' => $missingSkuRows,
             'missing_handle_rows' => $missingHandleRows,
+            'scoped_purchase_order_uuid' => $purchaseOrderUuid,
         ];
     }
 

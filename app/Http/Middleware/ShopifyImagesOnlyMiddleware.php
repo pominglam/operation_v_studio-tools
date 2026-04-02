@@ -20,6 +20,11 @@ final class ShopifyImagesOnlyMiddleware
         }
 
         $path = '/'.ltrim($request->path(), '/');
+        // Some nginx+php-fpm setups surface routed paths as "/index.php/..." instead of "/...".
+        // Normalize this variant so the images-only gate works consistently across runtimes.
+        if (str_starts_with($path, '/index.php/')) {
+            $path = '/'.ltrim(substr($path, strlen('/index.php/')), '/');
+        }
         if (str_starts_with($path, '/shopify-images/')) {
             return $next($request);
         }

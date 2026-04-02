@@ -9,7 +9,9 @@ use App\Models\PurchaseOrderItem;
 it('includes product_name on purchase order items', function (): void {
     $product = Product::query()->create([
         'sku' => 'PN-1',
+        'barcode' => '123',
         'description' => 'My Product Name',
+        'handle' => 'my-handle',
         'vendor' => 'Dspiae',
     ]);
 
@@ -28,6 +30,7 @@ it('includes product_name on purchase order items', function (): void {
 
     $this->getJson("/api/v1/purchase-orders/{$po->uuid}")
         ->assertOk()
-        ->assertJsonPath('data.items.0.product_name', 'My Product Name');
+        ->assertJsonPath('data.items.0.product_name', 'My Product Name')
+        ->assertJsonPath('data.items.0.product_barcode', '123')
+        ->assertJsonPath('data.items.0.product_handle', 'my-handle');
 });
-

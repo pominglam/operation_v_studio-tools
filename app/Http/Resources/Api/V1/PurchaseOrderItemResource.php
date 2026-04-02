@@ -94,6 +94,8 @@ final class PurchaseOrderItemResource extends JsonResource
             'id' => $item->id,
             'product_id' => $item->product?->uuid,
             'product_name' => $item->product?->description,
+            'product_barcode' => $item->product?->barcode,
+            'product_handle' => $item->product?->handle,
             'sku' => $item->sku,
             'vendor' => $item->vendor,
             // Always return CAD unit cost for display/costing; for foreign vendors, uses FX on the parent PO.
@@ -107,5 +109,3 @@ final class PurchaseOrderItemResource extends JsonResource
         ];
     }
 }
-
-

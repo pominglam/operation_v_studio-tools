@@ -20,8 +20,7 @@ it('returns 404 for external requests when external access disabled', function (
 });
 
 it('requires auth for external API requests when enabled', function (): void {
-    putenv('EXTERNAL_ACCESS_PASSWORD=testpw');
-    $_ENV['EXTERNAL_ACCESS_PASSWORD'] = 'testpw';
+    config(['app.external_access_password' => 'testpw']);
     $auth = app(ExternalAccessAuthService::class);
 
     app(ExternalAccessSettingsService::class)->setEnabled(true);
@@ -32,8 +31,7 @@ it('requires auth for external API requests when enabled', function (): void {
 });
 
 it('allows external access after login for this session', function (): void {
-    putenv('EXTERNAL_ACCESS_PASSWORD=testpw');
-    $_ENV['EXTERNAL_ACCESS_PASSWORD'] = 'testpw';
+    config(['app.external_access_password' => 'testpw']);
 
     $auth = app(ExternalAccessAuthService::class);
     app(ExternalAccessSettingsService::class)->setEnabled(true);

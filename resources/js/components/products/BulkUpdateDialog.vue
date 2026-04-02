@@ -3,15 +3,27 @@ import { computed, ref, watch } from 'vue';
 
 import type { BulkUpdateProductChanges } from './ProductsTable.vue';
 
+const EMPTY_MAIN_TYPE_VALUE = 'empty (no Shopify tags)';
+const FILTER_EMPTY_MAIN_TYPE_TOKEN = '__empty__';
+
 const props = defineProps<{
     open: boolean;
     selectedCount: number;
     busy: boolean;
+    mainTypeOptions?: string[];
+    vendorOptions?: string[];
+    typeOptions?: string[];
+    gradeOptions?: string[];
+    scaleOptions?: string[];
+    seriesOptions?: string[];
 }>();
 
 const emit = defineEmits<{
     (e: 'cancel'): void;
-    (e: 'confirm', payload: { changes: BulkUpdateProductChanges; renamePlamodAssets: boolean }): void;
+    (
+        e: 'confirm',
+        payload: { changes: BulkUpdateProductChanges; renamePlamodAssets: boolean },
+    ): void;
 }>();
 
 type BulkFieldState<T> = {
@@ -25,11 +37,48 @@ const sku = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const barcode = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const description = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const handle = ref<BulkFieldState<string>>({ apply: false, value: '' });
+const mainType = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const type = ref<BulkFieldState<string>>({ apply: false, value: '' });
+const grade = ref<BulkFieldState<string>>({ apply: false, value: '' });
+const scale = ref<BulkFieldState<string>>({ apply: false, value: '' });
+const series = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const vendor = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const publishedOnShopify = ref<BulkFieldState<'true' | 'false'>>({ apply: false, value: 'false' });
+const latestArrival = ref<BulkFieldState<'true' | 'false'>>({ apply: false, value: 'false' });
+const archiveStatus = ref<BulkFieldState<'archive' | 'unarchive'>>({
+    apply: false,
+    value: 'archive',
+});
+const availableQty = ref<BulkFieldState<string>>({ apply: false, value: '' });
+const maintainQty = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const extended = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const renamePlamodAssets = ref(false);
+
+function normalizeOptions(list: string[] | undefined, current: string): string[] {
+    const base = (list ?? []).map((v) => String(v).trim()).filter((v) => v !== '');
+    const cur = current.trim();
+    const merged = cur !== '' ? [...base, cur] : base;
+    return Array.from(new Set(merged)).sort((a, b) => a.localeCompare(b));
+}
+
+const vendorChoices = computed<string[]>(() =>
+    normalizeOptions(props.vendorOptions, vendor.value.value),
+);
+const mainTypeChoices = computed<string[]>(() =>
+    normalizeOptions(props.mainTypeOptions, mainType.value.value).filter(
+        (v) => v !== FILTER_EMPTY_MAIN_TYPE_TOKEN,
+    ),
+);
+const typeChoices = computed<string[]>(() => normalizeOptions(props.typeOptions, type.value.value));
+const gradeChoices = computed<string[]>(() =>
+    normalizeOptions(props.gradeOptions, grade.value.value),
+);
+const scaleChoices = computed<string[]>(() =>
+    normalizeOptions(props.scaleOptions, scale.value.value),
+);
+const seriesChoices = computed<string[]>(() =>
+    normalizeOptions(props.seriesOptions, series.value.value),
+);
 
 const hasAnyApply = computed<boolean>(() => {
     return (
@@ -37,9 +86,17 @@ const hasAnyApply = computed<boolean>(() => {
         barcode.value.apply ||
         description.value.apply ||
         handle.value.apply ||
+        mainType.value.apply ||
         type.value.apply ||
+        grade.value.apply ||
+        scale.value.apply ||
+        series.value.apply ||
         vendor.value.apply ||
         publishedOnShopify.value.apply ||
+        latestArrival.value.apply ||
+        archiveStatus.value.apply ||
+        availableQty.value.apply ||
+        maintainQty.value.apply ||
         extended.value.apply ||
         renamePlamodAssets.value
     );
@@ -51,9 +108,17 @@ function reset(): void {
     barcode.value = { apply: false, value: '' };
     description.value = { apply: false, value: '' };
     handle.value = { apply: false, value: '' };
+    mainType.value = { apply: false, value: '' };
     type.value = { apply: false, value: '' };
+    grade.value = { apply: false, value: '' };
+    scale.value = { apply: false, value: '' };
+    series.value = { apply: false, value: '' };
     vendor.value = { apply: false, value: '' };
     publishedOnShopify.value = { apply: false, value: 'false' };
+    latestArrival.value = { apply: false, value: 'false' };
+    archiveStatus.value = { apply: false, value: 'archive' };
+    availableQty.value = { apply: false, value: '' };
+    maintainQty.value = { apply: false, value: '' };
     extended.value = { apply: false, value: '' };
     renamePlamodAssets.value = false;
 }
@@ -66,7 +131,24 @@ watch(
 );
 
 watch(
-    [sku, barcode, description, handle, type, vendor, publishedOnShopify, extended],
+    [
+        sku,
+        barcode,
+        description,
+        handle,
+        mainType,
+        type,
+        grade,
+        scale,
+        series,
+        vendor,
+        publishedOnShopify,
+        latestArrival,
+        archiveStatus,
+        availableQty,
+        maintainQty,
+        extended,
+    ],
     () => {
         // Clear stale validation messages as the user edits fields
         if (localError.value !== null) {
@@ -124,9 +206,33 @@ function onConfirm(): void {
         changes.handle = nextHandle === '' ? null : nextHandle;
     }
 
+    if (mainType.value.apply) {
+        const next = mainType.value.value.trim();
+        if (next === '' || next.toLowerCase() === EMPTY_MAIN_TYPE_VALUE.toLowerCase()) {
+            changes.main_type = null;
+        } else {
+            changes.main_type = next;
+        }
+    }
+
     if (type.value.apply) {
         const nextType = type.value.value.trim();
         changes.type = nextType === '' ? null : nextType;
+    }
+
+    if (grade.value.apply) {
+        const next = grade.value.value.trim();
+        changes.grade = next === '' ? null : next;
+    }
+
+    if (scale.value.apply) {
+        const next = scale.value.value.trim();
+        changes.scale = next === '' ? null : next;
+    }
+
+    if (series.value.apply) {
+        const next = series.value.value.trim();
+        changes.series = next === '' ? null : next;
     }
 
     if (vendor.value.apply) {
@@ -136,6 +242,38 @@ function onConfirm(): void {
 
     if (publishedOnShopify.value.apply) {
         changes.published_on_shopify = publishedOnShopify.value.value === 'true';
+    }
+
+    if (latestArrival.value.apply) {
+        changes.latest_arrival = latestArrival.value.value === 'true';
+    }
+
+    if (archiveStatus.value.apply) {
+        changes.archived = archiveStatus.value.value === 'archive';
+    }
+
+    if (availableQty.value.apply) {
+        const raw = availableQty.value.value.trim();
+        if (raw === '') {
+            changes.available = null;
+        } else if (!/^\d+$/.test(raw)) {
+            localError.value = 'Available quantity must be an integer.';
+            return;
+        } else {
+            changes.available = Number.parseInt(raw, 10);
+        }
+    }
+
+    if (maintainQty.value.apply) {
+        const raw = maintainQty.value.value.trim();
+        if (raw === '') {
+            changes.maintain = null;
+        } else if (!/^\d+$/.test(raw)) {
+            localError.value = 'Maintain quantity must be an integer.';
+            return;
+        } else {
+            changes.maintain = Number.parseInt(raw, 10);
+        }
     }
 
     if (extended.value.apply) {
@@ -196,7 +334,11 @@ function onConfirm(): void {
 
                     <div class="md:col-span-2">
                         <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                            <input v-model="barcode.apply" type="checkbox" class="h-4 w-4 rounded" />
+                            <input
+                                v-model="barcode.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                            />
                             Barcode
                         </label>
                         <input
@@ -216,8 +358,46 @@ function onConfirm(): void {
                             v-model="vendor.value"
                             class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                             type="text"
+                            list="bulk-update-vendor-options"
                             :disabled="!vendor.apply || busy"
                         />
+                        <datalist id="bulk-update-vendor-options">
+                            <option v-for="v in vendorChoices" :key="v" :value="v" />
+                        </datalist>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="mainType.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                                data-testid="bulk-update-main-type-apply"
+                            />
+                            Main type
+                        </label>
+                        <input
+                            v-model="mainType.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            type="text"
+                            list="bulk-update-main-type-options"
+                            :disabled="!mainType.apply || busy"
+                            placeholder="model kit"
+                            data-testid="bulk-update-main-type-input"
+                        />
+                        <button
+                            class="mt-1 text-xs font-medium text-slate-700 underline hover:text-slate-900 disabled:opacity-50"
+                            type="button"
+                            :disabled="!mainType.apply || busy"
+                            data-testid="bulk-update-main-type-empty"
+                            @click="mainType.value = EMPTY_MAIN_TYPE_VALUE"
+                        >
+                            Set empty (no Shopify tags)
+                        </button>
+                        <datalist id="bulk-update-main-type-options">
+                            <option :value="EMPTY_MAIN_TYPE_VALUE" />
+                            <option v-for="v in mainTypeChoices" :key="v" :value="v" />
+                        </datalist>
                     </div>
 
                     <div class="md:col-span-2">
@@ -236,6 +416,46 @@ function onConfirm(): void {
                         >
                             <option value="true">True</option>
                             <option value="false">False</option>
+                        </select>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="latestArrival.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                            />
+                            Latest arrival
+                        </label>
+                        <select
+                            v-model="latestArrival.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                            :disabled="!latestArrival.apply || busy"
+                        >
+                            <option value="true">True</option>
+                            <option value="false">False</option>
+                        </select>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="archiveStatus.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                                data-testid="bulk-archive-status-apply"
+                            />
+                            Archive status
+                        </label>
+                        <select
+                            v-model="archiveStatus.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                            :disabled="!archiveStatus.apply || busy"
+                            data-testid="bulk-archive-status-select"
+                        >
+                            <option value="archive">Archive</option>
+                            <option value="unarchive">Unarchive</option>
                         </select>
                     </div>
 
@@ -279,7 +499,125 @@ function onConfirm(): void {
                             v-model="type.value"
                             class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                             type="text"
+                            list="bulk-update-type-options"
                             :disabled="!type.apply || busy"
+                        />
+                        <datalist id="bulk-update-type-options">
+                            <option v-for="v in typeChoices" :key="v" :value="v" />
+                        </datalist>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="grade.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                                data-testid="bulk-grade-apply"
+                            />
+                            Grade
+                        </label>
+                        <input
+                            v-model="grade.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            type="text"
+                            list="bulk-update-grade-options"
+                            :disabled="!grade.apply || busy"
+                            placeholder="(blank clears)"
+                            data-testid="bulk-grade-value"
+                        />
+                        <datalist id="bulk-update-grade-options">
+                            <option v-for="v in gradeChoices" :key="v" :value="v" />
+                        </datalist>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="scale.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                                data-testid="bulk-scale-apply"
+                            />
+                            Scale
+                        </label>
+                        <input
+                            v-model="scale.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 font-mono text-xs"
+                            type="text"
+                            list="bulk-update-scale-options"
+                            :disabled="!scale.apply || busy"
+                            placeholder="(blank clears)"
+                            data-testid="bulk-scale-value"
+                        />
+                        <datalist id="bulk-update-scale-options">
+                            <option v-for="v in scaleChoices" :key="v" :value="v" />
+                        </datalist>
+                    </div>
+
+                    <div class="md:col-span-6">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="series.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                                data-testid="bulk-series-apply"
+                            />
+                            Series
+                        </label>
+                        <input
+                            v-model="series.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            type="text"
+                            list="bulk-update-series-options"
+                            :disabled="!series.apply || busy"
+                            placeholder="(blank clears)"
+                            data-testid="bulk-series-value"
+                        />
+                        <datalist id="bulk-update-series-options">
+                            <option v-for="v in seriesChoices" :key="v" :value="v" />
+                        </datalist>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="availableQty.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                                data-testid="bulk-available-apply"
+                            />
+                            Available qty
+                        </label>
+                        <input
+                            v-model="availableQty.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            type="text"
+                            inputmode="numeric"
+                            :disabled="!availableQty.apply || busy"
+                            placeholder="(blank clears)"
+                            data-testid="bulk-available-value"
+                        />
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="maintainQty.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                                data-testid="bulk-maintain-apply"
+                            />
+                            Maintain qty
+                        </label>
+                        <input
+                            v-model="maintainQty.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            type="text"
+                            inputmode="numeric"
+                            :disabled="!maintainQty.apply || busy"
+                            placeholder="(blank clears)"
+                            data-testid="bulk-maintain-value"
                         />
                     </div>
 
@@ -303,9 +641,16 @@ function onConfirm(): void {
                 </div>
 
                 <div class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-600">Bulk actions</div>
+                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Bulk actions
+                    </div>
                     <label class="mt-2 flex items-center gap-2 text-sm text-slate-800">
-                        <input v-model="renamePlamodAssets" type="checkbox" class="h-4 w-4 rounded" :disabled="busy" />
+                        <input
+                            v-model="renamePlamodAssets"
+                            type="checkbox"
+                            class="h-4 w-4 rounded"
+                            :disabled="busy"
+                        />
                         Rename Plamod image filenames (SEO)
                     </label>
                     <div class="mt-1 text-xs text-slate-600">
@@ -342,6 +687,3 @@ function onConfirm(): void {
         </div>
     </Teleport>
 </template>
-
-
-

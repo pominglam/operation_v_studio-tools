@@ -19,6 +19,7 @@ describe('BulkRecrawlDialog', () => {
         });
 
         expect(wrapper.text()).toContain('Newtype PDP');
+        expect(wrapper.text()).toContain('GundamHangar API');
 
         // Uncheck everything except Newtype, then confirm.
         const labels = wrapper.findAll('label');

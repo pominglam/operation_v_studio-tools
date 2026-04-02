@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../lib/api';
 import { formatTorontoDateTime, formatTorontoEpochSeconds } from '../lib/datetime';
+import { navigateTo } from '../lib/navigation';
 import DebugLogDialog from '../components/jobs/DebugLogDialog.vue';
 
 type JobBatchListItem = {
@@ -84,6 +85,11 @@ const debugDialogOpen = ref(false);
 const debugDialogTitle = ref<string>('');
 const debugDialogSubtitle = ref<string | null>(null);
 const debugDialogLog = ref<string>('');
+
+const autoExportBusy = ref(false);
+const autoExportMessage = ref<string | null>(null);
+const autoExportError = ref<string | null>(null);
+const autoExportTriggered = ref(false);
 
 function openDebugDialog(it: JobBatchItem): void {
     const sku = it.sku ?? it.product_uuid;
@@ -230,8 +236,103 @@ function formatEpochSeconds(s: number): string {
     return formatTorontoEpochSeconds(s);
 }
 
+function runningForLabel(startedAt: string | null): string | null {
+    if (!startedAt) return null;
+    const t0 = Date.parse(startedAt);
+    if (!Number.isFinite(t0)) return null;
+    const ms = Date.now() - t0;
+    if (!Number.isFinite(ms) || ms < 0) return null;
+    const totalSec = Math.floor(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    if (m <= 0) return `${s}s`;
+    return `${m}m ${s}s`;
+}
+
 const progressBarWidth = computed(() => `${status.value?.progress_percent ?? 0}%`);
 const isDone = computed(() => !!(status.value?.finished_at || status.value?.cancelled_at || status.value?.cancelled));
+
+function autoExportTypeFromQuery(): string | null {
+    const raw = typeof route.query.auto_export === 'string' ? route.query.auto_export.trim() : '';
+    return raw !== '' ? raw : null;
+}
+
+async function maybeAutoExport(): Promise<void> {
+    if (!selectedId.value) return;
+    if (!isDone.value) return;
+    if (autoExportTriggered.value) return;
+
+    const kind = autoExportTypeFromQuery();
+    if (kind !== 'shopify_content') return;
+
+    autoExportTriggered.value = true;
+    autoExportBusy.value = true;
+    autoExportMessage.value = null;
+    autoExportError.value = null;
+
+    const key = `auto_export_shopify_content:${selectedId.value}`;
+    let ids: string[] = [];
+    try {
+        const raw = sessionStorage.getItem(key);
+        if (raw) {
+            const parsed = JSON.parse(raw) as any;
+            const arr = parsed?.ids;
+            if (Array.isArray(arr)) {
+                ids = arr.map((v) => String(v)).filter((v) => v.trim() !== '');
+            }
+        }
+    } catch {
+        // ignore
+    }
+
+    if (ids.length === 0) {
+        autoExportBusy.value = false;
+        autoExportError.value = 'Auto-export could not start (missing selected product ids). Please export manually.';
+        return;
+    }
+
+    try {
+        const res = await api.post<{ download_url: string }>(
+            '/api/v1/products/exports/shopify-content/prepare',
+            { ids },
+            { validateStatus: () => true },
+        );
+
+        if (res.status !== 200) {
+            const anyData = res.data as any;
+            const msgRaw: unknown = anyData?.message ?? anyData?.error ?? anyData?.errors;
+            let details = '';
+            if (typeof msgRaw === 'string') details = msgRaw.trim();
+            else if (msgRaw !== null && msgRaw !== undefined) {
+                try {
+                    details = JSON.stringify(msgRaw);
+                } catch {
+                    details = String(msgRaw);
+                }
+            }
+            throw new Error(`Export failed (HTTP ${res.status}).${details ? ` ${details}` : ''}`);
+        }
+
+        const downloadUrl = (res.data as any)?.download_url;
+        if (typeof downloadUrl !== 'string' || downloadUrl.trim() === '') {
+            throw new Error('export_failed');
+        }
+
+        try {
+            sessionStorage.removeItem(key);
+        } catch {
+            // ignore
+        }
+
+        autoExportMessage.value = 'Export ready. Download starting…';
+        navigateTo(downloadUrl);
+    } catch (e: any) {
+        const msg = typeof e?.message === 'string' ? e.message.trim() : '';
+        autoExportError.value = msg !== '' ? msg : 'Auto-export failed. Please export manually.';
+    } finally {
+        autoExportBusy.value = false;
+    }
+}
 
 function selectBatch(id: string): void {
     selectedId.value = id;
@@ -254,10 +355,23 @@ watch(
         itemsError.value = null;
         resumeMessage.value = null;
         resumeError.value = null;
+        autoExportBusy.value = false;
+        autoExportMessage.value = null;
+        autoExportError.value = null;
+        autoExportTriggered.value = false;
         if (!id) return;
         void Promise.all([loadStatus(id), loadItems(id)]).then(() => {
             if (!isDone.value) startPolling();
+            void maybeAutoExport();
         });
+    },
+);
+
+watch(
+    () => isDone.value,
+    (done) => {
+        if (!done) return;
+        void maybeAutoExport();
     },
 );
 
@@ -372,6 +486,18 @@ onUnmounted(() => stopPolling());
                 <div v-if="resumeError" class="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
                     {{ resumeError }}
                 </div>
+                <div
+                    v-if="autoExportError"
+                    class="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+                >
+                    {{ autoExportError }}
+                </div>
+                <div
+                    v-if="autoExportMessage"
+                    class="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+                >
+                    {{ autoExportMessage }}
+                </div>
 
                 <div v-if="status" class="space-y-3">
                     <div class="flex items-center justify-between text-sm text-slate-700">
@@ -482,6 +608,7 @@ onUnmounted(() => stopPolling());
                                             <span v-if="it.vendor">{{ it.vendor }} · </span>
                                             attempts {{ it.attempts }}
                                             <span v-if="it.started_at"> · started {{ formatTorontoDateTime(it.started_at) }}</span>
+                                            <span v-if="it.started_at"> · running for {{ runningForLabel(it.started_at) }}</span>
                                         </div>
                                         <div v-if="hasDebugLog(it)" class="mt-1">
                                             <button

@@ -1,0 +1,22 @@
+---
+description: Definition of Done: features must fulfill purpose and be tested
+alwaysApply: true
+---
+
+# Definition of Done (WORKING)
+
+A feature/task/bugfix is **WORKING** only when:
+
+- The **actual purpose is fulfilled** (from the user’s perspective), and
+- It has been **tested in the same way the real user/system will use it**.
+
+## External integrations
+
+If the purpose involves **external systems** (Shopify, webhooks, public downloads, etc.), testing must include an **external internet** check when relevant.
+
+### Example: Shopify image downloads
+
+- Do not consider “image serving” done just because local URLs load.
+- Verify the image is reachable from the outside world (e.g. the Cloudflare Tunnel URL) and returns:
+  - **HTTP 200**
+  - **Correct `Content-Type`** (e.g. `image/jpeg`, `image/png`)

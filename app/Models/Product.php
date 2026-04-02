@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
@@ -17,6 +18,7 @@ use Illuminate\Support\Str;
  * @property string $description
  * @property string|null $preferred_description_source
  * @property string|null $handle
+ * @property string $main_type
  * @property string|null $type
  * @property string|null $grade
  * @property string|null $series
@@ -26,10 +28,13 @@ use Illuminate\Support\Str;
  * @property string|null $vendor
  * @property string|null $brand
  * @property bool $published_on_shopify
+ * @property \Illuminate\Support\Carbon|null $archived_at
  * @property bool $is_ready
+ * @property bool $latest_arrival
  * @property int|null $order_qty
  * @property int|null $filled_qty
  * @property int|null $available_qty
+ * @property int|null $maintain_qty
  * @property string|null $extended
  * @property string|null $latest_unit_cost
  * @property string|null $latest_landed_unit_cost
@@ -45,6 +50,7 @@ final class Product extends Model
         'description',
         'preferred_description_source',
         'handle',
+        'main_type',
         'type',
         'grade',
         'series',
@@ -54,10 +60,13 @@ final class Product extends Model
         'vendor',
         'brand',
         'published_on_shopify',
+        'archived_at',
         'is_ready',
+        'latest_arrival',
         'order_qty',
         'filled_qty',
         'available_qty',
+        'maintain_qty',
         'extended',
         'latest_unit_cost',
         'latest_landed_unit_cost',
@@ -68,10 +77,13 @@ final class Product extends Model
         'order_qty' => 'integer',
         'filled_qty' => 'integer',
         'available_qty' => 'integer',
+        'maintain_qty' => 'integer',
         'yen_price' => 'integer',
         'bandai_launch_date' => 'date',
         'published_on_shopify' => 'boolean',
+        'archived_at' => 'datetime',
         'is_ready' => 'boolean',
+        'latest_arrival' => 'boolean',
         'extended' => 'decimal:2',
         'latest_unit_cost' => 'decimal:2',
         'latest_landed_unit_cost' => 'decimal:2',
@@ -85,6 +97,16 @@ final class Product extends Model
                 $product->uuid = (string) Str::uuid();
             }
         });
+    }
+
+    public function scopeNotArchived(Builder $query): Builder
+    {
+        return $query->whereNull('archived_at');
+    }
+
+    public function scopeArchived(Builder $query): Builder
+    {
+        return $query->whereNotNull('archived_at');
     }
 
     /** @return HasMany<ProductPriceQuote> */
@@ -128,6 +150,19 @@ final class Product extends Model
     {
         return $this->hasMany(ProductExternalAsset::class)
             ->where('source', '=', 'plamod')
+            ->where(function ($q): void {
+                $q->where('kind', '=', 'image')
+                    ->orWhere('mime_type', 'like', 'image/%');
+            })
+            ->orderByRaw('sort_order is null')
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    /** @return HasMany<ProductExternalAsset> */
+    public function imageAssets(): HasMany
+    {
+        return $this->hasMany(ProductExternalAsset::class)
             ->where(function ($q): void {
                 $q->where('kind', '=', 'image')
                     ->orWhere('mime_type', 'like', 'image/%');

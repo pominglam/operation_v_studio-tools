@@ -25,6 +25,7 @@ final class PurchaseOrderUpdateService
      *   vendor?:string,
      *   ordered_date?:string|null,
      *   shipped_date?:string|null,
+     *   estimated_arrival_date?:string|null,
      *   received_date?:string|null,
      *   fully_on_shelves_date?:string|null,
      *   shipping_total?:string|null,
@@ -32,7 +33,8 @@ final class PurchaseOrderUpdateService
      *   product_total?:string|null,
      *   vendor_currency_code?:string,
      *   vendor_product_total?:string|null,
-     *   notes?:string|null
+     *   notes?:string|null,
+     *   is_done?:bool
      * } $changes
      */
     public function update(string $uuid, array $changes): PurchaseOrder
@@ -53,6 +55,9 @@ final class PurchaseOrderUpdateService
             }
             if (array_key_exists('shipped_date', $changes)) {
                 $po->shipped_date = $changes['shipped_date'];
+            }
+            if (array_key_exists('estimated_arrival_date', $changes)) {
+                $po->estimated_arrival_date = $changes['estimated_arrival_date'];
             }
             if (array_key_exists('received_date', $changes)) {
                 $po->received_date = $changes['received_date'];
@@ -77,6 +82,9 @@ final class PurchaseOrderUpdateService
             }
             if (array_key_exists('notes', $changes)) {
                 $po->notes = $changes['notes'];
+            }
+            if (array_key_exists('is_done', $changes)) {
+                $po->is_done = (bool) $changes['is_done'];
             }
 
             $po->fx_rate_to_cad = $this->deriveFxRateToCad(

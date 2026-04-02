@@ -34,6 +34,8 @@ use App\DAL\RuntimeSettings\EloquentRuntimeSettingRepository;
 use App\DAL\RuntimeSettings\RuntimeSettingRepository;
 use App\DAL\PurchaseOrders\EloquentPurchaseOrderRepository;
 use App\DAL\PurchaseOrders\PurchaseOrderRepository;
+use App\DAL\TcgEvents\EloquentTcgEventRepository;
+use App\DAL\TcgEvents\TcgEventRepository;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\PriceResearch\Http\AliExpressScraperClient;
 use App\Services\PriceResearch\PriceResearchService;
@@ -60,6 +62,8 @@ use App\Services\Maintenance\CloudflareQuickTunnelVerifier as MaintenanceQuickTu
 use App\Services\Shopify\CloudflaredTunnel;
 use App\Services\Shopify\CloudflaredTunnelService;
 use App\Services\Shopify\CloudflareQuickTunnelVerifier;
+use App\Services\TcgEvents\Providers\BandaiTcgPlusApi;
+use App\Services\TcgEvents\Providers\HttpBandaiTcgPlusApi;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -83,6 +87,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(InventoryCheckRepository::class, EloquentInventoryCheckRepository::class);
         $this->app->bind(PurchaseOrderRepository::class, EloquentPurchaseOrderRepository::class);
         $this->app->bind(InventoryRepository::class, EloquentInventoryRepository::class);
+        $this->app->bind(TcgEventRepository::class, EloquentTcgEventRepository::class);
 
         $this->app->bind(ProductLookupRepository::class, EloquentProductLookupRepository::class);
         $this->app->bind(ProductPriceQuoteRepository::class, EloquentProductPriceQuoteRepository::class);
@@ -107,6 +112,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(CloudflaredTunnel::class, function ($app): CloudflaredTunnelService {
             return new CloudflaredTunnelService($app->make(CloudflareQuickTunnelVerifier::class));
         });
+        $this->app->bind(BandaiTcgPlusApi::class, HttpBandaiTcgPlusApi::class);
 
         $this->app->tag([
             AliExpressProvider::class,

@@ -72,6 +72,7 @@ return [
 
     // Simple external-access password (used only for trycloudflare quick tunnel access).
     'external_access_password' => env('EXTERNAL_ACCESS_PASSWORD'),
+    'external_access_employee_password' => env('EXTERNAL_ACCESS_EMPLOYEE_PASSWORD', 'emp147'),
 
     /*
     |--------------------------------------------------------------------------

@@ -163,7 +163,7 @@ function parseLine(raw: string): Entry {
     }
 
     // Standardized crawler logs: [source][start|done|error] key=val ...
-    if (['plamod', 'hlj', 'bandai', 'competitor_price_research'].includes(source)) {
+    if (['plamod', 'hlj', 'bandai', 'gundamhangar', 'competitor_price_research'].includes(source)) {
         e.kind = 'source_step';
         // Back-compat: older format was "[plamod] start" (event missing, verb in rest).
         if (!e.event && rest && !rest.includes('=')) {
@@ -209,6 +209,7 @@ function badgeClass(source: string): string {
     if (source === 'gundamplanet') return 'bg-violet-100 text-violet-800 border-violet-200';
     if (source === 'hlj') return 'bg-sky-100 text-sky-800 border-sky-200';
     if (source === 'bandai') return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+    if (source === 'gundamhangar') return 'bg-teal-100 text-teal-800 border-teal-200';
     if (source === 'plamod') return 'bg-slate-100 text-slate-800 border-slate-200';
     if (source === 'job') return 'bg-amber-100 text-amber-900 border-amber-200';
     return 'bg-slate-100 text-slate-800 border-slate-200';

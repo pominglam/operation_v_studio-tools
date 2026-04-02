@@ -25,7 +25,12 @@ final class ProductHandleImportController extends Controller
         }
 
         try {
-            return response()->json($this->importer->import($file));
+            /** @var string|null $poUuid */
+            $poUuid = $request->validated('purchase_order_uuid');
+            $poUuid = is_string($poUuid) ? trim($poUuid) : null;
+            $poUuid = $poUuid !== '' ? $poUuid : null;
+
+            return response()->json($this->importer->import($file, $poUuid));
         } catch (InvalidProductImportFileException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

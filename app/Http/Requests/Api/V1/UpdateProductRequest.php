@@ -18,11 +18,16 @@ final class UpdateProductRequest extends FormRequest
             'barcode' => ['nullable', 'string', 'max:64'],
             'description' => ['required', 'string', 'max:512'],
             'handle' => ['nullable', 'string', 'max:255'],
+            'main_type' => ['nullable', 'string', 'max:64'],
             'type' => ['nullable', 'string', 'max:128'],
+            'grade' => ['nullable', 'string', 'max:128'],
+            'scale' => ['nullable', 'string', 'max:64'],
+            'series' => ['nullable', 'string', 'max:255'],
             'vendor' => ['nullable', 'string', 'max:128'],
             'order' => ['nullable', 'integer', 'min:0'],
             'filled' => ['nullable', 'integer', 'min:0'],
             'available' => ['nullable', 'integer', 'min:0', 'max:2147483647'],
+            'maintain' => ['nullable', 'integer', 'min:0', 'max:2147483647'],
             'extended' => ['nullable', 'numeric'],
         ];
     }

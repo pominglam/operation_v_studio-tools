@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue';
 
-export type ProductsBulkExportType = 'shopify' | 'shopify_content' | 'missing_barcode' | 'barcoded';
+export type ProductsBulkExportType =
+  | 'shopify'
+  | 'shopify_no_inventory'
+  | 'shopify_content'
+  | 'shopify_content_no_inventory'
+  | 'shopify_content_rename_export'
+  | 'missing_barcode'
+  | 'barcoded';
 
 const props = defineProps<{
   open: boolean;
@@ -66,8 +73,13 @@ function onConfirm(): void {
             class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
             :disabled="busy"
           >
-            <option value="shopify">Shopify (CSV)</option>
+            <option value="shopify">Shopify (CSV + description)</option>
+            <option value="shopify_no_inventory">Shopify (CSV + description, no inventory)</option>
             <option value="shopify_content">Shopify content (images + description)</option>
+            <option value="shopify_content_no_inventory">
+              Shopify content (images + description, no inventory)
+            </option>
+            <option value="shopify_content_rename_export">Rename to SEO-friendly images + export images + description</option>
             <option value="missing_barcode">Missing barcode (CSV)</option>
             <option value="barcoded">Barcoded inventory (CSV)</option>
           </select>

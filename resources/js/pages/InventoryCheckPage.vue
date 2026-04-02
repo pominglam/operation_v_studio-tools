@@ -7,6 +7,9 @@ type InventoryCheckListRow = {
     id: string;
     name: string | null;
     source: string | null;
+    workflow_state?: string | null;
+    created_by_role?: string | null;
+    applied_at?: string | null;
     created_at: string | null;
     counts: {
         items: number;
@@ -251,6 +254,9 @@ async function runImport(): Promise<void> {
                         <tr>
                             <th class="px-2 py-2">Created</th>
                             <th class="px-2 py-2">ID</th>
+                            <th class="px-2 py-2">Source</th>
+                            <th class="px-2 py-2">Role</th>
+                            <th class="px-2 py-2">State</th>
                             <th class="px-2 py-2 text-right">Rows</th>
                             <th class="px-2 py-2 text-right">Applied</th>
                             <th class="px-2 py-2 text-right">Unmatched</th>
@@ -263,6 +269,9 @@ async function runImport(): Promise<void> {
                             <td class="px-2 py-2">
                                 <a class="underline underline-offset-2" :href="`/inventory-check/${c.id}`">{{ c.id }}</a>
                             </td>
+                            <td class="px-2 py-2">{{ c.source ?? '—' }}</td>
+                            <td class="px-2 py-2">{{ c.created_by_role ?? '—' }}</td>
+                            <td class="px-2 py-2">{{ c.workflow_state ?? 'draft' }}</td>
                             <td class="px-2 py-2 text-right">{{ c.counts.items }}</td>
                             <td class="px-2 py-2 text-right">{{ c.counts.applied }}</td>
                             <td class="px-2 py-2 text-right">{{ c.counts.unmatched }}</td>

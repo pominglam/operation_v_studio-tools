@@ -15,6 +15,7 @@ use Illuminate\Support\Str;
  * @property string $vendor_currency_code
  * @property string|null $ordered_date
  * @property string|null $shipped_date
+ * @property string|null $estimated_arrival_date
  * @property string|null $received_date
  * @property string|null $fully_on_shelves_date
  * @property string|null $shipping_total
@@ -23,6 +24,7 @@ use Illuminate\Support\Str;
  * @property string|null $vendor_product_total
  * @property string|null $fx_rate_to_cad
  * @property string|null $notes
+ * @property bool $is_done
  */
 final class PurchaseOrder extends Model
 {
@@ -33,6 +35,7 @@ final class PurchaseOrder extends Model
         'vendor_currency_code',
         'ordered_date',
         'shipped_date',
+        'estimated_arrival_date',
         'received_date',
         'fully_on_shelves_date',
         'shipping_total',
@@ -41,12 +44,15 @@ final class PurchaseOrder extends Model
         'vendor_product_total',
         'fx_rate_to_cad',
         'notes',
+        'is_done',
+        'workflow_checklist_json',
     ];
 
     /** @var array<string, string> */
     protected $casts = [
         'ordered_date' => 'date',
         'shipped_date' => 'date',
+        'estimated_arrival_date' => 'date',
         'received_date' => 'date',
         'fully_on_shelves_date' => 'date',
         'shipping_total' => 'decimal:2',
@@ -54,6 +60,8 @@ final class PurchaseOrder extends Model
         'product_total' => 'decimal:2',
         'vendor_product_total' => 'decimal:2',
         'fx_rate_to_cad' => 'decimal:6',
+        'is_done' => 'boolean',
+        'workflow_checklist_json' => 'array',
     ];
 
     protected static function booted(): void

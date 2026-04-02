@@ -6,23 +6,29 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\ProductBulkPlamodAssetRenameRequest;
-use App\Services\Products\PlamodAssetFilenameService;
+use App\Services\Products\ProductsBulkRenameAssetsService;
 use Illuminate\Http\JsonResponse;
 
 final class ProductBulkPlamodAssetRenameController extends Controller
 {
-    public function __invoke(ProductBulkPlamodAssetRenameRequest $request, PlamodAssetFilenameService $service): JsonResponse
+    public function __invoke(ProductBulkPlamodAssetRenameRequest $request, ProductsBulkRenameAssetsService $service): JsonResponse
     {
         /** @var array<int, string> $ids */
         $ids = $request->validated('ids');
 
-        $out = $service->bulkRename($ids);
+        $res = $service->queue($ids);
+        if ($res->batchId === '') {
+            return response()->json([
+                'ok' => false,
+                'error' => 'no_products',
+            ], 422);
+        }
 
         return response()->json([
             'ok' => true,
-            'renamed_assets' => $out['renamed_assets'],
-            'products' => $out['products'],
-        ]);
+            'queued' => $res->queued,
+            'batch_id' => $res->batchId,
+        ], 202);
     }
 }
 

@@ -18,7 +18,11 @@ final class PriceResearchProductsIndexRequest extends FormRequest
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'search' => ['sometimes', 'string', 'max:200'],
+            // Legacy single-select param (kept for backward compatibility)
             'purchase_order_uuid' => ['sometimes', 'nullable', 'uuid'],
+            // New multi-select param
+            'purchase_order_uuids' => ['sometimes', 'array', 'max:50'],
+            'purchase_order_uuids.*' => ['uuid'],
             'sort_by' => [
                 'sometimes',
                 'string',

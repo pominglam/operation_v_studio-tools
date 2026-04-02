@@ -163,7 +163,13 @@ final class ProductInventoryImportService
                     continue;
                 }
 
-                $qty = (int) round((float) $qtyRaw);
+                $qtyFloat = (float) $qtyRaw;
+                // Shopify exports may use -1 to represent "not tracked"; treat it as 0.
+                if ($qtyFloat === -1.0) {
+                    $qty = 0;
+                } else {
+                    $qty = (int) round($qtyFloat);
+                }
                 if ($qty < 0) {
                     continue;
                 }
@@ -192,6 +198,10 @@ final class ProductInventoryImportService
         $all = $this->products->listAll()->sortBy('sku')->values();
         /** @var Product $p */
         foreach ($all as $p) {
+            // Archived products are intentionally excluded from import warning noise.
+            if ($p->archived_at !== null) {
+                continue;
+            }
             if (array_key_exists($p->sku, $have)) {
                 continue;
             }

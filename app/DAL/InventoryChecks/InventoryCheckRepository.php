@@ -17,6 +17,14 @@ interface InventoryCheckRepository
     public function paginate(int $perPage): LengthAwarePaginator;
 
     public function findByUuidOrFail(string $uuid): InventoryCheck;
+
+    public function save(InventoryCheck $check): InventoryCheck;
+
+    public function saveItem(InventoryCheckItem $item): InventoryCheckItem;
+
+    public function findItemInSessionOrFail(InventoryCheck $session, int $itemId): InventoryCheckItem;
+
+    public function deleteItem(InventoryCheckItem $item): void;
 }
 
 

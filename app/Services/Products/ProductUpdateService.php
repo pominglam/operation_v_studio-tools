@@ -15,17 +15,48 @@ final class ProductUpdateService
         private readonly ProductRepository $products,
     ) {}
 
+    private function isSkuUniqueViolation(QueryException $e): bool
+    {
+        $sqlState = (string) $e->getCode();
+        if ($sqlState !== '23000') {
+            return false;
+        }
+
+        $msg = $e->getMessage();
+        return str_contains($msg, 'products.sku')
+            || str_contains($msg, 'products_sku_unique')
+            || str_contains($msg, 'Duplicate entry')
+            || str_contains($msg, 'UNIQUE constraint failed: products.sku');
+    }
+
+    private function normalizeMainType(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $v = trim($value);
+        if (strtolower($v) === 'empty (no shopify tags)') {
+            return '';
+        }
+        return $v;
+    }
+
     /**
      * @param array{
      *   sku: string,
      *   barcode?: string|null,
      *   description: string,
      *   handle?: string|null,
+     *   main_type?: string|null,
      *   type?: string|null,
+     *   grade?: string|null,
+     *   scale?: string|null,
+     *   series?: string|null,
      *   vendor?: string|null,
      *   order?: int|null,
      *   filled?: int|null,
      *   available?: int|null,
+     *   maintain?: int|null,
      *   extended?: string|null
      * } $payload
      */
@@ -33,23 +64,35 @@ final class ProductUpdateService
     {
         $product = $this->products->findByUuidOrFail($uuid);
 
+        $mainType = array_key_exists('main_type', $payload) ? $payload['main_type'] : null;
+        $mainType = is_string($mainType) ? $this->normalizeMainType($mainType) : (array_key_exists('main_type', $payload) ? '' : null);
+
         $product->fill([
             'sku' => $payload['sku'],
             'barcode' => $payload['barcode'] ?? null,
             'description' => $payload['description'],
             'handle' => $payload['handle'] ?? null,
+            // When provided, allow clearing main_type to an empty string.
+            'main_type' => $mainType !== null ? $mainType : $product->main_type,
             'type' => $payload['type'] ?? null,
+            'grade' => $payload['grade'] ?? null,
+            'scale' => $payload['scale'] ?? null,
+            'series' => $payload['series'] ?? null,
             'vendor' => $payload['vendor'] ?? null,
             'order_qty' => $payload['order'] ?? null,
             'filled_qty' => $payload['filled'] ?? null,
             'available_qty' => $payload['available'] ?? null,
+            'maintain_qty' => $payload['maintain'] ?? null,
             'extended' => $payload['extended'] ?? null,
         ]);
 
         try {
             return $this->products->save($product);
         } catch (QueryException $e) {
-            throw new DuplicateSkuException('SKU already exists.', previous: $e);
+            if ($this->isSkuUniqueViolation($e)) {
+                throw new DuplicateSkuException('SKU already exists.', previous: $e);
+            }
+            throw $e;
         }
     }
 
@@ -83,11 +126,31 @@ final class ProductUpdateService
         return $this->products->save($product);
     }
 
+    public function updateMaintain(string $uuid, ?int $maintain): Product
+    {
+        $product = $this->products->findByUuidOrFail($uuid);
+        $product->fill([
+            'maintain_qty' => $maintain,
+        ]);
+
+        return $this->products->save($product);
+    }
+
     public function updateReady(string $uuid, bool $isReady): Product
     {
         $product = $this->products->findByUuidOrFail($uuid);
         $product->fill([
             'is_ready' => $isReady,
+        ]);
+
+        return $this->products->save($product);
+    }
+
+    public function updateLatestArrival(string $uuid, bool $latestArrival): Product
+    {
+        $product = $this->products->findByUuidOrFail($uuid);
+        $product->fill([
+            'latest_arrival' => $latestArrival,
         ]);
 
         return $this->products->save($product);

@@ -50,6 +50,7 @@ describe('PlamodDrawer', () => {
                 open: true,
                 productId: 'p-desc-1',
                 productSku: 'SKU-DESC-1',
+                productName: 'Grid Name 1',
                 productPrice: null,
                 onClose: () => undefined,
             },
@@ -160,6 +161,7 @@ describe('PlamodDrawer', () => {
                 open: true,
                 productId: 'p-sort-1',
                 productSku: 'SKU-SORT-1',
+                productName: 'Grid Name Sort',
                 productPrice: null,
                 onClose: () => undefined,
             },
@@ -227,6 +229,7 @@ describe('PlamodDrawer', () => {
                 open: true,
                 productId: 'p-1',
                 productSku: 'SKU-1',
+                productName: 'Grid Name 2',
                 productPrice: null,
                 onClose: () => undefined,
             },
@@ -316,6 +319,7 @@ describe('PlamodDrawer', () => {
                 open: true,
                 productId: 'p-2',
                 productSku: 'SKU-2',
+                productName: 'Grid Name 3',
                 productPrice: null,
                 onClose: () => undefined,
             },
@@ -395,6 +399,7 @@ describe('PlamodDrawer', () => {
                 open: true,
                 productId: 'p-1',
                 productSku: 'SKU-1',
+                productName: 'Grid Name 4',
                 productPrice: null,
                 onClose: () => undefined,
             },
@@ -420,6 +425,286 @@ describe('PlamodDrawer', () => {
         expect(api.patch).toHaveBeenCalledWith('/api/v1/product-assets/11/shopify-enabled', { shopify_enabled: false });
         // Should persist image order afterward.
         expect(api.put).toHaveBeenCalled();
+    });
+
+    it('does not treat thumbnail reorder drag as manual upload drop', async () => {
+        (api.get as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+            data: {
+                data: {
+                    preferred_description_source: null,
+                    contents: [],
+                    assets: [
+                        {
+                            id: 101,
+                            source: 'gundamhangar',
+                            kind: 'image',
+                            filename: 'gh-1.jpg',
+                            mime_type: 'image/jpeg',
+                            size_bytes: 10,
+                            checksum_sha256: 'a'.repeat(64),
+                            shopify_enabled: true,
+                            sort_order: 1,
+                            download_url: 'https://example.com/dl/gh-1.jpg',
+                            view_url: 'https://example.com/view/gh-1.jpg',
+                        },
+                        {
+                            id: 102,
+                            source: 'gundamhangar',
+                            kind: 'image',
+                            filename: 'gh-2.jpg',
+                            mime_type: 'image/jpeg',
+                            size_bytes: 10,
+                            checksum_sha256: 'b'.repeat(64),
+                            shopify_enabled: true,
+                            sort_order: 2,
+                            download_url: 'https://example.com/dl/gh-2.jpg',
+                            view_url: 'https://example.com/view/gh-2.jpg',
+                        },
+                    ],
+                },
+            },
+        });
+
+        (api.post as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { ok: true, data: { created: 1 } } });
+
+        const wrapper = mount(PlamodDrawer, {
+            props: {
+                open: true,
+                productId: 'p-reorder-guard',
+                productSku: 'SKU-REORDER',
+                productName: 'Grid Name Reorder Guard',
+                productPrice: null,
+                onClose: () => undefined,
+            },
+            global: {
+                stubs: {
+                    Teleport: true,
+                },
+            },
+        });
+
+        await Promise.resolve();
+        await wrapper.vm.$nextTick();
+
+        const thumb = wrapper.findAll('button[draggable="true"]')[0];
+        expect(thumb.exists()).toBe(true);
+        await thumb.trigger('dragstart');
+
+        const dropzone = wrapper.find('[data-testid="manual-image-dropzone"]');
+        expect(dropzone.exists()).toBe(true);
+        await dropzone.trigger('drop', {
+            dataTransfer: {
+                files: [{ name: 'ghost.png', type: 'image/png' }],
+            },
+        });
+
+        expect(api.post).not.toHaveBeenCalled();
+    });
+
+    it('keeps manual description draft scoped per product', async () => {
+        window.localStorage.clear();
+        (api.get as unknown as ReturnType<typeof vi.fn>)
+            .mockResolvedValueOnce({
+                data: {
+                    data: {
+                        preferred_description_source: null,
+                        contents: [
+                            {
+                                source: 'other',
+                                source_url: null,
+                                title: 'Other A',
+                                description_html: '<p>Desc A</p>',
+                                attributes: null,
+                                updated_at: '2026-02-04T00:00:00Z',
+                            },
+                        ],
+                        assets: [],
+                    },
+                },
+            })
+            .mockResolvedValueOnce({
+                data: {
+                    data: {
+                        preferred_description_source: null,
+                        contents: [
+                            {
+                                source: 'other',
+                                source_url: null,
+                                title: 'Other B',
+                                description_html: '<p>Desc B</p>',
+                                attributes: null,
+                                updated_at: '2026-02-04T00:00:00Z',
+                            },
+                        ],
+                        assets: [],
+                    },
+                },
+            })
+            .mockResolvedValueOnce({
+                data: {
+                    data: {
+                        preferred_description_source: null,
+                        contents: [
+                            {
+                                source: 'other',
+                                source_url: null,
+                                title: 'Other A',
+                                description_html: '<p>Desc A</p>',
+                                attributes: null,
+                                updated_at: '2026-02-04T00:00:00Z',
+                            },
+                        ],
+                        assets: [],
+                    },
+                },
+            });
+
+        const wrapper = mount(PlamodDrawer, {
+            props: {
+                open: true,
+                productId: 'p-draft-a',
+                productSku: 'SKU-A',
+                productName: 'Product A',
+                productPrice: null,
+                onClose: () => undefined,
+            },
+            global: {
+                stubs: {
+                    Teleport: true,
+                },
+            },
+        });
+
+        await Promise.resolve();
+        await wrapper.vm.$nextTick();
+
+        const textareaA = wrapper.find('[data-testid="description-editor-manual"]');
+        expect((textareaA.element as HTMLTextAreaElement).value).toContain('Desc A');
+        await textareaA.setValue('Custom text for A');
+
+        await wrapper.setProps({
+            productId: 'p-draft-b',
+            productSku: 'SKU-B',
+            productName: 'Product B',
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        await wrapper.vm.$nextTick();
+        await wrapper.vm.$nextTick();
+
+        const textareaB = wrapper.find('[data-testid="description-editor-manual"]');
+        expect((textareaB.element as HTMLTextAreaElement).value).not.toContain('Custom text for A');
+
+        await wrapper.setProps({
+            productId: 'p-draft-a',
+            productSku: 'SKU-A',
+            productName: 'Product A',
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        await wrapper.vm.$nextTick();
+        await wrapper.vm.$nextTick();
+
+        const textareaAReturn = wrapper.find('[data-testid="description-editor-manual"]');
+        expect((textareaAReturn.element as HTMLTextAreaElement).value).toContain('Custom text for A');
+    });
+
+    it('shows the product grid name in the drawer header', async () => {
+        (api.get as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+            data: {
+                data: {
+                    preferred_description_source: null,
+                    contents: [
+                        {
+                            source: 'hlj',
+                            source_url: 'https://example.com/hlj',
+                            title: 'HLJ Title',
+                            description_html: '<p>HLJ desc</p>',
+                            attributes: null,
+                            updated_at: '2026-02-04T00:00:00Z',
+                        },
+                    ],
+                    assets: [],
+                },
+            },
+        });
+
+        const wrapper = mount(PlamodDrawer, {
+            props: {
+                open: true,
+                productId: 'p-name-1',
+                productSku: 'SKU-NAME-1',
+                productName: 'MG 1/100 Delta Plus',
+                productPrice: null,
+                onClose: () => undefined,
+            },
+            global: {
+                stubs: {
+                    Teleport: true,
+                },
+            },
+        });
+
+        await Promise.resolve();
+        await wrapper.vm.$nextTick();
+
+        expect(wrapper.text()).toContain('MG 1/100 Delta Plus');
+    });
+
+    it('persists manual description html when clicking "Use this" on manual card', async () => {
+        (api.get as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+            data: {
+                data: {
+                    preferred_description_source: null,
+                    contents: [
+                        {
+                            source: 'other',
+                            source_url: null,
+                            title: 'Other',
+                            description_html: '<p>Seed</p>',
+                            attributes: null,
+                            updated_at: '2026-03-16T00:00:00Z',
+                        },
+                    ],
+                    assets: [],
+                },
+            },
+        });
+        (api.patch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ data: { ok: true } });
+
+        const wrapper = mount(PlamodDrawer, {
+            props: {
+                open: true,
+                productId: 'p-manual-persist',
+                productSku: 'SKU-MANUAL',
+                productName: 'Manual Persist Product',
+                productPrice: null,
+                onClose: () => undefined,
+            },
+            global: {
+                stubs: {
+                    Teleport: true,
+                },
+            },
+        });
+
+        await Promise.resolve();
+        await wrapper.vm.$nextTick();
+
+        const textarea = wrapper.find('[data-testid="description-editor-manual"]');
+        await textarea.setValue('Line 1\nLine 2');
+
+        const useButtons = wrapper.findAll('button').filter((b) => b.text().includes('Use this'));
+        const manualUseBtn = useButtons.at(-1);
+        expect(manualUseBtn).toBeTruthy();
+        await manualUseBtn!.trigger('click');
+        await Promise.resolve();
+        await wrapper.vm.$nextTick();
+
+        expect(api.patch).toHaveBeenCalledWith('/api/v1/products/p-manual-persist/preferred-description-source', {
+            preferred_description_source: 'other',
+            manual_description_html: '<p>Line 1<br />Line 2</p>',
+        });
     });
 });
 

@@ -14,7 +14,7 @@ final class ProductBulkPlamodAssetRenameRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'ids' => ['required', 'array', 'min:1', 'max:500'],
+            'ids' => ['required', 'array', 'min:1', 'max:5000'],
             'ids.*' => ['required', 'string', 'uuid'],
         ];
     }

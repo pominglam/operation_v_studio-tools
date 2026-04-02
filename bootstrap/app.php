@@ -1,9 +1,15 @@
 <?php
 
+use App\Services\Maintenance\ExternalAccessAuthService;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use App\Services\Maintenance\ExternalAccessAuthService;
+
+// Ensure newly created files/directories are readable across containers.
+// (e.g. the shopify_images_php worker runs as a different user than the queue/web containers.)
+if (function_exists('umask')) {
+    umask(0022); // dirs: 0755, files: 0644 (default create modes)
+}
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withCommands()

@@ -6,6 +6,7 @@ namespace App\DAL\PurchaseOrders;
 
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
@@ -71,14 +72,47 @@ final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
     /**
      * @return LengthAwarePaginator<PurchaseOrder>
      */
-    public function paginate(int $perPage, string $sortDir = 'desc'): LengthAwarePaginator
+    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created'): LengthAwarePaginator
     {
         $sortDir = strtolower(trim($sortDir)) === 'asc' ? 'asc' : 'desc';
+        $sortBy = strtolower(trim($sortBy));
+        if (! in_array($sortBy, ['created', 'ordered'], true)) {
+            $sortBy = 'created';
+        }
 
-        return PurchaseOrder::query()
-            ->withCount('items')
-            ->orderBy('created_at', $sortDir)
-            ->paginate(perPage: $perPage);
+        $q = PurchaseOrder::query()->withCount('items');
+
+        if ($sortBy === 'ordered') {
+            // Keep undated orders at the end for both directions.
+            $q->orderByRaw('ordered_date is null asc')
+                ->orderBy('ordered_date', $sortDir)
+                ->orderBy('created_at', 'desc');
+        } else {
+            $q->orderBy('created_at', $sortDir);
+        }
+
+        return $q->paginate(perPage: $perPage);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function distinctVendors(): array
+    {
+        /** @var array<int, string|null> $vendors */
+        $vendors = PurchaseOrder::query()
+            ->select('vendor')
+            ->whereNotNull('vendor')
+            ->distinct()
+            ->orderBy('vendor')
+            ->pluck('vendor')
+            ->all();
+
+        $vendors = array_map(static fn (?string $v): string => trim((string) $v), $vendors);
+        $vendors = array_values(array_unique(array_filter($vendors, static fn (string $v): bool => $v !== '')));
+        sort($vendors);
+
+        return $vendors;
     }
 
     public function findByUuidOrFail(string $uuid): PurchaseOrder
@@ -108,6 +142,64 @@ final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
         return PurchaseOrderItem::query()
             ->where('purchase_order_id', '=', $purchaseOrderId)
             ->delete();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function listItemSkusByUuid(string $uuid): array
+    {
+        $uuid = trim($uuid);
+        if ($uuid === '') {
+            return [];
+        }
+
+        /** @var array<int, string> $rows */
+        $rows = DB::table('purchase_orders')
+            ->join('purchase_order_items', 'purchase_order_items.purchase_order_id', '=', 'purchase_orders.id')
+            ->where('purchase_orders.uuid', '=', $uuid)
+            ->pluck('purchase_order_items.sku')
+            ->all();
+
+        $out = [];
+        foreach ($rows as $sku) {
+            $sku = trim((string) $sku);
+            if ($sku === '') {
+                continue;
+            }
+            $out[] = $sku;
+        }
+
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    public function listProductIdsByUuid(string $uuid): array
+    {
+        $uuid = trim($uuid);
+        if ($uuid === '') {
+            return [];
+        }
+
+        /** @var array<int, int|string|null> $rows */
+        $rows = DB::table('purchase_orders')
+            ->join('purchase_order_items', 'purchase_order_items.purchase_order_id', '=', 'purchase_orders.id')
+            ->where('purchase_orders.uuid', '=', $uuid)
+            ->whereNotNull('purchase_order_items.product_id')
+            ->pluck('purchase_order_items.product_id')
+            ->all();
+
+        $out = [];
+        foreach ($rows as $id) {
+            $n = (int) $id;
+            if ($n > 0) {
+                $out[] = $n;
+            }
+        }
+
+        return array_values(array_unique($out));
     }
 
     public function delete(PurchaseOrder $po): void

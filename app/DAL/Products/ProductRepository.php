@@ -18,12 +18,14 @@ interface ProductRepository
     public function upsertImportedRows(array $rows): int;
 
     /**
+     * @param  array<int, string>  $mainTypes
      * @param  array<int, string>  $types
      * @param  array<int, string>  $vendors
      * @param  array<int, string>  $missing
+     * @param  array<int, string>  $purchaseOrderUuids
      * @param  array<int, string>  $searchTerms
      */
-    public function paginate(int $perPage, ?string $search = null, array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', ?string $purchaseOrderUuid = null, array $searchTerms = []): LengthAwarePaginator;
+    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], bool $includeArchived = false, ?string $poProductNovelty = null, ?string $ready = null, ?int $available = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false): LengthAwarePaginator;
 
     /**
      * @param  array<int, string>  $types
@@ -113,7 +115,27 @@ interface ProductRepository
     /**
      * @return array<int, string>
      */
+    public function distinctMainTypes(): array;
+
+    /**
+     * @return array<int, string>
+     */
     public function distinctVendors(): array;
+
+    /**
+     * @return array<int, string>
+     */
+    public function distinctGrades(): array;
+
+    /**
+     * @return array<int, string>
+     */
+    public function distinctScales(): array;
+
+    /**
+     * @return array<int, string>
+     */
+    public function distinctSeries(): array;
 
     /**
      * @param  array<int, string>  $skus
@@ -161,4 +183,31 @@ interface ProductRepository
     public function updateByUuids(array $uuids, array $updates): int;
 
     public function flushAll(): void;
+
+    /**
+     * Override available qty using barcode counts.
+     *
+     * Behavior:
+     * - Resets all products `available_qty` to 0
+     * - Sets `available_qty` for products whose barcode exists in the list
+     *
+     * @param  array<int, array{barcode:string, qty:int}>  $barcodeCounts
+     * @param  bool  $resetMissingToZero  When false, do NOT reset products not present in the file.
+     * @return array{reset:int, updated:int}
+     */
+    public function overrideAvailableQtyFromBarcodeCounts(array $barcodeCounts, bool $resetMissingToZero = true): array;
+
+    /**
+     * Override available qty using barcode counts for a restricted set of products.
+     *
+     * Behavior:
+     * - Resets `available_qty` to 0 only for the restricted products
+     * - Sets `available_qty` for restricted products whose barcode exists in the list
+     *
+     * @param  array<int, int>  $restrictToProductIds
+     * @param  array<int, array{barcode:string, qty:int}>  $barcodeCounts
+     * @param  bool  $resetMissingToZero  When false, do NOT reset restricted products not present in the file.
+     * @return array{reset:int, updated:int}
+     */
+    public function overrideAvailableQtyFromBarcodeCountsForProductIds(array $restrictToProductIds, array $barcodeCounts, bool $resetMissingToZero = true): array;
 }

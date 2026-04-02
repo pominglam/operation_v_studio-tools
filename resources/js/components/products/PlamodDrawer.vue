@@ -36,7 +36,7 @@ type ProductInfoPayload = {
     assets: ProductInfoAsset[];
 };
 
-type SourceKey = 'bandai' | 'hlj' | 'gundamplanet' | 'newtype' | 'plamod' | 'other';
+type SourceKey = 'bandai' | 'hlj' | 'gundamplanet' | 'newtype' | 'gundamhangar' | 'plamod' | 'manual_upload' | 'other';
 
 type DescriptionSelectionMode = 'source' | 'manual';
 
@@ -51,6 +51,8 @@ const SOURCE_LABELS: Record<SourceKey, string> = {
     plamod: 'Plamod',
     gundamplanet: 'GundamPlanet',
     newtype: 'Newtype',
+    gundamhangar: 'GundamHangar',
+    manual_upload: 'Manual upload',
     other: 'Other',
 };
 
@@ -59,7 +61,9 @@ const SOURCE_BADGE_CLASSES: Record<SourceKey, string> = {
     hlj: 'border-emerald-700 bg-emerald-600 text-white',
     newtype: 'border-fuchsia-700 bg-fuchsia-600 text-white',
     gundamplanet: 'border-amber-700 bg-amber-500 text-slate-950',
+    gundamhangar: 'border-teal-700 bg-teal-600 text-white',
     bandai: 'border-sky-700 bg-sky-600 text-white',
+    manual_upload: 'border-rose-700 bg-rose-600 text-white',
     other: 'border-slate-700 bg-slate-700 text-white',
 };
 
@@ -74,6 +78,8 @@ function normalizeSourceKey(source: string): SourceKey {
     if (s === 'plamod') return 'plamod';
     if (s === 'gundamplanet') return 'gundamplanet';
     if (s === 'newtype') return 'newtype';
+    if (s === 'gundamhangar') return 'gundamhangar';
+    if (s === 'manual_upload') return 'manual_upload';
     return 'other';
 }
 
@@ -81,6 +87,7 @@ function preferredContentSource(available: Set<SourceKey>): SourceKey {
     if (available.has('hlj')) return 'hlj';
     if (available.has('bandai')) return 'bandai';
     if (available.has('newtype')) return 'newtype';
+    if (available.has('gundamhangar')) return 'gundamhangar';
     if (available.has('other')) return 'other';
     return 'plamod';
 }
@@ -98,6 +105,22 @@ function htmlToPlainText(html: string): string {
     const el = document.createElement('div');
     el.innerHTML = html;
     return (el.textContent ?? '').trim();
+}
+
+function escapeHtml(s: string): string {
+    return s
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function manualDraftToHtml(text: string): string | null {
+    const trimmed = text.trim();
+    if (trimmed === '') return null;
+    const body = escapeHtml(trimmed).replace(/\r\n|\r|\n/g, '<br />');
+    return `<p>${body}</p>`;
 }
 
 function contentForSource(contents: ProductInfoContent[], source: SourceKey): ProductInfoContent | null {
@@ -133,6 +156,7 @@ const props = defineProps<{
     open: boolean;
     productId: string | null;
     productSku: string | null;
+    productName: string | null;
     productPrice: string | null;
     onClose: () => void;
 }>();
@@ -175,6 +199,7 @@ const selectedContent = computed<ProductInfoContent | null>(() => {
 });
 
 const title = computed<string>(() => selectedContent.value?.title || props.productSku || 'Product info');
+const gridName = computed<string>(() => (props.productName ?? '').trim());
 
 type DescriptionCard = {
     key: SourceKey;
@@ -183,7 +208,7 @@ type DescriptionCard = {
 
 const descriptionCards = computed<DescriptionCard[]>(() => {
     const contents = data.value?.contents ?? [];
-    const order: SourceKey[] = ['hlj', 'newtype', 'gundamplanet', 'plamod', 'bandai', 'other'];
+    const order: SourceKey[] = ['hlj', 'newtype', 'gundamhangar', 'gundamplanet', 'plamod', 'bandai', 'other'];
     const out: DescriptionCard[] = [];
     for (const key of order) {
         const c = contentForSource(contents, key);
@@ -194,10 +219,39 @@ const descriptionCards = computed<DescriptionCard[]>(() => {
 });
 
 const manualDescriptionDraft = ref<string>('');
+const manualDraftProductId = ref<string | null>(null);
+const MANUAL_DRAFT_STORAGE_PREFIX = 'plamod_drawer:manual_description_draft:';
 const otherDefaultDescriptionHtml = computed<string | null>(() => {
     const other = contentForSource(data.value?.contents ?? [], 'other');
     return other ? descriptionHtmlFor(other) : null;
 });
+
+function storageKeyForManualDraft(productId: string | null): string | null {
+    const id = (productId ?? '').trim();
+    if (!id) return null;
+    return `${MANUAL_DRAFT_STORAGE_PREFIX}${id}`;
+}
+
+function loadManualDraftFromStorage(productId: string | null): string | null {
+    const key = storageKeyForManualDraft(productId);
+    if (!key) return null;
+    try {
+        const raw = window.localStorage.getItem(key);
+        return typeof raw === 'string' ? raw : null;
+    } catch {
+        return null;
+    }
+}
+
+function persistManualDraftToStorage(productId: string | null, value: string): void {
+    const key = storageKeyForManualDraft(productId);
+    if (!key) return;
+    try {
+        window.localStorage.setItem(key, value);
+    } catch {
+        // Best-effort only.
+    }
+}
 
 watch(
     () => [props.open, props.productId, otherDefaultDescriptionHtml.value] as const,
@@ -205,11 +259,30 @@ watch(
         if (!open) return;
         if (!productId) return;
 
-        // Seed initial draft but never overwrite user's edits.
+        const switchedProduct = manualDraftProductId.value !== productId;
+        if (switchedProduct) {
+            const stored = loadManualDraftFromStorage(productId);
+            // On product switch, avoid seeding from stale previous-product content.
+            // New product content may load asynchronously right after this branch.
+            manualDescriptionDraft.value = stored ?? '';
+            manualDraftProductId.value = productId;
+            return;
+        }
+
+        // Same product: only seed when draft is empty.
         if (manualDescriptionDraft.value.trim() !== '') return;
-        manualDescriptionDraft.value = html ? htmlToPlainText(html) : '';
+        const stored = loadManualDraftFromStorage(productId);
+        manualDescriptionDraft.value = stored ?? (html ? htmlToPlainText(html) : '');
     },
     { immediate: true },
+);
+
+watch(
+    () => [props.productId, manualDescriptionDraft.value] as const,
+    ([productId, draft]) => {
+        if (!productId) return;
+        persistManualDraftToStorage(productId, draft);
+    },
 );
 
 function useDescriptionSource(key: SourceKey): void {
@@ -219,22 +292,28 @@ function useDescriptionSource(key: SourceKey): void {
 
 function useManualDescription(): void {
     selectedSource.value = { ...selectedSource.value, contentSource: 'other', descriptionMode: 'manual' };
-    void persistPreferredDescriptionSource('other');
+    void persistPreferredDescriptionSource('other', manualDraftToHtml(manualDescriptionDraft.value));
 }
 
 const savingPreferredDescription = ref(false);
 
-async function persistPreferredDescriptionSource(key: SourceKey): Promise<void> {
+async function persistPreferredDescriptionSource(key: SourceKey, manualDescriptionHtml: string | null = null): Promise<void> {
     if (!props.productId) return;
     savingPreferredDescription.value = true;
     error.value = null;
     try {
-        await api.patch(`/api/v1/products/${props.productId}/preferred-description-source`, {
+        const payload: Record<string, unknown> = {
             preferred_description_source: key,
-        });
+        };
+        if (key === 'other') {
+            payload.manual_description_html = manualDescriptionHtml;
+        }
+
+        await api.patch(`/api/v1/products/${props.productId}/preferred-description-source`, payload);
         if (data.value) {
             data.value = { ...data.value, preferred_description_source: key };
         }
+        await load();
     } catch {
         error.value = 'Failed to save preferred description.';
     } finally {
@@ -338,7 +417,7 @@ const imageSourceStats = computed<ImageSourceStat[]>(() => {
         const k = normalizeSourceKey(a.source);
         counts.set(k, (counts.get(k) ?? 0) + 1);
     }
-    const order: SourceKey[] = ['hlj', 'gundamplanet', 'plamod', 'bandai', 'other'];
+    const order: SourceKey[] = ['hlj', 'newtype', 'gundamhangar', 'gundamplanet', 'plamod', 'manual_upload', 'bandai', 'other'];
     const keys = Array.from(counts.keys()).sort((a, b) => {
         const ai = order.indexOf(a);
         const bi = order.indexOf(b);
@@ -522,9 +601,111 @@ const activeImageDebug = computed<string | null>(() => {
 });
 const savingOrder = ref(false);
 const dragAssetId = ref<number | null>(null);
+const thumbnailDragInProgress = ref(false);
 const togglingShopify = ref<Record<number, true>>({});
 const dedupingExact = ref(false);
 const disablingHiddenSources = ref(false);
+const manualUploadBusy = ref(false);
+const manualUploadInput = ref<HTMLInputElement | null>(null);
+const manualUploadDragOver = ref(false);
+
+function openManualUploadPicker(): void {
+    if (manualUploadBusy.value) return;
+    message.value = null;
+    error.value = null;
+    manualUploadInput.value?.click();
+}
+
+async function onManualUploadFilesSelected(e: Event): Promise<void> {
+    const input = e.target as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    input.value = '';
+
+    await uploadManualFiles(files);
+}
+
+function onManualUploadDragOver(e: DragEvent): void {
+    e.preventDefault();
+    if (manualUploadBusy.value) return;
+    if (thumbnailDragInProgress.value) return;
+    manualUploadDragOver.value = true;
+}
+
+function onManualUploadDragEnter(e: DragEvent): void {
+    e.preventDefault();
+    if (manualUploadBusy.value) return;
+    if (thumbnailDragInProgress.value) return;
+    manualUploadDragOver.value = true;
+}
+
+function onManualUploadDragLeave(e: DragEvent): void {
+    e.preventDefault();
+    // Only reset when leaving the dropzone entirely.
+    if ((e.currentTarget as HTMLElement | null) === e.target) {
+        manualUploadDragOver.value = false;
+    }
+}
+
+async function onManualUploadDrop(e: DragEvent): Promise<void> {
+    e.preventDefault();
+    manualUploadDragOver.value = false;
+    if (manualUploadBusy.value) return;
+    if (thumbnailDragInProgress.value || dragAssetId.value !== null) return;
+
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    await uploadManualFiles(files);
+}
+
+async function uploadManualFiles(files: File[]): Promise<void> {
+    if (!props.productId) return;
+    if (files.length === 0) return;
+
+    const imageFiles = files.filter((f) => (f.type ?? '').toLowerCase().startsWith('image/'));
+    if (imageFiles.length === 0) {
+        error.value = 'Please drop image files only.';
+        return;
+    }
+
+    manualUploadBusy.value = true;
+    message.value = null;
+    error.value = null;
+
+    try {
+        const form = new FormData();
+        for (const f of imageFiles) {
+            form.append('files[]', f);
+        }
+
+        const res = await api.post<{ ok: boolean; data: { created: number } }>(
+            `/api/v1/products/${props.productId}/assets/manual-upload`,
+            form,
+            { headers: { 'Content-Type': 'multipart/form-data' }, validateStatus: () => true },
+        );
+
+        if (res.status !== 201) {
+            const anyData = res.data as any;
+            const msg: unknown = anyData?.message ?? anyData?.error ?? anyData?.errors;
+            let details = '';
+            if (typeof msg === 'string') details = msg.trim();
+            else if (msg !== null && msg !== undefined) {
+                try {
+                    details = JSON.stringify(msg);
+                } catch {
+                    details = String(msg);
+                }
+            }
+            throw new Error(`Upload failed (HTTP ${res.status}).${details ? ` ${details}` : ''}`);
+        }
+
+        const created = (res.data as any)?.data?.created;
+        message.value = `Uploaded ${typeof created === 'number' ? created : imageFiles.length} image(s).`;
+        await load();
+    } catch (e2: unknown) {
+        error.value = e2 instanceof Error ? e2.message : 'Failed to upload images.';
+    } finally {
+        manualUploadBusy.value = false;
+    }
+}
 
 function applyImageOrderLocally(orderedImages: ProductInfoAsset[]): void {
     if (!data.value) return;
@@ -593,7 +774,7 @@ async function sortExportingImagesBySource(): Promise<void> {
         else disabled.push(a);
     }
 
-    const order: SourceKey[] = ['plamod', 'hlj', 'newtype', 'gundamplanet'];
+    const order: SourceKey[] = ['plamod', 'hlj', 'newtype', 'gundamhangar', 'gundamplanet'];
     const buckets = new Map<SourceKey, ProductInfoAsset[]>();
     for (const k of order) buckets.set(k, []);
 
@@ -627,6 +808,7 @@ async function sortExportingImagesBySource(): Promise<void> {
 async function onDropThumbnail(toIndex: number): Promise<void> {
     const fromId = dragAssetId.value;
     dragAssetId.value = null;
+    thumbnailDragInProgress.value = false;
     if (fromId === null) return;
     const from = visibleImageAssets.value.findIndex((a) => a.id === fromId);
     if (from < 0) return;
@@ -859,8 +1041,11 @@ watch(
                 <div class="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
                     <div>
                         <h2 class="text-base font-semibold text-slate-900">{{ title }}</h2>
+                        <div v-if="gridName && gridName !== title" class="mt-0.5 text-sm font-semibold text-slate-900">
+                            {{ gridName }}
+                        </div>
                         <p class="mt-0.5 text-xs text-slate-600">
-                            PDP content & assets (Plamod/HLJ/Bandai) with source attribution
+                            PDP content & assets (Plamod/HLJ/Bandai/GundamPlanet/Newtype/GundamHangar) with source attribution
                         </p>
                     </div>
 
@@ -1015,7 +1200,15 @@ watch(
                         </div>
                     </div>
 
-                    <div class="rounded-md border border-slate-200 bg-white p-3">
+                    <div
+                        class="rounded-md border border-slate-200 bg-white p-3 transition"
+                        data-testid="manual-image-dropzone"
+                        :class="manualUploadDragOver ? 'border-blue-400 bg-blue-50/60' : ''"
+                        @dragenter="onManualUploadDragEnter"
+                        @dragover="onManualUploadDragOver"
+                        @dragleave="onManualUploadDragLeave"
+                        @drop="onManualUploadDrop"
+                    >
                         <div class="flex items-center justify-between gap-3">
                             <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Photos</div>
                             <div class="text-xs text-slate-500">
@@ -1026,33 +1219,53 @@ watch(
                             Drag to reorder (Shopify export follows this order). Toggle export per photo (color vs grayed out).
                         </div>
 
-                        <div v-if="imageAssets.length > 0" class="mt-2 flex flex-wrap items-center gap-2">
-                            <div class="text-xs font-semibold text-slate-700">Sources</div>
-                            <button
-                                v-for="s in imageSourceStats"
-                                :key="s.key"
-                                type="button"
-                                class="rounded-full border px-2 py-0.5 text-xs font-semibold transition"
-                                :class="
-                                    s.hidden
-                                        ? 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                                        : 'border-slate-900 bg-slate-900 text-white hover:bg-slate-800'
-                                "
-                                @click="toggleImageSourceVisibility(s.key)"
-                            >
-                                {{ s.label }} <span class="opacity-80">({{ s.count }})</span>
-                                <span v-if="s.hidden" class="opacity-70"> · hidden</span>
-                            </button>
-                            <button
-                                v-if="hiddenImageSources.size > 0"
-                                type="button"
-                                class="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-900 hover:bg-slate-50"
-                                @click="showAllImageSources"
-                            >
-                                Show all
-                            </button>
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                            <input
+                                ref="manualUploadInput"
+                                class="hidden"
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                @change="onManualUploadFilesSelected"
+                            />
+                            <template v-if="imageAssets.length > 0">
+                                <div class="text-xs font-semibold text-slate-700">Sources</div>
+                                <button
+                                    v-for="s in imageSourceStats"
+                                    :key="s.key"
+                                    type="button"
+                                    class="rounded-full border px-2 py-0.5 text-xs font-semibold transition"
+                                    :class="
+                                        s.hidden
+                                            ? 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                                            : 'border-slate-900 bg-slate-900 text-white hover:bg-slate-800'
+                                    "
+                                    @click="toggleImageSourceVisibility(s.key)"
+                                >
+                                    {{ s.label }} <span class="opacity-80">({{ s.count }})</span>
+                                    <span v-if="s.hidden" class="opacity-70"> · hidden</span>
+                                </button>
+                                <button
+                                    v-if="hiddenImageSources.size > 0"
+                                    type="button"
+                                    class="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-900 hover:bg-slate-50"
+                                    @click="showAllImageSources"
+                                >
+                                    Show all
+                                </button>
+                            </template>
                             <div class="grow" />
                             <button
+                                type="button"
+                                class="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
+                                :disabled="manualUploadBusy || savingOrder"
+                                @click="openManualUploadPicker"
+                                title="Upload images from your computer (source: Manual upload)."
+                            >
+                                {{ manualUploadBusy ? 'Uploading…' : 'Upload images' }}
+                            </button>
+                            <button
+                                v-if="imageAssets.length > 0"
                                 type="button"
                                 class="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
                                 :disabled="dedupingExact || savingOrder"
@@ -1062,15 +1275,29 @@ watch(
                                 {{ dedupingExact ? 'Disabling…' : 'Disable exact duplicates' }}
                             </button>
                             <button
+                                v-if="imageAssets.length > 0"
                                 type="button"
                                 class="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
                                 :disabled="savingOrder"
                                 @click="sortExportingImagesBySource"
-                                title="Reorders exporting (On) photos by source: Plamod → HLJ → Newtype → GundamPlanet."
+                                title="Reorders exporting (On) photos by source: Plamod → HLJ → Newtype → GundamHangar → GundamPlanet."
                             >
                                 Sort exporting by source
                             </button>
                         </div>
+                        <button
+                            type="button"
+                            class="mt-2 w-full rounded-md border-2 border-dashed px-3 py-4 text-center text-sm transition disabled:cursor-not-allowed disabled:opacity-60"
+                            :class="
+                                manualUploadDragOver
+                                    ? 'border-blue-500 bg-blue-50 text-blue-900'
+                                    : 'border-slate-300 bg-slate-50 text-slate-700 hover:border-slate-400 hover:bg-slate-100'
+                            "
+                            :disabled="manualUploadBusy"
+                            @click="openManualUploadPicker"
+                        >
+                            {{ manualUploadBusy ? 'Uploading…' : 'Drop images here, or click to upload' }}
+                        </button>
 
                         <div v-if="imageAssets.length === 0" class="mt-2 text-sm text-slate-600">No images found yet.</div>
 
@@ -1143,9 +1370,16 @@ watch(
                                         :class="img.id === activeImage?.id ? 'border-slate-900' : 'border-slate-200 hover:border-slate-400'"
                                         :disabled="savingOrder"
                                         draggable="true"
-                                        @dragstart="dragAssetId = img.id"
-                                        @dragover.prevent
-                                        @drop.prevent="onDropThumbnail(idx)"
+                                        @dragstart="
+                                            dragAssetId = img.id;
+                                            thumbnailDragInProgress = true;
+                                        "
+                                        @dragend="
+                                            dragAssetId = null;
+                                            thumbnailDragInProgress = false;
+                                        "
+                                        @dragover.prevent.stop
+                                        @drop.prevent.stop="onDropThumbnail(idx)"
                                         @click="activeImageId = img.id"
                                     >
                                         <img

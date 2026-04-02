@@ -79,6 +79,7 @@ final class PurchaseOrderResource extends JsonResource
             'vendor_currency_code' => $po->vendor_currency_code,
             'ordered_date' => $po->ordered_date?->toDateString(),
             'shipped_date' => $po->shipped_date?->toDateString(),
+            'estimated_arrival_date' => $po->estimated_arrival_date?->toDateString(),
             'received_date' => $po->received_date?->toDateString(),
             'fully_on_shelves_date' => $po->fully_on_shelves_date?->toDateString(),
             'shipping_total' => $this->money2($po->shipping_total),
@@ -90,6 +91,8 @@ final class PurchaseOrderResource extends JsonResource
             // Display-friendly: "CAD -> vendor" (e.g. ~5.x for HKD).
             'fx_rate_cad_to_vendor' => $this->invertDecimal6($this->decimal6($po->fx_rate_to_cad)),
             'notes' => $po->notes,
+            'is_done' => (bool) $po->is_done,
+            'workflow_checklist' => is_array($po->workflow_checklist_json) ? $po->workflow_checklist_json : null,
             'counts' => [
                 'items' => $po->relationLoaded('items') ? (int) $po->items->count() : (int) ($po->items_count ?? 0),
             ],

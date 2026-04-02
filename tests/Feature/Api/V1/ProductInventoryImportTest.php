@@ -60,4 +60,42 @@ it('rejects a Shopify CSV missing required inventory columns', function (): void
     ]);
 });
 
+it('treats -1 inventory qty as 0 and excludes archived products from not-updated list', function (): void {
+    Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000040101',
+        'sku' => 'INV-NEG-1',
+        'description' => 'Negative one test',
+        'available_qty' => 9,
+    ]);
+    Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000040102',
+        'sku' => 'INV-ARCH-1',
+        'description' => 'Archived product',
+        'available_qty' => 7,
+        'archived_at' => now(),
+    ]);
+
+    $csv = implode("\n", [
+        'Handle,Variant SKU,Variant Inventory Qty,Variant Price',
+        'x,INV-NEG-1,-1,6.99',
+    ]);
+    $file = UploadedFile::fake()->createWithContent('shopify.csv', $csv, 'text/csv');
+
+    $res = $this->postJson('/api/v1/products/import-inventory', [
+        'file' => $file,
+    ]);
+
+    $res->assertOk();
+    $res->assertJsonPath('updated', 1);
+
+    $this->assertDatabaseHas('products', [
+        'sku' => 'INV-NEG-1',
+        'available_qty' => 0,
+    ]);
+
+    $notUpdated = $res->json('not_updated') ?? [];
+    expect($notUpdated)->toBeArray();
+    expect(collect($notUpdated)->pluck('sku')->all())->not->toContain('INV-ARCH-1');
+});
+
 

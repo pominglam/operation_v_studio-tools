@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 
 const props = defineProps<{
     embedded?: boolean;
+    purchaseOrderUuid?: string | null;
 }>();
 
 const file = ref<File | null>(null);
@@ -51,6 +52,9 @@ async function submit(): Promise<void> {
     try {
         const form = new FormData();
         form.append('file', file.value);
+        if (typeof props.purchaseOrderUuid === 'string' && props.purchaseOrderUuid.trim() !== '') {
+            form.append('purchase_order_uuid', props.purchaseOrderUuid.trim());
+        }
 
         const res = await api.post<{
             updated: number;
@@ -61,6 +65,7 @@ async function submit(): Promise<void> {
             missing_in_system: string[];
             missing_sku_rows: number;
             missing_handle_rows: number;
+            scoped_purchase_order_uuid?: string | null;
         }>('/api/v1/products/import-handles', form, { headers: { 'Content-Type': 'multipart/form-data' } });
 
         updated.value = res.data.updated;

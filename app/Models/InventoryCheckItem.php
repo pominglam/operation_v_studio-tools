@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $id
  * @property int $inventory_check_id
  * @property int|null $product_id
+ * @property string|null $barcode_scanned
  * @property string|null $handle
  * @property string|null $vendor
  * @property string $sku
@@ -23,8 +24,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $notes
  * @property string $match_status
  * @property string|null $match_error
+ * @property bool $issue_flag
+ * @property string|null $issue_reason
  * @property bool $applied
  * @property \Illuminate\Support\Carbon|null $applied_at
+ * @property string|null $selling_price_snapshot
+ * @property string|null $landed_unit_cost_snapshot
  */
 final class InventoryCheckItem extends Model
 {
@@ -32,6 +37,7 @@ final class InventoryCheckItem extends Model
     protected $fillable = [
         'inventory_check_id',
         'product_id',
+        'barcode_scanned',
         'handle',
         'vendor',
         'sku',
@@ -44,6 +50,10 @@ final class InventoryCheckItem extends Model
         'notes',
         'match_status',
         'match_error',
+        'issue_flag',
+        'issue_reason',
+        'selling_price_snapshot',
+        'landed_unit_cost_snapshot',
         'applied',
         'applied_at',
     ];
@@ -53,6 +63,9 @@ final class InventoryCheckItem extends Model
         'available_amount' => 'integer',
         'quantity_in_store' => 'integer',
         'difference' => 'integer',
+        'selling_price_snapshot' => 'decimal:2',
+        'landed_unit_cost_snapshot' => 'decimal:2',
+        'issue_flag' => 'boolean',
         'applied' => 'boolean',
         'applied_at' => 'datetime',
     ];

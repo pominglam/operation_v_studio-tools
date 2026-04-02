@@ -33,6 +33,7 @@ final class ProductsExportBarcodedController extends Controller
                 'Handle',
                 'Vendor',
                 'SKU',
+                'Barcode',
                 'Type',
                 'Product Name',
                 'English name',
@@ -50,6 +51,7 @@ final class ProductsExportBarcodedController extends Controller
                     (string) ($p->handle ?? ''),
                     (string) ($p->vendor ?? ''),
                     (string) $p->sku,
+                    (string) ($p->barcode ?? ''),
                     (string) ($p->type ?? ''),
                     (string) $p->description,
                     '',
@@ -83,5 +85,3 @@ final class ProductsExportBarcodedController extends Controller
         }
     }
 }
-
-

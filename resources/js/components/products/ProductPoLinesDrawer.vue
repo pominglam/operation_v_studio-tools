@@ -9,6 +9,8 @@ type PoLine = {
     ordered_date: string | null;
     shipped_date: string | null;
     received_date: string | null;
+    qty_shipped: number | null;
+    qty_received: number | null;
     unit_cost: string | null;
     ship_per_unit: string;
     surcharge_per_unit: string;
@@ -104,6 +106,8 @@ watch(
                                     <th class="px-3 py-2 text-left">Vendor</th>
                                     <th class="px-3 py-2 text-left">Ordered</th>
                                     <th class="px-3 py-2 text-left">Received</th>
+                                    <th class="px-3 py-2 text-right">Qty shipped</th>
+                                    <th class="px-3 py-2 text-right">Qty received</th>
                                     <th class="px-3 py-2 text-right">Unit</th>
                                     <th class="px-3 py-2 text-right">Ship/unit</th>
                                     <th class="px-3 py-2 text-right">Surcharge/unit</th>
@@ -128,6 +132,12 @@ watch(
                                     <td class="px-3 py-2 font-mono text-xs">{{ l.ordered_date ?? '—' }}</td>
                                     <td class="px-3 py-2 font-mono text-xs">{{ l.received_date ?? '—' }}</td>
                                     <td class="px-3 py-2 text-right font-mono text-xs">
+                                        {{ l.qty_shipped ?? '—' }}
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono text-xs">
+                                        {{ l.qty_received ?? '—' }}
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono text-xs">
                                         {{ l.unit_cost ? formatMoney2(l.unit_cost) : '—' }}
                                     </td>
                                     <td class="px-3 py-2 text-right font-mono text-xs">
@@ -142,7 +152,7 @@ watch(
                                 </tr>
 
                                 <tr v-if="lines.length === 0">
-                                    <td class="px-3 py-4 text-sm text-slate-600" colspan="8">
+                                    <td class="px-3 py-4 text-sm text-slate-600" colspan="10">
                                         No purchase order lines found for this product.
                                     </td>
                                 </tr>

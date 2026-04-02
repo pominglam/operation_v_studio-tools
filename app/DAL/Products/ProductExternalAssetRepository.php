@@ -42,6 +42,24 @@ interface ProductExternalAssetRepository
     public function findById(int $id): ?ProductExternalAsset;
 
     public function setShopifyEnabled(int $id, bool $enabled): void;
+
+    /**
+     * Create additional assets for a product (append; does not delete existing rows).
+     *
+     * @param  array<int, array{
+     *   kind: string,
+     *   storage_path: string,
+     *   filename: string,
+     *   mime_type?: string|null,
+     *   size_bytes?: int|null,
+     *   origin_url?: string|null,
+     *   origin_width?: int|null,
+     *   origin_height?: int|null,
+     *   checksum_sha256?: string|null,
+     *   sort_order?: int|null,
+     *   shopify_enabled?: bool|null
+     * }>  $assets
+     * @return array<int, ProductExternalAsset>
+     */
+    public function createForProduct(int $productId, string $source, array $assets): array;
 }
-
-

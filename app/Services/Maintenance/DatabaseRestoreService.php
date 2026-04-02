@@ -28,6 +28,11 @@ final class DatabaseRestoreService
             throw new \RuntimeException('Backup file not found on disk.');
         }
 
+        if (str_ends_with(strtolower($fullPath), '.zip')) {
+            $this->restoreFromBundleZip($conn, $driver, $fullPath, $backup->uuid);
+            return;
+        }
+
         if ($driver === 'sqlite') {
             $this->restoreSqlite($fullPath);
             return;
@@ -39,6 +44,144 @@ final class DatabaseRestoreService
         }
 
         throw new \RuntimeException("Unsupported database driver for restore: {$driver}");
+    }
+
+    private function restoreFromBundleZip(ConnectionInterface $conn, string $driver, string $bundlePath, string $backupUuid): void
+    {
+        $tmpDir = storage_path('backups/restore_tmp_'.$backupUuid.'_'.now()->format('YmdHis'));
+        File::ensureDirectoryExists($tmpDir);
+
+        try {
+            $this->extractZipSafely($bundlePath, $tmpDir);
+
+            $dbPath = $this->findBundledDbPath($tmpDir, $driver);
+            if ($driver === 'sqlite') {
+                $this->restoreSqlite($dbPath);
+            } elseif ($driver === 'mysql') {
+                $this->restoreMysql($conn, $dbPath);
+            } else {
+                throw new \RuntimeException("Unsupported database driver for restore: {$driver}");
+            }
+
+            $this->restoreBundledStorageApp($tmpDir);
+        } finally {
+            // Best-effort cleanup.
+            try {
+                File::deleteDirectory($tmpDir);
+            } catch (\Throwable) {
+                // ignore
+            }
+        }
+    }
+
+    private function findBundledDbPath(string $tmpDir, string $driver): string
+    {
+        $dbDir = $tmpDir.'/db';
+        if (! is_dir($dbDir)) {
+            throw new \RuntimeException('Backup archive is missing db/ folder.');
+        }
+
+        $ext = $driver === 'sqlite' ? 'sqlite' : 'sql';
+        $files = File::files($dbDir);
+
+        foreach ($files as $f) {
+            $name = strtolower($f->getFilename());
+            if (str_ends_with($name, '.'.$ext)) {
+                return $f->getPathname();
+            }
+        }
+
+        throw new \RuntimeException('Backup archive is missing the database dump.');
+    }
+
+    private function restoreBundledStorageApp(string $tmpDir): void
+    {
+        $bundleStorageApp = $tmpDir.'/storage/app';
+        if (! is_dir($bundleStorageApp)) {
+            return;
+        }
+
+        $targetRoot = storage_path('app');
+        File::ensureDirectoryExists($targetRoot);
+
+        $it = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($bundleStorageApp, \FilesystemIterator::SKIP_DOTS),
+        );
+
+        foreach ($it as $file) {
+            if (! $file->isFile()) {
+                continue;
+            }
+
+            $src = $file->getPathname();
+            $rel = str_replace('\\', '/', substr($src, strlen($bundleStorageApp) + 1));
+            $rel = ltrim($rel, '/');
+            if ($rel === '' || str_contains($rel, '../') || str_contains($rel, '..\\')) {
+                continue;
+            }
+
+            $dest = $targetRoot.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $rel);
+            File::ensureDirectoryExists(dirname($dest));
+            File::copy($src, $dest);
+        }
+    }
+
+    private function extractZipSafely(string $zipPath, string $tmpDir): void
+    {
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath) !== true) {
+            throw new \RuntimeException('Could not open backup archive.');
+        }
+
+        try {
+            for ($i = 0; $i < $zip->numFiles; $i++) {
+                $name = (string) $zip->getNameIndex($i);
+                $safe = $this->sanitizeZipEntryPath($name);
+                if ($safe === null) {
+                    continue;
+                }
+
+                $target = $tmpDir.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $safe);
+                File::ensureDirectoryExists(dirname($target));
+
+                $stream = $zip->getStream($name);
+                if ($stream === false) {
+                    continue;
+                }
+
+                $out = fopen($target, 'wb');
+                if ($out === false) {
+                    fclose($stream);
+                    continue;
+                }
+
+                try {
+                    stream_copy_to_stream($stream, $out);
+                } finally {
+                    fclose($out);
+                    fclose($stream);
+                }
+            }
+        } finally {
+            $zip->close();
+        }
+    }
+
+    private function sanitizeZipEntryPath(string $name): ?string
+    {
+        $n = str_replace('\\', '/', $name);
+        $n = ltrim($n, '/');
+        if ($n === '' || str_ends_with($n, '/')) {
+            return null;
+        }
+        if (str_contains($n, '../') || str_contains($n, '..\\')) {
+            return null;
+        }
+        if (strlen($n) > 240) {
+            return null;
+        }
+
+        return $n;
     }
 
     private function restoreSqlite(string $backupPath): void

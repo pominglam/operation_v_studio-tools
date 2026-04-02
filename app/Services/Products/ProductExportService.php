@@ -6,6 +6,7 @@ namespace App\Services\Products;
 
 use App\DAL\Products\ProductRepository;
 use App\Models\Product;
+use App\Models\ProductExternalContent;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
@@ -89,6 +90,7 @@ final class ProductExportService
             'Type',
             'Tags',
             'Published',
+            'Published Scope',
             'Option1 Name',
             'Option1 Value',
             'Option1 Linked To',
@@ -125,6 +127,26 @@ final class ProductExportService
             'Cost per item',
             'Status',
         ];
+    }
+
+    /**
+     * Shopify content export variant that does NOT include inventory columns,
+     * so importing the CSV will not overwrite Shopify quantities.
+     *
+     * @return array<int, string>
+     */
+    public function shopifyHeaderNoInventory(): array
+    {
+        $omit = [
+            'Variant Inventory Tracker',
+            'Variant Inventory Qty',
+            'Variant Inventory Policy',
+        ];
+
+        return array_values(array_filter(
+            $this->shopifyHeader(),
+            static fn (string $col): bool => ! in_array($col, $omit, true),
+        ));
     }
 
     public function shopifyHandleForProduct(Product $product, array &$usedHandles): string
@@ -168,19 +190,24 @@ final class ProductExportService
      */
     public function shopifyRow(Product $product, string $handle): array
     {
-        $filledQty = $product->filled_qty ?? 0;
+        $availableQty = $product->available_qty ?? 0;
         $selling = $product->sellingPrice?->selling_price;
         $type = $product->type !== null ? trim((string) $product->type) : '';
+        $tags = $this->shopifyTagsForProduct($product, $type);
+        $isArchived = $product->archived_at !== null;
+        $shouldPublish = ! $isArchived && (bool) $product->published_on_shopify;
+        $status = $isArchived ? 'archived' : ($shouldPublish ? 'active' : 'draft');
 
         return [
             $handle, // Handle
             (string) $product->description, // Title
-            '', // Body (HTML)
+            $this->resolveBodyHtml($product), // Body (HTML)
             '', // Vendor
             '', // Product Category
             $type, // Type
-            $type, // Tags
-            $product->published_on_shopify ? 'TRUE' : 'FALSE', // Published
+            $tags, // Tags
+            $shouldPublish ? 'TRUE' : 'FALSE', // Published
+            'global', // Published Scope (all channels: Online Store + POS + Shop, etc)
             'Title', // Option1 Name
             'Default Title', // Option1 Value
             '', // Option1 Linked To
@@ -193,13 +220,13 @@ final class ProductExportService
             (string) $product->sku, // Variant SKU
             '0.0', // Variant Grams
             'shopify', // Variant Inventory Tracker
-            (string) max(0, (int) $filledQty), // Variant Inventory Qty
+            (string) max(0, (int) $availableQty), // Variant Inventory Qty
             'deny', // Variant Inventory Policy (stop selling when out of stock)
             'manual', // Variant Fulfillment Service
             (string) ($selling ?? ''), // Variant Price
             '', // Variant Compare At Price
-            'true', // Variant Requires Shipping
-            'true', // Variant Taxable
+            'TRUE', // Variant Requires Shipping
+            'TRUE', // Variant Taxable
             '', // Unit Price Total Measure
             '', // Unit Price Total Measure Unit
             '', // Unit Price Base Measure
@@ -208,15 +235,162 @@ final class ProductExportService
             '', // Image Src
             '', // Image Position
             '', // Image Alt Text
-            'false', // Gift Card
+            'FALSE', // Gift Card
             '', // SEO Title
             '', // SEO Description
             '', // Variant Image
             'kg', // Variant Weight Unit
             '', // Variant Tax Code
             '', // Cost per item (intentionally omitted)
-            'active', // Status
+            $status, // Status
         ];
     }
 
+    /**
+     * @return array<int, string>
+     */
+    public function shopifyRowNoInventory(Product $product, string $handle): array
+    {
+        $fullHeader = $this->shopifyHeader();
+        $fullRow = $this->shopifyRow($product, $handle);
+        $map = array_combine($fullHeader, $fullRow);
+        if (! is_array($map)) {
+            $map = [];
+        }
+
+        $header = $this->shopifyHeaderNoInventory();
+
+        return array_map(
+            static fn (string $col): string => (string) ($map[$col] ?? ''),
+            $header,
+        );
+    }
+
+    private function shopifyTagsForProduct(Product $product, string $type): string
+    {
+        $mainType = trim((string) $product->main_type);
+        if ($mainType === '') {
+            // Explicitly treat empty main_type as "no tags at all" for Shopify exports.
+            return '';
+        }
+
+        $tags = [$mainType];
+
+        if ($type !== '') {
+            $tags[] = $type;
+        }
+        if ($product->latest_arrival) {
+            $tags[] = 'latest arrival';
+        }
+
+        $out = [];
+        $seen = [];
+        foreach ($tags as $t) {
+            $t = trim((string) $t);
+            if ($t === '') {
+                continue;
+            }
+            $key = strtolower($t);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = $t;
+        }
+
+        return implode(', ', $out);
+    }
+
+    private function resolveBodyHtml(Product $product): string
+    {
+        $preferred = is_string($product->preferred_description_source) ? trim($product->preferred_description_source) : '';
+        if ($preferred !== '') {
+            if ($preferred === 'hlj') {
+                $hlj = $product->hljExternalContent?->description_html;
+                if (is_string($hlj) && trim($hlj) !== '') {
+                    return $this->normalizeBodyHtmlForShopify($hlj);
+                }
+            }
+            if ($preferred === 'plamod') {
+                $plamod = $product->plamodExternalContent?->description_html;
+                if (is_string($plamod) && trim($plamod) !== '') {
+                    return $this->normalizeBodyHtmlForShopify($plamod);
+                }
+            }
+
+            /** @var array<int, ProductExternalContent> $contents */
+            $contents = $product->externalContents?->all() ?? [];
+            foreach ($contents as $c) {
+                if (! $c instanceof ProductExternalContent) {
+                    continue;
+                }
+                if ($c->source !== $preferred) {
+                    continue;
+                }
+                if (! is_string($c->description_html) || trim($c->description_html) === '') {
+                    continue;
+                }
+
+                return $this->normalizeBodyHtmlForShopify((string) $c->description_html);
+            }
+        }
+
+        $hlj = $product->hljExternalContent?->description_html;
+        if (is_string($hlj) && trim($hlj) !== '') {
+            return $this->normalizeBodyHtmlForShopify($hlj);
+        }
+
+        /** @var array<int, ProductExternalContent> $contents */
+        $contents = $product->externalContents?->all() ?? [];
+        $best = null;
+        foreach ($contents as $c) {
+            if (! $c instanceof ProductExternalContent) {
+                continue;
+            }
+            if (in_array($c->source, ['hlj', 'plamod'], true)) {
+                continue;
+            }
+            if (! is_string($c->description_html) || trim($c->description_html) === '') {
+                continue;
+            }
+            if ($best === null) {
+                $best = $c;
+                continue;
+            }
+            $bestAt = $best->updated_at?->getTimestamp() ?? 0;
+            $cAt = $c->updated_at?->getTimestamp() ?? 0;
+            if ($cAt >= $bestAt) {
+                $best = $c;
+            }
+        }
+        if ($best !== null && is_string($best->description_html) && trim($best->description_html) !== '') {
+            return $this->normalizeBodyHtmlForShopify((string) $best->description_html);
+        }
+
+        $plamod = $product->plamodExternalContent?->description_html;
+        if (is_string($plamod) && trim($plamod) !== '') {
+            return $this->normalizeBodyHtmlForShopify($plamod);
+        }
+
+        $fallback = trim((string) $product->description);
+        if ($fallback === '') {
+            return '';
+        }
+
+        return '<p>'.e($fallback).'</p>';
+    }
+
+    private function normalizeBodyHtmlForShopify(string $html): string
+    {
+        $html = trim($html);
+        if ($html === '') {
+            return '';
+        }
+
+        $html = preg_replace('#<\s*br\s*/?\s*>#i', '', $html) ?? $html;
+        $html = str_replace('Â ', ' ', $html);
+        $html = preg_replace('/[ \t\r\n]+/', ' ', $html) ?? $html;
+
+        return trim($html);
+    }
 }

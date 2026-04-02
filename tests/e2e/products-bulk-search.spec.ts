@@ -25,6 +25,13 @@ test('bulk search finds products from multi-line paste', async ({ page, request,
 
     await page.goto('/products');
 
+    // Wait for initial page fetch to settle.
+    const initialList = await page.waitForResponse(
+        (r) => r.url().includes('/api/v1/products') && r.request().method() === 'GET',
+        { timeout: 30_000 },
+    );
+    expect(initialList.ok(), `Initial products list failed: HTTP ${initialList.status()}`).toBeTruthy();
+
     await page.getByTestId('products-search-bulk').click();
 
     // Use the same style of multi-line input as real usage (with duplicates / mixed case).
@@ -39,7 +46,14 @@ test('bulk search finds products from multi-line paste', async ({ page, request,
         ].join('\n'),
     );
 
+    // Wait for the bulk search to trigger a new products fetch.
+    const afterSearchPromise = page.waitForResponse(
+        (r) => r.url().includes('/api/v1/products') && r.request().method() === 'GET',
+        { timeout: 30_000 },
+    );
     await page.getByTestId('products-bulk-search').click();
+    const afterSearch = await afterSearchPromise;
+    expect(afterSearch.ok(), `Products fetch after bulk search failed: HTTP ${afterSearch.status()}`).toBeTruthy();
 
     // Should not show a hard failure banner.
     await expect(page.getByTestId('products-error')).toHaveCount(0);

@@ -30,6 +30,7 @@ it('does not error when received_date is provided and lots are created (regressi
         'vendor' => 'Plamod',
         'ordered_date' => '2026-01-05',
         'shipped_date' => '2026-01-13',
+        'estimated_arrival_date' => '2026-01-20',
         'received_date' => '2026-01-21',
         'shipping_total' => 1.00,
         'file' => $file,
@@ -44,6 +45,7 @@ it('does not error when received_date is provided and lots are created (regressi
         ->whereHas('purchaseOrderItem', fn ($q) => $q->where('purchase_order_id', $po->id))
         ->firstOrFail();
 
+    expect($po->estimated_arrival_date?->toDateString())->toBe('2026-01-20');
     expect($lot->received_at->toDateString())->toBe('2026-01-21');
 });
 

@@ -42,6 +42,7 @@ final class ProductResource extends JsonResource
             'barcode' => $product->barcode,
             'description' => $product->description,
             'handle' => $product->handle,
+            'main_type' => $product->main_type,
             'type' => $product->type,
             'grade' => $product->grade,
             'series' => $product->series,
@@ -51,7 +52,10 @@ final class ProductResource extends JsonResource
             'vendor' => $product->vendor,
             'brand' => $product->brand,
             'published_on_shopify' => (bool) $product->published_on_shopify,
+            'archived_at' => optional($product->archived_at)->toISOString(),
+            'is_archived' => $product->archived_at !== null,
             'is_ready' => (bool) $product->is_ready,
+            'latest_arrival' => (bool) $product->latest_arrival,
             'latest_unit_cost' => $this->money2($product->latest_unit_cost),
             'latest_landed_unit_cost' => $this->money2($product->latest_landed_unit_cost),
             'selling_price' => $this->money2($product->sellingPrice?->selling_price),
@@ -61,7 +65,11 @@ final class ProductResource extends JsonResource
             ],
             'order' => $product->order_qty,
             'filled' => $product->filled_qty,
+            'total_ordered' => max(0, (int) ($product->getAttribute('total_ordered_qty') ?? 0)),
             'available' => $product->available_qty,
+            'maintain' => $product->maintain_qty,
+            'not_arrived' => max(0, (int) ($product->getAttribute('inbound_open_po_qty') ?? 0)),
+            'reorder' => max(0, (int) ($product->getAttribute('reorder_qty') ?? 0)),
             'extended' => $this->money2($product->extended),
             'po_total_cost' => $this->money2($product->getAttribute('po_total_cost')),
             'created_at' => optional($product->created_at)->toISOString(),
@@ -77,16 +85,25 @@ final class ProductResource extends JsonResource
         }
 
         $hlj = $product->hljExternalContent?->description_html;
-        if (is_string($hlj) && trim($hlj) !== '') return true;
+        if (is_string($hlj) && trim($hlj) !== '') {
+            return true;
+        }
 
         $plamod = $product->plamodExternalContent?->description_html;
-        if (is_string($plamod) && trim($plamod) !== '') return true;
+        if (is_string($plamod) && trim($plamod) !== '') {
+            return true;
+        }
 
         // If other sources were eager-loaded, consider them as well (avoid extra DB queries).
         $contents = $product->externalContents?->all() ?? [];
         foreach ($contents as $c) {
-            if (! $c instanceof \App\Models\ProductExternalContent) continue;
-            if (! is_string($c->description_html) || trim($c->description_html) === '') continue;
+            if (! $c instanceof \App\Models\ProductExternalContent) {
+                continue;
+            }
+            if (! is_string($c->description_html) || trim($c->description_html) === '') {
+                continue;
+            }
+
             return true;
         }
 

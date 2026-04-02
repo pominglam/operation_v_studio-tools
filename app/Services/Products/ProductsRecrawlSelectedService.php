@@ -8,6 +8,7 @@ use App\DAL\Jobs\JobBatchItemRepository;
 use App\DAL\Products\ProductRepository;
 use App\DTOs\Products\ProductsRecrawlSelectedResultDTO;
 use App\Jobs\RecrawlSelectedProductJob;
+use App\Services\Products\GundamHangar\GundamHangarContentSyncService;
 use App\Services\Products\Newtype\NewtypeHtmlParser;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
@@ -38,6 +39,7 @@ final class ProductsRecrawlSelectedService
         $sourcesLine = '[job] sources='.implode(',', $sources);
         $wantGundamPlanet = in_array('gundamplanet', $sources, true);
         $wantNewtype = in_array('newtype', $sources, true);
+        $wantGundamHangar = in_array('gundamhangar', $sources, true);
 
         $existing = $this->products->findByUuids($productUuids)->keyBy('uuid');
         foreach ($productUuids as $uuid) {
@@ -54,6 +56,9 @@ final class ProductsRecrawlSelectedService
             }
             if ($wantNewtype) {
                 $debug = $this->appendNewtypePlan($debug, $p);
+            }
+            if ($wantGundamHangar) {
+                $debug = $this->appendGundamHangarPlan($debug, $p);
             }
 
             $itemProducts[] = [
@@ -136,6 +141,37 @@ final class ProductsRecrawlSelectedService
     {
         $qs = http_build_query(['q' => trim($query)]);
         return NewtypeHtmlParser::BASE_URL.'/search?'.$qs;
+    }
+
+    private function appendGundamHangarPlan(string $debug, object $product): string
+    {
+        $lines = [$debug];
+        $terms = $this->terms->termsForProduct($product);
+        $lines[] = '[gundamhangar][plan] terms_count='.count($terms);
+
+        $limit = 10;
+        foreach (array_slice($terms, 0, $limit) as $t) {
+            $q = trim((string) $t);
+            if ($q === '') continue;
+            $url = $this->gundamHangarSearchUrl($q);
+            $lines[] = "[gundamhangar][plan] q={$q} url={$url}";
+        }
+        if (count($terms) > $limit) {
+            $lines[] = '[gundamhangar][plan] (truncated)';
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function gundamHangarSearchUrl(string $query): string
+    {
+        $qs = http_build_query([
+            'search' => trim($query),
+            'page' => 1,
+            'outofstock' => '',
+            'limit' => 10,
+        ]);
+        return GundamHangarContentSyncService::API_BASE_URL.'/products?'.$qs;
     }
 }
 

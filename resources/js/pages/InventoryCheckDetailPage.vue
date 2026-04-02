@@ -30,6 +30,9 @@ type InventoryCheck = {
     name: string | null;
     source: string | null;
     uploaded_file_path: string | null;
+    workflow_state?: string | null;
+    created_by_role?: string | null;
+    applied_at?: string | null;
     counts: {
         items: number;
         matched: number;
@@ -47,6 +50,12 @@ const id = computed(() => String(route.params.id ?? ''));
 const loading = ref(false);
 const error = ref<string | null>(null);
 const check = ref<InventoryCheck | null>(null);
+const applying = ref(false);
+const applyQuantity = ref(true);
+const applyName = ref(true);
+const savingLine = ref<Record<number, true>>({});
+const quantityDrafts = ref<Record<number, string>>({});
+const nameDrafts = ref<Record<number, string>>({});
 
 const filter = ref<'all' | 'applied' | 'unapplied' | 'unmatched' | 'ambiguous'>('all');
 const search = ref('');
@@ -83,6 +92,69 @@ function downloadCsv(): void {
     window.location.assign(`/api/v1/inventory-check/${id.value}/download`);
 }
 
+async function applySession(): Promise<void> {
+    if (!check.value) return;
+    if (applying.value) return;
+
+    const msg = `Apply selected fields for this session? Only products present in this session are updated.`;
+    if (!window.confirm(msg)) return;
+
+    applying.value = true;
+    error.value = null;
+    try {
+        await api.post(`/api/v1/inventory-check/${id.value}/apply`, {
+            apply_quantity: applyQuantity.value,
+            apply_name: applyName.value,
+        });
+        await load();
+    } catch {
+        error.value = 'Failed to apply this session.';
+    } finally {
+        applying.value = false;
+    }
+}
+
+function isSavingLine(itemId: number): boolean {
+    return savingLine.value[itemId] === true;
+}
+
+function qtyValueFor(item: InventoryCheckItem): string {
+    if (quantityDrafts.value[item.id] !== undefined) return quantityDrafts.value[item.id]!;
+
+    return item.quantity_in_store === null ? '' : String(item.quantity_in_store);
+}
+
+function nameValueFor(item: InventoryCheckItem): string {
+    if (nameDrafts.value[item.id] !== undefined) return nameDrafts.value[item.id]!;
+
+    return item.english_name || item.product_name || '';
+}
+
+async function saveLine(item: InventoryCheckItem): Promise<void> {
+    if (isSavingLine(item.id)) return;
+
+    const qRaw = quantityDrafts.value[item.id] ?? (item.quantity_in_store === null ? '' : String(item.quantity_in_store));
+    const nameRaw = nameDrafts.value[item.id] ?? (item.english_name || item.product_name || '');
+    const qtyParsed = Number.parseInt(qRaw.trim() === '' ? '0' : qRaw, 10);
+    const quantity = Number.isFinite(qtyParsed) && qtyParsed >= 0 ? qtyParsed : 0;
+    const productName = nameRaw.trim();
+
+    savingLine.value = { ...savingLine.value, [item.id]: true };
+    error.value = null;
+    try {
+        await api.patch(`/api/v1/inventory-check/${id.value}/items/${item.id}`, {
+            quantity,
+            product_name: productName,
+        });
+        await load();
+    } catch {
+        error.value = 'Failed to save line changes.';
+    } finally {
+        const { [item.id]: _omit, ...rest } = savingLine.value;
+        savingLine.value = rest;
+    }
+}
+
 watch(id, () => {
     void load();
 });
@@ -101,14 +173,32 @@ onMounted(() => {
                     <a class="underline underline-offset-2" href="/inventory-check">Back to history</a>
                 </p>
             </div>
-            <button
-                type="button"
-                class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                :disabled="loading"
-                @click="downloadCsv"
-            >
-                Download uploaded CSV
-            </button>
+            <div class="flex items-center gap-2">
+                <label class="inline-flex items-center gap-2 text-xs text-slate-700">
+                    <input v-model="applyQuantity" type="checkbox" class="h-4 w-4 rounded border-slate-300" />
+                    Apply quantity
+                </label>
+                <label class="inline-flex items-center gap-2 text-xs text-slate-700">
+                    <input v-model="applyName" type="checkbox" class="h-4 w-4 rounded border-slate-300" />
+                    Apply name
+                </label>
+                <button
+                    type="button"
+                    class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="loading || applying || (!applyQuantity && !applyName)"
+                    @click="applySession"
+                >
+                    {{ applying ? 'Applying…' : 'Apply quantities' }}
+                </button>
+                <button
+                    type="button"
+                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="loading"
+                    @click="downloadCsv"
+                >
+                    Download uploaded CSV
+                </button>
+            </div>
         </div>
 
         <p v-if="error" class="text-sm text-red-700">{{ error }}</p>
@@ -119,6 +209,9 @@ onMounted(() => {
                 <div class="text-sm text-slate-800">
                     <div><span class="font-medium">ID:</span> {{ check.id }}</div>
                     <div><span class="font-medium">Created:</span> {{ formatTorontoDateTime(check.created_at) }}</div>
+                    <div><span class="font-medium">State:</span> {{ check.workflow_state ?? 'draft' }}</div>
+                    <div><span class="font-medium">Created by:</span> {{ check.created_by_role ?? '—' }}</div>
+                    <div><span class="font-medium">Applied at:</span> {{ formatTorontoDateTime(check.applied_at) || '—' }}</div>
                 </div>
                 <div class="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-slate-800 sm:grid-cols-5">
                     <div><span class="font-medium">Rows:</span> {{ check.counts.items }}</div>
@@ -170,6 +263,7 @@ onMounted(() => {
                                 <th class="px-2 py-1 text-right">Difference</th>
                                 <th class="px-2 py-1">Notes</th>
                                 <th class="px-2 py-1">Error</th>
+                                <th class="px-2 py-1 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="text-slate-800">
@@ -178,13 +272,50 @@ onMounted(() => {
                                 <td class="px-2 py-1">{{ it.vendor ?? '' }}</td>
                                 <td class="px-2 py-1">{{ it.sku }}</td>
                                 <td class="px-2 py-1">{{ it.type ?? '' }}</td>
-                                <td class="px-2 py-1">{{ it.english_name || it.product_name || '' }}</td>
+                                <td class="px-2 py-1">
+                                    <input
+                                        class="w-64 rounded border border-slate-200 px-2 py-1 text-xs"
+                                        type="text"
+                                        :disabled="isSavingLine(it.id)"
+                                        :value="nameValueFor(it)"
+                                        @input="
+                                            nameDrafts = {
+                                                ...nameDrafts,
+                                                [it.id]: ($event.target as HTMLInputElement).value,
+                                            }
+                                        "
+                                    />
+                                </td>
                                 <td class="px-2 py-1 text-right">{{ it.available_amount ?? '' }}</td>
                                 <td class="px-2 py-1 text-right">{{ formatMoney2OrEmpty(it.selling_price) }}</td>
-                                <td class="px-2 py-1 text-right">{{ it.quantity_in_store ?? '' }}</td>
+                                <td class="px-2 py-1 text-right">
+                                    <input
+                                        class="w-20 rounded border border-slate-200 px-2 py-1 text-right text-xs"
+                                        type="number"
+                                        min="0"
+                                        :disabled="isSavingLine(it.id)"
+                                        :value="qtyValueFor(it)"
+                                        @input="
+                                            quantityDrafts = {
+                                                ...quantityDrafts,
+                                                [it.id]: ($event.target as HTMLInputElement).value,
+                                            }
+                                        "
+                                    />
+                                </td>
                                 <td class="px-2 py-1 text-right">{{ it.difference ?? '' }}</td>
                                 <td class="px-2 py-1">{{ it.notes ?? '' }}</td>
                                 <td class="px-2 py-1 text-slate-600">{{ it.match_error ?? '' }}</td>
+                                <td class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                        :disabled="isSavingLine(it.id)"
+                                        @click="saveLine(it)"
+                                    >
+                                        {{ isSavingLine(it.id) ? 'Saving…' : 'Save' }}
+                                    </button>
+                                </td>
                             </tr>
                         </tbody>
                     </table>

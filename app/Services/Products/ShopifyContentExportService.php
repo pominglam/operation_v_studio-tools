@@ -8,7 +8,9 @@ use App\DAL\Products\ProductRepository;
 use App\Models\Product;
 use App\Models\ProductExternalAsset;
 use App\Models\ProductExternalContent;
+use App\Services\Shopify\ShopifyImageServeService;
 use App\Services\Shopify\ShopifyImageUrlSigner;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -18,6 +20,7 @@ final class ShopifyContentExportService
         private readonly ProductRepository $products,
         private readonly ProductExportService $exports,
         private readonly ShopifyImageUrlSigner $signer,
+        private readonly ShopifyImageServeService $imageServe,
     ) {}
 
     /**
@@ -34,10 +37,52 @@ final class ShopifyContentExportService
      */
     public function prepare(?string $tunnelBaseUrl, array $productUuids = []): array
     {
+        return $this->prepareInternal(
+            tunnelBaseUrl: $tunnelBaseUrl,
+            productUuids: $productUuids,
+            includeInventory: true,
+        );
+    }
+
+    /**
+     * @return array{
+     *   export_id: string,
+     *   storage_path: string,
+     *   exported_products: int,
+     *   exported_rows: int,
+     *   skipped_missing_handle: array<int, array{sku:string, description:string}>,
+     *   skipped_duplicate_handle: array<int, array{sku:string, description:string, handle:string}>,
+     *   tunnel_base_url: string|null,
+     *   images_enabled: bool
+     * }
+     */
+    public function prepareNoInventory(?string $tunnelBaseUrl, array $productUuids = []): array
+    {
+        return $this->prepareInternal(
+            tunnelBaseUrl: $tunnelBaseUrl,
+            productUuids: $productUuids,
+            includeInventory: false,
+        );
+    }
+
+    /**
+     * @return array{
+     *   export_id: string,
+     *   storage_path: string,
+     *   exported_products: int,
+     *   exported_rows: int,
+     *   skipped_missing_handle: array<int, array{sku:string, description:string}>,
+     *   skipped_duplicate_handle: array<int, array{sku:string, description:string, handle:string}>,
+     *   tunnel_base_url: string|null,
+     *   images_enabled: bool
+     * }
+     */
+    private function prepareInternal(?string $tunnelBaseUrl, array $productUuids, bool $includeInventory): array
+    {
         $exportId = (string) Str::uuid();
         $storagePath = "exports/shopify_content/{$exportId}.csv";
 
-        $header = $this->exports->shopifyHeader();
+        $header = $includeInventory ? $this->exports->shopifyHeader() : $this->exports->shopifyHeaderNoInventory();
         /** @var array<string, int> $idx */
         $idx = array_flip($header);
 
@@ -75,6 +120,7 @@ final class ShopifyContentExportService
                         'sku' => (string) $product->sku,
                         'description' => (string) $product->description,
                     ];
+
                     continue;
                 }
 
@@ -84,13 +130,16 @@ final class ShopifyContentExportService
                         'description' => (string) $product->description,
                         'handle' => $handle,
                     ];
+
                     continue;
                 }
                 $usedHandles[$handle] = $product->uuid;
 
                 $bodyHtml = $this->normalizeBodyHtmlForShopify($this->resolveBodyHtml($product));
 
-                $row = $this->exports->shopifyRow($product, $handle);
+                $row = $includeInventory
+                    ? $this->exports->shopifyRow($product, $handle)
+                    : $this->exports->shopifyRowNoInventory($product, $handle);
                 $row[$idx['Body (HTML)']] = $bodyHtml;
 
                 $images = $this->imagesForProduct($product);
@@ -184,9 +233,16 @@ final class ShopifyContentExportService
             /** @var array<int, ProductExternalContent> $contents */
             $contents = $product->externalContents?->all() ?? [];
             foreach ($contents as $c) {
-                if (! $c instanceof ProductExternalContent) continue;
-                if ($c->source !== $preferred) continue;
-                if (! is_string($c->description_html) || trim($c->description_html) === '') continue;
+                if (! $c instanceof ProductExternalContent) {
+                    continue;
+                }
+                if ($c->source !== $preferred) {
+                    continue;
+                }
+                if (! is_string($c->description_html) || trim($c->description_html) === '') {
+                    continue;
+                }
+
                 return (string) $c->description_html;
             }
         }
@@ -200,12 +256,19 @@ final class ShopifyContentExportService
         $contents = $product->externalContents?->all() ?? [];
         $best = null;
         foreach ($contents as $c) {
-            if (! $c instanceof ProductExternalContent) continue;
-            if (in_array($c->source, ['hlj', 'plamod'], true)) continue;
-            if (! is_string($c->description_html) || trim($c->description_html) === '') continue;
+            if (! $c instanceof ProductExternalContent) {
+                continue;
+            }
+            if (in_array($c->source, ['hlj', 'plamod'], true)) {
+                continue;
+            }
+            if (! is_string($c->description_html) || trim($c->description_html) === '') {
+                continue;
+            }
 
             if ($best === null) {
                 $best = $c;
+
                 continue;
             }
             $bestAt = $best->updated_at?->getTimestamp() ?? 0;
@@ -237,10 +300,10 @@ final class ShopifyContentExportService
         $html = preg_replace('#<\s*br\s*/?\s*>#i', '', $html) ?? $html;
 
         // Common encoding artifact: "Â " (NBSP mis-decoded) – replace with a regular space.
-        $html = str_replace("Â ", ' ', $html);
+        $html = str_replace('Â ', ' ', $html);
 
         // Clean up excessive whitespace between tags.
-        $html = preg_replace("/[ \\t\\r\\n]+/", ' ', $html) ?? $html;
+        $html = preg_replace('/[ \\t\\r\\n]+/', ' ', $html) ?? $html;
         $html = trim($html);
 
         return $html;
@@ -252,14 +315,49 @@ final class ShopifyContentExportService
     private function imagesForProduct(Product $product): array
     {
         $imgs = $product->shopifyImageAssets?->all() ?? [];
+        /** @var FilesystemAdapter $disk */
+        $disk = Storage::disk('local');
+
         /** @var array<int, ProductExternalAsset> $out */
         $out = [];
         foreach ($imgs as $a) {
             if ($a instanceof ProductExternalAsset) {
+                if (! $this->isServableImage($disk, $a)) {
+                    continue;
+                }
                 $out[] = $a;
             }
         }
+
         return $out;
+    }
+
+    private function isServableImage(FilesystemAdapter $disk, ProductExternalAsset $asset): bool
+    {
+        $path = is_string($asset->storage_path) ? trim($asset->storage_path) : '';
+        if ($path === '') {
+            return false;
+        }
+
+        // Auto-repair restrictive permissions before export so valid assets are not silently skipped.
+        $this->imageServe->repairStoragePath($path);
+
+        try {
+            if (! $disk->exists($path)) {
+                return false;
+            }
+        } catch (\Throwable) {
+            return false;
+        }
+
+        // Defensive: don't export URLs to unreadable files (prevents Shopify/CSV consumers from hitting 500s).
+        try {
+            $abs = $disk->path($path);
+
+            return is_string($abs) && $abs !== '' && is_file($abs) && is_readable($abs);
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     private function signedImageUrl(ProductExternalAsset $asset, string $tunnelBaseUrl): string
@@ -272,8 +370,7 @@ final class ShopifyContentExportService
         // Shopify CSV imports may strip query parameters from Image Src URLs.
         $filename = is_string($asset->filename) && trim($asset->filename) !== '' ? basename($asset->filename) : 'image.png';
         $filename = rawurlencode($filename);
+
         return $tunnelBaseUrl.'/shopify-images/'.$asset->id.'/'.$signed['expires'].'/'.$signed['signature'].'/'.$filename;
     }
 }
-
-

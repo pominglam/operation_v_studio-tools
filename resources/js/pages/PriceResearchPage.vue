@@ -31,7 +31,6 @@ type ProductResearch = {
     price_researched_at: string | null;
     expired: boolean;
     vendor: string | null;
-    filled: number | null;
     available: number | null;
     cost: string | null;
     shipping_per_unit: string | null;
@@ -99,13 +98,10 @@ const isBusy = computed<boolean>(() => loading.value || running.value || isRunAc
 const isRecrawlBlocked = computed<boolean>(() => running.value || isRunActive.value);
 
 const pageTotals = computed(() => {
-    let shipped = 0;
     let cost = 0;
     let price = 0;
 
     for (const p of items.value) {
-        shipped += p.filled ?? 0;
-
         const c = parseMoney(p.landed_cost ?? p.cost);
         if (c !== null) cost += c;
 
@@ -114,7 +110,6 @@ const pageTotals = computed(() => {
     }
 
     return {
-        shipped,
         cost: cost.toFixed(2),
         price: price.toFixed(2),
     };
@@ -124,11 +119,24 @@ type ResearchSortKey =
     | 'sku'
     | 'description'
     | 'price_researched_at'
-    | 'filled'
     | 'available'
     | 'cost'
     | 'selling_price'
     | 'multiplier';
+
+const RESEARCH_SORT_KEYS: readonly ResearchSortKey[] = [
+    'sku',
+    'description',
+    'price_researched_at',
+    'available',
+    'cost',
+    'selling_price',
+    'multiplier',
+] as const;
+
+function isResearchSortKey(value: unknown): value is ResearchSortKey {
+    return typeof value === 'string' && (RESEARCH_SORT_KEYS as readonly string[]).includes(value);
+}
 
 const search = ref('');
 const perPage = ref(50);
@@ -213,11 +221,20 @@ type PurchaseOrderOption = {
     id: string;
     vendor: string;
     created_at: string | null;
+    received_date: string | null;
     counts: { items: number };
 };
 
-const purchaseOrderUuid = ref<string>('');
+const purchaseOrderUuids = ref<string[]>([]);
 const purchaseOrders = ref<PurchaseOrderOption[]>([]);
+
+const purchaseOrderOptions = computed<MultiSelectOption[]>(() => {
+    return purchaseOrders.value.map((po) => ({
+        value: po.id,
+        label: poLabel(po),
+        muted: isPoMuted(po),
+    }));
+});
 
 const STATE_KEY = 'page_state:price_research';
 const hydrating = ref(true);
@@ -384,8 +401,8 @@ function buildProductsUrl(): string {
     const s = search.value.trim();
     if (s) params.set('search', s);
 
-    const po = purchaseOrderUuid.value.trim();
-    if (po) params.set('purchase_order_uuid', po);
+    const pos = purchaseOrderUuids.value.map((v) => v.trim()).filter(Boolean);
+    for (const po of pos) params.append('purchase_order_uuids[]', po);
 
     if (sellingPrice.value !== 'any') {
         params.set('selling_price', sellingPrice.value);
@@ -467,6 +484,11 @@ function poLabel(po: PurchaseOrderOption): string {
     const date = po.created_at ? formatLocalDateTime(po.created_at) : '—';
     const short = po.id.slice(0, 8);
     return `${date} · ${po.vendor} · ${po.counts.items} items · ${short}`;
+}
+
+function isPoMuted(po: PurchaseOrderOption): boolean {
+    // Visually mute POs that are still not arrived.
+    return !po.received_date;
 }
 
 async function loadPurchaseOrders(): Promise<void> {
@@ -556,78 +578,9 @@ const savingBarcode = ref<string | null>(null);
 const editingBarcodeId = ref<string | null>(null);
 const barcodeDrafts = reactive<Record<string, string>>({});
 
-const savingFilled = ref<string | null>(null);
-const editingFilledId = ref<string | null>(null);
-const filledDrafts = reactive<Record<string, string>>({});
-
 const savingAvailable = ref<string | null>(null);
 const editingAvailableId = ref<string | null>(null);
 const availableDrafts = reactive<Record<string, string>>({});
-
-function startFilledEdit(productId: string, current: number | null): void {
-    editingFilledId.value = productId;
-    if (filledDrafts[productId] === undefined) {
-        filledDrafts[productId] = current === null ? '' : String(current);
-    }
-}
-
-function updateFilledDraft(productId: string, value: string): void {
-    filledDrafts[productId] = value;
-}
-
-function commitFilledEdit(productId: string): void {
-    // Prevent Enter + blur from committing twice (second commit would send empty after draft deletion)
-    if (editingFilledId.value !== productId) {
-        return;
-    }
-
-    editingFilledId.value = null;
-    const value = filledDrafts[productId] ?? '';
-    delete filledDrafts[productId];
-    void saveFilled(productId, value);
-}
-
-async function saveFilled(productId: string, value: string | null): Promise<void> {
-    savingFilled.value = productId;
-    error.value = null;
-    const row = items.value.find((p) => p.id === productId);
-    const previous = row?.filled ?? null;
-
-    try {
-        const filled = parseNonNegativeIntOrNull(value ?? '');
-
-        if (row) {
-            row.filled = filled;
-        }
-
-        if (!row) {
-            error.value = 'Failed to save shipped amount.';
-            return;
-        }
-
-        const res = await api.patch(
-            `/api/v1/products/${productId}/filled`,
-            { filled },
-            { validateStatus: () => true },
-        );
-
-        if (res.status < 200 || res.status >= 300) {
-            row.filled = previous;
-            error.value = res.data?.message ?? 'Failed to save shipped amount.';
-            return;
-        }
-
-        const saved = (res.data?.data?.filled as number | null | undefined) ?? null;
-        row.filled = saved;
-    } catch {
-        if (row) {
-            row.filled = previous;
-        }
-        error.value = 'Failed to save shipped amount.';
-    } finally {
-        savingFilled.value = null;
-    }
-}
 
 function startAvailableEdit(productId: string, current: number | null): void {
     editingAvailableId.value = productId;
@@ -874,7 +827,8 @@ onMounted(() => {
         page?: number;
         sortBy?: ResearchSortKey;
         sortDir?: 'asc' | 'desc';
-        purchaseOrderUuid?: string;
+        purchaseOrderUuid?: string; // legacy
+        purchaseOrderUuids?: string[];
         sellingPrice?: 'any' | 'set' | 'missing';
         shippingPerUnit?: 'any' | 'set' | 'missing';
         barcodeFilter?: 'any' | 'set' | 'missing';
@@ -890,9 +844,11 @@ onMounted(() => {
         if (typeof saved.search === 'string') search.value = saved.search;
         if (typeof saved.perPage === 'number') perPage.value = saved.perPage;
         if (typeof saved.page === 'number') page.value = saved.page;
-        if (saved.sortBy) sortBy.value = saved.sortBy;
+        if (isResearchSortKey(saved.sortBy)) sortBy.value = saved.sortBy;
         if (saved.sortDir) sortDir.value = saved.sortDir;
-        if (typeof saved.purchaseOrderUuid === 'string') purchaseOrderUuid.value = saved.purchaseOrderUuid;
+        if (Array.isArray(saved.purchaseOrderUuids)) purchaseOrderUuids.value = saved.purchaseOrderUuids;
+        else if (typeof saved.purchaseOrderUuid === 'string' && saved.purchaseOrderUuid.trim() !== '')
+            purchaseOrderUuids.value = [saved.purchaseOrderUuid.trim()];
         if (saved.sellingPrice) sellingPrice.value = saved.sellingPrice;
         if (saved.shippingPerUnit) shippingPerUnit.value = saved.shippingPerUnit;
         if (saved.barcodeFilter) barcodeFilter.value = saved.barcodeFilter;
@@ -937,7 +893,7 @@ function onPageChange(next: number): void {
 
 let searchTimer: number | null = null;
 watch(
-    [search, perPage, sellingPrice, shippingPerUnit, barcodeFilter, purchaseOrderUuid, vendors, types, freshness, quoteSites, sortBy, sortDir],
+    [search, perPage, sellingPrice, shippingPerUnit, barcodeFilter, purchaseOrderUuids, vendors, types, freshness, quoteSites, sortBy, sortDir],
     () => {
     if (hydrating.value) return;
     page.value = 1;
@@ -962,7 +918,7 @@ watch(
 );
 
 watch(
-    [search, perPage, page, sortBy, sortDir, purchaseOrderUuid, sellingPrice, shippingPerUnit, barcodeFilter, vendors, types, freshness, quoteSites, runSites, disabledSiteKeys],
+    [search, perPage, page, sortBy, sortDir, purchaseOrderUuids, sellingPrice, shippingPerUnit, barcodeFilter, vendors, types, freshness, quoteSites, runSites, disabledSiteKeys],
     () => {
         if (hydrating.value) return;
         savePageState(STATE_KEY, {
@@ -971,7 +927,7 @@ watch(
             page: page.value,
             sortBy: sortBy.value,
             sortDir: sortDir.value,
-            purchaseOrderUuid: purchaseOrderUuid.value,
+            purchaseOrderUuids: purchaseOrderUuids.value,
             sellingPrice: sellingPrice.value,
             shippingPerUnit: shippingPerUnit.value,
             barcodeFilter: barcodeFilter.value,
@@ -993,7 +949,7 @@ function resetPageState(): void {
     page.value = 1;
     sortBy.value = 'price_researched_at';
     sortDir.value = 'desc';
-    purchaseOrderUuid.value = '';
+    purchaseOrderUuids.value = [];
     sellingPrice.value = 'any';
     shippingPerUnit.value = 'any';
     barcodeFilter.value = 'any';
@@ -1158,16 +1114,12 @@ function resetPageState(): void {
                 </div>
 
                 <div class="min-w-[260px] flex-[2_1_360px]">
-                    <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">PO</label>
-                    <select
-                        v-model="purchaseOrderUuid"
-                        class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                    >
-                        <option value="">All POs</option>
-                        <option v-for="po in purchaseOrders" :key="po.id" :value="po.id">
-                            {{ poLabel(po) }}
-                        </option>
-                    </select>
+                    <MultiSelectFilter
+                        v-model="purchaseOrderUuids"
+                        label="PO"
+                        :options="purchaseOrderOptions"
+                        placeholder="All POs"
+                    />
                 </div>
 
                 <div class="min-w-[180px] flex-[1_1_220px]">
@@ -1283,15 +1235,6 @@ function resetPageState(): void {
                                     <button
                                         type="button"
                                         class="hover:underline"
-                                        @click="onSortChange('filled')"
-                                    >
-                                        SHIPPED{{ sortIndicator('filled') }}
-                                    </button>
-                                </th>
-                                <th class="px-4 py-3 text-right">
-                                    <button
-                                        type="button"
-                                        class="hover:underline"
                                         @click="onSortChange('available')"
                                     >
                                         AVAILABLE{{ sortIndicator('available') }}
@@ -1354,7 +1297,7 @@ function resetPageState(): void {
                         </thead>
                         <tbody class="divide-y divide-slate-100">
                             <tr v-if="items.length === 0">
-                                <td class="px-4 py-4 text-slate-600" :colspan="9 + sites.length">
+                                <td class="px-4 py-4 text-slate-600" :colspan="12 + sites.length">
                                     No products found.
                                 </td>
                             </tr>
@@ -1437,28 +1380,6 @@ function resetPageState(): void {
                                 </td>
                                 <td class="px-4 py-3 text-slate-700">
                                     {{ p.vendor ?? '—' }}
-                                </td>
-                                <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                                    <input
-                                        class="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-sm tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
-                                        type="text"
-                                        inputmode="numeric"
-                                        :value="
-                                            filledDrafts[p.id] ??
-                                            (p.filled === null ? '' : String(p.filled))
-                                        "
-                                        :disabled="savingFilled === p.id"
-                                        placeholder="—"
-                                        @focus="startFilledEdit(p.id, p.filled)"
-                                        @input="
-                                            updateFilledDraft(
-                                                p.id,
-                                                ($event.target as HTMLInputElement).value,
-                                            )
-                                        "
-                                        @keydown.enter.prevent="commitFilledEdit(p.id)"
-                                        @blur="commitFilledEdit(p.id)"
-                                    />
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
                                     <input
@@ -1698,9 +1619,12 @@ function resetPageState(): void {
                                 <td class="px-4 py-3 text-slate-600">Page total</td>
                                 <td class="px-4 py-3"></td>
                                 <td class="px-4 py-3"></td>
-                                <td class="px-4 py-3 text-right tabular-nums">{{ pageTotals.shipped }}</td>
+                                <td class="px-4 py-3"></td>
                                 <td class="px-4 py-3"></td>
                                 <td class="px-4 py-3 text-right tabular-nums">{{ pageTotals.cost }}</td>
+                                <td class="px-4 py-3"></td>
+                                <td class="px-2.5 py-3"></td>
+                                <td class="px-4 py-3"></td>
                                 <td class="px-4 py-3"></td>
                                 <td class="px-4 py-3 text-right tabular-nums">{{ pageTotals.price }}</td>
                                 <td class="px-2.5 py-3"></td>

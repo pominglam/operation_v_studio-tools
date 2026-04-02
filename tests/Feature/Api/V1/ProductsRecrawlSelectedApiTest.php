@@ -18,7 +18,7 @@ it('queues a recrawl batch for selected products and sources', function (): void
 
     $res = $this->postJson('/api/v1/products/recrawl/selected', [
         'ids' => ['00000000-0000-0000-0000-000000070010'],
-        'sources' => ['bandai', 'hlj', 'gundamplanet', 'plamod', 'competitor_price_research'],
+        'sources' => ['bandai', 'hlj', 'gundamplanet', 'gundamhangar', 'plamod', 'competitor_price_research'],
     ]);
 
     $res->assertStatus(202);
@@ -36,6 +36,8 @@ it('queues a recrawl batch for selected products and sources', function (): void
     expect(is_string($debug) ? $debug : '')->toContain('gundamplanet');
     expect(is_string($debug) ? $debug : '')->toContain('[gundamplanet][plan]');
     expect(is_string($debug) ? $debug : '')->toContain('www.gundamplanet.com/search?q=');
+    expect(is_string($debug) ? $debug : '')->toContain('[gundamhangar][plan]');
+    expect(is_string($debug) ? $debug : '')->toContain('server.gundamhangar.com/api/products?');
 
     Bus::assertBatched(function ($batch) {
         return $batch->name === 'recrawl_selected_products';

@@ -21,6 +21,12 @@ export function buildNewtypeSearchUrl(query: string): string | null {
   return `https://newtype.us/search?q=${encodeURIComponent(q)}`;
 }
 
+export function buildGundamHangarSearchUrl(query: string): string | null {
+  const q = query.trim();
+  if (!q) return null;
+  return `https://server.gundamhangar.com/api/products?search=${encodeURIComponent(q)}&page=1&outofstock=&limit=10`;
+}
+
 export function descriptionSourceUrl(
   content: ContentSource | null,
   opts: { sku: string | null; query: string },
@@ -35,6 +41,10 @@ export function descriptionSourceUrl(
 
   if (content.source === 'newtype') {
     return buildNewtypeSearchUrl(opts.query);
+  }
+
+  if (content.source === 'gundamhangar') {
+    return buildGundamHangarSearchUrl(opts.query);
   }
 
   return null;

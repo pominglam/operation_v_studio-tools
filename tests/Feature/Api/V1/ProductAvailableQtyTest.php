@@ -11,6 +11,9 @@ it('persists available qty on product update', function (): void {
         'barcode' => null,
         'description' => 'Inventory test',
         'type' => 'HG',
+        'grade' => null,
+        'scale' => null,
+        'series' => null,
         'vendor' => 'Plamod',
         'price' => '10.00',
         'order_qty' => 1,
@@ -24,19 +27,31 @@ it('persists available qty on product update', function (): void {
         'barcode' => $p->barcode,
         'description' => $p->description,
         'type' => $p->type,
+        'grade' => 'RG',
+        'scale' => '1/144',
+        'series' => 'Gundam Seed',
         'vendor' => $p->vendor,
         'price' => $p->price,
         'order' => $p->order_qty,
         'filled' => $p->filled_qty,
         'available' => 7,
+        'maintain' => 10,
         'extended' => $p->extended,
     ]);
 
     $res->assertOk();
     $res->assertJsonPath('data.available', 7);
+    $res->assertJsonPath('data.maintain', 10);
+    $res->assertJsonPath('data.grade', 'RG');
+    $res->assertJsonPath('data.scale', '1/144');
+    $res->assertJsonPath('data.series', 'Gundam Seed');
     $this->assertDatabaseHas('products', [
         'uuid' => $p->uuid,
         'available_qty' => 7,
+        'maintain_qty' => 10,
+        'grade' => 'RG',
+        'scale' => '1/144',
+        'series' => 'Gundam Seed',
     ]);
 });
 
@@ -64,5 +79,3 @@ it('validates available qty must be non-negative', function (): void {
     $res->assertStatus(422);
     $res->assertJsonValidationErrors(['available']);
 });
-
-

@@ -15,6 +15,7 @@ final class ProductHandleImportRequest extends FormRequest
     {
         return [
             'file' => ['required', 'file', 'mimes:csv,txt', 'max:51200'],
+            'purchase_order_uuid' => ['sometimes', 'nullable', 'string', 'uuid'],
         ];
     }
 }

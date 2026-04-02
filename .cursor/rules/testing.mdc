@@ -61,6 +61,13 @@ Use Vitest 2.x with @vue/test-utils 2.x for Vue component testing. Mock external
 
 Use Playwright 1.x (preferred) or Cypress 13.x for E2E. Follow page object pattern. Use factories for test data.
 
+## Mandatory E2E Coverage (Repo Rule)
+
+- **When required**: Any change that affects **user-facing behavior** (UI interactions, filters, bulk actions, exports, auth, tunnels, workflows) must include an **E2E test** (Playwright preferred) that covers the happy path end-to-end.
+- **What to do**:
+  - Add or update a `tests/e2e/*.spec.ts` test.
+  - Run the **targeted** E2E test locally (`npx playwright test <file>`), and ensure it passes before handing work back.
+
 ### Playwright Smoke Suite (`@smoke`)
 
 - **Purpose**: Provide a fast, high-signal subset of E2E tests that runs on every PR (via `--grep @smoke`) while keeping runtime under ~5–10 minutes.
@@ -115,6 +122,8 @@ Require contract tests for public interfaces. Use OpenAPI schema for API contrac
 - **Mandatory**: For all new features, you must implement:
   - At least one **happy-path test**.
   - At least one **failure-case test** (validation, error handling, or permission denial).
+- **Mandatory (coverage depth)**: Always write enough tests to cover different real-world cases, not only the happy path.
+- **For external integrations/crawlers**: Include multiple non-happy-path tests (for example: one upstream exception path and one partial-success path where one step fails but processing continues).
 - **Timing**: Tests must be implemented and passing **before** requesting review or merging.
 - **AI Generated Code**: All AI-generated logic must be explicitly covered by tests to ensure reliability.
 

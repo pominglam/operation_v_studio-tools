@@ -18,6 +18,10 @@ final class DatabaseBackupRestoreController extends Controller
         DatabaseBackupRepository $backups,
         DatabaseRestore $restore,
     ): JsonResponse {
+        // Restoring can be slow (DB + images).
+        @set_time_limit(0);
+        @ignore_user_abort(true);
+
         /** @var string $uuid */
         $uuid = $request->validated('backup_uuid');
 
@@ -27,7 +31,13 @@ final class DatabaseBackupRestoreController extends Controller
             return response()->json(['message' => 'Backup not found.'], 404);
         }
 
-        $restore->restore($backup);
+        try {
+            $restore->restore($backup);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+            ], 500);
+        }
 
         return response()->json(['ok' => true]);
     }

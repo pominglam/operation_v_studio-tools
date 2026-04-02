@@ -25,16 +25,37 @@ final class ProductsExportSelectedRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'export_type' => ['required', 'string', Rule::in(['shopify', 'missing_barcode', 'barcoded'])],
-            'ids' => ['required', 'array', 'min:1', 'max:500'],
+            'export_type' => ['required', 'string', Rule::in(['shopify', 'shopify_no_inventory', 'missing_barcode', 'barcoded'])],
+            'ids' => ['required', 'array', 'min:1', 'max:5000'],
             'ids.*' => ['string', 'uuid'],
+            // Shopify export normally skips products without selling price. Set this flag to include them anyway.
+            'include_missing_selling_price' => ['sometimes', 'boolean'],
             'sort_by' => [
                 'sometimes',
                 'string',
-                Rule::in(['sku', 'barcode', 'description', 'type', 'latest_landed_unit_cost', 'order', 'filled', 'extended', 'updated_at', 'created_at']),
+                Rule::in([
+                    'sku',
+                    'barcode',
+                    'description',
+                    'main_type',
+                    'type',
+                    'grade',
+                    'series',
+                    'scale',
+                    'vendor',
+                    'latest_landed_unit_cost',
+                    'selling_price',
+                    'order',
+                    'filled',
+                    'available',
+                    'maintain',
+                    'extended',
+                    'po_total_cost',
+                    'updated_at',
+                    'created_at',
+                ]),
             ],
             'sort_dir' => ['sometimes', 'string', Rule::in(['asc', 'desc'])],
         ];
     }
 }
-

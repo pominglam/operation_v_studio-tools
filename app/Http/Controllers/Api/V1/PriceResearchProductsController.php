@@ -39,6 +39,14 @@ final class PriceResearchProductsController extends Controller
 
         /** @var string|null $purchaseOrderUuid */
         $purchaseOrderUuid = $request->validated('purchase_order_uuid');
+        /** @var array<int, string> $purchaseOrderUuids */
+        $purchaseOrderUuids = $request->validated('purchase_order_uuids') ?? [];
+        $purchaseOrderUuids = array_values(array_unique(array_filter(array_map('trim', $purchaseOrderUuids), static fn (string $v): bool => $v !== '')));
+        $single = is_string($purchaseOrderUuid) ? trim($purchaseOrderUuid) : '';
+        if ($single !== '') {
+            $purchaseOrderUuids[] = $single;
+            $purchaseOrderUuids = array_values(array_unique($purchaseOrderUuids));
+        }
 
         /** @var array<int, string> $vendors */
         $vendors = $request->validated('vendors') ?? [];
@@ -63,7 +71,7 @@ final class PriceResearchProductsController extends Controller
                 sellingPrice: $sellingPrice,
                 shippingPerUnit: $shippingPerUnit,
                 barcode: $barcode,
-                purchaseOrderUuid: $purchaseOrderUuid,
+                purchaseOrderUuids: $purchaseOrderUuids,
                 vendors: $vendors,
                 freshness: $freshness,
                 types: $types,

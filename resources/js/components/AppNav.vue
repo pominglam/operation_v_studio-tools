@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { RouterLink, useRoute } from 'vue-router';
 import logoUrl from '../assets/operation-v-logo.svg?url';
+import { currentAccessRole } from '../lib/accessRole';
 
 const route = useRoute();
+const isEmployee = currentAccessRole() === 'employee';
 
 function isActive(name: string): boolean {
     if (name === 'inventory-check') {
@@ -29,6 +31,19 @@ function isActive(name: string): boolean {
 
             <nav class="flex items-center gap-2 text-sm">
                 <RouterLink
+                    v-if="isEmployee"
+                    to="/employee/inventory-count"
+                    class="rounded-md px-3 py-1.5 transition"
+                    :class="
+                        route.path.startsWith('/employee/inventory-count')
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-100'
+                    "
+                >
+                    Inventory Count
+                </RouterLink>
+                <RouterLink
+                    v-if="!isEmployee"
                     to="/products"
                     class="rounded-md px-3 py-1.5 transition"
                     :class="
@@ -40,6 +55,7 @@ function isActive(name: string): boolean {
                     Products
                 </RouterLink>
                 <RouterLink
+                    v-if="!isEmployee"
                     to="/inventory-check"
                     class="rounded-md px-3 py-1.5 transition"
                     :class="
@@ -51,6 +67,7 @@ function isActive(name: string): boolean {
                     Inventory Check
                 </RouterLink>
                 <RouterLink
+                    v-if="!isEmployee"
                     to="/purchase-orders"
                     class="rounded-md px-3 py-1.5 transition"
                     :class="
@@ -62,6 +79,7 @@ function isActive(name: string): boolean {
                     Purchase Orders
                 </RouterLink>
                 <RouterLink
+                    v-if="!isEmployee"
                     to="/price-research"
                     class="rounded-md px-3 py-1.5 transition"
                     :class="
@@ -73,6 +91,19 @@ function isActive(name: string): boolean {
                     Pricing
                 </RouterLink>
                 <RouterLink
+                    v-if="!isEmployee"
+                    to="/tcg-events"
+                    class="rounded-md px-3 py-1.5 transition"
+                    :class="
+                        isActive('tcg-events')
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-100'
+                    "
+                >
+                    TCG Events
+                </RouterLink>
+                <RouterLink
+                    v-if="!isEmployee"
                     to="/maintenance"
                     class="rounded-md px-3 py-1.5 transition"
                     :class="

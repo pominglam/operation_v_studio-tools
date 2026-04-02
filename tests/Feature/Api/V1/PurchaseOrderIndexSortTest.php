@@ -45,3 +45,42 @@ it('sorts purchase orders index by created_at via sort_dir', function (): void {
     expect((int) $oldIdxAsc)->toBeLessThan((int) $newIdxAsc);
 });
 
+it('sorts purchase orders index by ordered_date via sort_by', function (): void {
+    $oldOrdered = PurchaseOrder::query()->create([
+        'vendor' => 'OrderedOld',
+        'ordered_date' => '2026-01-01',
+    ]);
+    $newOrdered = PurchaseOrder::query()->create([
+        'vendor' => 'OrderedNew',
+        'ordered_date' => '2026-03-01',
+    ]);
+    $noOrdered = PurchaseOrder::query()->create([
+        'vendor' => 'OrderedNone',
+        'ordered_date' => null,
+    ]);
+
+    $desc = $this->getJson('/api/v1/purchase-orders?per_page=200&sort_by=ordered&sort_dir=desc');
+    $desc->assertOk();
+    $descIds = array_map(static fn (array $row): string => (string) $row['id'], $desc->json('data') ?? []);
+    $newDescIdx = array_search((string) $newOrdered->uuid, $descIds, true);
+    $oldDescIdx = array_search((string) $oldOrdered->uuid, $descIds, true);
+    $noneDescIdx = array_search((string) $noOrdered->uuid, $descIds, true);
+    expect($newDescIdx)->not->toBeFalse();
+    expect($oldDescIdx)->not->toBeFalse();
+    expect($noneDescIdx)->not->toBeFalse();
+    expect((int) $newDescIdx)->toBeLessThan((int) $oldDescIdx);
+    expect((int) $oldDescIdx)->toBeLessThan((int) $noneDescIdx);
+
+    $asc = $this->getJson('/api/v1/purchase-orders?per_page=200&sort_by=ordered&sort_dir=asc');
+    $asc->assertOk();
+    $ascIds = array_map(static fn (array $row): string => (string) $row['id'], $asc->json('data') ?? []);
+    $oldAscIdx = array_search((string) $oldOrdered->uuid, $ascIds, true);
+    $newAscIdx = array_search((string) $newOrdered->uuid, $ascIds, true);
+    $noneAscIdx = array_search((string) $noOrdered->uuid, $ascIds, true);
+    expect($oldAscIdx)->not->toBeFalse();
+    expect($newAscIdx)->not->toBeFalse();
+    expect($noneAscIdx)->not->toBeFalse();
+    expect((int) $oldAscIdx)->toBeLessThan((int) $newAscIdx);
+    expect((int) $newAscIdx)->toBeLessThan((int) $noneAscIdx);
+});
+

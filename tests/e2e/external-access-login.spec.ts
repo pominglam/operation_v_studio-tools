@@ -22,6 +22,7 @@ function readExternalPasswordFromDotEnv(): string | null {
 test.describe.configure({ mode: 'serial' });
 
 test('external tunnel: enable -> login -> use app; disable -> 404; Shopify tunnel still OK', async ({ page }) => {
+    test.skip(process.env.E2E_EXTERNAL_TUNNEL !== '1', 'Set E2E_EXTERNAL_TUNNEL=1 to run external tunnel E2E');
     const pw = readExternalPasswordFromDotEnv();
     test.skip(!pw, 'EXTERNAL_ACCESS_PASSWORD not set in .env');
 

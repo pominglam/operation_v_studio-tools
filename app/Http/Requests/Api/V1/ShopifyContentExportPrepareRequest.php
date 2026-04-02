@@ -24,7 +24,7 @@ final class ShopifyContentExportPrepareRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'ids' => ['sometimes', 'array', 'min:1', 'max:500'],
+            'ids' => ['sometimes', 'array', 'min:1', 'max:5000'],
             'ids.*' => ['string', 'uuid'],
         ];
     }

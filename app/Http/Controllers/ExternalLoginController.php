@@ -46,12 +46,13 @@ final class ExternalLoginController
 
         $pw = $request->input('password');
         $pw = is_string($pw) ? $pw : '';
+        $role = $auth->resolveRoleForPassword($pw);
 
-        if (! $auth->verifyPassword($pw)) {
+        if ($role === null) {
             return redirect('/external-login?next='.rawurlencode($next).'&error=invalid');
         }
 
-        $cookieVal = $auth->expectedCookieValue();
+        $cookieVal = $auth->cookieValueForRole($role);
         if (! is_string($cookieVal) || $cookieVal === '') {
             abort(500);
         }

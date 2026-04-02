@@ -9,10 +9,21 @@ import InventoryCheckPage from './pages/InventoryCheckPage.vue';
 import InventoryCheckDetailPage from './pages/InventoryCheckDetailPage.vue';
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage.vue';
 import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage.vue';
+import TcgEventsPage from './pages/TcgEventsPage.vue';
+import EmployeeInventoryCountPage from './pages/EmployeeInventoryCountPage.vue';
+import { currentAccessRole } from './lib/accessRole';
+
+const accessRole = currentAccessRole();
+const isEmployee = accessRole === 'employee';
 
 const routes: RouteRecordRaw[] = [
-    { path: '/', redirect: '/products' },
+    { path: '/', redirect: isEmployee ? '/employee/inventory-count' : '/products' },
     { path: '/import', redirect: { path: '/products', hash: '#import' } },
+    {
+        path: '/employee/inventory-count',
+        name: 'employee-inventory-count',
+        component: EmployeeInventoryCountPage,
+    },
     { path: '/products', name: 'products', component: ProductsPage },
     { path: '/purchase-orders', name: 'purchase-orders', component: PurchaseOrdersPage },
     {
@@ -38,10 +49,18 @@ const routes: RouteRecordRaw[] = [
         component: PriceResearchRunLogsPage,
     },
     { path: '/sync-progress', name: 'sync-progress', component: SyncProgressPage },
+    { path: '/tcg-events', name: 'tcg-events', component: TcgEventsPage },
     { path: '/maintenance', name: 'maintenance', component: MaintenancePage },
 ];
 
 export const router = createRouter({
     history: createWebHistory(),
     routes,
+});
+
+router.beforeEach((to) => {
+    if (!isEmployee) return true;
+    if (to.path === '/employee/inventory-count') return true;
+
+    return '/employee/inventory-count';
 });

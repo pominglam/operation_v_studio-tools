@@ -63,6 +63,39 @@ final class EloquentInventoryCheckRepository implements InventoryCheckRepository
 
         return $check;
     }
+
+    public function save(InventoryCheck $check): InventoryCheck
+    {
+        $check->save();
+
+        return $check;
+    }
+
+    public function saveItem(InventoryCheckItem $item): InventoryCheckItem
+    {
+        $item->save();
+
+        return $item;
+    }
+
+    public function findItemInSessionOrFail(InventoryCheck $session, int $itemId): InventoryCheckItem
+    {
+        /** @var InventoryCheckItem|null $item */
+        $item = InventoryCheckItem::query()
+            ->where('inventory_check_id', '=', (int) $session->id)
+            ->where('id', '=', $itemId)
+            ->first();
+        if ($item === null) {
+            throw (new ModelNotFoundException)->setModel(InventoryCheckItem::class, [$itemId]);
+        }
+
+        return $item;
+    }
+
+    public function deleteItem(InventoryCheckItem $item): void
+    {
+        $item->delete();
+    }
 }
 
 

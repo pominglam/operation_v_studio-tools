@@ -98,9 +98,25 @@ final class BandaiContentSyncService
             return mb_strlen($t) >= 4;
         }));
 
+        // Preferred query: normalized from the product name (keeps grade tokens like "MG").
+        $preferred = $this->buildSearchQuery($product);
+
+        // Normalize each term to improve recall and avoid overly-specific model-code tokens.
+        $normalized = [];
+        if (is_string($preferred) && trim($preferred) !== '') {
+            $normalized[] = $preferred;
+        }
+        foreach ($terms as $t) {
+            $q = $this->normalizeSearchQuery($t);
+            if (! is_string($q) || trim($q) === '') {
+                continue;
+            }
+            $normalized[] = $q;
+        }
+        $terms = array_values(array_unique($normalized));
+
         if ($terms === []) {
-            $q = $this->buildSearchQuery($product);
-            return $q !== null ? $this->findBestPdpFromCmsApi($q) : null;
+            return $preferred !== null ? $this->findBestPdpFromCmsApi($preferred) : null;
         }
 
         $best = null;
@@ -149,18 +165,24 @@ final class BandaiContentSyncService
     private function buildSearchQuery(Product $product): ?string
     {
         $name = is_string($product->description) ? trim($product->description) : '';
-        if ($name === '') {
+        return $this->normalizeSearchQuery($name);
+    }
+
+    private function normalizeSearchQuery(string $query): ?string
+    {
+        $query = trim($query);
+        if ($query === '') {
             return null;
         }
 
         // Remove scale tokens like "1/100" to improve search recall.
-        $name = preg_replace('/\b\d+\s*\/\s*\d+\b/u', '', $name) ?? $name;
+        $query = preg_replace('/\b\d+\s*\/\s*\d+\b/u', '', $query) ?? $query;
 
         // Remove model codes like "MBF-02VV" that can reduce recall.
-        $name = preg_replace('/\b[A-Z]{2,}-\d+[A-Z0-9-]*\b/iu', '', $name) ?? $name;
-        $name = trim(preg_replace('/\s+/u', ' ', $name) ?? $name);
+        $query = preg_replace('/\b[A-Z]{2,}-\d+[A-Z0-9-]*\b/iu', '', $query) ?? $query;
+        $query = trim(preg_replace('/\s+/u', ' ', $query) ?? $query);
 
-        return $name !== '' ? $name : null;
+        return $query !== '' ? $query : null;
     }
 
     private function buildSearchUrl(string $query): string

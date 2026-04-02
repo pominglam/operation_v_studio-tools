@@ -15,6 +15,9 @@ use Illuminate\Support\Str;
  * @property string|null $source
  * @property string|null $uploaded_file_path
  * @property string|null $notes
+ * @property string $workflow_state
+ * @property string|null $created_by_role
+ * @property \Illuminate\Support\Carbon|null $applied_at
  */
 final class InventoryCheck extends Model
 {
@@ -27,6 +30,14 @@ final class InventoryCheck extends Model
         'source',
         'uploaded_file_path',
         'notes',
+        'workflow_state',
+        'created_by_role',
+        'applied_at',
+    ];
+
+    /** @var array<string, string> */
+    protected $casts = [
+        'applied_at' => 'datetime',
     ];
 
     protected static function booted(): void

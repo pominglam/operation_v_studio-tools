@@ -14,9 +14,17 @@ final class PurchaseOrderQueryService
         private readonly PurchaseOrderRepository $purchaseOrders,
     ) {}
 
-    public function paginate(int $perPage, string $sortDir = 'desc'): LengthAwarePaginator
+    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created'): LengthAwarePaginator
     {
-        return $this->purchaseOrders->paginate($perPage, $sortDir);
+        return $this->purchaseOrders->paginate($perPage, $sortDir, $sortBy);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function distinctVendors(): array
+    {
+        return $this->purchaseOrders->distinctVendors();
     }
 
     public function findByUuidOrFail(string $uuid): PurchaseOrder
