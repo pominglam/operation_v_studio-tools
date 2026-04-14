@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import ConfirmDialog from '../components/ui/ConfirmDialog.vue';
 import { api } from '../lib/api';
 import { formatTorontoDateTime } from '../lib/datetime';
 
@@ -11,6 +12,7 @@ type InventoryCheckListRow = {
     created_by_role?: string | null;
     applied_at?: string | null;
     created_at: string | null;
+    updated_at?: string | null;
     counts: {
         items: number;
         matched: number;
@@ -46,6 +48,8 @@ type ImportResult = {
 
 const loading = ref(false);
 const error = ref<string | null>(null);
+const deletingId = ref<string | null>(null);
+const pendingDelete = ref<InventoryCheckListRow | null>(null);
 const checks = ref<InventoryCheckListRow[]>([]);
 const meta = ref<Paginated<InventoryCheckListRow>['meta'] | null>(null);
 
@@ -55,6 +59,16 @@ const importError = ref<string | null>(null);
 const importResult = ref<ImportResult | null>(null);
 
 const hasImportResult = computed(() => importResult.value !== null);
+
+const deleteConfirmMessage = computed(() => {
+    const c = pendingDelete.value;
+    if (!c) return '';
+    const idShort = `${c.id.slice(0, 8)}…`;
+    const n = c.counts.items;
+    const lineWord = n === 1 ? 'line' : 'lines';
+
+    return `This will permanently remove session ${idShort} (${n} ${lineWord}). This cannot be undone. If you clicked Delete by mistake, choose Cancel.`;
+});
 
 async function loadHistory(): Promise<void> {
     loading.value = true;
@@ -69,6 +83,38 @@ async function loadHistory(): Promise<void> {
         error.value = 'Failed to load inventory check history.';
     } finally {
         loading.value = false;
+    }
+}
+
+function requestDeleteCheck(c: InventoryCheckListRow): void {
+    pendingDelete.value = c;
+}
+
+function cancelDeleteConfirm(): void {
+    if (deletingId.value !== null) return;
+    pendingDelete.value = null;
+}
+
+async function confirmDeleteCheck(): Promise<void> {
+    const c = pendingDelete.value;
+    if (!c) return;
+
+    deletingId.value = c.id;
+    error.value = null;
+    try {
+        const res = await api.delete(`/api/v1/inventory-check/${c.id}`, {
+            validateStatus: () => true,
+        });
+        if (res.status !== 200) {
+            const msg = (res.data as { message?: string })?.message;
+            throw new Error(msg ?? `Delete failed (HTTP ${res.status}).`);
+        }
+        await loadHistory();
+    } catch (e: unknown) {
+        error.value = e instanceof Error ? e.message : 'Failed to delete inventory check.';
+    } finally {
+        deletingId.value = null;
+        pendingDelete.value = null;
     }
 }
 
@@ -101,6 +147,10 @@ async function runImport(): Promise<void> {
         importing.value = false;
     }
 }
+
+onMounted(() => {
+    void loadHistory();
+});
 </script>
 
 <template>
@@ -108,8 +158,8 @@ async function runImport(): Promise<void> {
         <div class="mb-6">
             <h1 class="text-xl font-semibold text-slate-900">Inventory Check</h1>
             <p class="mt-1 text-sm text-slate-600">
-                Import a counted CSV to update <span class="font-medium">Available Qty</span> and store differences/notes as a
-                historical session.
+                Import a counted CSV to update <span class="font-medium">Available Qty</span> and
+                store differences/notes as a historical session.
             </p>
         </div>
 
@@ -137,7 +187,10 @@ async function runImport(): Promise<void> {
 
             <p v-if="importError" class="mt-3 text-sm text-red-700">{{ importError }}</p>
 
-            <div v-if="hasImportResult" class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+            <div
+                v-if="hasImportResult"
+                class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3"
+            >
                 <div class="flex flex-col gap-1 text-sm text-slate-800">
                     <div>
                         <span class="font-medium">Session:</span>
@@ -149,17 +202,34 @@ async function runImport(): Promise<void> {
                         </a>
                     </div>
                     <div class="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-6">
-                        <div><span class="font-medium">Rows:</span> {{ importResult!.rows_parsed }}</div>
-                        <div><span class="font-medium">Matched:</span> {{ importResult!.matched }}</div>
-                        <div><span class="font-medium">Applied:</span> {{ importResult!.applied }}</div>
-                        <div><span class="font-medium">Needs attention:</span> {{ importResult!.not_applied }}</div>
-                        <div><span class="font-medium">Unmatched:</span> {{ importResult!.unmatched }}</div>
-                        <div><span class="font-medium">Ambiguous:</span> {{ importResult!.ambiguous }}</div>
+                        <div>
+                            <span class="font-medium">Rows:</span> {{ importResult!.rows_parsed }}
+                        </div>
+                        <div>
+                            <span class="font-medium">Matched:</span> {{ importResult!.matched }}
+                        </div>
+                        <div>
+                            <span class="font-medium">Applied:</span> {{ importResult!.applied }}
+                        </div>
+                        <div>
+                            <span class="font-medium">Needs attention:</span>
+                            {{ importResult!.not_applied }}
+                        </div>
+                        <div>
+                            <span class="font-medium">Unmatched:</span>
+                            {{ importResult!.unmatched }}
+                        </div>
+                        <div>
+                            <span class="font-medium">Ambiguous:</span>
+                            {{ importResult!.ambiguous }}
+                        </div>
                     </div>
                 </div>
 
                 <div v-if="importResult!.not_applied_rows.length > 0" class="mt-4">
-                    <h3 class="text-xs font-semibold text-slate-900">Needs attention (quantity in store)</h3>
+                    <h3 class="text-xs font-semibold text-slate-900">
+                        Needs attention (quantity in store)
+                    </h3>
                     <div class="mt-2 overflow-x-auto">
                         <table class="min-w-full text-left text-xs">
                             <thead class="text-slate-600">
@@ -171,7 +241,11 @@ async function runImport(): Promise<void> {
                                 </tr>
                             </thead>
                             <tbody class="text-slate-800">
-                                <tr v-for="(r, idx) in importResult!.not_applied_rows" :key="idx" class="border-t border-slate-200">
+                                <tr
+                                    v-for="(r, idx) in importResult!.not_applied_rows"
+                                    :key="idx"
+                                    class="border-t border-slate-200"
+                                >
                                     <td class="px-2 py-1">{{ r.handle }}</td>
                                     <td class="px-2 py-1">{{ r.vendor }}</td>
                                     <td class="px-2 py-1">{{ r.sku }}</td>
@@ -195,7 +269,11 @@ async function runImport(): Promise<void> {
                                 </tr>
                             </thead>
                             <tbody class="text-slate-800">
-                                <tr v-for="(r, idx) in importResult!.unmatched_rows" :key="idx" class="border-t border-slate-200">
+                                <tr
+                                    v-for="(r, idx) in importResult!.unmatched_rows"
+                                    :key="idx"
+                                    class="border-t border-slate-200"
+                                >
                                     <td class="px-2 py-1">{{ r.handle }}</td>
                                     <td class="px-2 py-1">{{ r.vendor }}</td>
                                     <td class="px-2 py-1">{{ r.sku }}</td>
@@ -219,7 +297,11 @@ async function runImport(): Promise<void> {
                                 </tr>
                             </thead>
                             <tbody class="text-slate-800">
-                                <tr v-for="(r, idx) in importResult!.ambiguous_rows" :key="idx" class="border-t border-slate-200">
+                                <tr
+                                    v-for="(r, idx) in importResult!.ambiguous_rows"
+                                    :key="idx"
+                                    class="border-t border-slate-200"
+                                >
                                     <td class="px-2 py-1">{{ r.handle }}</td>
                                     <td class="px-2 py-1">{{ r.vendor }}</td>
                                     <td class="px-2 py-1">{{ r.sku }}</td>
@@ -253,6 +335,7 @@ async function runImport(): Promise<void> {
                     <thead class="text-slate-600">
                         <tr>
                             <th class="px-2 py-2">Created</th>
+                            <th class="px-2 py-2">Last updated</th>
                             <th class="px-2 py-2">ID</th>
                             <th class="px-2 py-2">Source</th>
                             <th class="px-2 py-2">Role</th>
@@ -261,13 +344,27 @@ async function runImport(): Promise<void> {
                             <th class="px-2 py-2 text-right">Applied</th>
                             <th class="px-2 py-2 text-right">Unmatched</th>
                             <th class="px-2 py-2 text-right">Ambiguous</th>
+                            <th class="px-2 py-2 text-right whitespace-nowrap">Delete</th>
                         </tr>
                     </thead>
                     <tbody class="text-slate-800">
-                        <tr v-for="c in checks" :key="c.id" class="border-t border-slate-200 hover:bg-slate-50">
-                            <td class="px-2 py-2 text-slate-600">{{ formatTorontoDateTime(c.created_at) }}</td>
+                        <tr
+                            v-for="c in checks"
+                            :key="c.id"
+                            class="border-t border-slate-200 hover:bg-slate-50"
+                        >
+                            <td class="px-2 py-2 text-slate-600">
+                                {{ formatTorontoDateTime(c.created_at) }}
+                            </td>
+                            <td class="px-2 py-2 text-slate-600">
+                                {{ formatTorontoDateTime(c.updated_at) }}
+                            </td>
                             <td class="px-2 py-2">
-                                <a class="underline underline-offset-2" :href="`/inventory-check/${c.id}`">{{ c.id }}</a>
+                                <a
+                                    class="underline underline-offset-2"
+                                    :href="`/inventory-check/${c.id}`"
+                                    >{{ c.id }}</a
+                                >
                             </td>
                             <td class="px-2 py-2">{{ c.source ?? '—' }}</td>
                             <td class="px-2 py-2">{{ c.created_by_role ?? '—' }}</td>
@@ -276,16 +373,36 @@ async function runImport(): Promise<void> {
                             <td class="px-2 py-2 text-right">{{ c.counts.applied }}</td>
                             <td class="px-2 py-2 text-right">{{ c.counts.unmatched }}</td>
                             <td class="px-2 py-2 text-right">{{ c.counts.ambiguous }}</td>
+                            <td class="px-2 py-2 text-right align-middle whitespace-nowrap">
+                                <button
+                                    type="button"
+                                    class="rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="deletingId !== null || loading"
+                                    @click="requestDeleteCheck(c)"
+                                >
+                                    {{ deletingId === c.id ? 'Deleting…' : 'Delete' }}
+                                </button>
+                            </td>
                         </tr>
                     </tbody>
                 </table>
 
-                <p v-if="meta && meta.total === 0" class="mt-3 text-sm text-slate-600">No inventory checks yet.</p>
+                <p v-if="meta && meta.total === 0" class="mt-3 text-sm text-slate-600">
+                    No inventory checks yet.
+                </p>
             </div>
         </section>
+
+        <ConfirmDialog
+            :open="pendingDelete !== null"
+            title="Delete this inventory check?"
+            :message="deleteConfirmMessage"
+            confirm-text="Delete permanently"
+            cancel-text="Cancel"
+            variant="danger"
+            :busy="deletingId !== null"
+            @cancel="cancelDeleteConfirm"
+            @confirm="confirmDeleteCheck"
+        />
     </main>
 </template>
-
-
-
-

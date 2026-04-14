@@ -30,6 +30,29 @@ type PurchaseOrderItem = {
     qty_received: number | null;
 };
 
+type InventoryCheckPickRow = {
+    id: string;
+    name: string | null;
+    source: string | null;
+    workflow_state?: string | null;
+    created_by_role?: string | null;
+    created_at: string | null;
+    counts: {
+        items: number;
+        matched: number;
+        unmatched: number;
+        ambiguous: number;
+        applied: number;
+    };
+};
+
+type ApplyInventoryCheckWarning = {
+    kind: string;
+    sku?: string;
+    purchase_order_item_id?: number;
+    quantity_in_store?: number;
+};
+
 type PurchaseOrder = {
     id: string;
     vendor: string;
@@ -66,6 +89,8 @@ const reimporting = ref(false);
 const importMoreing = ref(false);
 const reimportFile = ref<File | null>(null);
 const reimportError = ref<string | null>(null);
+/** When true, replace re-import deletes PO-linked lots/movements and clears qty received before replacing lines. */
+const reimportResetReceipt = ref(false);
 
 const savingQtyOrdered = ref<number | null>(null);
 const editingQtyOrderedId = ref<number | null>(null);
@@ -112,6 +137,15 @@ const applyingReceivedToAvailable = ref(false);
 const applyReceivedError = ref<string | null>(null);
 const applyReceivedSummary = ref<string | null>(null);
 
+const inventoryChecksLoading = ref(false);
+const inventoryChecksList = ref<InventoryCheckPickRow[]>([]);
+const inventoryChecksMetaLastPage = ref(1);
+const selectedInventoryCheckId = ref<string>('');
+const applyingInventoryCheck = ref(false);
+const applyInventoryCheckError = ref<string | null>(null);
+const applyInventoryCheckSummary = ref<string | null>(null);
+const applyInventoryCheckWarnings = ref<ApplyInventoryCheckWarning[]>([]);
+
 const checklistBusy = ref(false);
 const checklistError = ref<string | null>(null);
 
@@ -123,6 +157,7 @@ type WorkflowChecklistKey =
     | 'export_to_shopify_get_handles'
     | 'import_handle_only'
     | 'update_product_available_with_shopify_current_inventory_quantity'
+    | 'mark_latest_arrival_and_published_on_shopify'
     | 'import_product_available_quantity';
 
 const checklistLabels: Array<{ key: WorkflowChecklistKey; label: string }> = [
@@ -130,11 +165,21 @@ const checklistLabels: Array<{ key: WorkflowChecklistKey; label: string }> = [
     { key: 'crawl_desc_image_price', label: 'Crawl desc, image, price (new products only)' },
     { key: 'set_selling_price', label: 'Set selling price (new/existing products)' },
     { key: 'ensure_all_products_have_barcode', label: 'Ensure all products have barcode' },
-    { key: 'export_to_shopify_get_handles', label: 'Export to Shopify to get handles (new products only)' },
-    { key: 'import_handle_only', label: 'Import the HANDLE ONLY back into the system (new products only)' },
+    {
+        key: 'export_to_shopify_get_handles',
+        label: 'Export to Shopify to get handles (new products only)',
+    },
+    {
+        key: 'import_handle_only',
+        label: 'Import the HANDLE ONLY back into the system (new products only)',
+    },
     {
         key: 'update_product_available_with_shopify_current_inventory_quantity',
         label: 'Add qty received to qty available',
+    },
+    {
+        key: 'mark_latest_arrival_and_published_on_shopify',
+        label: 'Mark products as latest arrival and published',
     },
     { key: 'import_product_available_quantity', label: 'Import product available quantity' },
 ];
@@ -150,6 +195,9 @@ const checklist = computed<Record<WorkflowChecklistKey, boolean>>(() => {
         import_handle_only: Boolean((raw as any)?.import_handle_only),
         update_product_available_with_shopify_current_inventory_quantity: Boolean(
             (raw as any)?.update_product_available_with_shopify_current_inventory_quantity,
+        ),
+        mark_latest_arrival_and_published_on_shopify: Boolean(
+            (raw as any)?.mark_latest_arrival_and_published_on_shopify,
         ),
         import_product_available_quantity: Boolean((raw as any)?.import_product_available_quantity),
     };
@@ -385,6 +433,105 @@ async function toggleChecklist(key: WorkflowChecklistKey, next: boolean): Promis
         checklistError.value = e instanceof Error ? e.message : 'Failed to save checklist.';
     } finally {
         checklistBusy.value = false;
+    }
+}
+
+function inventoryCheckLabel(c: InventoryCheckPickRow): string {
+    const date = formatTorontoDateTime(c.created_at) || '—';
+    const st = c.workflow_state ?? '—';
+    const src = c.source ?? '—';
+    const role = c.created_by_role ?? '—';
+    const n = c.counts?.items ?? 0;
+
+    return `${date} · ${st} · ${src} · ${role} · ${n} rows · ${c.id.slice(0, 8)}…`;
+}
+
+function formatApplyInventoryCheckWarning(w: ApplyInventoryCheckWarning): string {
+    switch (w.kind) {
+        case 'po_line_no_inventory_match':
+            return `PO line #${w.purchase_order_item_id ?? '?'}: no inventory check row for SKU "${w.sku ?? '?'}"`;
+        case 'check_sku_not_on_po':
+            return `Check has SKU "${w.sku ?? '?'}" (${w.quantity_in_store ?? 0} scanned) but no matching PO line`;
+        case 'po_line_empty_sku':
+            return `PO line #${w.purchase_order_item_id ?? '?'}: empty SKU — skipped`;
+        default:
+            return `${w.kind}${w.sku != null ? ` (${w.sku})` : ''}`;
+    }
+}
+
+async function loadInventoryChecksForPicker(): Promise<void> {
+    inventoryChecksLoading.value = true;
+    try {
+        const res = await api.get<{
+            data: InventoryCheckPickRow[];
+            meta: { last_page: number };
+        }>('/api/v1/inventory-check', { params: { per_page: 200 } });
+        inventoryChecksList.value = res.data.data;
+        inventoryChecksMetaLastPage.value = res.data.meta?.last_page ?? 1;
+    } catch {
+        inventoryChecksList.value = [];
+        inventoryChecksMetaLastPage.value = 1;
+    } finally {
+        inventoryChecksLoading.value = false;
+    }
+}
+
+async function applyInventoryCheckToQtyReceived(): Promise<void> {
+    if (!po.value || selectedInventoryCheckId.value.trim() === '') return;
+    applyingInventoryCheck.value = true;
+    applyInventoryCheckError.value = null;
+    applyInventoryCheckSummary.value = null;
+    applyInventoryCheckWarnings.value = [];
+    try {
+        const res = await api.post<{
+            ok: boolean;
+            data: {
+                lines_updated: number;
+                warnings: ApplyInventoryCheckWarning[];
+                reset?: {
+                    movements_deleted: number;
+                    lots_deleted: number;
+                    qty_received_cleared: number;
+                };
+            };
+        }>(
+            `/api/v1/purchase-orders/${po.value.id}/apply-inventory-check`,
+            { inventory_check_id: selectedInventoryCheckId.value.trim() },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as { message?: string })?.message;
+            throw new Error(msg ?? `Failed to apply inventory check (HTTP ${res.status}).`);
+        }
+        const data = (
+            res.data as {
+                data?: {
+                    lines_updated: number;
+                    warnings: ApplyInventoryCheckWarning[];
+                    reset?: {
+                        movements_deleted: number;
+                        lots_deleted: number;
+                        qty_received_cleared: number;
+                    };
+                };
+            }
+        ).data ?? { lines_updated: 0, warnings: [] };
+        const r = data.reset;
+        const resetPart =
+            r != null
+                ? ` Cleared ${r.qty_received_cleared} line(s); removed ${r.lots_deleted} lot(s) and ${r.movements_deleted} movement(s).`
+                : '';
+        applyInventoryCheckSummary.value = `Updated qty received on ${data.lines_updated} line(s) from the selected inventory check.${resetPart}`;
+        applyInventoryCheckWarnings.value = Array.isArray(data.warnings) ? data.warnings : [];
+        for (const k of Object.keys(qtyReceivedDrafts)) {
+            delete qtyReceivedDrafts[Number(k)];
+        }
+        await load();
+    } catch (e: unknown) {
+        applyInventoryCheckError.value =
+            e instanceof Error ? e.message : 'Failed to apply inventory check.';
+    } finally {
+        applyingInventoryCheck.value = false;
     }
 }
 
@@ -628,11 +775,9 @@ const totalsCheck = computed<TotalsCheck>(() => {
         }
     }
 
-    const poGrandTotal =
-        (headerProduct ?? 0) + (headerShipping ?? 0) + (headerSurcharge ?? 0);
+    const poGrandTotal = (headerProduct ?? 0) + (headerShipping ?? 0) + (headerSurcharge ?? 0);
     const deltaLandedTotal = poGrandTotal - landedLinesTotal;
-    const okLanded =
-        missingUnitCostLines === 0 && Math.abs(deltaLandedTotal) <= toleranceCents;
+    const okLanded = missingUnitCostLines === 0 && Math.abs(deltaLandedTotal) <= toleranceCents;
 
     return {
         ok: okProduct && okShipping && okSurcharge && okLanded,
@@ -1035,6 +1180,17 @@ async function importMoreCsvIntoPo(): Promise<void> {
     await importCsvIntoPo('append');
 }
 
+function formatPoImportError(message: string, issues: unknown): string {
+    if (!Array.isArray(issues) || issues.length === 0) {
+        return message;
+    }
+    const first = issues[0] as { kind?: string } | undefined;
+    if (first?.kind === 'reimport_not_allowed') {
+        return message;
+    }
+    return `${message} (${JSON.stringify(first)})`;
+}
+
 async function importCsvIntoPo(mode: 'replace' | 'append'): Promise<void> {
     if (!po.value) return;
     reimportError.value = null;
@@ -1044,13 +1200,17 @@ async function importCsvIntoPo(mode: 'replace' | 'append'): Promise<void> {
         return;
     }
 
-    const msg = mode === 'replace'
-        ? (
-            po.value.counts.items > 0
-                ? `Re-import this CSV into the current PO? This will REPLACE ${po.value.counts.items} existing line item(s) and update product barcodes/names.`
-                : 'Re-import this CSV into the current PO? This will update product barcodes/names.'
-        )
-        : `Import additional products into this PO? This will ADD line items and keep the existing ${po.value.counts.items} line item(s).`;
+    const resetNote =
+        mode === 'replace' && reimportResetReceipt.value
+            ? '\n\nYou asked to clear PO receipt data first: PO-linked inventory lots and movement rows will be removed and qty received cleared on all lines before lines are replaced. Product available qty is not adjusted.'
+            : '';
+
+    const msg =
+        mode === 'replace'
+            ? po.value.counts.items > 0
+                ? `Re-import this CSV into the current PO? This will REPLACE ${po.value.counts.items} existing line item(s) and update product barcodes/names.${resetNote}`
+                : `Re-import this CSV into the current PO? This will update product barcodes/names.${resetNote}`
+            : `Import additional products into this PO? This will ADD line items and keep the existing ${po.value.counts.items} line item(s).`;
 
     if (!window.confirm(msg)) return;
 
@@ -1063,6 +1223,9 @@ async function importCsvIntoPo(mode: 'replace' | 'append'): Promise<void> {
         fd.append('vendor', po.value.vendor);
         fd.append('purchase_order_uuid', po.value.id);
         fd.append('import_mode', mode);
+        if (mode === 'replace' && reimportResetReceipt.value) {
+            fd.append('reset_receipt_before_reimport', '1');
+        }
 
         const res = await api.post('/api/v1/purchase-orders/import', fd, {
             headers: { 'Content-Type': 'multipart/form-data' },
@@ -1072,14 +1235,12 @@ async function importCsvIntoPo(mode: 'replace' | 'append'): Promise<void> {
         if (res.status !== 200) {
             const message = (res.data as any)?.message as string | undefined;
             const issues = (res.data as any)?.issues as any;
-            reimportError.value = message ?? 'Re-import failed.';
-            if (Array.isArray(issues) && issues.length) {
-                reimportError.value += ` (${JSON.stringify(issues[0])})`;
-            }
+            reimportError.value = formatPoImportError(message ?? 'Re-import failed.', issues);
             return;
         }
 
         reimportFile.value = null;
+        reimportResetReceipt.value = false;
         await load();
     } catch {
         reimportError.value = mode === 'replace' ? 'Re-import failed.' : 'Import more failed.';
@@ -1095,6 +1256,7 @@ watch(id, () => {
 
 onMounted(() => {
     void load();
+    void loadInventoryChecksForPicker();
 });
 </script>
 
@@ -1161,9 +1323,29 @@ onMounted(() => {
                                 :disabled="reimporting || importMoreing"
                                 @change="onReimportFileChange"
                             />
+                            <label
+                                class="mt-2 flex cursor-pointer items-start gap-2 text-[11px] text-slate-700"
+                            >
+                                <input
+                                    v-model="reimportResetReceipt"
+                                    type="checkbox"
+                                    class="mt-0.5 h-4 w-4 rounded border-slate-300 text-slate-900"
+                                    :disabled="reimporting || importMoreing"
+                                />
+                                <span>
+                                    <span class="font-medium text-slate-800"
+                                        >Clear PO receipt data first</span
+                                    >
+                                    (removes PO-linked inventory lots and movement rows, clears
+                                    <span class="font-medium">Qty received</span> on all lines, then
+                                    replaces lines). Use when re-import was blocked after receiving
+                                    stock. Does not change product available qty.
+                                </span>
+                            </label>
                             <div class="mt-1 text-[11px] text-slate-500">
-                                Re-import replaces existing lines (blocked when inventory was received).
-                                Import more appends new lines and keeps the existing lines.
+                                Re-import replaces existing lines unless you use the option above
+                                when receipt data exists. Import more appends new lines and keeps
+                                the existing lines.
                             </div>
                         </div>
                         <div class="lg:col-span-1 space-y-2">
@@ -1257,10 +1439,94 @@ onMounted(() => {
                         </div>
                     </div>
 
+                    <div class="mt-4 border-t border-slate-200 pt-4">
+                        <div class="text-xs font-semibold text-slate-800">
+                            Qty received from inventory check
+                        </div>
+                        <p class="mt-1 text-xs text-slate-600">
+                            First clears <span class="font-medium">Qty received</span> on every line
+                            and removes
+                            <span class="font-medium">PO-linked inventory lots</span> (and their
+                            movement rows), then sets qty received from the check by
+                            <span class="font-medium">SKU</span> (trimmed) using
+                            <span class="font-medium">Qty in store</span>. Product on-hand is not
+                            adjusted here. Shows warnings for mismatches and skipped lines.
+                        </p>
+                        <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+                            <div class="min-w-[min(100%,320px)] flex-1">
+                                <label class="text-xs font-medium text-slate-700"
+                                    >Inventory check</label
+                                >
+                                <select
+                                    v-model="selectedInventoryCheckId"
+                                    class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                    :disabled="inventoryChecksLoading || applyingInventoryCheck"
+                                >
+                                    <option value="">
+                                        {{
+                                            inventoryChecksLoading
+                                                ? 'Loading checks…'
+                                                : 'Choose inventory check…'
+                                        }}
+                                    </option>
+                                    <option
+                                        v-for="c in inventoryChecksList"
+                                        :key="c.id"
+                                        :value="c.id"
+                                    >
+                                        {{ inventoryCheckLabel(c) }}
+                                    </option>
+                                </select>
+                                <p
+                                    v-if="inventoryChecksMetaLastPage > 1"
+                                    class="mt-1 text-[11px] text-amber-800"
+                                >
+                                    Showing the newest 200 sessions only. Use Inventory Check
+                                    history for full list.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="
+                                    selectedInventoryCheckId.trim() === '' ||
+                                    applyingInventoryCheck ||
+                                    inventoryChecksLoading
+                                "
+                                @click="applyInventoryCheckToQtyReceived"
+                            >
+                                {{ applyingInventoryCheck ? 'Applying…' : 'Apply to qty received' }}
+                            </button>
+                        </div>
+                        <p v-if="applyInventoryCheckError" class="mt-2 text-sm text-rose-700">
+                            {{ applyInventoryCheckError }}
+                        </p>
+                        <p v-if="applyInventoryCheckSummary" class="mt-2 text-sm text-emerald-800">
+                            {{ applyInventoryCheckSummary }}
+                        </p>
+                        <div
+                            v-if="applyInventoryCheckWarnings.length > 0"
+                            class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2"
+                        >
+                            <div class="text-xs font-semibold text-amber-900">
+                                Warnings ({{ applyInventoryCheckWarnings.length }})
+                            </div>
+                            <ul class="mt-1 list-inside list-disc text-xs text-amber-950">
+                                <li v-for="(w, idx) in applyInventoryCheckWarnings" :key="idx">
+                                    {{ formatApplyInventoryCheckWarning(w) }}
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
                     <p v-if="exportError" class="mt-3 text-sm text-rose-700">{{ exportError }}</p>
                     <p v-if="recrawlError" class="mt-3 text-sm text-rose-700">{{ recrawlError }}</p>
-                    <p v-if="applyReceivedError" class="mt-3 text-sm text-rose-700">{{ applyReceivedError }}</p>
-                    <p v-if="applyReceivedSummary" class="mt-3 text-sm text-emerald-800">{{ applyReceivedSummary }}</p>
+                    <p v-if="applyReceivedError" class="mt-3 text-sm text-rose-700">
+                        {{ applyReceivedError }}
+                    </p>
+                    <p v-if="applyReceivedSummary" class="mt-3 text-sm text-emerald-800">
+                        {{ applyReceivedSummary }}
+                    </p>
 
                     <div v-if="importHandlesOpen" class="mt-4">
                         <ImportHandlesCard :embedded="true" :purchase-order-uuid="po.id" />
@@ -1351,7 +1617,9 @@ onMounted(() => {
                             />
                         </div>
                         <div>
-                            <label class="text-xs font-medium text-slate-700">Estimated arrival</label>
+                            <label class="text-xs font-medium text-slate-700"
+                                >Estimated arrival</label
+                            >
                             <input
                                 v-model="draft.estimated_arrival_date"
                                 type="date"
@@ -1529,7 +1797,8 @@ onMounted(() => {
                         v-if="totalsCheck.missing_unit_cost_lines > 0"
                         class="mt-1 text-xs text-rose-700"
                     >
-                        {{ totalsCheck.missing_unit_cost_lines }} line(s) are missing unit cost, so landed total cannot fully reconcile.
+                        {{ totalsCheck.missing_unit_cost_lines }} line(s) are missing unit cost, so
+                        landed total cannot fully reconcile.
                     </div>
                     <div v-if="allocationQtyNote" class="mt-2 text-xs text-amber-800">
                         {{ allocationQtyNote }}

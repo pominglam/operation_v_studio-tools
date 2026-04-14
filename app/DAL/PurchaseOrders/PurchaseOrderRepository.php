@@ -27,9 +27,10 @@ interface PurchaseOrderRepository
     public function saveItem(PurchaseOrderItem $item): PurchaseOrderItem;
 
     /**
+     * @param  array<int, string>  $vendors  When non-empty, only rows whose vendor is in this list (exact match).
      * @return LengthAwarePaginator<PurchaseOrder>
      */
-    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created'): LengthAwarePaginator;
+    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created', array $vendors = []): LengthAwarePaginator;
 
     /**
      * @return array<int, string>
@@ -54,5 +55,3 @@ interface PurchaseOrderRepository
 
     public function delete(PurchaseOrder $po): void;
 }
-
-

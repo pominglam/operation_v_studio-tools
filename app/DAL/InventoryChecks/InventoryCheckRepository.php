@@ -25,6 +25,9 @@ interface InventoryCheckRepository
     public function findItemInSessionOrFail(InventoryCheck $session, int $itemId): InventoryCheckItem;
 
     public function deleteItem(InventoryCheckItem $item): void;
+
+    /**
+     * Deletes all line items for the session, then the session row (FK-safe).
+     */
+    public function deleteSession(InventoryCheck $check): void;
 }
-
-

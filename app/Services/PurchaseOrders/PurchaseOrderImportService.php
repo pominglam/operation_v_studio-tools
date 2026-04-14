@@ -11,8 +11,8 @@ use App\Models\InventoryLot;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
-use App\Services\Products\ProductTypeDerivationService;
 use App\Services\Products\ProductLatestCostCacheService;
+use App\Services\Products\ProductTypeDerivationService;
 use App\Services\PurchaseOrders\Exceptions\PurchaseOrderImportException;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
@@ -22,27 +22,49 @@ use Illuminate\Support\Facades\DB;
 final class PurchaseOrderImportService
 {
     private const COL_SKU = 'SKU';
+
     private const COL_UNIT_COST = 'Unit cost';
+
     private const COL_QTY_ORDERED = 'Qty ordered';
+
     private const COL_QTY_SHIPPED = 'Qty shipped';
+
     private const COL_QTY_RECEIVED = 'Qty received';
+
     private const COL_DSPIAE_WHOLESALE_PRICE = 'Wholesale price';
+
     private const COL_DSPIAE_REQUIRED_QTY = 'Required Quantity / pcs (Carton Multiple)';
+
     private const COL_DSPIAE_PRODUCT_NAME = 'Product name';
+
     private const COL_DSPIAE_BARCODE = 'Barcode';
+
     private const COL_STEDI_WHOLESALE_PRICE_HKD = 'Wholesale price HKD';
+
     private const COL_STEDI_ORDER_QTY = 'Order qty';
+
     private const COL_STEDI_QTY = 'Qty';
+
     private const COL_STEDI_UNIT_PRICE_HKD = 'Unit Price (HK$)';
+
     private const COL_UNIT_PRICE_HKD = 'Unit Price (HKD)';
+
     private const COL_AMOUNT_HKD = 'Amount (HKD)';
+
     private const COL_STEDI_AMOUNT_HKD = 'Amount (HK$)';
+
     private const COL_PLAMOD_ORDER_ID = 'Order ID';
+
     private const COL_PLAMOD_PRODUCT_NAME = 'Product Name';
+
     private const COL_PLAMOD_QTY_ORDERED = 'Qty Ordered';
+
     private const COL_PLAMOD_QTY_FILLED = 'Qty Filled';
+
     private const COL_PLAMOD_UNIT_PRICE = 'Unit Price';
+
     private const COL_PLAMOD_ORDER_TYPE = 'Order Type';
+
     private const COL_JS_PDF_TEXT_HEADER = 'Item Description Quantity Price Per Unit Total';
 
     public function __construct(
@@ -67,7 +89,8 @@ final class PurchaseOrderImportService
      *   shipping_currency_mode?:string,
      *   product_total?:string|null,
      *   surcharge_total?:string|null,
-     *   notes?:string|null
+     *   notes?:string|null,
+     *   reset_receipt_before_reimport?:bool
      * } $meta
      * @return array{purchase_order_uuid:string, items:int, lots:int, shipping_per_unit:string|null}
      */
@@ -287,7 +310,7 @@ final class PurchaseOrderImportService
                     /** @var Product $product */
                     $product = $productsBySku[(string) $r['sku']];
 
-                    $item = new PurchaseOrderItem();
+                    $item = new PurchaseOrderItem;
                     $item->purchase_order_id = $po->id;
                     $item->product_id = (int) $product->id;
                     $item->sku = (string) $product->sku;
@@ -307,7 +330,7 @@ final class PurchaseOrderImportService
                         continue;
                     }
 
-                    $lot = new InventoryLot();
+                    $lot = new InventoryLot;
                     $lot->product_id = (int) $product->id;
                     $lot->purchase_order_item_id = $item->id;
                     $lot->source_type = 'po';
@@ -421,7 +444,8 @@ final class PurchaseOrderImportService
      *   shipping_total?:string|null,
      *   product_total?:string|null,
      *   surcharge_total?:string|null,
-     *   notes?:string|null
+     *   notes?:string|null,
+     *   reset_receipt_before_reimport?:bool
      * } $meta
      * @param  array{vendor_currency_code?:string,vendor_product_total?:string|null}  $preambleMeta
      */
@@ -437,13 +461,31 @@ final class PurchaseOrderImportService
             }
 
             if (! $appendMode) {
-                $itemIds = $po->items->pluck('id')->all();
+                /** @var array<int, int> $itemIds */
+                $itemIds = $po->items->pluck('id')->map(static fn ($v): int => (int) $v)->values()->all();
+
+                $resetReceipt = array_key_exists('reset_receipt_before_reimport', $meta)
+                    && filter_var($meta['reset_receipt_before_reimport'], FILTER_VALIDATE_BOOLEAN);
+
+                if ($resetReceipt && $itemIds !== []) {
+                    $this->inventory->deleteMovementsAndLotsForPurchaseOrderItems($itemIds);
+                    foreach ($po->items as $line) {
+                        $line->qty_received = null;
+                        $this->purchaseOrders->saveItem($line);
+                    }
+                    $po->load('items');
+                    $itemIds = $po->items->pluck('id')->map(static fn ($v): int => (int) $v)->values()->all();
+                }
+
                 $hasReceived = $po->items->contains(static fn ($it): bool => ((int) ($it->qty_received ?? 0)) > 0);
                 $lots = $this->inventory->countLotsForPurchaseOrderItems($itemIds);
                 if ($hasReceived || $lots > 0) {
-                    throw new PurchaseOrderImportException('Re-import blocked: this PO has received inventory/lots. Create a new PO instead.', [
-                        ['kind' => 'reimport_not_allowed', 'purchase_order_uuid' => (string) $po->uuid],
-                    ]);
+                    throw new PurchaseOrderImportException(
+                        'Re-import blocked: this PO still has received quantities and/or inventory lots. Enable Clear PO receipt data first on re-import, use Import more to append lines, or create a new PO.',
+                        [
+                            ['kind' => 'reimport_not_allowed', 'purchase_order_uuid' => (string) $po->uuid],
+                        ],
+                    );
                 }
 
                 // Replace all items for a clean re-import.
@@ -456,20 +498,38 @@ final class PurchaseOrderImportService
                 $po->vendor_currency_code = $preambleMeta['vendor_currency_code'] ?? $po->vendor_currency_code ?? 'CAD';
                 $po->vendor_product_total = $preambleMeta['vendor_product_total'] ?? $po->vendor_product_total;
             }
-            if (array_key_exists('ordered_date', $meta)) $po->ordered_date = $meta['ordered_date'];
-            if (array_key_exists('shipped_date', $meta)) $po->shipped_date = $meta['shipped_date'];
-            if (array_key_exists('estimated_arrival_date', $meta)) $po->estimated_arrival_date = $meta['estimated_arrival_date'];
-            if (array_key_exists('received_date', $meta)) $po->received_date = $meta['received_date'];
-            if (array_key_exists('fully_on_shelves_date', $meta)) $po->fully_on_shelves_date = $meta['fully_on_shelves_date'];
-            if (array_key_exists('shipping_total', $meta)) $po->shipping_total = $meta['shipping_total'];
-            if (array_key_exists('product_total', $meta)) $po->product_total = $meta['product_total'];
-            if (array_key_exists('surcharge_total', $meta)) $po->surcharge_total = $meta['surcharge_total'];
-            if (array_key_exists('notes', $meta)) $po->notes = $meta['notes'];
+            if (array_key_exists('ordered_date', $meta)) {
+                $po->ordered_date = $meta['ordered_date'];
+            }
+            if (array_key_exists('shipped_date', $meta)) {
+                $po->shipped_date = $meta['shipped_date'];
+            }
+            if (array_key_exists('estimated_arrival_date', $meta)) {
+                $po->estimated_arrival_date = $meta['estimated_arrival_date'];
+            }
+            if (array_key_exists('received_date', $meta)) {
+                $po->received_date = $meta['received_date'];
+            }
+            if (array_key_exists('fully_on_shelves_date', $meta)) {
+                $po->fully_on_shelves_date = $meta['fully_on_shelves_date'];
+            }
+            if (array_key_exists('shipping_total', $meta)) {
+                $po->shipping_total = $meta['shipping_total'];
+            }
+            if (array_key_exists('product_total', $meta)) {
+                $po->product_total = $meta['product_total'];
+            }
+            if (array_key_exists('surcharge_total', $meta)) {
+                $po->surcharge_total = $meta['surcharge_total'];
+            }
+            if (array_key_exists('notes', $meta)) {
+                $po->notes = $meta['notes'];
+            }
 
             return $po;
         }
 
-        $po = new PurchaseOrder();
+        $po = new PurchaseOrder;
         $po->vendor = $vendor;
         $po->vendor_currency_code = $preambleMeta['vendor_currency_code'] ?? 'CAD';
         $po->vendor_product_total = $preambleMeta['vendor_product_total'] ?? null;
@@ -771,7 +831,9 @@ final class PurchaseOrderImportService
     {
         foreach (array_keys($map) as $k) {
             $line = strtolower(trim((string) $k));
-            if ($line === '') continue;
+            if ($line === '') {
+                continue;
+            }
             if (str_contains($line, strtolower(self::COL_JS_PDF_TEXT_HEADER))) {
                 return true;
             }
@@ -817,6 +879,7 @@ final class PurchaseOrderImportService
             if ($looksHeader) {
                 $map = $maybeHeader;
                 $this->detectFormat($map);
+
                 return [$row, $meta];
             }
 
@@ -839,7 +902,9 @@ final class PurchaseOrderImportService
     private function looksLikeJsHeaderRow(array $row): bool
     {
         $joined = trim(implode(' ', array_map(static fn ($x): string => trim((string) $x), $row)));
-        if ($joined === '') return false;
+        if ($joined === '') {
+            return false;
+        }
         $joined = preg_replace('/\s+/u', ' ', $joined) ?? $joined;
 
         return strtolower($joined) === strtolower(self::COL_JS_PDF_TEXT_HEADER);
@@ -881,6 +946,7 @@ final class PurchaseOrderImportService
                 $description = trim(implode(' ', $descBuffer));
                 $descBuffer = [];
                 $rows[] = $this->buildJsRow($rowNumber, $description, (int) $m[1], $m[2]);
+
                 continue;
             }
 
@@ -891,6 +957,7 @@ final class PurchaseOrderImportService
                     $descBuffer = [];
                 }
                 $rows[] = $this->buildJsRow($rowNumber, $description, (int) $m[2], $m[3]);
+
                 continue;
             }
 
@@ -935,7 +1002,9 @@ final class PurchaseOrderImportService
         $norm = mb_strtolower(trim($description));
         $compact = preg_replace('/[^a-z0-9]+/u', '', $norm) ?? '';
         $compact = strtoupper(substr($compact, 0, 16));
-        if ($compact === '') $compact = 'ITEM';
+        if ($compact === '') {
+            $compact = 'ITEM';
+        }
         $hash = strtoupper(substr(hash('crc32b', $norm !== '' ? $norm : $description), 0, 8));
 
         return "JS-{$compact}-{$hash}";
@@ -1084,6 +1153,7 @@ final class PurchaseOrderImportService
             if (is_string($lineTotalRaw) && trim($lineTotalRaw) !== '' && is_numeric($lineTotalRaw)) {
                 $sum += (float) $lineTotalRaw;
                 $hasAny = true;
+
                 continue;
             }
 
@@ -1128,6 +1198,7 @@ final class PurchaseOrderImportService
 
         if (! extension_loaded('bcmath')) {
             $rate = ((float) $cad) / ((float) $vendor);
+
             return number_format($rate, 6, '.', '');
         }
 
@@ -1249,6 +1320,7 @@ final class PurchaseOrderImportService
         }
         if (! extension_loaded('bcmath')) {
             $value = ((float) $num) / max(1, $denominator);
+
             return number_format($value, $scale, '.', '');
         }
 
@@ -1308,7 +1380,7 @@ final class PurchaseOrderImportService
                 $description = trim($description) !== '' ? trim($description) : $sku;
                 $type = $this->types->deriveFromName($description) ?? 'Others';
 
-                $product = new Product();
+                $product = new Product;
                 $product->sku = $sku;
                 $product->barcode = $this->normalizeBarcode(isset($r['barcode']) ? (string) ($r['barcode'] ?? '') : null);
                 $product->description = $description;
@@ -1317,6 +1389,7 @@ final class PurchaseOrderImportService
                 $this->products->create($product);
 
                 $existing->put($sku, $product);
+
                 continue;
             }
 
@@ -1364,9 +1437,13 @@ final class PurchaseOrderImportService
 
     private function normalizeBarcode(?string $value): ?string
     {
-        if ($value === null) return null;
+        if ($value === null) {
+            return null;
+        }
         $v = trim($value);
-        if ($v === '') return null;
+        if ($v === '') {
+            return null;
+        }
 
         // If Excel exported scientific notation, convert it to digits.
         if (preg_match('/^\s*([0-9]+(?:\.[0-9]+)?)\s*[eE]\s*\+?\s*([0-9]+)\s*$/', $v, $m) === 1) {
@@ -1392,5 +1469,3 @@ final class PurchaseOrderImportService
         return $digits === '' ? null : $digits;
     }
 }
-
-

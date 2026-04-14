@@ -226,12 +226,17 @@ final class EmployeeInventoryCountService
     /**
      * @return array<string, mixed>
      */
-    public function updateLine(string $sessionUuid, int $lineId, ?int $quantity, ?string $productName): array
-    {
+    public function updateLine(
+        string $sessionUuid,
+        int $lineId,
+        ?int $quantity,
+        ?string $productName,
+        bool $returnSessionPayload = true,
+    ): array {
         $quantity = $quantity !== null ? max(0, $quantity) : null;
         $productName = is_string($productName) ? trim($productName) : null;
 
-        return DB::transaction(function () use ($sessionUuid, $lineId, $quantity, $productName): array {
+        return DB::transaction(function () use ($sessionUuid, $lineId, $quantity, $productName, $returnSessionPayload): array {
             $session = $this->inventoryChecks->findByUuidOrFail($sessionUuid);
             $this->assertSessionEditable($session);
             $line = $this->inventoryChecks->findItemInSessionOrFail($session, $lineId);
@@ -253,7 +258,7 @@ final class EmployeeInventoryCountService
             $this->inventoryChecks->saveItem($line);
             $this->touchReadyForReview($session);
 
-            return $this->sessionPayload((string) $session->uuid);
+            return $returnSessionPayload ? $this->sessionPayload((string) $session->uuid) : [];
         });
     }
 
@@ -348,10 +353,12 @@ final class EmployeeInventoryCountService
                 }
                 if ((bool) $item->issue_flag === true) {
                     $skipped++;
+
                     continue;
                 }
                 if ($item->product === null) {
                     $skipped++;
+
                     continue;
                 }
 
@@ -361,6 +368,7 @@ final class EmployeeInventoryCountService
                 $canApplyName = $applyName && $lineName !== '';
                 if (! $canApplyQuantity && ! $canApplyName) {
                     $skipped++;
+
                     continue;
                 }
 
@@ -415,7 +423,9 @@ final class EmployeeInventoryCountService
         $out = [];
         foreach ($assets as $asset) {
             $pid = (int) $asset->product_id;
-            if ($pid <= 0 || array_key_exists($pid, $out)) continue;
+            if ($pid <= 0 || array_key_exists($pid, $out)) {
+                continue;
+            }
             $out[$pid] = "/api/v1/product-assets/{$asset->id}/view";
         }
 
@@ -436,4 +446,3 @@ final class EmployeeInventoryCountService
         }
     }
 }
-

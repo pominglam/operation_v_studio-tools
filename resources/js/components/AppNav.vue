@@ -2,6 +2,7 @@
 import { RouterLink, useRoute } from 'vue-router';
 import logoUrl from '../assets/operation-v-logo.svg?url';
 import { currentAccessRole } from '../lib/accessRole';
+import { employeeInventoryScanNotFoundBg } from '../lib/employeeInventoryScanUi';
 
 const route = useRoute();
 const isEmployee = currentAccessRole() === 'employee';
@@ -18,7 +19,14 @@ function isActive(name: string): boolean {
 </script>
 
 <template>
-    <header class="border-b border-slate-200 bg-white">
+    <header
+        class="border-b transition-[background-color,border-color] duration-300 ease-out"
+        :class="
+            isEmployee && employeeInventoryScanNotFoundBg
+                ? 'border-red-700 bg-red-500'
+                : 'border-slate-200 bg-white'
+        "
+    >
         <div class="mx-auto flex w-full max-w-screen-2xl items-center justify-between px-4 py-3">
             <div class="flex items-center gap-3">
                 <img

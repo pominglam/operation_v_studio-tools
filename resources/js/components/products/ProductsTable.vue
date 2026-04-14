@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import ConfirmDialog from '../ui/ConfirmDialog.vue';
 import BulkUpdateDialog from './BulkUpdateDialog.vue';
 import BulkExportDialog, { type ProductsBulkExportType } from './BulkExportDialog.vue';
@@ -8,6 +8,9 @@ import { formatMoney2 } from '../../lib/money';
 import { parseNonNegativeIntOrNull } from '../../lib/numbers';
 
 const FILTER_EMPTY_MAIN_TYPE_TOKEN = '__empty__';
+
+/** Baseline main types (aligned with ProductsPage loadFilterOptions) when API options are missing. */
+const DEFAULT_MAIN_TYPE_CHOICES = ['model kit', 'tools', 'paints', 'supplies'] as const;
 
 export type ProductRow = {
     id: string; // uuid
@@ -28,6 +31,8 @@ export type ProductRow = {
     latest_arrival?: boolean;
     latest_unit_cost?: string | null;
     latest_landed_unit_cost?: string | null;
+    /** Latest PO `received_date` (Y-m-d) from any received PO line; null if none. */
+    received_date?: string | null;
     selling_price?: string | null;
     pdp?: {
         has_description: boolean;
@@ -100,6 +105,7 @@ export type ProductSortKey =
     | 'scale'
     | 'vendor'
     | 'latest_landed_unit_cost'
+    | 'received_date'
     | 'selling_price'
     | 'total_ordered'
     | 'total_sold'
@@ -147,9 +153,10 @@ const vendorChoices = computed<string[]>(() => {
 });
 
 const mainTypeChoices = computed<string[]>(() => {
-    const base = (props.mainTypeOptions ?? [])
+    const fromProps = (props.mainTypeOptions ?? [])
         .map((v) => String(v ?? '').trim())
         .filter((v) => v !== '' && v.toLowerCase() !== FILTER_EMPTY_MAIN_TYPE_TOKEN);
+    const base = Array.from(new Set([...DEFAULT_MAIN_TYPE_CHOICES, ...fromProps]));
     const current = draft.value?.main_type?.trim() ?? '';
     const merged = current !== '' ? [...base, current] : base;
     return Array.from(new Set(merged)).sort((a, b) => a.localeCompare(b));
@@ -163,6 +170,36 @@ const typeChoices = computed<string[]>(() => {
     const merged = current !== '' ? [...base, current] : base;
     return Array.from(new Set(merged)).sort((a, b) => a.localeCompare(b));
 });
+
+function mergeDistinctOptions(
+    propList: string[] | undefined,
+    current: string | null | undefined,
+): string[] {
+    const base = (propList ?? []).map((v) => String(v ?? '').trim()).filter((v) => v !== '');
+    const cur = (current ?? '').trim();
+    const merged = cur !== '' ? [...base, cur] : base;
+    return Array.from(new Set(merged)).sort((a, b) => a.localeCompare(b));
+}
+
+const gradeChoices = computed<string[]>(() =>
+    mergeDistinctOptions(props.gradeOptions, draft.value?.grade ?? null),
+);
+
+const scaleChoices = computed<string[]>(() =>
+    mergeDistinctOptions(props.scaleOptions, draft.value?.scale ?? null),
+);
+
+const seriesChoices = computed<string[]>(() =>
+    mergeDistinctOptions(props.seriesOptions, draft.value?.series ?? null),
+);
+
+function setDraftTypeFromSelect(event: Event): void {
+    if (!draft.value) {
+        return;
+    }
+    const v = (event.target as HTMLSelectElement).value;
+    draft.value.type = v === '' ? null : v;
+}
 
 const selected = ref<Set<string>>(new Set());
 const allMatchingSelected = ref(false);
@@ -342,12 +379,20 @@ const allOnPageSelected = computed(
 );
 
 const emptyRowColspan = computed(() => {
-    const total = showCost.value ? 21 : 20;
+    const total = showCost.value ? 22 : 21;
     return showClassificationColumns.value ? total : total - 6;
 });
 
 function totalSold(p: ProductRow): number {
     return Number(p.total_ordered ?? 0) - Number(p.available ?? 0);
+}
+
+function formatReceivedDate(iso: string | null | undefined): string {
+    if (!iso || String(iso).trim() === '') return '—';
+    const d = new Date(`${String(iso).trim()}T12:00:00`);
+    return Number.isNaN(d.getTime())
+        ? String(iso)
+        : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 function reorderValue(p: ProductRow): number {
@@ -370,6 +415,7 @@ function sortLabel(key: ProductSortKey): string {
         scale: 'Scale',
         vendor: 'Vendor',
         latest_landed_unit_cost: 'Cost (Latest)',
+        received_date: 'Received',
         selling_price: 'Selling price',
         total_ordered: 'Total ordered',
         total_sold: 'Total sold',
@@ -736,6 +782,29 @@ async function saveEdit(): Promise<void> {
         saving.value = false;
     }
 }
+
+function onDocumentKeydown(e: KeyboardEvent): void {
+    if (editingId.value === null) {
+        return;
+    }
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelEdit();
+        return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        void saveEdit();
+    }
+}
+
+onMounted(() => {
+    document.addEventListener('keydown', onDocumentKeydown);
+});
+
+onUnmounted(() => {
+    document.removeEventListener('keydown', onDocumentKeydown);
+});
 </script>
 
 <template>
@@ -970,6 +1039,16 @@ async function saveEdit(): Promise<void> {
                                 {{ sortLabel('vendor') }}{{ sortIndicator('vendor') }}
                             </button>
                         </th>
+                        <th class="px-4 py-3 whitespace-nowrap">
+                            <button
+                                type="button"
+                                class="hover:underline"
+                                :class="sortHeaderClass('received_date')"
+                                @click="onSortChange('received_date')"
+                            >
+                                {{ sortLabel('received_date') }}{{ sortIndicator('received_date') }}
+                            </button>
+                        </th>
                         <th class="px-4 py-3 text-right">
                             <button
                                 type="button"
@@ -1086,7 +1165,7 @@ async function saveEdit(): Promise<void> {
                                 <div class="flex flex-col gap-2">
                                     <input
                                         v-model="draft!.description"
-                                        class="w-[28rem] rounded-md border border-slate-200 px-2 py-1 text-sm"
+                                        class="w-[28rem] max-w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
                                         type="text"
                                     />
                                     <div class="flex flex-wrap gap-2">
@@ -1101,49 +1180,92 @@ async function saveEdit(): Promise<void> {
                                             type="text"
                                         />
                                     </div>
+                                    <div class="flex flex-wrap gap-2 pt-1">
+                                        <button
+                                            class="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                                            type="button"
+                                            :disabled="saving"
+                                            @click="saveEdit"
+                                        >
+                                            {{ saving ? 'Saving…' : 'Save' }}
+                                        </button>
+                                        <button
+                                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50"
+                                            type="button"
+                                            :disabled="saving"
+                                            @click="cancelEdit"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <span class="self-center text-[11px] text-slate-500">
+                                            Esc cancel · Ctrl+Enter save
+                                        </span>
+                                    </div>
                                 </div>
                             </template>
                             <template v-else>
                                 <div
-                                    class="max-w-[28rem] truncate font-medium text-slate-900"
-                                    :title="p.description"
+                                    class="cursor-pointer rounded-md px-1 py-0.5 transition hover:bg-slate-100"
+                                    role="button"
+                                    tabindex="0"
+                                    title="Click to edit"
+                                    @click="startEdit(p)"
+                                    @keydown.enter.prevent="startEdit(p)"
                                 >
-                                    {{ p.description }}
-                                </div>
-                                <div class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-600">
-                                    <span class="font-mono">{{ p.sku }}</span>
-                                    <span class="font-mono">{{ p.barcode ?? '—' }}</span>
-                                </div>
-                                <div class="mt-0.5 text-xs text-slate-500">
-                                    <span
-                                        class="font-mono"
-                                        :class="
-                                            p.handle && p.handle.trim() !== ''
-                                                ? 'text-slate-600'
-                                                : 'text-slate-400'
-                                        "
+                                    <div
+                                        class="max-w-[28rem] truncate font-medium text-slate-900"
+                                        :title="p.description"
                                     >
-                                        {{ p.handle && p.handle.trim() !== '' ? p.handle : '—' }}
-                                    </span>
+                                        {{ p.description }}
+                                    </div>
+                                    <div
+                                        class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-600"
+                                    >
+                                        <span class="font-mono">{{ p.sku }}</span>
+                                        <span class="font-mono">{{ p.barcode ?? '—' }}</span>
+                                    </div>
+                                    <div class="mt-0.5 text-xs text-slate-500">
+                                        <span
+                                            class="font-mono"
+                                            :class="
+                                                p.handle && p.handle.trim() !== ''
+                                                    ? 'text-slate-600'
+                                                    : 'text-slate-400'
+                                            "
+                                        >
+                                            {{
+                                                p.handle && p.handle.trim() !== '' ? p.handle : '—'
+                                            }}
+                                        </span>
+                                    </div>
                                 </div>
                             </template>
                         </td>
 
                         <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
                             <template v-if="editingId === p.id">
-                                <input
+                                <select
                                     v-model="draft!.main_type"
-                                    list="products-main-type-options"
-                                    class="w-36 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
-                                    type="text"
-                                    placeholder="model kit"
-                                />
-                                <datalist id="products-main-type-options">
-                                    <option v-for="opt in mainTypeChoices" :key="`main-type-${opt}`" :value="opt" />
-                                </datalist>
+                                    class="w-36 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                                >
+                                    <option
+                                        v-for="opt in mainTypeChoices"
+                                        :key="`main-type-${opt}`"
+                                        :value="opt"
+                                    >
+                                        {{ opt }}
+                                    </option>
+                                </select>
                             </template>
                             <template v-else>
-                                <div class="max-w-[10rem] truncate" :title="p.main_type">
+                                <div
+                                    class="max-w-[10rem] cursor-pointer truncate rounded-md px-1 py-0.5 transition hover:bg-slate-100"
+                                    title="Click to edit"
+                                    role="button"
+                                    tabindex="0"
+                                    @click="startEdit(p)"
+                                    @keydown.enter.prevent="startEdit(p)"
+                                >
                                     {{ p.main_type }}
                                 </div>
                             </template>
@@ -1151,60 +1273,118 @@ async function saveEdit(): Promise<void> {
 
                         <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
                             <template v-if="editingId === p.id">
-                                <input
-                                    v-model="draft!.type"
-                                    list="products-type-options"
-                                    class="w-24 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
-                                    type="text"
-                                />
-                                <datalist id="products-type-options">
-                                    <option v-for="opt in typeChoices" :key="`type-${opt}`" :value="opt" />
-                                </datalist>
+                                <select
+                                    class="max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                                    :class="typeChoices.length > 4 ? 'w-44' : 'w-28'"
+                                    :value="draft!.type ?? ''"
+                                    @change="setDraftTypeFromSelect"
+                                >
+                                    <option value="">—</option>
+                                    <option
+                                        v-for="opt in typeChoices"
+                                        :key="`type-${opt}`"
+                                        :value="opt"
+                                    >
+                                        {{ opt }}
+                                    </option>
+                                </select>
                             </template>
-                            <template v-else>{{ p.type ?? '—' }}</template>
+                            <template v-else>
+                                <span
+                                    class="inline-block cursor-pointer rounded-md px-1 py-0.5 transition hover:bg-slate-100"
+                                    title="Click to edit"
+                                    role="button"
+                                    tabindex="0"
+                                    @click="startEdit(p)"
+                                    @keydown.enter.prevent="startEdit(p)"
+                                    >{{ p.type ?? '—' }}</span
+                                >
+                            </template>
                         </td>
 
                         <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
                             <template v-if="editingId === p.id">
-                                <input
+                                <select
                                     v-model="draft!.grade"
-                                    class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm"
-                                    type="text"
-                                    placeholder="—"
-                                />
+                                    class="w-24 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                                >
+                                    <option :value="null">—</option>
+                                    <option
+                                        v-for="opt in gradeChoices"
+                                        :key="`grade-${opt}`"
+                                        :value="opt"
+                                    >
+                                        {{ opt }}
+                                    </option>
+                                </select>
                             </template>
                             <template v-else>
-                                <span class="font-semibold text-slate-900">{{
-                                    p.grade ?? '—'
-                                }}</span>
+                                <span
+                                    class="inline-block cursor-pointer rounded-md px-1 py-0.5 font-semibold text-slate-900 transition hover:bg-slate-100"
+                                    title="Click to edit"
+                                    role="button"
+                                    tabindex="0"
+                                    @click="startEdit(p)"
+                                    @keydown.enter.prevent="startEdit(p)"
+                                    >{{ p.grade ?? '—' }}</span
+                                >
                             </template>
                         </td>
 
                         <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
                             <template v-if="editingId === p.id">
-                                <input
+                                <select
                                     v-model="draft!.scale"
-                                    class="w-20 rounded-md border border-slate-200 px-2 py-1 font-mono text-xs"
-                                    type="text"
-                                    placeholder="—"
-                                />
+                                    class="w-24 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 font-mono text-xs"
+                                >
+                                    <option :value="null">—</option>
+                                    <option
+                                        v-for="opt in scaleChoices"
+                                        :key="`scale-${opt}`"
+                                        :value="opt"
+                                    >
+                                        {{ opt }}
+                                    </option>
+                                </select>
                             </template>
                             <template v-else>
-                                <span class="font-mono text-xs">{{ p.scale ?? '—' }}</span>
+                                <span
+                                    class="inline-block cursor-pointer rounded-md px-1 py-0.5 font-mono text-xs transition hover:bg-slate-100"
+                                    title="Click to edit"
+                                    role="button"
+                                    tabindex="0"
+                                    @click="startEdit(p)"
+                                    @keydown.enter.prevent="startEdit(p)"
+                                    >{{ p.scale ?? '—' }}</span
+                                >
                             </template>
                         </td>
 
                         <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
                             <template v-if="editingId === p.id">
-                                <input
+                                <select
                                     v-model="draft!.series"
-                                    class="w-56 rounded-md border border-slate-200 px-2 py-1 text-sm"
-                                    type="text"
-                                    placeholder="—"
-                                />
+                                    class="w-56 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                                >
+                                    <option :value="null">—</option>
+                                    <option
+                                        v-for="opt in seriesChoices"
+                                        :key="`series-${opt}`"
+                                        :value="opt"
+                                    >
+                                        {{ opt }}
+                                    </option>
+                                </select>
                             </template>
                             <template v-else>
-                                <div class="max-w-[16rem] truncate" :title="p.series ?? ''">
+                                <div
+                                    class="max-w-[16rem] cursor-pointer truncate rounded-md px-1 py-0.5 transition hover:bg-slate-100"
+                                    :title="(p.series ?? '') || 'Click to edit'"
+                                    role="button"
+                                    tabindex="0"
+                                    @click="startEdit(p)"
+                                    @keydown.enter.prevent="startEdit(p)"
+                                >
                                     {{ p.series ?? '—' }}
                                 </div>
                             </template>
@@ -1222,7 +1402,21 @@ async function saveEdit(): Promise<void> {
                                     </option>
                                 </select>
                             </template>
-                            <template v-else>{{ p.vendor ?? '—' }}</template>
+                            <template v-else>
+                                <span
+                                    class="inline-block cursor-pointer rounded-md px-1 py-0.5 transition hover:bg-slate-100"
+                                    title="Click to edit"
+                                    role="button"
+                                    tabindex="0"
+                                    @click="startEdit(p)"
+                                    @keydown.enter.prevent="startEdit(p)"
+                                    >{{ p.vendor ?? '—' }}</span
+                                >
+                            </template>
+                        </td>
+
+                        <td class="px-4 py-3 whitespace-nowrap text-slate-700">
+                            {{ formatReceivedDate(p.received_date) }}
                         </td>
 
                         <td class="px-4 py-3 text-right tabular-nums text-slate-700">
@@ -1473,25 +1667,7 @@ async function saveEdit(): Promise<void> {
                         </td>
 
                         <td class="px-4 py-3 text-right">
-                            <div v-if="editingId === p.id" class="flex justify-end gap-2">
-                                <button
-                                    class="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-                                    type="button"
-                                    :disabled="saving"
-                                    @click="saveEdit"
-                                >
-                                    {{ saving ? 'Saving…' : 'Save' }}
-                                </button>
-                                <button
-                                    class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50"
-                                    type="button"
-                                    :disabled="saving"
-                                    @click="cancelEdit"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
-                            <div v-else class="flex justify-end">
+                            <div class="flex justify-end">
                                 <button
                                     class="mr-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50"
                                     type="button"
@@ -1500,6 +1676,7 @@ async function saveEdit(): Promise<void> {
                                     PO Lines
                                 </button>
                                 <button
+                                    v-if="editingId !== p.id"
                                     class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50"
                                     type="button"
                                     @click="startEdit(p)"

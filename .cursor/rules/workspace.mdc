@@ -68,6 +68,12 @@ See `.cursor/rules/` for complete rule definitions:
 - **Git No-Pager**: Always append `--no-pager` to git commands that might trigger a pager (e.g., `git --no-pager log`, `git --no-pager diff`).
 - **Composer vs Sail**: Prefer direct `composer` commands (e.g., `composer test`) over Sail. Do not use `sail` or `./vendor/bin/sail` unless explicitly requested.
 
+**Vite production bundle (mandatory after frontend edits):**
+- When you change anything built by Vite (`resources/js/**`, `resources/css/**`, `vite.config.*`, or other frontend source/config that affects the bundle), you MUST **run `npm run build`** from the project root **before** considering the task done, confirm it exits **0**, and fix any errors.
+- The app serves compiled assets from `public/build` unless `public/hot` points at `npm run dev`; users who only refresh the browser will not see UI changes until the bundle is rebuilt (or the dev server is running with HMR).
+- **Do not** end the task by telling the user to run the build yourself unless the environment cannot run Node (then say so explicitly).
+- **Exception:** the user states they are using **`npm run dev`** only for this session and do not need a production build.
+
 Before making ANY changes, planning, or implementing features, you MUST:
 1. **Read all applicable rule files** from `.cursor/rules/` based on the files/context you're working with
 2. **Check rule file globs** to identify which rules apply to your target files

@@ -15,7 +15,7 @@ final class ProductsIndexRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'per_page' => ['sometimes', 'integer', 'min:1', 'max:500'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:1000'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'search' => ['sometimes', 'string', 'max:200'],
             'search_terms' => ['sometimes', 'array', 'max:60'],
@@ -51,6 +51,7 @@ final class ProductsIndexRequest extends FormRequest
                     'scale',
                     'vendor',
                     'latest_landed_unit_cost',
+                    'received_date',
                     'selling_price',
                     'total_ordered',
                     'total_sold',

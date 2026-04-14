@@ -2,8 +2,13 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import { api } from '../lib/api';
-import { formatLocalDateTime } from '../lib/datetime';
-import { formatMoney2, formatMoney2OrEmpty, formatMoney2OrOriginal, parseMoney } from '../lib/money';
+import { formatLocalDate, formatLocalDateTime } from '../lib/datetime';
+import {
+    formatMoney2,
+    formatMoney2OrEmpty,
+    formatMoney2OrOriginal,
+    parseMoney,
+} from '../lib/money';
 import { parseNonNegativeIntOrNull } from '../lib/numbers';
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
@@ -197,7 +202,9 @@ const quoteSites = ref<string[]>([]);
 
 const runSiteOptions = computed<MultiSelectOption[]>(() => {
     const disabled = new Set(disabledSiteKeys.value);
-    return allSites.filter((s) => !disabled.has(s.key)).map((s) => ({ value: s.key, label: s.name }));
+    return allSites
+        .filter((s) => !disabled.has(s.key))
+        .map((s) => ({ value: s.key, label: s.name }));
 });
 const runSites = ref<string[]>(allSites.filter((s) => s.key !== 'aliexpress').map((s) => s.key));
 
@@ -481,9 +488,14 @@ async function loadProductFilterOptions(): Promise<void> {
 }
 
 function poLabel(po: PurchaseOrderOption): string {
-    const date = po.created_at ? formatLocalDateTime(po.created_at) : '—';
     const short = po.id.slice(0, 8);
-    return `${date} · ${po.vendor} · ${po.counts.items} items · ${short}`;
+    const tail = `${po.vendor} · ${po.counts.items} items · ${short}`;
+    const rd = po.received_date?.trim();
+    if (rd) {
+        return `Received ${formatLocalDate(rd)} · ${tail}`;
+    }
+    const created = po.created_at ? formatLocalDateTime(po.created_at) : '—';
+    return `Not arrived · created ${created} · ${tail}`;
 }
 
 function isPoMuted(po: PurchaseOrderOption): boolean {
@@ -493,7 +505,7 @@ function isPoMuted(po: PurchaseOrderOption): boolean {
 
 async function loadPurchaseOrders(): Promise<void> {
     try {
-        const r = await fetch('/api/v1/purchase-orders?per_page=200&sort_dir=desc');
+        const r = await fetch('/api/v1/purchase-orders?per_page=200&sort_by=filter');
         if (!r.ok) {
             purchaseOrders.value = [];
             return;
@@ -680,7 +692,11 @@ async function saveBarcode(productId: string, value: string | null): Promise<voi
             return;
         }
 
-        const res = await api.patch(`/api/v1/products/${productId}/barcode`, { barcode }, { validateStatus: () => true });
+        const res = await api.patch(
+            `/api/v1/products/${productId}/barcode`,
+            { barcode },
+            { validateStatus: () => true },
+        );
 
         if (res.status < 200 || res.status >= 300) {
             row.barcode = previous;
@@ -778,12 +794,18 @@ async function recrawlProduct(productId: string): Promise<void> {
     try {
         const res = await api.post(
             '/api/v1/price-research/run',
-            { force: true, ids: [productId], site_keys: runSites.value.length > 0 ? runSites.value : undefined },
+            {
+                force: true,
+                ids: [productId],
+                site_keys: runSites.value.length > 0 ? runSites.value : undefined,
+            },
             { validateStatus: () => true },
         );
 
         if (res.status < 200 || res.status >= 300) {
-            error.value = (res.data?.message as string | undefined) ?? `Failed to recrawl product (HTTP ${res.status}).`;
+            error.value =
+                (res.data?.message as string | undefined) ??
+                `Failed to recrawl product (HTTP ${res.status}).`;
             return;
         }
 
@@ -846,8 +868,12 @@ onMounted(() => {
         if (typeof saved.page === 'number') page.value = saved.page;
         if (isResearchSortKey(saved.sortBy)) sortBy.value = saved.sortBy;
         if (saved.sortDir) sortDir.value = saved.sortDir;
-        if (Array.isArray(saved.purchaseOrderUuids)) purchaseOrderUuids.value = saved.purchaseOrderUuids;
-        else if (typeof saved.purchaseOrderUuid === 'string' && saved.purchaseOrderUuid.trim() !== '')
+        if (Array.isArray(saved.purchaseOrderUuids))
+            purchaseOrderUuids.value = saved.purchaseOrderUuids;
+        else if (
+            typeof saved.purchaseOrderUuid === 'string' &&
+            saved.purchaseOrderUuid.trim() !== ''
+        )
             purchaseOrderUuids.value = [saved.purchaseOrderUuid.trim()];
         if (saved.sellingPrice) sellingPrice.value = saved.sellingPrice;
         if (saved.shippingPerUnit) shippingPerUnit.value = saved.shippingPerUnit;
@@ -893,12 +919,25 @@ function onPageChange(next: number): void {
 
 let searchTimer: number | null = null;
 watch(
-    [search, perPage, sellingPrice, shippingPerUnit, barcodeFilter, purchaseOrderUuids, vendors, types, freshness, quoteSites, sortBy, sortDir],
+    [
+        search,
+        perPage,
+        sellingPrice,
+        shippingPerUnit,
+        barcodeFilter,
+        purchaseOrderUuids,
+        vendors,
+        types,
+        freshness,
+        quoteSites,
+        sortBy,
+        sortDir,
+    ],
     () => {
-    if (hydrating.value) return;
-    page.value = 1;
-    if (searchTimer) window.clearTimeout(searchTimer);
-    searchTimer = window.setTimeout(() => void load(), 250);
+        if (hydrating.value) return;
+        page.value = 1;
+        if (searchTimer) window.clearTimeout(searchTimer);
+        searchTimer = window.setTimeout(() => void load(), 250);
     },
     { deep: true },
 );
@@ -918,7 +957,23 @@ watch(
 );
 
 watch(
-    [search, perPage, page, sortBy, sortDir, purchaseOrderUuids, sellingPrice, shippingPerUnit, barcodeFilter, vendors, types, freshness, quoteSites, runSites, disabledSiteKeys],
+    [
+        search,
+        perPage,
+        page,
+        sortBy,
+        sortDir,
+        purchaseOrderUuids,
+        sellingPrice,
+        shippingPerUnit,
+        barcodeFilter,
+        vendors,
+        types,
+        freshness,
+        quoteSites,
+        runSites,
+        disabledSiteKeys,
+    ],
     () => {
         if (hydrating.value) return;
         savePageState(STATE_KEY, {
@@ -1138,7 +1193,8 @@ function resetPageState(): void {
                 </div>
 
                 <div class="min-w-[180px] flex-[1_1_220px]">
-                    <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                    <label
+                        class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                         >Shipping cost</label
                     >
                     <select
@@ -1355,7 +1411,9 @@ function resetPageState(): void {
                                                 type="button"
                                                 title="Recrawl prices for this product"
                                                 :aria-label="`Recrawl prices for SKU ${p.sku}`"
-                                                :disabled="isRecrawlBlocked || recrawlingProductId === p.id"
+                                                :disabled="
+                                                    isRecrawlBlocked || recrawlingProductId === p.id
+                                                "
                                                 @click.stop="recrawlProduct(p.id)"
                                             >
                                                 <span
@@ -1404,13 +1462,19 @@ function resetPageState(): void {
                                     />
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                                    <span class="font-medium text-slate-900">{{ formatMoney2OrEmpty(p.cost) || '—' }}</span>
+                                    <span class="font-medium text-slate-900">{{
+                                        formatMoney2OrEmpty(p.cost) || '—'
+                                    }}</span>
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                                    <span class="font-medium text-slate-900">{{ formatMoney2OrEmpty(p.shipping_per_unit) || '—' }}</span>
+                                    <span class="font-medium text-slate-900">{{
+                                        formatMoney2OrEmpty(p.shipping_per_unit) || '—'
+                                    }}</span>
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                                    <span class="font-medium text-slate-900">{{ formatMoney2OrEmpty(p.landed_cost) || '—' }}</span>
+                                    <span class="font-medium text-slate-900">{{
+                                        formatMoney2OrEmpty(p.landed_cost) || '—'
+                                    }}</span>
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
                                     <span class="text-slate-600">{{
@@ -1621,12 +1685,16 @@ function resetPageState(): void {
                                 <td class="px-4 py-3"></td>
                                 <td class="px-4 py-3"></td>
                                 <td class="px-4 py-3"></td>
-                                <td class="px-4 py-3 text-right tabular-nums">{{ pageTotals.cost }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums">
+                                    {{ pageTotals.cost }}
+                                </td>
                                 <td class="px-4 py-3"></td>
                                 <td class="px-2.5 py-3"></td>
                                 <td class="px-4 py-3"></td>
                                 <td class="px-4 py-3"></td>
-                                <td class="px-4 py-3 text-right tabular-nums">{{ pageTotals.price }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums">
+                                    {{ pageTotals.price }}
+                                </td>
                                 <td class="px-2.5 py-3"></td>
                                 <td v-for="s in sites" :key="s.key" class="px-2.5 py-3"></td>
                             </tr>

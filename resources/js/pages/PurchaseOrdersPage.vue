@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
 import { api } from '../lib/api';
-import { formatTorontoDateTime } from '../lib/datetime';
+import { formatTorontoDate } from '../lib/datetime';
 import { formatMoney2OrEmpty, parseMoney } from '../lib/money';
 
 type PurchaseOrderListRow = {
@@ -44,16 +45,25 @@ type FilterOptions = {
     };
 };
 
-const DEFAULT_VENDOR_OPTIONS = ['Plamod', 'Dspiae', 'Stedi', 'Gaahleri', 'MSMN', 'PM', 'JS'] as const;
+const DEFAULT_VENDOR_OPTIONS = [
+    'Plamod',
+    'Dspiae',
+    'Stedi',
+    'Gaahleri',
+    'MSMN',
+    'PM',
+    'JS',
+] as const;
 
 const loading = ref(false);
 const error = ref<string | null>(null);
 const pos = ref<PurchaseOrderListRow[]>([]);
 const meta = ref<Paginated<PurchaseOrderListRow>['meta'] | null>(null);
 
-type PurchaseOrderSortBy = 'created' | 'ordered';
+type PurchaseOrderSortBy = 'created' | 'ordered' | 'received';
 const sortBy = ref<PurchaseOrderSortBy>('created');
 const sortDir = ref<'asc' | 'desc'>('desc');
+const selectedVendors = ref<string[]>([]);
 const savingDoneById = ref<Record<string, true>>({});
 
 const file = ref<File | null>(null);
@@ -75,6 +85,18 @@ const surchargeTotal = ref<string>('');
 const notes = ref<string>('');
 
 const hasImportResult = computed(() => importResult.value !== null);
+
+const vendorFilterOptions = computed<MultiSelectOption[]>(() =>
+    vendors.value.map((v) => ({ value: v, label: v })),
+);
+
+watch(
+    selectedVendors,
+    () => {
+        void loadHistory();
+    },
+    { deep: true },
+);
 
 function mergeVendorOptions(next: string[]): void {
     const normalized = new Map<string, string>();
@@ -131,15 +153,21 @@ async function loadHistory(): Promise<void> {
     loading.value = true;
     error.value = null;
     try {
+        const params: Record<string, unknown> = {
+            per_page: 50,
+            sort_by: sortBy.value,
+            sort_dir: sortDir.value,
+        };
+        if (selectedVendors.value.length > 0) {
+            params.vendors = selectedVendors.value;
+        }
         const res = await api.get<Paginated<PurchaseOrderListRow>>('/api/v1/purchase-orders', {
-            params: { per_page: 50, sort_by: sortBy.value, sort_dir: sortDir.value },
+            params,
         });
         pos.value = res.data.data;
         meta.value = res.data.meta;
         mergeVendorOptions(
-            pos.value
-                .map((x) => String(x.vendor ?? '').trim())
-                .filter((x) => x !== ''),
+            pos.value.map((x) => String(x.vendor ?? '').trim()).filter((x) => x !== ''),
         );
     } catch {
         error.value = 'Failed to load purchase orders.';
@@ -177,6 +205,22 @@ function toggleOrderedSort(): void {
 
 function orderedSortIndicator(): string {
     if (sortBy.value !== 'ordered') return '';
+    return sortDir.value === 'asc' ? ' ▲' : ' ▼';
+}
+
+function toggleReceivedSort(): void {
+    if (sortBy.value !== 'received') {
+        sortBy.value = 'received';
+        sortDir.value = 'desc';
+        void loadHistory();
+        return;
+    }
+    sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc';
+    void loadHistory();
+}
+
+function receivedSortIndicator(): string {
+    if (sortBy.value !== 'received') return '';
     return sortDir.value === 'asc' ? ' ▲' : ' ▼';
 }
 
@@ -253,7 +297,8 @@ async function runImport(): Promise<void> {
         fd.append('vendor', vendor.value);
         if (orderedDate.value) fd.append('ordered_date', orderedDate.value);
         if (shippedDate.value) fd.append('shipped_date', shippedDate.value);
-        if (estimatedArrivalDate.value) fd.append('estimated_arrival_date', estimatedArrivalDate.value);
+        if (estimatedArrivalDate.value)
+            fd.append('estimated_arrival_date', estimatedArrivalDate.value);
         if (receivedDate.value) fd.append('received_date', receivedDate.value);
         if (fullyOnShelvesDate.value) fd.append('fully_on_shelves_date', fullyOnShelvesDate.value);
         if (productTotal.value) fd.append('product_total', productTotal.value);
@@ -272,7 +317,9 @@ async function runImport(): Promise<void> {
         const apiMessage: string | undefined = anyErr?.response?.data?.message;
         const apiIssues: unknown = anyErr?.response?.data?.issues;
         importError.value = apiMessage ?? 'Import failed. Check the CSV format and try again.';
-        importIssues.value = Array.isArray(apiIssues) ? (apiIssues as Array<Record<string, unknown>>) : null;
+        importIssues.value = Array.isArray(apiIssues)
+            ? (apiIssues as Array<Record<string, unknown>>)
+            : null;
     } finally {
         importing.value = false;
     }
@@ -290,7 +337,8 @@ onMounted(() => {
         <div class="mb-6">
             <h1 class="text-xl font-semibold text-slate-900">Purchase Orders</h1>
             <p class="mt-1 text-sm text-slate-600">
-                Import a vendor PO CSV, enter shipping total, and track FIFO lots for landed costing.
+                Import a vendor PO CSV, enter shipping total, and track FIFO lots for landed
+                costing.
             </p>
         </div>
 
@@ -313,19 +361,35 @@ onMounted(() => {
                 </div>
                 <div>
                     <label class="text-xs font-medium text-slate-700">Ordered</label>
-                    <input v-model="orderedDate" type="date" class="mt-1 block w-full rounded-md border border-slate-200 px-3 py-2 text-sm" />
+                    <input
+                        v-model="orderedDate"
+                        type="date"
+                        class="mt-1 block w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    />
                 </div>
                 <div>
                     <label class="text-xs font-medium text-slate-700">Shipped</label>
-                    <input v-model="shippedDate" type="date" class="mt-1 block w-full rounded-md border border-slate-200 px-3 py-2 text-sm" />
+                    <input
+                        v-model="shippedDate"
+                        type="date"
+                        class="mt-1 block w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    />
                 </div>
                 <div>
                     <label class="text-xs font-medium text-slate-700">Received</label>
-                    <input v-model="receivedDate" type="date" class="mt-1 block w-full rounded-md border border-slate-200 px-3 py-2 text-sm" />
+                    <input
+                        v-model="receivedDate"
+                        type="date"
+                        class="mt-1 block w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    />
                 </div>
                 <div>
                     <label class="text-xs font-medium text-slate-700">Estimated arrival</label>
-                    <input v-model="estimatedArrivalDate" type="date" class="mt-1 block w-full rounded-md border border-slate-200 px-3 py-2 text-sm" />
+                    <input
+                        v-model="estimatedArrivalDate"
+                        type="date"
+                        class="mt-1 block w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    />
                 </div>
                 <div>
                     <label class="text-xs font-medium text-slate-700">On shelves</label>
@@ -415,17 +479,26 @@ onMounted(() => {
                 </ul>
             </div>
 
-            <div v-if="hasImportResult" class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800">
+            <div
+                v-if="hasImportResult"
+                class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-800"
+            >
                 <div>
                     <span class="font-medium">PO:</span>
-                    <a class="underline underline-offset-2" :href="`/purchase-orders/${importResult!.purchase_order_uuid}`">
+                    <a
+                        class="underline underline-offset-2"
+                        :href="`/purchase-orders/${importResult!.purchase_order_uuid}`"
+                    >
                         {{ importResult!.purchase_order_uuid }}
                     </a>
                 </div>
                 <div class="mt-1 grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-4">
                     <div><span class="font-medium">Items:</span> {{ importResult!.items }}</div>
                     <div><span class="font-medium">Lots:</span> {{ importResult!.lots }}</div>
-                    <div><span class="font-medium">Ship/unit:</span> {{ importResult!.shipping_per_unit ?? '—' }}</div>
+                    <div>
+                        <span class="font-medium">Ship/unit:</span>
+                        {{ importResult!.shipping_per_unit ?? '—' }}
+                    </div>
                 </div>
             </div>
         </section>
@@ -443,6 +516,16 @@ onMounted(() => {
                 </button>
             </div>
 
+            <div class="mt-3 max-w-md">
+                <MultiSelectFilter
+                    v-model="selectedVendors"
+                    label="Vendors"
+                    :options="vendorFilterOptions"
+                    placeholder="All vendors"
+                    test-id="po-history-vendor-filter"
+                />
+            </div>
+
             <p v-if="error" class="mt-3 text-sm text-red-700">{{ error }}</p>
             <p v-else-if="loading" class="mt-3 text-sm text-slate-600">Loading…</p>
 
@@ -453,17 +536,36 @@ onMounted(() => {
                             <th class="px-2 py-2">ID</th>
                             <th class="px-2 py-2 text-center">Done</th>
                             <th class="px-2 py-2">
-                                <button type="button" class="hover:underline" data-testid="po-history-sort-created" @click="toggleCreatedSort">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    data-testid="po-history-sort-created"
+                                    @click="toggleCreatedSort"
+                                >
                                     Created{{ createdSortIndicator() }}
                                 </button>
                             </th>
                             <th class="px-2 py-2">
-                                <button type="button" class="hover:underline" data-testid="po-history-sort-ordered" @click="toggleOrderedSort">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    data-testid="po-history-sort-ordered"
+                                    @click="toggleOrderedSort"
+                                >
                                     Ordered{{ orderedSortIndicator() }}
                                 </button>
                             </th>
                             <th class="px-2 py-2">Estimated arrival</th>
-                            <th class="px-2 py-2">Received</th>
+                            <th class="px-2 py-2">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    data-testid="po-history-sort-received"
+                                    @click="toggleReceivedSort"
+                                >
+                                    Received{{ receivedSortIndicator() }}
+                                </button>
+                            </th>
                             <th class="px-2 py-2">On shelves</th>
                             <th class="px-2 py-2">Vendor</th>
                             <th class="px-2 py-2 text-right">Items</th>
@@ -474,9 +576,17 @@ onMounted(() => {
                         </tr>
                     </thead>
                     <tbody class="text-slate-800">
-                        <tr v-for="po in pos" :key="po.id" class="border-t border-slate-200 hover:bg-slate-50">
+                        <tr
+                            v-for="po in pos"
+                            :key="po.id"
+                            class="border-t border-slate-200 hover:bg-slate-50"
+                        >
                             <td class="px-2 py-2">
-                                <a class="underline underline-offset-2" :href="`/purchase-orders/${po.id}`">{{ po.id }}</a>
+                                <a
+                                    class="underline underline-offset-2"
+                                    :href="`/purchase-orders/${po.id}`"
+                                    >{{ po.id }}</a
+                                >
                             </td>
                             <td class="px-2 py-2 text-center">
                                 <input
@@ -485,28 +595,43 @@ onMounted(() => {
                                     type="checkbox"
                                     class="h-4 w-4 rounded border-slate-300 text-slate-900"
                                     :data-testid="`po-history-done:${po.id}`"
-                                    @change="toggleDone(po.id, ($event.target as HTMLInputElement).checked)"
+                                    @change="
+                                        toggleDone(
+                                            po.id,
+                                            ($event.target as HTMLInputElement).checked,
+                                        )
+                                    "
                                 />
                             </td>
-                            <td class="px-2 py-2 text-slate-600">{{ formatTorontoDateTime(po.created_at) }}</td>
+                            <td class="px-2 py-2 text-slate-600">
+                                {{ formatTorontoDate(po.created_at) }}
+                            </td>
                             <td class="px-2 py-2">{{ po.ordered_date ?? '—' }}</td>
                             <td class="px-2 py-2">{{ po.estimated_arrival_date ?? '—' }}</td>
                             <td class="px-2 py-2">{{ po.received_date ?? '—' }}</td>
                             <td class="px-2 py-2">{{ po.fully_on_shelves_date ?? '—' }}</td>
                             <td class="px-2 py-2">{{ po.vendor }}</td>
                             <td class="px-2 py-2 text-right">{{ po.counts.items }}</td>
-                            <td class="px-2 py-2 text-right">{{ formatMoney2OrEmpty(po.product_total) }}</td>
-                            <td class="px-2 py-2 text-right">{{ formatMoney2OrEmpty(po.shipping_total) }}</td>
-                            <td class="px-2 py-2 text-right">{{ formatMoney2OrEmpty(po.surcharge_total) }}</td>
-                            <td class="px-2 py-2 text-right">{{ formatMoney2OrEmpty(poTotal(po)) }}</td>
+                            <td class="px-2 py-2 text-right">
+                                {{ formatMoney2OrEmpty(po.product_total) }}
+                            </td>
+                            <td class="px-2 py-2 text-right">
+                                {{ formatMoney2OrEmpty(po.shipping_total) }}
+                            </td>
+                            <td class="px-2 py-2 text-right">
+                                {{ formatMoney2OrEmpty(po.surcharge_total) }}
+                            </td>
+                            <td class="px-2 py-2 text-right">
+                                {{ formatMoney2OrEmpty(poTotal(po)) }}
+                            </td>
                         </tr>
                     </tbody>
                 </table>
 
-                <p v-if="meta && meta.total === 0" class="mt-3 text-sm text-slate-600">No purchase orders yet.</p>
+                <p v-if="meta && meta.total === 0" class="mt-3 text-sm text-slate-600">
+                    No purchase orders yet.
+                </p>
             </div>
         </section>
     </main>
 </template>
-
-

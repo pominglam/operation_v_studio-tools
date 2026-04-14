@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { RouterView, useRoute } from 'vue-router';
+import { employeeInventoryScanNotFoundBg } from '../lib/employeeInventoryScanUi';
 import AppNav from './AppNav.vue';
 
 const route = useRoute();
@@ -10,7 +11,10 @@ function isFullWidthPath(path: string): boolean {
 </script>
 
 <template>
-    <div class="min-h-screen bg-slate-50 text-slate-900">
+    <div
+        class="min-h-screen text-slate-900 transition-[background-color] duration-300 ease-out"
+        :class="employeeInventoryScanNotFoundBg ? 'bg-red-500' : 'bg-slate-50'"
+    >
         <AppNav />
         <main
             class="mx-auto w-full px-4 py-6"

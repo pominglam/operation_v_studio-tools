@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatTorontoDateTime, formatTorontoEpochSeconds } from '../datetime';
+import { formatTorontoDate, formatTorontoDateTime, formatTorontoEpochSeconds } from '../datetime';
 
 describe('datetime', () => {
   it('formats ISO timestamps in America/Toronto', () => {
@@ -19,10 +19,18 @@ describe('datetime', () => {
     expect(out).toContain('10:43');
   });
 
+  it('formats Toronto date-only as YYYY-MM-DD', () => {
+    const out = formatTorontoDate('2026-04-06T18:15:00.000Z'); // 14:15 EDT
+    expect(out).toBe('2026-04-06');
+  });
+
   it('returns placeholder for null/undefined/invalid', () => {
     expect(formatTorontoDateTime(null)).toBe('—');
     expect(formatTorontoDateTime(undefined)).toBe('—');
     expect(formatTorontoDateTime('not-a-date')).toBe('—');
+    expect(formatTorontoDate(null)).toBe('—');
+    expect(formatTorontoDate(undefined)).toBe('—');
+    expect(formatTorontoDate('not-a-date')).toBe('—');
     expect(formatTorontoEpochSeconds(null)).toBe('—');
     expect(formatTorontoEpochSeconds(undefined)).toBe('—');
   });

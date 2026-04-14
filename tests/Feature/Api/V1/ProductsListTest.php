@@ -144,6 +144,61 @@ it('sorts products by selling price', function (): void {
     $res->assertJsonPath('data.2.sku', 'SELL-NULL');
 });
 
+it('sorts products by received date descending with nulls last', function (): void {
+    $poOld = PurchaseOrder::query()->create([
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+        'received_date' => '2026-01-01',
+    ]);
+    $poNew = PurchaseOrder::query()->create([
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+        'received_date' => '2026-03-15',
+    ]);
+
+    $newest = \App\Models\Product::query()->create([
+        'sku' => 'RCV-NEW',
+        'description' => 'Newest received',
+        'vendor' => 'Plamod',
+    ]);
+    $older = \App\Models\Product::query()->create([
+        'sku' => 'RCV-OLD',
+        'description' => 'Older received',
+        'vendor' => 'Plamod',
+    ]);
+    $none = \App\Models\Product::query()->create([
+        'sku' => 'RCV-NONE',
+        'description' => 'No received PO',
+        'vendor' => 'Plamod',
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $poNew->id,
+        'product_id' => $newest->id,
+        'sku' => $newest->sku,
+        'vendor' => 'Plamod',
+        'qty_ordered' => 1,
+        'qty_received' => 1,
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $poOld->id,
+        'product_id' => $older->id,
+        'sku' => $older->sku,
+        'vendor' => 'Plamod',
+        'qty_ordered' => 1,
+        'qty_received' => 1,
+    ]);
+
+    $res = $this->getJson('/api/v1/products?per_page=100&sort_by=received_date&sort_dir=desc');
+    $res->assertOk();
+    $res->assertJsonPath('data.0.sku', 'RCV-NEW');
+    $res->assertJsonPath('data.0.received_date', '2026-03-15');
+    $res->assertJsonPath('data.1.sku', 'RCV-OLD');
+    $res->assertJsonPath('data.1.received_date', '2026-01-01');
+    $res->assertJsonPath('data.2.sku', 'RCV-NONE');
+    $res->assertJsonPath('data.2.received_date', null);
+});
+
 it('filters products by not-ready flag', function (): void {
     \App\Models\Product::query()->create([
         'sku' => 'READY-1',

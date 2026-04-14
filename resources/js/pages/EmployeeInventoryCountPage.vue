@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { api } from '../lib/api';
+import { employeeInventoryScanNotFoundBg } from '../lib/employeeInventoryScanUi';
 import { formatMoney2OrEmpty } from '../lib/money';
 
 type SessionItem = {
@@ -58,8 +59,30 @@ const recentResult = computed<SessionItem | null>(() => {
     return matched.slice().sort((a, b) => b.id - a.id)[0] ?? null;
 });
 
+const fullPageNotFoundBg = computed<boolean>(
+    () =>
+        hasSession.value &&
+        recentResult.value !== null &&
+        isBarcodeNotFoundLine(recentResult.value),
+);
+
+watch(
+    fullPageNotFoundBg,
+    (v) => {
+        employeeInventoryScanNotFoundBg.value = v;
+    },
+    { immediate: true },
+);
+
 function isSavingLine(lineId: number): boolean {
     return savingLine.value[lineId] === true;
+}
+
+/** Matches server copy from EmployeeInventoryCountService when no active product has this barcode. */
+function isBarcodeNotFoundLine(line: SessionItem): boolean {
+    const err = line.match_error ?? '';
+
+    return line.match_status === 'unmatched' && err.includes('No active product found');
 }
 
 function rememberSessionId(id: string): void {
@@ -83,9 +106,12 @@ function getRememberedSessionId(): string | null {
 }
 
 async function createSession(): Promise<string> {
-    const res = await api.post<{ data: SessionPayload }>('/api/v1/inventory-check/employee/sessions', {
-        name: null,
-    });
+    const res = await api.post<{ data: SessionPayload }>(
+        '/api/v1/inventory-check/employee/sessions',
+        {
+            name: null,
+        },
+    );
     sessionData.value = res.data.data;
     const id = res.data.data.session.id;
     rememberSessionId(id);
@@ -94,7 +120,9 @@ async function createSession(): Promise<string> {
 }
 
 async function loadSession(sessionId: string): Promise<void> {
-    const res = await api.get<{ data: SessionPayload }>(`/api/v1/inventory-check/employee/sessions/${sessionId}`);
+    const res = await api.get<{ data: SessionPayload }>(
+        `/api/v1/inventory-check/employee/sessions/${sessionId}`,
+    );
     sessionData.value = res.data.data;
     rememberSessionId(res.data.data.session.id);
 }
@@ -183,21 +211,18 @@ function clearIdleScanTimer(): void {
     }
 }
 
-watch(
-    barcodeInput,
-    (next) => {
-        clearIdleScanTimer();
-        if (scanBusy.value) return;
-        if (!sessionData.value) return;
-        if (next.trim() === '') return;
+watch(barcodeInput, (next) => {
+    clearIdleScanTimer();
+    if (scanBusy.value) return;
+    if (!sessionData.value) return;
+    if (next.trim() === '') return;
 
-        idleScanTimer = setTimeout(() => {
-            if (scanBusy.value) return;
-            if (barcodeInput.value.trim() === '') return;
-            void scanBarcode();
-        }, 500);
-    },
-);
+    idleScanTimer = setTimeout(() => {
+        if (scanBusy.value) return;
+        if (barcodeInput.value.trim() === '') return;
+        void scanBarcode();
+    }, 500);
+});
 
 async function setLineQuantity(lineId: number, quantity: number): Promise<void> {
     if (!sessionData.value) return;
@@ -269,6 +294,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
     clearIdleScanTimer();
+    employeeInventoryScanNotFoundBg.value = false;
 });
 </script>
 
@@ -300,31 +326,67 @@ onBeforeUnmount(() => {
         <template v-else-if="hasSession">
             <div
                 v-if="recentResult"
-                class="rounded-lg border border-emerald-200 bg-emerald-50 p-4"
+                :class="[
+                    'rounded-lg border p-4',
+                    isBarcodeNotFoundLine(recentResult)
+                        ? 'border-red-300 bg-red-100'
+                        : 'border-emerald-200 bg-emerald-50',
+                ]"
                 data-testid="employee-recent-result"
             >
                 <div class="flex items-center gap-3">
-                    <div class="h-20 w-20 shrink-0 overflow-hidden rounded-md border border-emerald-200 bg-white">
+                    <div
+                        :class="[
+                            'h-20 w-20 shrink-0 overflow-hidden rounded-md border bg-white',
+                            isBarcodeNotFoundLine(recentResult)
+                                ? 'border-red-200'
+                                : 'border-emerald-200',
+                        ]"
+                    >
                         <img
                             v-if="recentResult.image_url"
                             :src="recentResult.image_url"
                             :alt="recentResult.sku"
                             class="h-full w-full object-cover"
                         />
-                        <div v-else class="flex h-full w-full items-center justify-center text-xs text-slate-500">
+                        <div
+                            v-else
+                            class="flex h-full w-full items-center justify-center text-xs text-slate-500"
+                        >
                             No image
                         </div>
                     </div>
                     <div class="min-w-0 flex-1">
-                        <div class="text-xs uppercase tracking-wide text-emerald-700">Last scan</div>
+                        <div
+                            :class="[
+                                'text-xs font-semibold uppercase tracking-wide',
+                                isBarcodeNotFoundLine(recentResult)
+                                    ? 'text-red-800'
+                                    : 'text-emerald-700',
+                            ]"
+                        >
+                            {{
+                                isBarcodeNotFoundLine(recentResult)
+                                    ? 'Barcode not found'
+                                    : 'Last scan'
+                            }}
+                        </div>
                         <div class="mt-1 truncate text-sm font-semibold text-slate-900">
                             {{ recentResult.product_name ?? recentResult.sku }}
                         </div>
                         <div class="mt-1 text-xs text-slate-700">SKU: {{ recentResult.sku }}</div>
-                        <div class="mt-1 text-xs text-slate-700">
+                        <div
+                            v-if="isBarcodeNotFoundLine(recentResult) && recentResult.match_error"
+                            class="mt-1 text-xs font-medium text-red-900"
+                        >
+                            {{ recentResult.match_error }}
+                        </div>
+                        <div v-else class="mt-1 text-xs text-slate-700">
                             Price: {{ formatMoney2OrEmpty(recentResult.selling_price) || '—' }}
                         </div>
-                        <div class="mt-1 text-xs text-slate-700">Qty in this session: {{ recentResult.quantity }}</div>
+                        <div class="mt-1 text-xs text-slate-700">
+                            Qty in this session: {{ recentResult.quantity }}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -332,7 +394,8 @@ onBeforeUnmount(() => {
             <div class="rounded-lg border border-slate-200 bg-white p-4">
                 <div class="grid gap-3 md:grid-cols-2">
                     <div>
-                        <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                        <label
+                            class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                             >Scan barcode</label
                         >
                         <input
@@ -363,10 +426,30 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div class="mt-3 flex flex-wrap items-center gap-4 text-xs text-slate-600">
-                    <div>Session: <span class="font-semibold text-slate-900">{{ sessionData!.session.id.slice(0, 8) }}</span></div>
-                    <div>Lines: <span class="font-semibold text-slate-900">{{ sessionData!.session.counts.lines }}</span></div>
-                    <div>Units: <span class="font-semibold text-slate-900">{{ sessionData!.session.counts.units }}</span></div>
-                    <div>Issues: <span class="font-semibold text-slate-900">{{ sessionData!.session.counts.issues }}</span></div>
+                    <div>
+                        Session:
+                        <span class="font-semibold text-slate-900">{{
+                            sessionData!.session.id.slice(0, 8)
+                        }}</span>
+                    </div>
+                    <div>
+                        Lines:
+                        <span class="font-semibold text-slate-900">{{
+                            sessionData!.session.counts.lines
+                        }}</span>
+                    </div>
+                    <div>
+                        Units:
+                        <span class="font-semibold text-slate-900">{{
+                            sessionData!.session.counts.units
+                        }}</span>
+                    </div>
+                    <div>
+                        Issues:
+                        <span class="font-semibold text-slate-900">{{
+                            sessionData!.session.counts.issues
+                        }}</span>
+                    </div>
                     <button
                         type="button"
                         class="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
@@ -379,13 +462,17 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                <div class="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">
+                <div
+                    class="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700"
+                >
                     Scanned items
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-slate-200 text-sm">
                         <thead class="bg-slate-50">
-                            <tr class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                            <tr
+                                class="text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
+                            >
                                 <th class="px-3 py-2">Product</th>
                                 <th class="px-3 py-2">SKU</th>
                                 <th class="px-3 py-2">Price</th>
@@ -395,14 +482,16 @@ onBeforeUnmount(() => {
                         </thead>
                         <tbody class="divide-y divide-slate-100">
                             <tr v-if="items.length === 0">
-                                <td class="px-3 py-3 text-slate-600" colspan="5">
-                                    No scans yet.
-                                </td>
+                                <td class="px-3 py-3 text-slate-600" colspan="5">No scans yet.</td>
                             </tr>
                             <tr
                                 v-for="line in items"
                                 :key="line.id"
-                                class="hover:bg-slate-50"
+                                :class="
+                                    isBarcodeNotFoundLine(line)
+                                        ? 'border-l-4 border-l-red-600 bg-red-100 hover:bg-red-200/90'
+                                        : 'hover:bg-slate-50'
+                                "
                                 :data-testid="`employee-line-${line.id}`"
                             >
                                 <td class="px-3 py-2">
@@ -421,19 +510,37 @@ onBeforeUnmount(() => {
                                             )
                                         "
                                     />
-                                    <div v-if="line.issue_flag" class="mt-0.5 text-xs font-semibold text-amber-700">
-                                        Issue: {{ line.issue_reason ?? line.match_error ?? 'Review needed' }}
+                                    <div
+                                        v-if="line.issue_flag"
+                                        :class="[
+                                            'mt-0.5 text-xs font-semibold',
+                                            isBarcodeNotFoundLine(line)
+                                                ? 'text-red-900'
+                                                : 'text-amber-700',
+                                        ]"
+                                    >
+                                        Issue:
+                                        {{
+                                            line.issue_reason ?? line.match_error ?? 'Review needed'
+                                        }}
                                     </div>
                                 </td>
                                 <td class="px-3 py-2 font-mono text-xs">{{ line.sku }}</td>
-                                <td class="px-3 py-2">{{ formatMoney2OrEmpty(line.selling_price) || '—' }}</td>
+                                <td class="px-3 py-2">
+                                    {{ formatMoney2OrEmpty(line.selling_price) || '—' }}
+                                </td>
                                 <td class="px-3 py-2">
                                     <div class="flex items-center gap-1">
                                         <button
                                             type="button"
                                             class="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs hover:bg-slate-100 disabled:opacity-50"
                                             :disabled="isSavingLine(line.id)"
-                                            @click="setLineQuantity(line.id, Math.max(0, line.quantity - 1))"
+                                            @click="
+                                                setLineQuantity(
+                                                    line.id,
+                                                    Math.max(0, line.quantity - 1),
+                                                )
+                                            "
                                         >
                                             -
                                         </button>
@@ -447,7 +554,8 @@ onBeforeUnmount(() => {
                                                 setLineQuantity(
                                                     line.id,
                                                     Number.parseInt(
-                                                        ($event.target as HTMLInputElement).value || '0',
+                                                        ($event.target as HTMLInputElement).value ||
+                                                            '0',
                                                         10,
                                                     ),
                                                 )

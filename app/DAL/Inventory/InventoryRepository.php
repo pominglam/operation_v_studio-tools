@@ -23,6 +23,20 @@ interface InventoryRepository
 
     /**
      * @param  array<int, int>  $purchaseOrderItemIds
+     * @return array<int, int> distinct PO item ids that have at least one lot
+     */
+    public function purchaseOrderItemIdsHavingLots(array $purchaseOrderItemIds): array;
+
+    /**
+     * Deletes movements referencing lots on these PO lines, then deletes those lots (PO receipt reset).
+     *
+     * @param  array<int, int>  $purchaseOrderItemIds
+     * @return array{movements_deleted: int, lots_deleted: int}
+     */
+    public function deleteMovementsAndLotsForPurchaseOrderItems(array $purchaseOrderItemIds): array;
+
+    /**
+     * @param  array<int, int>  $purchaseOrderItemIds
      */
     public function deleteLotsForPurchaseOrderItems(array $purchaseOrderItemIds): int;
 
@@ -42,5 +56,3 @@ interface InventoryRepository
 
     public function findOrCreateNegativeBalanceLot(int $productId): InventoryLot;
 }
-
-

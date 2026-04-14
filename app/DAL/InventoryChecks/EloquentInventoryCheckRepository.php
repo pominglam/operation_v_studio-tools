@@ -8,6 +8,7 @@ use App\Models\InventoryCheck;
 use App\Models\InventoryCheckItem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Support\Facades\DB;
 
 final class EloquentInventoryCheckRepository implements InventoryCheckRepository
 {
@@ -96,6 +97,14 @@ final class EloquentInventoryCheckRepository implements InventoryCheckRepository
     {
         $item->delete();
     }
+
+    public function deleteSession(InventoryCheck $check): void
+    {
+        DB::transaction(function () use ($check): void {
+            InventoryCheckItem::query()
+                ->where('inventory_check_id', '=', (int) $check->id)
+                ->delete();
+            $check->delete();
+        });
+    }
 }
-
-

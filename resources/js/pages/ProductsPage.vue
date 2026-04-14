@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../lib/api';
-import { formatLocalDateTime } from '../lib/datetime';
+import { formatLocalDate, formatLocalDateTime } from '../lib/datetime';
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
 import { splitBulkSearchTerms } from '../lib/productsBulkSearch';
 import AddProductForm, {
@@ -306,10 +306,10 @@ async function loadMissingSellingPrice(): Promise<void> {
 }
 
 const search = ref('');
-const perPage = ref(50);
+const perPage = ref(200);
 const page = ref(1);
-const sortBy = ref<ProductSortKey>('sku');
-const sortDir = ref<'asc' | 'desc'>('asc');
+const sortBy = ref<ProductSortKey>('received_date');
+const sortDir = ref<'asc' | 'desc'>('desc');
 const selectedMainTypes = ref<string[]>([]);
 const selectedTypes = ref<string[]>([]);
 const selectedVendors = ref<string[]>([]);
@@ -463,7 +463,8 @@ function productsListParams(per_page: number, pageNum: number): Record<string, u
     const base: Record<string, unknown> = {
         per_page,
         page: pageNum,
-        purchase_order_uuids: purchaseOrderUuids.value.length > 0 ? purchaseOrderUuids.value : undefined,
+        purchase_order_uuids:
+            purchaseOrderUuids.value.length > 0 ? purchaseOrderUuids.value : undefined,
         po_product_novelty: poProductNovelty.value !== 'all' ? poProductNovelty.value : undefined,
         sort_by: sortBy.value,
         sort_dir: sortDir.value,
@@ -619,10 +620,7 @@ function sortProducts(list: ProductRow[], key: ProductSortKey, dir: 'asc' | 'des
                 Number.isFinite(Number(b.not_arrived ?? 0)) ? Number(b.not_arrived ?? 0) : 0,
             );
         } else if (key === 'reorder') {
-            cmp = compareNullableNumbers(
-                reorderFromRow(a),
-                reorderFromRow(b),
-            );
+            cmp = compareNullableNumbers(reorderFromRow(a), reorderFromRow(b));
         } else if (key === 'total_ordered') {
             cmp = compareNullableNumbers(
                 Number.isFinite(Number(a.total_ordered ?? 0)) ? Number(a.total_ordered ?? 0) : 0,
@@ -643,6 +641,22 @@ function sortProducts(list: ProductRow[], key: ProductSortKey, dir: 'asc' | 'des
                 parseNullableNumber(a.selling_price),
                 parseNullableNumber(b.selling_price),
             );
+        } else if (key === 'received_date') {
+            const da = a.received_date?.trim() || null;
+            const db = b.received_date?.trim() || null;
+            if (da === null && db === null) {
+                cmp = 0;
+            } else if (da === null) {
+                cmp = 1;
+            } else if (db === null) {
+                cmp = -1;
+            } else {
+                cmp = da.localeCompare(db);
+            }
+            if (cmp !== 0) {
+                return dir === 'asc' ? cmp : -cmp;
+            }
+            return a.sku.localeCompare(b.sku);
         } else if (key === 'po_total_cost') {
             cmp = compareNullableNumbers(
                 parseNullableNumber(a.po_total_cost),
@@ -670,6 +684,7 @@ const PRODUCT_SORT_KEYS: readonly ProductSortKey[] = [
     'scale',
     'vendor',
     'latest_landed_unit_cost',
+    'received_date',
     'selling_price',
     'total_ordered',
     'total_sold',
@@ -795,14 +810,23 @@ async function loadFilterOptions(): Promise<void> {
         scaleOptions.value = (res.data.data.scales ?? []).map((v) => ({ value: v, label: v }));
         seriesOptions.value = (res.data.data.series ?? []).map((v) => ({ value: v, label: v }));
     } catch {
-        // ignore; filter dropdown will just be empty
+        const mainTypeDefaults = ['model kit', 'tools', 'paints', 'supplies'];
+        mainTypeOptions.value = [
+            { value: '__empty__', label: '(empty)' },
+            ...mainTypeDefaults.map((t) => ({ value: t, label: t })),
+        ];
     }
 }
 
 function poLabel(po: PurchaseOrderOption): string {
-    const date = po.created_at ? formatLocalDateTime(po.created_at) : '—';
     const short = po.id.slice(0, 8);
-    return `${date} · ${po.vendor} · ${po.counts.items} items · ${short}`;
+    const tail = `${po.vendor} · ${po.counts.items} items · ${short}`;
+    const rd = po.received_date?.trim();
+    if (rd) {
+        return `Received ${formatLocalDate(rd)} · ${tail}`;
+    }
+    const created = po.created_at ? formatLocalDateTime(po.created_at) : '—';
+    return `Not arrived · created ${created} · ${tail}`;
 }
 
 function isPoMuted(po: PurchaseOrderOption): boolean {
@@ -813,7 +837,7 @@ function isPoMuted(po: PurchaseOrderOption): boolean {
 async function loadPurchaseOrders(): Promise<void> {
     try {
         const res = await api.get<Paginated<PurchaseOrderOption>>('/api/v1/purchase-orders', {
-            params: { per_page: 200, sort_dir: 'desc' },
+            params: { per_page: 200, sort_by: 'filter' },
         });
         purchaseOrders.value = res.data.data ?? [];
     } catch {
@@ -930,7 +954,9 @@ async function updateProductAvailable(id: string, available: number | null): Pro
 
         const next = (res.data as any)?.data?.available;
         if (typeof next === 'number' || next === null) {
-            products.value = products.value.map((p) => (p.id === id ? { ...p, available: next } : p));
+            products.value = products.value.map((p) =>
+                p.id === id ? { ...p, available: next } : p,
+            );
         }
     } catch (e: unknown) {
         // Revert on failure.
@@ -971,7 +997,9 @@ async function updateProductMaintain(id: string, maintain: number | null): Promi
 
         const next = (res.data as any)?.data?.maintain;
         if (typeof next === 'number' || next === null) {
-            products.value = products.value.map((p) => (p.id === id ? { ...p, maintain: next } : p));
+            products.value = products.value.map((p) =>
+                p.id === id ? { ...p, maintain: next } : p,
+            );
         }
     } catch (e: unknown) {
         // Revert on failure.
@@ -1199,7 +1227,7 @@ function onSortChange(next: ProductSortKey): void {
     }
 
     sortBy.value = next;
-    sortDir.value = 'asc';
+    sortDir.value = next === 'received_date' ? 'desc' : 'asc';
 }
 
 function onPageChange(next: number): void {
@@ -1288,20 +1316,30 @@ onMounted(() => {
         if (typeof saved.page === 'number') page.value = saved.page;
         if (isProductSortKey(saved.sortBy)) sortBy.value = saved.sortBy;
         if (saved.sortDir) sortDir.value = saved.sortDir;
-        if (Array.isArray(saved.selectedMainTypes)) selectedMainTypes.value = saved.selectedMainTypes;
+        if (Array.isArray(saved.selectedMainTypes))
+            selectedMainTypes.value = saved.selectedMainTypes;
         if (Array.isArray(saved.selectedTypes)) selectedTypes.value = saved.selectedTypes;
         if (Array.isArray(saved.selectedVendors)) selectedVendors.value = saved.selectedVendors;
         if (Array.isArray(saved.selectedMissing)) selectedMissing.value = saved.selectedMissing;
-        if (saved.readyFilter === 'all' || saved.readyFilter === 'ready' || saved.readyFilter === 'not_ready') {
+        if (
+            saved.readyFilter === 'all' ||
+            saved.readyFilter === 'ready' ||
+            saved.readyFilter === 'not_ready'
+        ) {
             readyFilter.value = saved.readyFilter;
         }
-        if (typeof saved.availableFilter === 'string') availableFilter.value = saved.availableFilter;
+        if (typeof saved.availableFilter === 'string')
+            availableFilter.value = saved.availableFilter;
         if (typeof saved.notArrivedFilter === 'string')
             notArrivedFilter.value = saved.notArrivedFilter;
         if (typeof saved.reorderFilter === 'string') reorderFilter.value = saved.reorderFilter;
         if (typeof saved.reorderGtOne === 'boolean') reorderGtOne.value = saved.reorderGtOne;
-        if (Array.isArray(saved.purchaseOrderUuids)) purchaseOrderUuids.value = saved.purchaseOrderUuids;
-        else if (typeof saved.purchaseOrderUuid === 'string' && saved.purchaseOrderUuid.trim() !== '')
+        if (Array.isArray(saved.purchaseOrderUuids))
+            purchaseOrderUuids.value = saved.purchaseOrderUuids;
+        else if (
+            typeof saved.purchaseOrderUuid === 'string' &&
+            saved.purchaseOrderUuid.trim() !== ''
+        )
             purchaseOrderUuids.value = [saved.purchaseOrderUuid.trim()];
         if (
             saved.poProductNovelty === 'all' ||
@@ -1405,10 +1443,10 @@ function resetListState(): void {
     search.value = '';
     searchMode.value = 'single';
     bulkSearchText.value = '';
-    perPage.value = 50;
+    perPage.value = 200;
     page.value = 1;
-    sortBy.value = 'sku';
-    sortDir.value = 'asc';
+    sortBy.value = 'received_date';
+    sortDir.value = 'desc';
     selectedMainTypes.value = [];
     selectedTypes.value = [];
     selectedVendors.value = [];
@@ -1693,7 +1731,9 @@ function resetListState(): void {
                                     class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                                     >Archived</label
                                 >
-                                <label class="mt-2 inline-flex items-center gap-2 text-sm text-slate-700">
+                                <label
+                                    class="mt-2 inline-flex items-center gap-2 text-sm text-slate-700"
+                                >
                                     <input
                                         v-model="includeArchived"
                                         type="checkbox"
@@ -1755,7 +1795,9 @@ function resetListState(): void {
                                     placeholder="Any"
                                     data-testid="products-filter-reorder"
                                 />
-                                <label class="mt-2 inline-flex items-center gap-2 text-xs text-slate-700">
+                                <label
+                                    class="mt-2 inline-flex items-center gap-2 text-xs text-slate-700"
+                                >
                                     <input
                                         v-model="reorderGtOne"
                                         type="checkbox"
@@ -1780,6 +1822,7 @@ function resetListState(): void {
                                     <option :value="100">100</option>
                                     <option :value="200">200</option>
                                     <option :value="500">500</option>
+                                    <option :value="1000">1000</option>
                                 </select>
                             </div>
                         </div>
@@ -1932,7 +1975,9 @@ function resetListState(): void {
                                     class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                                 >
                                     <option value="shopify">Shopify (CSV + description)</option>
-                                    <option value="shopify_no_inventory">Shopify (CSV + description, no inventory)</option>
+                                    <option value="shopify_no_inventory">
+                                        Shopify (CSV + description, no inventory)
+                                    </option>
                                 </select>
                             </div>
 

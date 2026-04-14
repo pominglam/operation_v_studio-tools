@@ -29,8 +29,7 @@ final class PurchaseOrderImportRequest extends FormRequest
             'product_total' => ['sometimes', 'nullable', 'numeric'],
             'surcharge_total' => ['sometimes', 'nullable', 'numeric'],
             'notes' => ['sometimes', 'nullable', 'string'],
+            'reset_receipt_before_reimport' => ['sometimes', 'boolean'],
         ];
     }
 }
-
-

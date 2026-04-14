@@ -24,7 +24,7 @@ final class PurchaseOrderIndexController extends Controller
         /** @var string $sortBy */
         $sortBy = (string) ($request->query('sort_by') ?? 'created');
         $sortBy = strtolower(trim($sortBy));
-        if (! in_array($sortBy, ['created', 'ordered'], true)) {
+        if (! in_array($sortBy, ['created', 'ordered', 'received', 'filter'], true)) {
             $sortBy = 'created';
         }
 
@@ -32,10 +32,22 @@ final class PurchaseOrderIndexController extends Controller
         $sortDir = (string) ($request->query('sort_dir') ?? 'desc');
         $sortDir = strtolower(trim($sortDir)) === 'asc' ? 'asc' : 'desc';
 
+        /** @var array<int, string> $vendorFilters */
+        $vendorFilters = [];
+        $rawVendors = $request->query('vendors');
+        if (is_array($rawVendors)) {
+            foreach ($rawVendors as $v) {
+                $t = trim((string) $v);
+                if ($t !== '') {
+                    $vendorFilters[] = $t;
+                }
+            }
+        }
+        $vendorFilters = array_values(array_unique($vendorFilters));
+        $vendorFilters = array_slice($vendorFilters, 0, 50);
+
         return PurchaseOrderResource::collection(
-            $this->purchaseOrders->paginate($perPage, $sortDir, $sortBy),
+            $this->purchaseOrders->paginate($perPage, $sortDir, $sortBy, $vendorFilters),
         );
     }
 }
-
-

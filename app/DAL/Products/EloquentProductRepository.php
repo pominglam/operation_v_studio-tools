@@ -133,6 +133,7 @@ final class EloquentProductRepository implements ProductRepository
             'scale' => 'scale',
             'vendor' => 'vendor',
             'latest_landed_unit_cost' => 'latest_landed_unit_cost',
+            'received_date' => '__received_date',
             'selling_price' => '__selling_price',
             'total_ordered' => 'total_ordered_qty',
             'total_sold' => 'total_sold_qty',
@@ -177,6 +178,20 @@ final class EloquentProductRepository implements ProductRepository
     {
         return '(
             select coalesce(sum(coalesce(poi.qty_received, 0)), 0)
+            from purchase_order_items poi
+            inner join purchase_orders po on po.id = poi.purchase_order_id
+            where poi.product_id = products.id
+              and po.received_date is not null
+        )';
+    }
+
+    /**
+     * Latest PO received date for the product (any line on a received PO); null if none.
+     */
+    private function latestPoReceivedDateSubquery(): string
+    {
+        return '(
+            select max(po.received_date)
             from purchase_order_items poi
             inner join purchase_orders po on po.id = poi.purchase_order_id
             where poi.product_id = products.id
@@ -422,6 +437,7 @@ final class EloquentProductRepository implements ProductRepository
             DB::raw("{$reorderQtyExpr} as reorder_qty"),
             DB::raw("{$totalOrderedReceivedQtyExpr} as total_ordered_qty"),
             DB::raw("({$totalOrderedReceivedQtyExpr} - coalesce(products.available_qty, 0)) as total_sold_qty"),
+            DB::raw($this->latestPoReceivedDateSubquery().' as latest_po_received_date'),
         ]);
 
         $purchaseOrderUuids = array_values(array_unique(array_filter(array_map(
@@ -458,6 +474,15 @@ final class EloquentProductRepository implements ProductRepository
             $expr = "(select nullif(trim(sps.selling_price), '') from product_selling_prices sps where sps.product_id = products.id limit 1)";
             $q->orderByRaw("{$expr} is null asc");
             $q->orderByRaw("cast({$expr} as decimal(10,2)) {$sortDir}");
+            $q->orderBy('sku', 'asc');
+
+            return $q->paginate(perPage: $perPage);
+        }
+
+        if ($sortColumn === '__received_date') {
+            $expr = $this->latestPoReceivedDateSubquery();
+            $q->orderByRaw("{$expr} is null asc");
+            $q->orderByRaw("{$expr} {$sortDir}");
             $q->orderBy('sku', 'asc');
 
             return $q->paginate(perPage: $perPage);

@@ -5,6 +5,7 @@ globs:
   - "**/*.ts"
   - "**/*.tsx"
   - "**/resources/js/**"
+  - "**/resources/css/**"
   - "**/src/components/**"
   - "**/vite.config.*"
   - "**/tsconfig.json"
@@ -121,9 +122,12 @@ Example:
 
 ## Post-change verification (required)
 
-- After **any frontend change** (Vue/TS/CSS or frontend tooling config), the agent must run:
-  - `npm run build`
-  - Fix any build errors before handing the change back.
+- After **any frontend change** (Vue/TS/CSS or frontend tooling config), the agent **must execute** (not only suggest):
+  1. `npm run build` from the project root (PowerShell-safe).
+  2. Confirm the command **succeeds**; fix all build errors before finishing.
+  3. Treat this as part of the same task—users loading the app via `public/build` will not see changes until the bundle is updated (unless `npm run dev` / `public/hot` is in use).
+- **Also** run `npx prettier --write` on touched JS/TS/Vue/CSS when formatting is part of the change (per `formatting.mdc`).
+- See **`workspace.mdc`** (always applied) for the same mandatory bundle rule.
 
 ### Good vs Bad
 

@@ -23,7 +23,8 @@ final class PurchaseOrderWorkflowChecklistService
      *   export_to_shopify_get_handles?:bool,
      *   import_handle_only?:bool,
      *   update_product_available_with_shopify_current_inventory_quantity?:bool,
-     *   import_product_available_quantity?:bool
+     *   import_product_available_quantity?:bool,
+     *   mark_latest_arrival_and_published_on_shopify?:bool
      * } $changes
      */
     public function update(string $purchaseOrderUuid, array $changes): PurchaseOrder
@@ -57,7 +58,8 @@ final class PurchaseOrderWorkflowChecklistService
      *   export_to_shopify_get_handles:bool,
      *   import_handle_only:bool,
      *   update_product_available_with_shopify_current_inventory_quantity:bool,
-     *   import_product_available_quantity:bool
+     *   import_product_available_quantity:bool,
+     *   mark_latest_arrival_and_published_on_shopify:bool
      * }
      */
     private function defaults(): array
@@ -71,7 +73,7 @@ final class PurchaseOrderWorkflowChecklistService
             'import_handle_only' => false,
             'update_product_available_with_shopify_current_inventory_quantity' => false,
             'import_product_available_quantity' => false,
+            'mark_latest_arrival_and_published_on_shopify' => false,
         ];
     }
 }
-

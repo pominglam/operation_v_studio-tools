@@ -42,6 +42,52 @@ final class EloquentInventoryRepository implements InventoryRepository
             ->count();
     }
 
+    public function purchaseOrderItemIdsHavingLots(array $purchaseOrderItemIds): array
+    {
+        if ($purchaseOrderItemIds === []) {
+            return [];
+        }
+
+        /** @var array<int, int> $ids */
+        $ids = InventoryLot::query()
+            ->whereIn('purchase_order_item_id', $purchaseOrderItemIds)
+            ->distinct()
+            ->pluck('purchase_order_item_id')
+            ->map(static fn ($v): int => (int) $v)
+            ->unique()
+            ->values()
+            ->all();
+
+        return $ids;
+    }
+
+    public function deleteMovementsAndLotsForPurchaseOrderItems(array $purchaseOrderItemIds): array
+    {
+        if ($purchaseOrderItemIds === []) {
+            return ['movements_deleted' => 0, 'lots_deleted' => 0];
+        }
+
+        /** @var array<int, int> $lotIds */
+        $lotIds = InventoryLot::query()
+            ->whereIn('purchase_order_item_id', $purchaseOrderItemIds)
+            ->pluck('id')
+            ->map(static fn ($v): int => (int) $v)
+            ->values()
+            ->all();
+
+        $movementsDeleted = 0;
+        if ($lotIds !== []) {
+            $movementsDeleted = InventoryMovement::query()->whereIn('inventory_lot_id', $lotIds)->delete();
+        }
+
+        $lotsDeleted = $this->deleteLotsForPurchaseOrderItems($purchaseOrderItemIds);
+
+        return [
+            'movements_deleted' => (int) $movementsDeleted,
+            'lots_deleted' => (int) $lotsDeleted,
+        ];
+    }
+
     public function deleteLotsForPurchaseOrderItems(array $purchaseOrderItemIds): int
     {
         if ($purchaseOrderItemIds === []) {
@@ -97,7 +143,7 @@ final class EloquentInventoryRepository implements InventoryRepository
             return $lot;
         }
 
-        $lot = new InventoryLot();
+        $lot = new InventoryLot;
         $lot->product_id = $productId;
         $lot->purchase_order_item_id = null;
         $lot->source_type = 'negative_balance';
@@ -111,5 +157,3 @@ final class EloquentInventoryRepository implements InventoryRepository
         return $lot;
     }
 }
-
-

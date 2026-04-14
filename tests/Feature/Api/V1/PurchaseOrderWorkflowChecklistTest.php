@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
-use App\Models\Product;
 
 it('persists a workflow checklist on a purchase order', function (): void {
     $po = PurchaseOrder::query()->create([
@@ -53,6 +53,7 @@ it('persists a workflow checklist on a purchase order', function (): void {
     $res->assertJsonPath('data.workflow_checklist.update_product_available_with_shopify_current_inventory_quantity', true);
     $res->assertJsonPath('data.workflow_checklist.set_selling_price', false);
     $res->assertJsonPath('data.workflow_checklist.ensure_all_products_have_barcode', false);
+    $res->assertJsonPath('data.workflow_checklist.mark_latest_arrival_and_published_on_shopify', false);
 
     $po->refresh();
     expect($po->workflow_checklist_json)->toBeArray();
@@ -60,5 +61,5 @@ it('persists a workflow checklist on a purchase order', function (): void {
     expect($po->workflow_checklist_json['export_to_shopify_get_handles'] ?? null)->toBeTrue();
     expect($po->workflow_checklist_json['update_product_available_with_shopify_current_inventory_quantity'] ?? null)->toBeTrue();
     expect($po->workflow_checklist_json['ensure_all_products_have_barcode'] ?? null)->toBeFalse();
+    expect($po->workflow_checklist_json['mark_latest_arrival_and_published_on_shopify'] ?? null)->toBeFalse();
 });
-

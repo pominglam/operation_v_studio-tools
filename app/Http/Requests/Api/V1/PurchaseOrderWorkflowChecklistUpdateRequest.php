@@ -22,7 +22,7 @@ final class PurchaseOrderWorkflowChecklistUpdateRequest extends FormRequest
             'import_handle_only' => ['sometimes', 'boolean'],
             'update_product_available_with_shopify_current_inventory_quantity' => ['sometimes', 'boolean'],
             'import_product_available_quantity' => ['sometimes', 'boolean'],
+            'mark_latest_arrival_and_published_on_shopify' => ['sometimes', 'boolean'],
         ];
     }
 }
-

@@ -118,6 +118,12 @@ function isSavingLine(itemId: number): boolean {
     return savingLine.value[itemId] === true;
 }
 
+function isBarcodeNotFoundRow(item: InventoryCheckItem): boolean {
+    const err = item.match_error ?? '';
+
+    return item.match_status === 'unmatched' && err.includes('No active product found');
+}
+
 function qtyValueFor(item: InventoryCheckItem): string {
     if (quantityDrafts.value[item.id] !== undefined) return quantityDrafts.value[item.id]!;
 
@@ -127,14 +133,14 @@ function qtyValueFor(item: InventoryCheckItem): string {
 function nameValueFor(item: InventoryCheckItem): string {
     if (nameDrafts.value[item.id] !== undefined) return nameDrafts.value[item.id]!;
 
-    return item.english_name || item.product_name || '';
+    return item.product_name || item.english_name || '';
 }
 
 async function saveLine(item: InventoryCheckItem): Promise<void> {
     if (isSavingLine(item.id)) return;
 
     const qRaw = quantityDrafts.value[item.id] ?? (item.quantity_in_store === null ? '' : String(item.quantity_in_store));
-    const nameRaw = nameDrafts.value[item.id] ?? (item.english_name || item.product_name || '');
+    const nameRaw = nameDrafts.value[item.id] ?? (item.product_name || item.english_name || '');
     const qtyParsed = Number.parseInt(qRaw.trim() === '' ? '0' : qRaw, 10);
     const quantity = Number.isFinite(qtyParsed) && qtyParsed >= 0 ? qtyParsed : 0;
     const productName = nameRaw.trim();
@@ -147,6 +153,10 @@ async function saveLine(item: InventoryCheckItem): Promise<void> {
             product_name: productName,
         });
         await load();
+        const { [item.id]: _qd, ...restQ } = quantityDrafts.value;
+        quantityDrafts.value = restQ;
+        const { [item.id]: _nd, ...restN } = nameDrafts.value;
+        nameDrafts.value = restN;
     } catch {
         error.value = 'Failed to save line changes.';
     } finally {
@@ -247,6 +257,9 @@ onMounted(() => {
                         </select>
                     </div>
                 </div>
+                <p class="mt-2 text-xs text-slate-500">
+                    Product name and quantity save automatically when you leave the field.
+                </p>
 
                 <div class="mt-4 overflow-x-auto">
                     <table class="min-w-full text-left text-xs">
@@ -263,11 +276,19 @@ onMounted(() => {
                                 <th class="px-2 py-1 text-right">Difference</th>
                                 <th class="px-2 py-1">Notes</th>
                                 <th class="px-2 py-1">Error</th>
-                                <th class="px-2 py-1 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="text-slate-800">
-                            <tr v-for="it in filteredItems" :key="it.id" class="border-t border-slate-200">
+                            <tr
+                                v-for="it in filteredItems"
+                                :key="it.id"
+                                :class="[
+                                    'border-t border-slate-200',
+                                    isBarcodeNotFoundRow(it)
+                                        ? 'border-l-4 border-l-red-600 bg-red-100 hover:bg-red-200/90'
+                                        : 'hover:bg-slate-50',
+                                ]"
+                            >
                                 <td class="px-2 py-1">{{ it.handle ?? '' }}</td>
                                 <td class="px-2 py-1">{{ it.vendor ?? '' }}</td>
                                 <td class="px-2 py-1">{{ it.sku }}</td>
@@ -284,6 +305,7 @@ onMounted(() => {
                                                 [it.id]: ($event.target as HTMLInputElement).value,
                                             }
                                         "
+                                        @change="saveLine(it)"
                                     />
                                 </td>
                                 <td class="px-2 py-1 text-right">{{ it.available_amount ?? '' }}</td>
@@ -301,21 +323,12 @@ onMounted(() => {
                                                 [it.id]: ($event.target as HTMLInputElement).value,
                                             }
                                         "
+                                        @change="saveLine(it)"
                                     />
                                 </td>
                                 <td class="px-2 py-1 text-right">{{ it.difference ?? '' }}</td>
                                 <td class="px-2 py-1">{{ it.notes ?? '' }}</td>
                                 <td class="px-2 py-1 text-slate-600">{{ it.match_error ?? '' }}</td>
-                                <td class="px-2 py-1 text-right">
-                                    <button
-                                        type="button"
-                                        class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                                        :disabled="isSavingLine(it.id)"
-                                        @click="saveLine(it)"
-                                    >
-                                        {{ isSavingLine(it.id) ? 'Saving…' : 'Save' }}
-                                    </button>
-                                </td>
                             </tr>
                         </tbody>
                     </table>

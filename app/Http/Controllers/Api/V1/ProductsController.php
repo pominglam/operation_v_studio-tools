@@ -27,7 +27,7 @@ final class ProductsController extends Controller
     public function index(ProductsIndexRequest $request): AnonymousResourceCollection
     {
         $perPage = (int) ($request->validated('per_page') ?? 25);
-        $perPage = max(1, min($perPage, 500));
+        $perPage = max(1, min($perPage, 1000));
 
         /** @var string|null $search */
         $search = $request->validated('search');

@@ -6,10 +6,11 @@ namespace App\DAL\PurchaseOrders;
 
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
 {
@@ -42,7 +43,7 @@ final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
             ->find($id);
 
         if ($item === null) {
-            throw (new ModelNotFoundException())->setModel(PurchaseOrderItem::class, [$id]);
+            throw (new ModelNotFoundException)->setModel(PurchaseOrderItem::class, [$id]);
         }
 
         return $item;
@@ -72,26 +73,66 @@ final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
     /**
      * @return LengthAwarePaginator<PurchaseOrder>
      */
-    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created'): LengthAwarePaginator
+    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created', array $vendors = []): LengthAwarePaginator
     {
         $sortDir = strtolower(trim($sortDir)) === 'asc' ? 'asc' : 'desc';
         $sortBy = strtolower(trim($sortBy));
-        if (! in_array($sortBy, ['created', 'ordered'], true)) {
+        if (! in_array($sortBy, ['created', 'ordered', 'received', 'filter'], true)) {
             $sortBy = 'created';
         }
 
+        $vendorFilters = [];
+        foreach ($vendors as $v) {
+            $t = trim((string) $v);
+            if ($t !== '') {
+                $vendorFilters[] = $t;
+            }
+        }
+        $vendorFilters = array_values(array_unique($vendorFilters));
+
         $q = PurchaseOrder::query()->withCount('items');
+
+        if ($vendorFilters !== []) {
+            $q->whereIn('vendor', $vendorFilters);
+        }
+
+        if ($sortBy === 'filter') {
+            // Product/price-research PO multiselect: not-arrived first (ETA desc, then created desc),
+            // then arrived (received_date desc). sort_dir is ignored for this mode.
+            $this->applyPurchaseOrderFilterListSort($q);
+
+            return $q->paginate(perPage: $perPage);
+        }
 
         if ($sortBy === 'ordered') {
             // Keep undated orders at the end for both directions.
             $q->orderByRaw('ordered_date is null asc')
                 ->orderBy('ordered_date', $sortDir)
                 ->orderBy('created_at', 'desc');
+        } elseif ($sortBy === 'received') {
+            $q->orderByRaw('received_date is null asc')
+                ->orderBy('received_date', $sortDir)
+                ->orderBy('created_at', 'desc');
         } else {
             $q->orderBy('created_at', $sortDir);
         }
 
         return $q->paginate(perPage: $perPage);
+    }
+
+    /**
+     * Not-arrived POs first (ETA desc, null ETA last, then created desc), then arrived (received_date desc).
+     *
+     * @param  Builder<PurchaseOrder>  $q
+     */
+    private function applyPurchaseOrderFilterListSort(Builder $q): void
+    {
+        $q->orderByRaw('(purchase_orders.received_date IS NOT NULL) ASC')
+            ->orderByRaw('CASE WHEN purchase_orders.received_date IS NULL THEN purchase_orders.estimated_arrival_date IS NULL ELSE 0 END ASC')
+            ->orderByRaw('CASE WHEN purchase_orders.received_date IS NULL THEN purchase_orders.estimated_arrival_date END DESC')
+            ->orderByRaw('CASE WHEN purchase_orders.received_date IS NULL THEN purchase_orders.created_at END DESC')
+            ->orderByRaw('CASE WHEN purchase_orders.received_date IS NOT NULL THEN purchase_orders.received_date END DESC')
+            ->orderBy('purchase_orders.created_at', 'desc');
     }
 
     /**
@@ -124,7 +165,7 @@ final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
             ->first();
 
         if ($po === null) {
-            throw (new ModelNotFoundException())->setModel(PurchaseOrder::class, [$uuid]);
+            throw (new ModelNotFoundException)->setModel(PurchaseOrder::class, [$uuid]);
         }
 
         return $po;
@@ -207,5 +248,3 @@ final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
         $po->delete();
     }
 }
-
-

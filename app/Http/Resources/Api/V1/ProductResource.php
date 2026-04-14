@@ -11,6 +11,22 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /** @extends JsonResource<Product> */
 final class ProductResource extends JsonResource
 {
+    private function nullableDateYmd(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        if ($value instanceof \Carbon\CarbonInterface) {
+            return $value->toDateString();
+        }
+        $s = trim((string) $value);
+        if ($s === '') {
+            return null;
+        }
+
+        return substr($s, 0, 10);
+    }
+
     private function money2(string|int|float|null $value): ?string
     {
         if ($value === null) {
@@ -58,6 +74,7 @@ final class ProductResource extends JsonResource
             'latest_arrival' => (bool) $product->latest_arrival,
             'latest_unit_cost' => $this->money2($product->latest_unit_cost),
             'latest_landed_unit_cost' => $this->money2($product->latest_landed_unit_cost),
+            'received_date' => $this->nullableDateYmd($product->getAttribute('latest_po_received_date')),
             'selling_price' => $this->money2($product->sellingPrice?->selling_price),
             'pdp' => [
                 'has_description' => $this->hasExternalDescription($product),
