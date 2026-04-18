@@ -17,5 +17,3 @@ final class PlamodProductData
         public array $assets,
     ) {}
 }
-
-

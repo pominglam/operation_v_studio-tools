@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Services\Products\Newtype\NewtypeHtmlParser;
 
 it('extracts search candidates from Newtype search HTML', function (): void {
-    $html = <<<HTML
+    $html = <<<'HTML'
     <html><body>
       <a href="/p/AAA/h/hgac-174-wing-gundam-zero">Bandai HGAC 174 Wing Gundam Zero</a>
       <a href="https://newtype.us/p/BBB/h/rg-god-gundam">RG God Gundam</a>
@@ -13,7 +13,7 @@ it('extracts search candidates from Newtype search HTML', function (): void {
     </body></html>
     HTML;
 
-    $p = new NewtypeHtmlParser();
+    $p = new NewtypeHtmlParser;
     $cands = $p->extractSearchCandidatesFromSearchHtml($html);
 
     expect($cands)->toHaveCount(2);
@@ -22,7 +22,7 @@ it('extracts search candidates from Newtype search HTML', function (): void {
 });
 
 it('extracts gallery-scoped image URLs from Newtype PDP HTML', function (): void {
-    $html = <<<HTML
+    $html = <<<'HTML'
     <html><body>
       <img src="https://cdn.example.com/outside.jpg" />
 
@@ -37,7 +37,7 @@ it('extracts gallery-scoped image URLs from Newtype PDP HTML', function (): void
     </body></html>
     HTML;
 
-    $p = new NewtypeHtmlParser();
+    $p = new NewtypeHtmlParser;
     $urls = $p->extractImageUrlsFromPdpHtml($html);
 
     // "box art" should be first even if it's outside the gallery container.
@@ -50,7 +50,7 @@ it('extracts gallery-scoped image URLs from Newtype PDP HTML', function (): void
 });
 
 it('extracts description + facts (scale/line/brand/series) from Newtype PDP HTML', function (): void {
-    $html = <<<HTML
+    $html = <<<'HTML'
     <html><head>
       <meta property="og:title" content="Bandai HGAC 174 Wing Gundam Zero - Newtype" />
       <script type="application/ld+json">
@@ -66,7 +66,7 @@ it('extracts description + facts (scale/line/brand/series) from Newtype PDP HTML
     </body></html>
     HTML;
 
-    $p = new NewtypeHtmlParser();
+    $p = new NewtypeHtmlParser;
     $out = $p->extractDescriptionAndFactsFromPdpHtml($html);
 
     expect($out['title'])->toContain('Wing Gundam Zero');
@@ -76,4 +76,3 @@ it('extracts description + facts (scale/line/brand/series) from Newtype PDP HTML
     expect($out['brand'])->toBe('Mobile Suit Gundam');
     expect($out['series'])->toBe('Gundam Wing');
 });
-

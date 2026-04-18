@@ -74,4 +74,3 @@ it('imports Stedi simple CSV with lowercase HKD headers', function (): void {
     expect((string) $po->vendor_currency_code)->toBe('HKD');
     expect((string) $po->vendor_product_total)->toBe('53.82');
 });
-

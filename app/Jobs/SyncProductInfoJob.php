@@ -34,7 +34,7 @@ final class SyncProductInfoJob implements ShouldQueue
      */
     public function middleware(): array
     {
-        return [new SkipIfBatchCancelled()];
+        return [new SkipIfBatchCancelled];
     }
 
     public function __construct(
@@ -60,6 +60,7 @@ final class SyncProductInfoJob implements ShouldQueue
             if (is_string($batchId) && $batchId !== '') {
                 $batchItems->markSkipped($batchId, $this->productUuid, 'cancelled');
             }
+
             return;
         }
 
@@ -159,4 +160,3 @@ final class SyncProductInfoJob implements ShouldQueue
         }
     }
 }
-

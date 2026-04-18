@@ -25,19 +25,29 @@ final class NewtypeHtmlParser
         $seen = [];
 
         /** @var \DOMNodeList<DOMElement> $links */
-        $links = $xpath->query('//a[@href]') ?? new \DOMNodeList();
+        $links = $xpath->query('//a[@href]') ?? new \DOMNodeList;
         foreach ($links as $a) {
             $href = trim((string) $a->getAttribute('href'));
-            if ($href === '') continue;
+            if ($href === '') {
+                continue;
+            }
 
             $abs = $this->toAbsoluteUrl($href);
-            if ($abs === null) continue;
-            if (! preg_match('#https?://newtype\\.us/p/[^/]+/h/[^\\s\\?]+#i', $abs)) continue;
+            if ($abs === null) {
+                continue;
+            }
+            if (! preg_match('#https?://newtype\\.us/p/[^/]+/h/[^\\s\\?]+#i', $abs)) {
+                continue;
+            }
 
             $title = $this->candidateTitleFromLink($a);
-            if ($title === '') continue;
+            if ($title === '') {
+                continue;
+            }
 
-            if (isset($seen[$abs])) continue;
+            if (isset($seen[$abs])) {
+                continue;
+            }
             $seen[$abs] = true;
             $out[] = ['url' => $abs, 'title' => $title];
         }
@@ -51,10 +61,14 @@ final class NewtypeHtmlParser
      */
     public function pickBestCandidate(array $candidates, string $query): ?array
     {
-        if ($candidates === []) return null;
+        if ($candidates === []) {
+            return null;
+        }
 
         $qTokens = $this->tokens($query);
-        if ($qTokens === []) return $candidates[0] ?? null;
+        if ($qTokens === []) {
+            return $candidates[0] ?? null;
+        }
 
         $best = null;
         $bestScore = -1;
@@ -64,8 +78,11 @@ final class NewtypeHtmlParser
             $titleJoined = implode(' ', $tTokens);
             $score = 0;
             foreach ($qTokens as $t) {
-                if (in_array($t, $tTokens, true)) $score += 2;
-                elseif ($t !== '' && $titleJoined !== '' && str_contains($titleJoined, $t)) $score += 1;
+                if (in_array($t, $tTokens, true)) {
+                    $score += 2;
+                } elseif ($t !== '' && $titleJoined !== '' && str_contains($titleJoined, $t)) {
+                    $score += 1;
+                }
             }
             if ($score > $bestScore) {
                 $bestScore = $score;
@@ -97,12 +114,13 @@ final class NewtypeHtmlParser
         $boxArtUrls = $this->extractBoxArtUrls($xpath);
 
         /** @var \DOMNodeList<DOMElement> $containers */
-        $containers = $xpath->query("//div[contains(concat(' ', normalize-space(@class), ' '), ' pt-square ') and contains(concat(' ', normalize-space(@class), ' '), ' overflow-hidden ')]") ?? new \DOMNodeList();
+        $containers = $xpath->query("//div[contains(concat(' ', normalize-space(@class), ' '), ' pt-square ') and contains(concat(' ', normalize-space(@class), ' '), ' overflow-hidden ')]") ?? new \DOMNodeList;
         if ($containers->length === 0) {
             // Still return box art if present.
             foreach ($boxArtUrls as $u) {
                 $this->promoteUrlToFront($out, $seen, $u);
             }
+
             return $out;
         }
 
@@ -114,13 +132,14 @@ final class NewtypeHtmlParser
 
         // 1) Prefer explicit <img> tags (box art often uses <img alt="box art">)
         /** @var \DOMNodeList<DOMElement> $imgs */
-        $imgs = $xpath->query('.//img', $container) ?? new \DOMNodeList();
+        $imgs = $xpath->query('.//img', $container) ?? new \DOMNodeList;
         foreach ($imgs as $img) {
             $srcset = trim((string) $img->getAttribute('srcset'));
             if ($srcset !== '') {
                 $best = $this->bestUrlFromSrcset($srcset);
                 if ($best !== null) {
                     $this->pushUrl($out, $seen, $this->toAbsoluteUrl($best) ?? $best);
+
                     continue;
                 }
             }
@@ -135,10 +154,12 @@ final class NewtypeHtmlParser
 
         // 2) Background-image URLs in inline styles (the gallery uses absolute positioned divs).
         /** @var \DOMNodeList<DOMElement> $styled */
-        $styled = $xpath->query('.//*[@style]', $container) ?? new \DOMNodeList();
+        $styled = $xpath->query('.//*[@style]', $container) ?? new \DOMNodeList;
         foreach ($styled as $el) {
             $style = (string) $el->getAttribute('style');
-            if (! str_contains($style, 'background-image')) continue;
+            if (! str_contains($style, 'background-image')) {
+                continue;
+            }
             $urls = $this->backgroundImageUrlsFromStyle($style);
             foreach ($urls as $u) {
                 $this->pushUrl($out, $seen, $this->toAbsoluteUrl($u) ?? $u);
@@ -188,21 +209,30 @@ final class NewtypeHtmlParser
         $out = [];
 
         /** @var \DOMNodeList<DOMElement> $rows */
-        $rows = $xpath->query('//table//tr') ?? new \DOMNodeList();
+        $rows = $xpath->query('//table//tr') ?? new \DOMNodeList;
         foreach ($rows as $tr) {
             /** @var \DOMNodeList<DOMElement> $tds */
-            $tds = $xpath->query('./td', $tr) ?? new \DOMNodeList();
-            if ($tds->length < 2) continue;
+            $tds = $xpath->query('./td', $tr) ?? new \DOMNodeList;
+            if ($tds->length < 2) {
+                continue;
+            }
 
             $k = trim(preg_replace('/\s+/u', ' ', (string) ($tds->item(0)?->textContent ?? '')) ?? '');
             $v = trim(preg_replace('/\s+/u', ' ', (string) ($tds->item(1)?->textContent ?? '')) ?? '');
-            if ($k === '' || $v === '') continue;
+            if ($k === '' || $v === '') {
+                continue;
+            }
 
             $key = strtolower($k);
-            if (str_contains($key, 'scale')) $out['scale'] = $v;
-            elseif ($key === 'line') $out['line'] = $v;
-            elseif (str_contains($key, 'brand')) $out['brand'] = $v;
-            elseif (str_contains($key, 'series')) $out['series'] = $v;
+            if (str_contains($key, 'scale')) {
+                $out['scale'] = $v;
+            } elseif ($key === 'line') {
+                $out['line'] = $v;
+            } elseif (str_contains($key, 'brand')) {
+                $out['brand'] = $v;
+            } elseif (str_contains($key, 'series')) {
+                $out['series'] = $v;
+            }
         }
 
         return $out;
@@ -214,16 +244,23 @@ final class NewtypeHtmlParser
             return null;
         }
         foreach (($m[1] ?? []) as $raw) {
-            if (! is_string($raw)) continue;
+            if (! is_string($raw)) {
+                continue;
+            }
             $raw = trim($raw);
-            if ($raw === '') continue;
+            if ($raw === '') {
+                continue;
+            }
             $payload = json_decode($raw, true);
-            if (! is_array($payload)) continue;
+            if (! is_array($payload)) {
+                continue;
+            }
             $desc = $payload['description'] ?? null;
             if (is_string($desc) && trim($desc) !== '') {
                 return trim($desc);
             }
         }
+
         return null;
     }
 
@@ -234,6 +271,7 @@ final class NewtypeHtmlParser
         }
         $c = html_entity_decode((string) ($m[1] ?? ''), ENT_QUOTES | ENT_HTML5);
         $c = trim($c);
+
         return $c !== '' ? $c : null;
     }
 
@@ -244,6 +282,7 @@ final class NewtypeHtmlParser
         }
         $t = trim(html_entity_decode((string) ($m[1] ?? ''), ENT_QUOTES | ENT_HTML5));
         $t = preg_replace('/\\s+/u', ' ', $t) ?? $t;
+
         return $t !== '' ? $t : null;
     }
 
@@ -252,17 +291,22 @@ final class NewtypeHtmlParser
         $out = [];
         if (preg_match_all('#background-image\\s*:\\s*url\\(([^)]+)\\)#i', $style, $m)) {
             foreach (($m[1] ?? []) as $raw) {
-                if (! is_string($raw)) continue;
+                if (! is_string($raw)) {
+                    continue;
+                }
                 $u = trim($raw, " \t\n\r\0\x0B\"'");
-                if ($u !== '') $out[] = $u;
+                if ($u !== '') {
+                    $out[] = $u;
+                }
             }
         }
+
         return $out;
     }
 
     private function loadHtml(string $html): DOMDocument
     {
-        $doc = new DOMDocument();
+        $doc = new DOMDocument;
         $prev = libxml_use_internal_errors(true);
         try {
             $doc->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
@@ -270,37 +314,57 @@ final class NewtypeHtmlParser
             libxml_clear_errors();
             libxml_use_internal_errors($prev);
         }
+
         return $doc;
     }
 
     private function toAbsoluteUrl(string $url): ?string
     {
         $u = trim($url);
-        if ($u === '') return null;
-        if (str_starts_with($u, '//')) return 'https:'.$u;
-        if (str_starts_with($u, 'http://') || str_starts_with($u, 'https://')) return $u;
-        if (str_starts_with($u, '/')) return self::BASE_URL.$u;
+        if ($u === '') {
+            return null;
+        }
+        if (str_starts_with($u, '//')) {
+            return 'https:'.$u;
+        }
+        if (str_starts_with($u, 'http://') || str_starts_with($u, 'https://')) {
+            return $u;
+        }
+        if (str_starts_with($u, '/')) {
+            return self::BASE_URL.$u;
+        }
+
         return self::BASE_URL.'/'.ltrim($u, '/');
     }
 
     private function candidateTitleFromLink(DOMElement $a): string
     {
         $title = trim((string) ($a->getAttribute('aria-label') ?: $a->getAttribute('title')));
-        if ($title !== '') return $title;
+        if ($title !== '') {
+            return $title;
+        }
         $text = trim((string) ($a->textContent ?? ''));
         $text = preg_replace('/\\s+/u', ' ', $text) ?? $text;
+
         return $text !== '' ? $text : '';
     }
 
     private function bestUrlFromSrcset(string $srcset): ?string
     {
         $raw = trim($srcset);
-        if ($raw === '') return null;
+        if ($raw === '') {
+            return null;
+        }
         $parts = array_values(array_filter(array_map('trim', explode(',', $raw))));
-        if ($parts === []) return null;
+        if ($parts === []) {
+            return null;
+        }
         $last = $parts[count($parts) - 1] ?? null;
-        if (! is_string($last)) return null;
+        if (! is_string($last)) {
+            return null;
+        }
         $url = trim(preg_split('/\\s+/', $last)[0] ?? '');
+
         return $url !== '' ? $url : null;
     }
 
@@ -315,7 +379,7 @@ final class NewtypeHtmlParser
         /** @var \DOMNodeList<DOMElement> $imgs */
         $imgs = $xpath->query(
             "//img[@alt and translate(normalize-space(@alt), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') = 'box art']"
-        ) ?? new \DOMNodeList();
+        ) ?? new \DOMNodeList;
 
         foreach ($imgs as $img) {
             $srcset = trim((string) $img->getAttribute('srcset'));
@@ -323,6 +387,7 @@ final class NewtypeHtmlParser
                 $best = $this->bestUrlFromSrcset($srcset);
                 if ($best !== null) {
                     $out[] = $this->toAbsoluteUrl($best) ?? $best;
+
                     continue;
                 }
             }
@@ -347,14 +412,19 @@ final class NewtypeHtmlParser
     private function promoteUrlToFront(array &$out, array &$seen, string $url): void
     {
         $u = trim($url);
-        if ($u === '') return;
+        if ($u === '') {
+            return;
+        }
 
         if (isset($seen[$u])) {
             $idx = array_search($u, $out, true);
-            if ($idx === false) return;
+            if ($idx === false) {
+                return;
+            }
             unset($out[$idx]);
             array_unshift($out, $u);
             $out = array_values($out);
+
             return;
         }
 
@@ -369,8 +439,12 @@ final class NewtypeHtmlParser
     private function pushUrl(array &$out, array &$seen, string $url): void
     {
         $u = trim($url);
-        if ($u === '') return;
-        if (isset($seen[$u])) return;
+        if ($u === '') {
+            return;
+        }
+        if (isset($seen[$u])) {
+            return;
+        }
         $seen[$u] = true;
         $out[] = $u;
     }
@@ -383,8 +457,10 @@ final class NewtypeHtmlParser
         $s = mb_strtolower($s);
         $s = preg_replace('/[^a-z0-9]+/u', ' ', $s) ?? $s;
         $s = trim(preg_replace('/\\s+/u', ' ', $s) ?? $s);
-        if ($s === '') return [];
+        if ($s === '') {
+            return [];
+        }
+
         return array_values(array_filter(explode(' ', $s), static fn (string $t): bool => $t !== ''));
     }
 }
-

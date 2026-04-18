@@ -51,5 +51,3 @@ final class PurchaseOrderReassignOpeningBalanceItemCommand extends Command
         return self::SUCCESS;
     }
 }
-
-

@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Models\InventoryLot;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
-use App\Models\InventoryLot;
 
 it('updates qty_shipped for a purchase order item', function (): void {
     $product = Product::query()->create([
@@ -217,4 +217,3 @@ it('blocks qty_received when lots exist for the item', function (): void {
         'qty_received' => 2,
     ])->assertStatus(409)->assertJsonPath('issues.0.kind', 'qty_received_has_lots');
 });
-

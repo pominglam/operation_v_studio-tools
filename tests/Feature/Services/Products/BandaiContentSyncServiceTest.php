@@ -41,6 +41,7 @@ HTML;
         if (str_starts_with($url, 'https://global.bandai-hobby.net/en-us/search/?')) {
             expect($url)->not->toContain('MBF-02VV');
             expect($url)->not->toContain('1%2F100');
+
             return Http::response('<html><body>token=deadbeefdeadbeefdeadbeefdeadbeef</body></html>', 200);
         }
 
@@ -71,4 +72,3 @@ HTML;
 
     expect($ok)->toBeTrue();
 });
-

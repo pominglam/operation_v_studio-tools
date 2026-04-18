@@ -7,23 +7,23 @@ use App\Models\Product;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\Products\GundamPlanet\GundamPlanetContentSyncService;
 use App\Services\Products\GundamPlanet\GundamPlanetHtmlParser;
-use App\Services\Products\ProductPdpSearchTermsService;
-use App\Services\Products\Hlj\HljPdpResolverService;
 use App\Services\Products\Hlj\HljHtmlParser;
+use App\Services\Products\Hlj\HljPdpResolverService;
+use App\Services\Products\ProductPdpSearchTermsService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
 it('syncs gundamplanet images strictly from <product-gallery> and replaces assets', function (): void {
     Storage::fake('local');
 
-    $searchHtml = <<<HTML
+    $searchHtml = <<<'HTML'
     <html><body>
       <a href="/products/rg-god-gundam">RG God Gundam (Burning Gundam)</a>
       <a href="/products/rg-00-qan-t">RG 00 QAN[T]</a>
     </body></html>
     HTML;
 
-    $pdpHtml = <<<HTML
+    $pdpHtml = <<<'HTML'
     <html><body>
       <img src="https://cdn.example.com/outside.jpg" />
       <product-gallery>
@@ -48,15 +48,17 @@ it('syncs gundamplanet images strictly from <product-gallery> and replaces asset
         if (str_contains($url, 'cdn.shopify.com/files/gp2_900.jpg')) {
             return Http::response('img2', 200, ['Content-Type' => 'image/jpeg']);
         }
+
         return Http::response('not found', 404);
     });
 
     $captured = null;
-    $assetsRepo = new class($captured) implements ProductExternalAssetRepository {
+    $assetsRepo = new class($captured) implements ProductExternalAssetRepository
+    {
         /** @var array<int, array<string, mixed>>|null */
         public ?array $capturedRows = null;
 
-        public function __construct(& $captured)
+        public function __construct(&$captured)
         {
             // keep signature stable
         }
@@ -66,28 +68,46 @@ it('syncs gundamplanet images strictly from <product-gallery> and replaces asset
             expect($productId)->toBe(123);
             expect($source)->toBe('gundamplanet');
             $this->capturedRows = $assets;
+
             return [];
         }
 
-        public function listForProduct(int $productId, string $source): array { return []; }
-        public function listAllForProduct(int $productId): array { return []; }
-        public function updateSortOrders(array $assetIdToSortOrder): void { }
-        public function findById(int $id): ?\App\Models\ProductExternalAsset { return null; }
-        public function setShopifyEnabled(int $id, bool $enabled): void { }
-        public function createForProduct(int $productId, string $source, array $assets): array { return []; }
+        public function listForProduct(int $productId, string $source): array
+        {
+            return [];
+        }
+
+        public function listAllForProduct(int $productId): array
+        {
+            return [];
+        }
+
+        public function updateSortOrders(array $assetIdToSortOrder): void {}
+
+        public function findById(int $id): ?\App\Models\ProductExternalAsset
+        {
+            return null;
+        }
+
+        public function setShopifyEnabled(int $id, bool $enabled): void {}
+
+        public function createForProduct(int $productId, string $source, array $assets): array
+        {
+            return [];
+        }
     };
 
-    $product = new Product();
+    $product = new Product;
     $product->id = 123;
     $product->uuid = 'p-uuid';
     $product->sku = 'RG-GOD';
     $product->barcode = null;
     $product->description = 'RG GOD GUNDAM';
 
-    $http = new ExternalHtmlClient();
-    $hlj = new HljPdpResolverService($http, new HljHtmlParser());
+    $http = new ExternalHtmlClient;
+    $hlj = new HljPdpResolverService($http, new HljHtmlParser);
     $terms = new ProductPdpSearchTermsService($hlj);
-    $service = new GundamPlanetContentSyncService($http, new GundamPlanetHtmlParser(), $assetsRepo, $terms);
+    $service = new GundamPlanetContentSyncService($http, new GundamPlanetHtmlParser, $assetsRepo, $terms);
 
     $service->syncForProduct($product);
 
@@ -99,4 +119,3 @@ it('syncs gundamplanet images strictly from <product-gallery> and replaces asset
     Storage::disk('local')->assertExists('gundamplanet/images/RG-GOD/gundamplanet-RG-GOD-1.jpg');
     Storage::disk('local')->assertExists('gundamplanet/images/RG-GOD/gundamplanet-RG-GOD-2.jpg');
 });
-

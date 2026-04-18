@@ -14,4 +14,3 @@ final readonly class TcgEventsRefreshResultDTO
         public Carbon $fetchedAt,
     ) {}
 }
-

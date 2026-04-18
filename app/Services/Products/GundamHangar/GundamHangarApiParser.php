@@ -29,28 +29,40 @@ final class GundamHangarApiParser
 
         $out = [];
         foreach ($rows as $row) {
-            if (! is_array($row)) continue;
+            if (! is_array($row)) {
+                continue;
+            }
             $title = trim((string) ($row['title'] ?? ''));
             $slug = trim((string) ($row['slug'] ?? ''));
-            if ($title === '' || $slug === '') continue;
+            if ($title === '' || $slug === '') {
+                continue;
+            }
 
             $attrs = [];
             $rawAttrs = $row['attributes'] ?? null;
             if (is_array($rawAttrs)) {
                 foreach ($rawAttrs as $a) {
-                    if (! is_array($a)) continue;
+                    if (! is_array($a)) {
+                        continue;
+                    }
                     $name = trim((string) ($a['name'] ?? ''));
                     $value = trim((string) (($a['pivot']['value'] ?? null) ?? ''));
-                    if ($name === '' || $value === '') continue;
+                    if ($name === '' || $value === '') {
+                        continue;
+                    }
                     $key = strtolower((string) preg_replace('/[^a-z0-9]+/i', '_', $name));
                     $key = trim($key, '_');
-                    if ($key === '') continue;
+                    if ($key === '') {
+                        continue;
+                    }
                     $attrs[$key] = $value;
                 }
             }
 
             $imageNumber = (int) ($row['image_number'] ?? 0);
-            if ($imageNumber < 0) $imageNumber = 0;
+            if ($imageNumber < 0) {
+                $imageNumber = 0;
+            }
 
             $description = trim((string) ($row['description'] ?? ''));
             $out[] = [
@@ -98,13 +110,19 @@ final class GundamHangarApiParser
         $rawAttrs = $row['attributes'] ?? null;
         if (is_array($rawAttrs)) {
             foreach ($rawAttrs as $a) {
-                if (! is_array($a)) continue;
+                if (! is_array($a)) {
+                    continue;
+                }
                 $name = trim((string) ($a['name'] ?? ''));
                 $value = trim((string) (($a['pivot']['value'] ?? null) ?? ''));
-                if ($name === '' || $value === '') continue;
+                if ($name === '' || $value === '') {
+                    continue;
+                }
                 $key = strtolower((string) preg_replace('/[^a-z0-9]+/i', '_', $name));
                 $key = trim($key, '_');
-                if ($key === '') continue;
+                if ($key === '') {
+                    continue;
+                }
                 $attrs[$key] = $value;
             }
         }
@@ -115,7 +133,9 @@ final class GundamHangarApiParser
         if (is_array($images)) {
             foreach ($images as $img) {
                 $u = trim((string) $img);
-                if ($u !== '') $imageUrls[] = $u;
+                if ($u !== '') {
+                    $imageUrls[] = $u;
+                }
             }
         }
 
@@ -148,9 +168,13 @@ final class GundamHangarApiParser
      */
     public function pickBestCandidate(array $candidates, string $query): ?array
     {
-        if ($candidates === []) return null;
+        if ($candidates === []) {
+            return null;
+        }
         $qTokens = $this->tokens($query);
-        if ($qTokens === []) return $candidates[0] ?? null;
+        if ($qTokens === []) {
+            return $candidates[0] ?? null;
+        }
 
         $best = null;
         $bestScore = -1;
@@ -159,8 +183,11 @@ final class GundamHangarApiParser
             $joined = implode(' ', $tTokens);
             $score = 0;
             foreach ($qTokens as $t) {
-                if (in_array($t, $tTokens, true)) $score += 2;
-                elseif ($joined !== '' && str_contains($joined, $t)) $score += 1;
+                if (in_array($t, $tTokens, true)) {
+                    $score += 2;
+                } elseif ($joined !== '' && str_contains($joined, $t)) {
+                    $score += 1;
+                }
             }
             if ($score > $bestScore) {
                 $bestScore = $score;
@@ -177,12 +204,16 @@ final class GundamHangarApiParser
     private function tokens(string $s): array
     {
         $s = mb_strtolower(trim($s));
-        if ($s === '') return [];
+        if ($s === '') {
+            return [];
+        }
         $s = preg_replace('/\b\d+\s*\/\s*\d+\b/u', ' ', $s) ?? $s;
         $s = preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $s) ?? $s;
         $s = trim(preg_replace('/\s+/u', ' ', $s) ?? $s);
-        if ($s === '') return [];
+        if ($s === '') {
+            return [];
+        }
+
         return array_values(array_unique(array_filter(explode(' ', $s), static fn (string $t): bool => $t !== '')));
     }
 }
-

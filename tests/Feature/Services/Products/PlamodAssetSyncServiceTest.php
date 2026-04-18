@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use App\Models\Product;
+use App\Services\Products\Hlj\HljContentSync;
 use App\Services\Products\Http\PlamodScraper;
 use App\Services\Products\PlamodAssetSyncService;
-use App\Services\Products\Hlj\HljContentSync;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -23,7 +23,7 @@ it('syncs Plamod ZIP into extracted assets and persists content + assets', funct
     $zipAbs = Storage::disk('local')->path($zipStoragePath);
     @mkdir(dirname($zipAbs), 0777, true);
 
-    $zip = new ZipArchive();
+    $zip = new ZipArchive;
     expect($zip->open($zipAbs, ZipArchive::CREATE))->toBeTrue();
     $zip->addFromString('images/a.txt', 'hello');
     $zip->addFromString('../evil.txt', 'nope');
@@ -109,7 +109,7 @@ it('attempts Plamod assets for non-Plamod vendor when forced (manual product inf
     $zipAbs = Storage::disk('local')->path($zipStoragePath);
     @mkdir(dirname($zipAbs), 0777, true);
 
-    $zip = new ZipArchive();
+    $zip = new ZipArchive;
     expect($zip->open($zipAbs, ZipArchive::CREATE))->toBeTrue();
     $zip->addFromString('images/a.txt', 'hello');
     $zip->close();
@@ -165,5 +165,3 @@ it('does not fail the job when Plamod ZIP is missing (best-effort HLJ only)', fu
 
     expect($result->assets)->toHaveCount(0);
 });
-
-

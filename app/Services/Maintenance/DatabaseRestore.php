@@ -10,5 +10,3 @@ interface DatabaseRestore
 {
     public function restore(DatabaseBackup $backup): void;
 }
-
-

@@ -88,4 +88,3 @@ it('rejects invalid purchase order uuid for price research products', function (
 it('rejects invalid purchase order uuids array for price research products', function (): void {
     $this->getJson('/api/v1/price-research/products?purchase_order_uuids[]=not-a-uuid')->assertStatus(422);
 });
-

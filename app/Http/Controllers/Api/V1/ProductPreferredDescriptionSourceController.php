@@ -31,4 +31,3 @@ final class ProductPreferredDescriptionSourceController extends Controller
         ]);
     }
 }
-

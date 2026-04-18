@@ -11,7 +11,9 @@ final class EloquentRuntimeSettingRepository implements RuntimeSettingRepository
     public function getString(string $key): ?string
     {
         $key = trim($key);
-        if ($key === '') return null;
+        if ($key === '') {
+            return null;
+        }
 
         /** @var string|null $v */
         $v = AppRuntimeSetting::query()
@@ -19,16 +21,21 @@ final class EloquentRuntimeSettingRepository implements RuntimeSettingRepository
             ->value('value');
 
         $v = is_string($v) ? trim($v) : '';
+
         return $v !== '' ? $v : null;
     }
 
     public function putString(string $key, ?string $value): void
     {
         $key = trim($key);
-        if ($key === '') return;
+        if ($key === '') {
+            return;
+        }
 
         $v = is_string($value) ? trim($value) : null;
-        if ($v === '') $v = null;
+        if ($v === '') {
+            $v = null;
+        }
 
         AppRuntimeSetting::query()->updateOrCreate(
             ['key' => $key],
@@ -36,4 +43,3 @@ final class EloquentRuntimeSettingRepository implements RuntimeSettingRepository
         );
     }
 }
-

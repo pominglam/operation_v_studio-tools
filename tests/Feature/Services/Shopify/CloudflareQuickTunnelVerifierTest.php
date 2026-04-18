@@ -54,5 +54,3 @@ it('reports unreachable when the request fails', function (): void {
     expect($res['http_status'])->toBeNull();
     expect($res['error'])->toContain('connect failed');
 });
-
-

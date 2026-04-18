@@ -278,4 +278,3 @@ HTML;
 
     expect(ProductExternalAsset::query()->where('product_id', $product->id)->where('source', 'hlj')->count())->toBe(0);
 });
-

@@ -18,5 +18,3 @@ final class UpdateProductAvailableRequest extends FormRequest
         ];
     }
 }
-
-

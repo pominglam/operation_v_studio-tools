@@ -48,4 +48,3 @@ it('does not error when received_date is provided and lots are created (regressi
     expect($po->estimated_arrival_date?->toDateString())->toBe('2026-01-20');
     expect($lot->received_at->toDateString())->toBe('2026-01-21');
 });
-

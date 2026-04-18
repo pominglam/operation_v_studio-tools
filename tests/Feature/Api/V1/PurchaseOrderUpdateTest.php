@@ -49,6 +49,7 @@ it('updates purchase order header and recomputes related po lots shipping_per_un
         'shipping_total' => 100,
         'surcharge_total' => 12.34,
         'product_total' => 250.5,
+        'supplier_order_id' => 'SUP-12345',
         'estimated_arrival_date' => '2025-12-08',
         'received_date' => '2025-12-10',
         'is_done' => true,
@@ -58,6 +59,7 @@ it('updates purchase order header and recomputes related po lots shipping_per_un
         ->assertJsonPath('data.shipping_total', '100.00')
         ->assertJsonPath('data.surcharge_total', '12.34')
         ->assertJsonPath('data.product_total', '250.50')
+        ->assertJsonPath('data.supplier_order_id', 'SUP-12345')
         ->assertJsonPath('data.estimated_arrival_date', '2025-12-08')
         ->assertJsonPath('data.received_date', '2025-12-10')
         ->assertJsonPath('data.is_done', true)
@@ -67,5 +69,3 @@ it('updates purchase order header and recomputes related po lots shipping_per_un
     expect((string) $lot->shipping_per_unit)->toBe('10.000000');
     expect($lot->received_at?->toDateString())->toBe('2025-12-10');
 });
-
-

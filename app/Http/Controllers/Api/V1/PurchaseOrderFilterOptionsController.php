@@ -23,4 +23,3 @@ final class PurchaseOrderFilterOptionsController extends Controller
         ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
     }
 }
-

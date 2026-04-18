@@ -35,7 +35,7 @@ final class RecrawlSelectedProductJob implements ShouldQueue
      */
     public function middleware(): array
     {
-        return [new SkipIfBatchCancelled()];
+        return [new SkipIfBatchCancelled];
     }
 
     /**
@@ -65,6 +65,7 @@ final class RecrawlSelectedProductJob implements ShouldQueue
             if (is_string($batchId) && $batchId !== '') {
                 $batchItems->markSkipped($batchId, $this->productUuid, 'cancelled');
             }
+
             return;
         }
 
@@ -85,15 +86,23 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         $failedSources = [];
 
         $append = function (string $source, string $event, array $fields = []) use ($trace): void {
-            if (! is_callable($trace)) return;
+            if (! is_callable($trace)) {
+                return;
+            }
 
             $parts = [];
             foreach ($fields as $k => $v) {
-                if (! is_string($k) || trim($k) === '') continue;
-                if ($v === null) continue;
+                if (! is_string($k) || trim($k) === '') {
+                    continue;
+                }
+                if ($v === null) {
+                    continue;
+                }
                 $val = is_string($v) ? $v : (is_bool($v) ? ($v ? 'true' : 'false') : (string) $v);
                 $val = trim($val);
-                if ($val === '') continue;
+                if ($val === '') {
+                    continue;
+                }
                 $val = str_replace(["\r", "\n"], ' ', $val);
                 if (mb_strlen($val) > 400) {
                     $val = mb_substr($val, 0, 400).'…';
@@ -152,6 +161,7 @@ final class RecrawlSelectedProductJob implements ShouldQueue
                 $assetCount = is_array($res->assets ?? null) ? count($res->assets) : 0;
                 $desc = $res->content?->description_html;
                 $hasDesc = is_string($desc) && trim($desc) !== '';
+
                 return [
                     'result' => 'ok',
                     'assets' => (string) $assetCount,
@@ -163,6 +173,7 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         if ($wantHlj && $product !== null) {
             $runSource('hlj', function () use ($hlj, $product): array {
                 $hlj->syncForProduct($product);
+
                 return ['result' => 'ok'];
             });
         }
@@ -170,6 +181,7 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         if ($wantGundamPlanet && $product !== null) {
             $runSource('gundamplanet', function () use ($gundamplanet, $product, $trace): array {
                 $gundamplanet->syncForProduct($product, $this->syncUuid, $trace);
+
                 return ['result' => 'ok'];
             });
         }
@@ -177,6 +189,7 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         if ($wantNewtype && $product !== null) {
             $runSource('newtype', function () use ($newtype, $product, $trace): array {
                 $newtype->syncForProduct($product, $this->syncUuid, $trace);
+
                 return ['result' => 'ok'];
             });
         }
@@ -184,6 +197,7 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         if ($wantGundamHangar && $product !== null) {
             $runSource('gundamhangar', function () use ($gundamhangar, $product, $trace): array {
                 $gundamhangar->syncForProduct($product, $this->syncUuid, $trace);
+
                 return ['result' => 'ok'];
             });
         }
@@ -191,6 +205,7 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         if ($wantBandai) {
             $runSource('bandai', function () use ($bandai): array {
                 $ok = $bandai->syncByProductUuid($this->productUuid);
+
                 return ['result' => $ok ? 'ok' : 'skipped'];
             });
         }
@@ -198,6 +213,7 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         if ($wantPrices) {
             $runSource('competitor_price_research', function () use ($prices): array {
                 $res = $prices->run([$this->productUuid], true, null, null);
+
                 return [
                     'result' => 'ok',
                     'processed' => (string) ($res['processed'] ?? 0),
@@ -240,4 +256,3 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         ]);
     }
 }
-

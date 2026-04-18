@@ -42,6 +42,6 @@ function pngChunk(string $type, string $data): string
     $len = strlen($data);
     $crc = crc32($type.$data);
     $crc = $crc < 0 ? $crc + 0x100000000 : $crc;
+
     return pack('N', $len).$type.$data.pack('N', $crc);
 }
-

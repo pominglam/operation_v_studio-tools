@@ -15,6 +15,7 @@ final class JobBatchResumeController extends Controller
     {
         try {
             $result = $service->resume($id);
+
             return response()->json(['ok' => true, 'data' => $result]);
         } catch (HttpExceptionInterface $e) {
             return response()->json([
@@ -24,4 +25,3 @@ final class JobBatchResumeController extends Controller
         }
     }
 }
-

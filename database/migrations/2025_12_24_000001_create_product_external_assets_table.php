@@ -38,5 +38,3 @@ return new class extends Migration
         Schema::dropIfExists('product_external_assets');
     }
 };
-
-

@@ -6,8 +6,4 @@ namespace App\Services\PurchaseOrders\Exceptions;
 
 use Exception;
 
-final class PurchaseOrderDeleteException extends Exception
-{
-}
-
-
+final class PurchaseOrderDeleteException extends Exception {}

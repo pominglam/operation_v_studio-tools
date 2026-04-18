@@ -8,8 +8,7 @@ use App\DAL\Maintenance\DatabaseBackupRepository;
 use App\Models\DatabaseBackup;
 use Illuminate\Support\Facades\File;
 
-final class DatabaseBackupManagerService
-    implements DatabaseBackupManager
+final class DatabaseBackupManagerService implements DatabaseBackupManager
 {
     public function __construct(
         private readonly DatabaseBackupService $backup,
@@ -54,5 +53,3 @@ final class DatabaseBackupManagerService
         return $this->backups->create($backup);
     }
 }
-
-

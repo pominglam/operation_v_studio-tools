@@ -30,5 +30,3 @@ final class DatabaseBackupIndexController extends Controller
         return response()->json(['data' => $items]);
     }
 }
-
-

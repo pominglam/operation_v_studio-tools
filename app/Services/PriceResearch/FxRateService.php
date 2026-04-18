@@ -60,6 +60,3 @@ final class FxRateService
         return $rate;
     }
 }
-
-
-

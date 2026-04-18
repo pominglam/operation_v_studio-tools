@@ -13,19 +13,27 @@ use App\Services\Inventory\InventoryFifoDeductionService;
 use App\Services\Products\Exceptions\InvalidProductImportFileException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 
 final class InventoryCheckImportService
 {
     public const string COL_HANDLE = 'Handle';
+
     public const string COL_VENDOR = 'Vendor';
+
     public const string COL_SKU = 'SKU';
+
     public const string COL_TYPE = 'Type';
+
     public const string COL_PRODUCT_NAME = 'Product Name';
+
     public const string COL_ENGLISH_NAME = 'English name';
+
     public const string COL_AVAILABLE_AMOUNT = 'Available amount';
+
     public const string COL_QUANTITY_IN_STORE = 'Quantity in store';
+
     public const string COL_DIFFERENCE = 'Difference';
+
     public const string COL_NOTES = 'Notes';
 
     public function __construct(
@@ -252,11 +260,13 @@ final class InventoryCheckImportService
             if ($matches->count() === 1) {
                 /** @var Product $p */
                 $p = $matches->first();
+
                 return ['status' => 'matched', 'product' => $p, 'error' => null];
             }
             if ($matches->count() > 1) {
                 return ['status' => 'ambiguous', 'product' => null, 'error' => 'Multiple products share the same handle.'];
             }
+
             return ['status' => 'unmatched', 'product' => null, 'error' => 'No product found for handle.'];
         }
 
@@ -270,6 +280,7 @@ final class InventoryCheckImportService
         if ($matches->count() === 1) {
             /** @var Product $p */
             $p = $matches->first();
+
             return ['status' => 'matched', 'product' => $p, 'error' => null];
         }
         if ($matches->count() > 1) {
@@ -337,6 +348,7 @@ final class InventoryCheckImportService
         if ($row['quantity_in_store'] === null) {
             return 'Invalid Quantity in store (available not updated).';
         }
+
         return null;
     }
 
@@ -482,7 +494,3 @@ final class InventoryCheckImportService
         return $this->nonNegativeIntOrNullAt($row, $idx);
     }
 }
-
-
-
-

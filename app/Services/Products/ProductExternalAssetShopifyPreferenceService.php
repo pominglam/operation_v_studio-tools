@@ -32,4 +32,3 @@ final class ProductExternalAssetShopifyPreferenceService
         return $updated;
     }
 }
-

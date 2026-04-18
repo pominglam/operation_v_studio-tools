@@ -65,6 +65,7 @@ final class CloudflareQuickTunnelVerifier
                 // Treat 5xx (e.g. 530) as not-yet-ready; retry shortly.
                 if ($lastStatus >= 500 && $attempt < 2) {
                     usleep(650_000);
+
                     continue;
                 }
 
@@ -77,6 +78,7 @@ final class CloudflareQuickTunnelVerifier
             } catch (Throwable $e) {
                 if ($attempt < 2) {
                     usleep(650_000);
+
                     continue;
                 }
 
@@ -99,5 +101,3 @@ final class CloudflareQuickTunnelVerifier
         ];
     }
 }
-
-

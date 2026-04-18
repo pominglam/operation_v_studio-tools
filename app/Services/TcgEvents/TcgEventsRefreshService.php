@@ -244,4 +244,3 @@ final class TcgEventsRefreshService
         return Carbon::parse($value)->toDateTimeString();
     }
 }
-

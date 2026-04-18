@@ -27,5 +27,3 @@ final class JobBatchItemsController extends Controller
         ]);
     }
 }
-
-

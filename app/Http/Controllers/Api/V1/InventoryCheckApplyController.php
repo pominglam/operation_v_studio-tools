@@ -35,4 +35,3 @@ final class InventoryCheckApplyController extends Controller
         ]);
     }
 }
-

@@ -104,6 +104,24 @@ final class PurchaseOrderItemResource extends JsonResource
             'qty_ordered' => $item->qty_ordered,
             'qty_shipped' => $item->qty_shipped,
             'qty_received' => $item->qty_received,
+            'available' => $item->getAttribute('product_available') !== null
+                ? (int) $item->getAttribute('product_available')
+                : $item->product?->available_qty,
+            'maintain' => $item->getAttribute('product_maintain') !== null
+                ? (int) $item->getAttribute('product_maintain')
+                : $item->product?->maintain_qty,
+            'not_arrived' => (int) ($item->getAttribute('product_not_arrived') ?? 0),
+            'reorder' => (int) ($item->getAttribute('product_reorder') ?? 0),
+            'total_ordered' => (int) ($item->getAttribute('product_total_ordered') ?? 0),
+            'total_sold' => (int) ($item->getAttribute('product_total_sold') ?? 0),
+            'latest_landed_unit_cost' => $this->money2(
+                $item->getAttribute('product_latest_landed_unit_cost') ?? $item->product?->latest_landed_unit_cost,
+            ),
+            'selling_price' => $this->money2(
+                $item->getAttribute('product_selling_price')
+                    ?? $item->product?->sellingPrice?->selling_price,
+            ),
+            'multiplier' => $item->getAttribute('product_multiplier'),
             'created_at' => optional($item->created_at)->toISOString(),
             'updated_at' => optional($item->updated_at)->toISOString(),
         ];

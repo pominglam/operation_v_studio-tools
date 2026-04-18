@@ -34,4 +34,3 @@ it('validates product ready payload', function (): void {
     $res = $this->patchJson("/api/v1/products/{$p->uuid}/ready", ['is_ready' => 'not-a-bool']);
     $res->assertStatus(422);
 });
-

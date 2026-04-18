@@ -18,5 +18,3 @@ final class ProductInventoryImportRequest extends FormRequest
         ];
     }
 }
-
-

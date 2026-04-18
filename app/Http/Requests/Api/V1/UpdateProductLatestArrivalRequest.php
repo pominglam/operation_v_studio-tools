@@ -18,4 +18,3 @@ final class UpdateProductLatestArrivalRequest extends FormRequest
         ];
     }
 }
-

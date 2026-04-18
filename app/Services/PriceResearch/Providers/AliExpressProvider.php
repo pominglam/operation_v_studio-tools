@@ -6,8 +6,8 @@ namespace App\Services\PriceResearch\Providers;
 
 use App\Models\Product;
 use App\Services\PriceResearch\DTOs\PriceLookupResult;
-use App\Services\PriceResearch\Http\AliExpressScraperClient;
 use App\Services\PriceResearch\FxRateService;
+use App\Services\PriceResearch\Http\AliExpressScraperClient;
 use Throwable;
 
 final class AliExpressProvider implements CompetitorPriceProvider
@@ -47,6 +47,7 @@ final class AliExpressProvider implements CompetitorPriceProvider
             }
             if ($status !== 'found') {
                 $msg = (string) ($json['error_message'] ?? 'AliExpress lookup failed');
+
                 return PriceLookupResult::error($this->siteKey(), $this->siteName(), $msg);
             }
 
@@ -104,5 +105,3 @@ final class AliExpressProvider implements CompetitorPriceProvider
         return null;
     }
 }
-
-

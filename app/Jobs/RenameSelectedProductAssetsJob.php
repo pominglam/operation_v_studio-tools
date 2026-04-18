@@ -27,7 +27,7 @@ final class RenameSelectedProductAssetsJob implements ShouldQueue
      */
     public function middleware(): array
     {
-        return [new SkipIfBatchCancelled()];
+        return [new SkipIfBatchCancelled];
     }
 
     public function __construct(
@@ -43,11 +43,13 @@ final class RenameSelectedProductAssetsJob implements ShouldQueue
         if (! is_string($batchId) || trim($batchId) === '') {
             // Still perform the rename, but we can't report progress.
             $renamer->renameImageAssetsForProductUuid($this->productUuid);
+
             return;
         }
 
         if ($this->batch()?->cancelled()) {
             $batchItems->markSkipped($batchId, $this->productUuid, 'cancelled');
+
             return;
         }
 
@@ -66,7 +68,9 @@ final class RenameSelectedProductAssetsJob implements ShouldQueue
             if (is_array($errors) && $errors !== []) {
                 $limit = 20;
                 foreach (array_slice($errors, 0, $limit) as $line) {
-                    if (! is_string($line) || trim($line) === '') continue;
+                    if (! is_string($line) || trim($line) === '') {
+                        continue;
+                    }
                     $batchItems->appendDebugLog($batchId, $this->productUuid, '[rename][error] '.trim($line));
                 }
                 if (count($errors) > $limit) {
@@ -81,4 +85,3 @@ final class RenameSelectedProductAssetsJob implements ShouldQueue
         }
     }
 }
-

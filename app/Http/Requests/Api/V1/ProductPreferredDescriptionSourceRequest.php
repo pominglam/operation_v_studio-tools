@@ -29,4 +29,3 @@ final class ProductPreferredDescriptionSourceRequest extends FormRequest
         ];
     }
 }
-

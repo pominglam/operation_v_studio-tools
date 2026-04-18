@@ -34,4 +34,3 @@ it('validates product latest arrival payload', function (): void {
     $res = $this->patchJson("/api/v1/products/{$p->uuid}/latest-arrival", ['latest_arrival' => 'not-a-bool']);
     $res->assertStatus(422);
 });
-

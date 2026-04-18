@@ -18,4 +18,3 @@ it('returns distinct purchase order vendors', function (): void {
     $lower = array_map(static fn (string $v): string => strtolower(trim($v)), $vendors);
     expect($lower)->toContain('plamod');
 });
-

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
-use App\Models\Product;
 use Illuminate\Http\UploadedFile;
 
 it('imports JS PDF-copied text CSV with multiline descriptions', function (): void {
@@ -54,4 +54,3 @@ it('imports JS PDF-copied text CSV with multiline descriptions', function (): vo
         expect((string) $p->sku)->toStartWith('JS-');
     }
 });
-

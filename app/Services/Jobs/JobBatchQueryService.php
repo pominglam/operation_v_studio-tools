@@ -24,7 +24,9 @@ final class JobBatchQueryService
     {
         $limit = max(1, min($limit, 200));
         $name = $name !== null ? trim($name) : null;
-        if ($name === '') $name = null;
+        if ($name === '') {
+            $name = null;
+        }
 
         $q = DB::table('job_batches')
             ->select([
@@ -61,5 +63,3 @@ final class JobBatchQueryService
         }, $rows);
     }
 }
-
-

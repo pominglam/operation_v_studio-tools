@@ -58,4 +58,3 @@ it('validates manual_description_html type for preferred description source endp
         'manual_description_html' => ['not', 'a', 'string'],
     ])->assertStatus(422);
 });
-

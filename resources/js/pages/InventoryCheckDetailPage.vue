@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { api } from '../lib/api';
 import { formatTorontoDateTime } from '../lib/datetime';
 import { formatMoney2OrEmpty } from '../lib/money';
+import BulkExportDialog, {
+    type ProductsBulkExportType,
+} from '../components/products/BulkExportDialog.vue';
 
 type InventoryCheckItem = {
     id: number;
@@ -45,6 +48,7 @@ type InventoryCheck = {
 };
 
 const route = useRoute();
+const router = useRouter();
 const id = computed(() => String(route.params.id ?? ''));
 
 const loading = ref(false);
@@ -56,6 +60,9 @@ const applyName = ref(true);
 const savingLine = ref<Record<number, true>>({});
 const quantityDrafts = ref<Record<number, string>>({});
 const nameDrafts = ref<Record<number, string>>({});
+const exportOpen = ref(false);
+const exportBusy = ref(false);
+const exportError = ref<string | null>(null);
 
 const filter = ref<'all' | 'applied' | 'unapplied' | 'unmatched' | 'ambiguous'>('all');
 const search = ref('');
@@ -70,9 +77,19 @@ const filteredItems = computed(() => {
         if (filter.value === 'ambiguous' && it.match_status !== 'ambiguous') return false;
 
         if (q === '') return true;
-        const hay = `${it.handle ?? ''} ${it.vendor ?? ''} ${it.sku} ${it.product_name ?? ''} ${it.english_name ?? ''} ${it.notes ?? ''}`.toLowerCase();
+        const hay =
+            `${it.handle ?? ''} ${it.vendor ?? ''} ${it.sku} ${it.product_name ?? ''} ${it.english_name ?? ''} ${it.notes ?? ''}`.toLowerCase();
         return hay.includes(q);
     });
+});
+
+const exportProductIds = computed<string[]>(() => {
+    if (!check.value) return [];
+    const ids = check.value.items
+        .map((it) => (typeof it.product_id === 'string' ? it.product_id.trim() : ''))
+        .filter((v) => v !== '');
+
+    return Array.from(new Set(ids));
 });
 
 async function load(): Promise<void> {
@@ -139,7 +156,9 @@ function nameValueFor(item: InventoryCheckItem): string {
 async function saveLine(item: InventoryCheckItem): Promise<void> {
     if (isSavingLine(item.id)) return;
 
-    const qRaw = quantityDrafts.value[item.id] ?? (item.quantity_in_store === null ? '' : String(item.quantity_in_store));
+    const qRaw =
+        quantityDrafts.value[item.id] ??
+        (item.quantity_in_store === null ? '' : String(item.quantity_in_store));
     const nameRaw = nameDrafts.value[item.id] ?? (item.product_name || item.english_name || '');
     const qtyParsed = Number.parseInt(qRaw.trim() === '' ? '0' : qRaw, 10);
     const quantity = Number.isFinite(qtyParsed) && qtyParsed >= 0 ? qtyParsed : 0;
@@ -165,6 +184,111 @@ async function saveLine(item: InventoryCheckItem): Promise<void> {
     }
 }
 
+function parseFilenameFromContentDisposition(header: string | undefined): string | null {
+    if (!header) return null;
+    const m = /filename\*?=(?:UTF-8''|\"?)([^\";]+)\"?/i.exec(header);
+    if (!m) return null;
+    try {
+        return decodeURIComponent(m[1]);
+    } catch {
+        return m[1];
+    }
+}
+
+async function exportAllProducts(payload: { exportType: ProductsBulkExportType }): Promise<void> {
+    const ids = exportProductIds.value;
+    if (ids.length === 0) {
+        exportError.value = 'No matched products found in this inventory check.';
+        return;
+    }
+
+    exportBusy.value = true;
+    exportError.value = null;
+    try {
+        if (payload.exportType === 'shopify_content_rename_export') {
+            const res = await api.post<{ ok: boolean; queued: number; batch_id: string }>(
+                '/api/v1/products/bulk/plamod-assets/rename',
+                { ids },
+                { validateStatus: () => true },
+            );
+            if (res.status !== 202 || !String(res.data?.batch_id ?? '').trim()) {
+                throw new Error(`Export failed (HTTP ${res.status}).`);
+            }
+            const batchId = String(res.data.batch_id).trim();
+            sessionStorage.setItem(
+                `auto_export_shopify_content:${batchId}`,
+                JSON.stringify({ ids }),
+            );
+            await router.push({
+                name: 'sync-progress',
+                query: { batch_id: batchId, auto_export: 'shopify_content' },
+            });
+            exportOpen.value = false;
+            return;
+        }
+
+        if (
+            payload.exportType === 'shopify_content' ||
+            payload.exportType === 'shopify_content_no_inventory'
+        ) {
+            const endpoint =
+                payload.exportType === 'shopify_content'
+                    ? '/api/v1/products/exports/shopify-content/prepare'
+                    : '/api/v1/products/exports/shopify-content-no-inventory/prepare';
+            const res = await api.post<{ download_url: string }>(
+                endpoint,
+                { ids },
+                { validateStatus: () => true },
+            );
+            if (res.status !== 200 || !String(res.data?.download_url ?? '').trim()) {
+                throw new Error(`Export failed (HTTP ${res.status}).`);
+            }
+            window.location.assign(String(res.data.download_url));
+            exportOpen.value = false;
+            return;
+        }
+
+        const res = await api.post(
+            '/api/v1/products/export/selected',
+            {
+                export_type: payload.exportType,
+                ids,
+                include_missing_selling_price:
+                    payload.exportType === 'shopify' ||
+                    payload.exportType === 'shopify_no_inventory'
+                        ? true
+                        : undefined,
+            },
+            { responseType: 'blob', validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            throw new Error(`Export failed (HTTP ${res.status}).`);
+        }
+
+        const header = (res.headers as Record<string, string | undefined>)['content-disposition'];
+        const filename =
+            parseFilenameFromContentDisposition(header) ??
+            `inventory-check-products-${payload.exportType}.csv`;
+        const blob = res.data as Blob;
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        exportOpen.value = false;
+    } catch (e: unknown) {
+        exportError.value =
+            e instanceof Error && e.message.trim() !== ''
+                ? e.message
+                : 'Failed to export inventory check products.';
+    } finally {
+        exportBusy.value = false;
+    }
+}
+
 watch(id, () => {
     void load();
 });
@@ -180,16 +304,26 @@ onMounted(() => {
             <div>
                 <h1 class="text-xl font-semibold text-slate-900">Inventory Check Detail</h1>
                 <p class="mt-1 text-sm text-slate-600">
-                    <a class="underline underline-offset-2" href="/inventory-check">Back to history</a>
+                    <a class="underline underline-offset-2" href="/inventory-check"
+                        >Back to history</a
+                    >
                 </p>
             </div>
             <div class="flex items-center gap-2">
                 <label class="inline-flex items-center gap-2 text-xs text-slate-700">
-                    <input v-model="applyQuantity" type="checkbox" class="h-4 w-4 rounded border-slate-300" />
+                    <input
+                        v-model="applyQuantity"
+                        type="checkbox"
+                        class="h-4 w-4 rounded border-slate-300"
+                    />
                     Apply quantity
                 </label>
                 <label class="inline-flex items-center gap-2 text-xs text-slate-700">
-                    <input v-model="applyName" type="checkbox" class="h-4 w-4 rounded border-slate-300" />
+                    <input
+                        v-model="applyName"
+                        type="checkbox"
+                        class="h-4 w-4 rounded border-slate-300"
+                    />
                     Apply name
                 </label>
                 <button
@@ -204,6 +338,14 @@ onMounted(() => {
                     type="button"
                     class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                     :disabled="loading"
+                    @click="exportOpen = true"
+                >
+                    Export products
+                </button>
+                <button
+                    type="button"
+                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="loading"
                     @click="downloadCsv"
                 >
                     Download uploaded CSV
@@ -212,23 +354,42 @@ onMounted(() => {
         </div>
 
         <p v-if="error" class="text-sm text-red-700">{{ error }}</p>
+        <p v-if="exportError" class="text-sm text-red-700">{{ exportError }}</p>
         <p v-else-if="loading" class="text-sm text-slate-600">Loading…</p>
 
         <div v-else-if="check" class="space-y-6">
             <section class="rounded-lg border border-slate-200 bg-white p-4">
                 <div class="text-sm text-slate-800">
                     <div><span class="font-medium">ID:</span> {{ check.id }}</div>
-                    <div><span class="font-medium">Created:</span> {{ formatTorontoDateTime(check.created_at) }}</div>
-                    <div><span class="font-medium">State:</span> {{ check.workflow_state ?? 'draft' }}</div>
-                    <div><span class="font-medium">Created by:</span> {{ check.created_by_role ?? '—' }}</div>
-                    <div><span class="font-medium">Applied at:</span> {{ formatTorontoDateTime(check.applied_at) || '—' }}</div>
+                    <div>
+                        <span class="font-medium">Created:</span>
+                        {{ formatTorontoDateTime(check.created_at) }}
+                    </div>
+                    <div>
+                        <span class="font-medium">State:</span>
+                        {{ check.workflow_state ?? 'draft' }}
+                    </div>
+                    <div>
+                        <span class="font-medium">Created by:</span>
+                        {{ check.created_by_role ?? '—' }}
+                    </div>
+                    <div>
+                        <span class="font-medium">Applied at:</span>
+                        {{ formatTorontoDateTime(check.applied_at) || '—' }}
+                    </div>
                 </div>
-                <div class="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-slate-800 sm:grid-cols-5">
+                <div
+                    class="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 text-sm text-slate-800 sm:grid-cols-5"
+                >
                     <div><span class="font-medium">Rows:</span> {{ check.counts.items }}</div>
                     <div><span class="font-medium">Matched:</span> {{ check.counts.matched }}</div>
                     <div><span class="font-medium">Applied:</span> {{ check.counts.applied }}</div>
-                    <div><span class="font-medium">Unmatched:</span> {{ check.counts.unmatched }}</div>
-                    <div><span class="font-medium">Ambiguous:</span> {{ check.counts.ambiguous }}</div>
+                    <div>
+                        <span class="font-medium">Unmatched:</span> {{ check.counts.unmatched }}
+                    </div>
+                    <div>
+                        <span class="font-medium">Ambiguous:</span> {{ check.counts.ambiguous }}
+                    </div>
                 </div>
             </section>
 
@@ -308,8 +469,12 @@ onMounted(() => {
                                         @change="saveLine(it)"
                                     />
                                 </td>
-                                <td class="px-2 py-1 text-right">{{ it.available_amount ?? '' }}</td>
-                                <td class="px-2 py-1 text-right">{{ formatMoney2OrEmpty(it.selling_price) }}</td>
+                                <td class="px-2 py-1 text-right">
+                                    {{ it.available_amount ?? '' }}
+                                </td>
+                                <td class="px-2 py-1 text-right">
+                                    {{ formatMoney2OrEmpty(it.selling_price) }}
+                                </td>
                                 <td class="px-2 py-1 text-right">
                                     <input
                                         class="w-20 rounded border border-slate-200 px-2 py-1 text-right text-xs"
@@ -333,13 +498,19 @@ onMounted(() => {
                         </tbody>
                     </table>
 
-                    <p v-if="filteredItems.length === 0" class="mt-3 text-sm text-slate-600">No rows match your filters.</p>
+                    <p v-if="filteredItems.length === 0" class="mt-3 text-sm text-slate-600">
+                        No rows match your filters.
+                    </p>
                 </div>
             </section>
         </div>
+
+        <BulkExportDialog
+            :open="exportOpen"
+            :busy="exportBusy"
+            :selected-count="exportProductIds.length"
+            @cancel="exportOpen = false"
+            @confirm="exportAllProducts"
+        />
     </main>
 </template>
-
-
-
-

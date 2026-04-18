@@ -21,4 +21,3 @@ final class ProductImageAssetOrderController extends Controller
         return response()->json(['ok' => true]);
     }
 }
-

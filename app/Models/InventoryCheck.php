@@ -55,7 +55,3 @@ final class InventoryCheck extends Model
         return $this->hasMany(InventoryCheckItem::class, 'inventory_check_id');
     }
 }
-
-
-
-

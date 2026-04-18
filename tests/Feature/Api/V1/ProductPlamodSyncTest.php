@@ -57,5 +57,3 @@ it('queues a product info sync job (force Plamod assets attempt) for a product',
             && $job->attemptPlamodAssets === true;
     });
 });
-
-

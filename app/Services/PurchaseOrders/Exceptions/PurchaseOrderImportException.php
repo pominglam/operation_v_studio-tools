@@ -26,5 +26,3 @@ final class PurchaseOrderImportException extends RuntimeException
         return $this->issues;
     }
 }
-
-

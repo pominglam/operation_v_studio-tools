@@ -23,6 +23,7 @@ final class PurchaseOrderUpdateService
     /**
      * @param  array{
      *   vendor?:string,
+     *   supplier_order_id?:string|null,
      *   ordered_date?:string|null,
      *   shipped_date?:string|null,
      *   estimated_arrival_date?:string|null,
@@ -49,6 +50,10 @@ final class PurchaseOrderUpdateService
 
             if (array_key_exists('vendor', $changes)) {
                 $po->vendor = trim((string) $changes['vendor']);
+            }
+            if (array_key_exists('supplier_order_id', $changes)) {
+                $nextSupplierOrderId = trim((string) ($changes['supplier_order_id'] ?? ''));
+                $po->supplier_order_id = $nextSupplierOrderId !== '' ? $nextSupplierOrderId : null;
             }
             if (array_key_exists('ordered_date', $changes)) {
                 $po->ordered_date = $changes['ordered_date'];
@@ -173,6 +178,7 @@ final class PurchaseOrderUpdateService
         }
         if (! extension_loaded('bcmath')) {
             $value = ((float) $num) / max(1, $denominator);
+
             return number_format($value, $scale, '.', '');
         }
 
@@ -203,6 +209,7 @@ final class PurchaseOrderUpdateService
 
         if (! extension_loaded('bcmath')) {
             $rate = ((float) $cad) / ((float) $vendor);
+
             return number_format($rate, 6, '.', '');
         }
 
@@ -275,5 +282,3 @@ final class PurchaseOrderUpdateService
         return number_format($value, $scale, '.', '');
     }
 }
-
-

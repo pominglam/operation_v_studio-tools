@@ -13,7 +13,9 @@ use DOMXPath;
 final class BandaiHtmlParser
 {
     private const string BASE_URL = 'https://global.bandai-hobby.net';
+
     private const string CMS_API_BASE = 'https://cmsapi-global-frontend.bandai-hobby.net';
+
     // Observed stable token used by Bandai's public CMS API calls.
     // If this ever changes, we can replace it with an env/config value.
     private const string DEFAULT_CMS_API_TOKEN = '146e08ad68c5c0ab70b0406691f8a88cf8c48915ba8e4e39d726ac3f3539e524';
@@ -75,7 +77,7 @@ final class BandaiHtmlParser
         $seen = [];
 
         /** @var \DOMNodeList<DOMElement> $links */
-        $links = $xpath->query('//a[@href]') ?? new \DOMNodeList();
+        $links = $xpath->query('//a[@href]') ?? new \DOMNodeList;
         foreach ($links as $a) {
             $href = trim((string) $a->getAttribute('href'));
             if ($href === '') {
@@ -191,7 +193,7 @@ final class BandaiHtmlParser
         // Case-insensitive match: PRODUCTS INFO
         $heads = $xpath->query(
             '//*[self::h2 or self::h3][translate(normalize-space(), "abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")="PRODUCTS INFO"]'
-        ) ?? new \DOMNodeList();
+        ) ?? new \DOMNodeList;
         foreach ($heads as $h) {
             $container = $this->findNextElementSibling($h);
             if ($container === null) {
@@ -229,7 +231,7 @@ final class BandaiHtmlParser
         // Prefer <a href="FULL_IMAGE"><img alt="(product title)"></a> within the gallery.
         if ($wantTitleUpper !== '') {
             /** @var \DOMNodeList<DOMElement> $links */
-            $links = $xpath->query($galleryRootXpath.'//a[@href][.//img[@alt]]') ?? new \DOMNodeList();
+            $links = $xpath->query($galleryRootXpath.'//a[@href][.//img[@alt]]') ?? new \DOMNodeList;
             foreach ($links as $a) {
                 $href = trim((string) $a->getAttribute('href'));
                 if ($href === '') {
@@ -261,7 +263,7 @@ final class BandaiHtmlParser
         // Also capture <img src> inside the gallery (some slides may not use hrefs consistently).
         if ($wantTitleUpper !== '') {
             /** @var \DOMNodeList<DOMElement> $imgs */
-            $imgs = $xpath->query($galleryRootXpath.'//img[@alt][@src or @data-src]') ?? new \DOMNodeList();
+            $imgs = $xpath->query($galleryRootXpath.'//img[@alt][@src or @data-src]') ?? new \DOMNodeList;
             foreach ($imgs as $img) {
                 $alt = trim((string) $img->getAttribute('alt'));
                 if ($alt === '' || ! str_contains(mb_strtoupper($alt), $wantTitleUpper)) {
@@ -305,7 +307,7 @@ final class BandaiHtmlParser
         // Fallback: if we couldn't match via alt/title, use a stricter host+path heuristic.
         if ($out === []) {
             /** @var \DOMNodeList<DOMElement> $links */
-            $links = $xpath->query('//main//a[@href]') ?? new \DOMNodeList();
+            $links = $xpath->query('//main//a[@href]') ?? new \DOMNodeList;
             foreach ($links as $a) {
                 $href = trim((string) $a->getAttribute('href'));
                 if ($href === '') {
@@ -347,7 +349,7 @@ final class BandaiHtmlParser
         $out = [];
 
         /** @var \DOMNodeList<DOMElement> $dts */
-        $dts = $xpath->query('//dt') ?? new \DOMNodeList();
+        $dts = $xpath->query('//dt') ?? new \DOMNodeList;
         foreach ($dts as $dt) {
             $k = $this->cleanText($dt->textContent);
             if ($k === '') {
@@ -424,6 +426,7 @@ final class BandaiHtmlParser
     {
         $text = is_string($text) ? $text : '';
         $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);
+
         return $text;
     }
 
@@ -461,7 +464,7 @@ final class BandaiHtmlParser
 
     private function loadHtml(string $html): DOMDocument
     {
-        $doc = new DOMDocument();
+        $doc = new DOMDocument;
         libxml_use_internal_errors(true);
         $doc->loadHTML($html);
         libxml_clear_errors();
@@ -488,6 +491,7 @@ final class BandaiHtmlParser
             }
             $cur = $cur->nextSibling;
         }
+
         return null;
     }
 
@@ -497,7 +501,7 @@ final class BandaiHtmlParser
         foreach ($node->childNodes as $child) {
             $html .= $node->ownerDocument?->saveHTML($child) ?? '';
         }
+
         return $html;
     }
 }
-

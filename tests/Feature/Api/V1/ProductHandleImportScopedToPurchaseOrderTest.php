@@ -74,4 +74,3 @@ it('imports handles scoped to a purchase order (ignores other SKUs)', function (
     expect($pA->handle)->toBe('h-a');
     expect($pC->handle)->toBeNull();
 });
-

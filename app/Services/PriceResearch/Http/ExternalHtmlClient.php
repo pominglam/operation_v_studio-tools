@@ -136,6 +136,7 @@ final class ExternalHtmlClient
 
         // Exponential backoff, capped (attempt starts at 1).
         $base = 2 ** max(0, $attempt - 1);
+
         return max(1, min((int) $base, 30));
     }
 

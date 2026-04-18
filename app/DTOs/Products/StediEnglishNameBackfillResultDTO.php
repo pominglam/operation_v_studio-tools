@@ -22,4 +22,3 @@ final class StediEnglishNameBackfillResultDTO
         public readonly array $missing,
     ) {}
 }
-

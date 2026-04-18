@@ -91,5 +91,3 @@ it('returns per-product batch item details (queued/running/done)', function (): 
         'debug_log' => "line1\nline2",
     ]);
 });
-
-

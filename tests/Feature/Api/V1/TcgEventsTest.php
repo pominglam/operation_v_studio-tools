@@ -168,4 +168,3 @@ it('can hide events with 0 applicants', function (): void {
         ->assertJsonMissing(['store_name' => 'Zero Applicants'])
         ->assertJsonPath('data.0.store_name', 'Some Applicants');
 });
-

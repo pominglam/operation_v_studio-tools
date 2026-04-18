@@ -149,6 +149,100 @@ it('falls back to ordered allocation when received_date exists but qty_received 
         ->assertJsonPath('lines.0.ship_per_unit', '6.00');
 });
 
+it('uses received allocation when qty_received exists even if received_date is null', function (): void {
+    $p = Product::query()->create([
+        'sku' => 'PO-LINES-RECV-WITHOUT-DATE',
+        'description' => 'Received qty without received date',
+    ]);
+
+    $other = Product::query()->create([
+        'sku' => 'PO-LINES-RECV-WITHOUT-DATE-OTHER',
+        'description' => 'Received qty without received date other',
+    ]);
+
+    $po = PurchaseOrder::query()->create([
+        'vendor' => 'Vendor Received No Date',
+        'shipping_total' => '30.00',
+        'surcharge_total' => '0.00',
+        'ordered_date' => '2026-03-01',
+        'received_date' => null,
+        'created_at' => CarbonImmutable::parse('2026-03-06')->startOfDay(),
+        'updated_at' => CarbonImmutable::parse('2026-03-06')->startOfDay(),
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $p->id,
+        'sku' => $p->sku,
+        'vendor' => 'Vendor Received No Date',
+        'unit_cost' => '7.19',
+        'qty_ordered' => 5,
+        'qty_received' => 2,
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $other->id,
+        'sku' => $other->sku,
+        'vendor' => 'Vendor Received No Date',
+        'unit_cost' => '1.00',
+        'qty_ordered' => 5,
+        'qty_received' => 1,
+    ]);
+
+    // sum_received=3, sum_ordered=10. New rule: use received whenever > 0.
+    // shipping/unit = 30 / 3 = 10.00 (not 3.00).
+    $this->getJson("/api/v1/products/{$p->uuid}/po-lines?limit=10")
+        ->assertOk()
+        ->assertJsonPath('lines.0.ship_per_unit', '10.00');
+});
+
+it('uses entered qty_received totals even when they are zero', function (): void {
+    $p = Product::query()->create([
+        'sku' => 'PO-LINES-RECV-ZERO',
+        'description' => 'Received zero allocation product',
+    ]);
+
+    $other = Product::query()->create([
+        'sku' => 'PO-LINES-RECV-ZERO-OTHER',
+        'description' => 'Received zero allocation other',
+    ]);
+
+    $po = PurchaseOrder::query()->create([
+        'vendor' => 'Vendor Received Zero',
+        'shipping_total' => '30.00',
+        'surcharge_total' => '0.00',
+        'ordered_date' => '2026-03-01',
+        'received_date' => null,
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $p->id,
+        'sku' => $p->sku,
+        'vendor' => 'Vendor Received Zero',
+        'unit_cost' => '7.19',
+        'qty_ordered' => 5,
+        'qty_received' => 0,
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $other->id,
+        'sku' => $other->sku,
+        'vendor' => 'Vendor Received Zero',
+        'unit_cost' => '1.00',
+        'qty_ordered' => 5,
+        'qty_received' => 0,
+    ]);
+
+    // Received qtys are entered (both 0), so allocation uses received total (0), not ordered (10).
+    // With zero allocation units, ship/unit resolves to 0.00.
+    $this->getJson("/api/v1/products/{$p->uuid}/po-lines?limit=10")
+        ->assertOk()
+        ->assertJsonPath('lines.0.ship_per_unit', '0.00');
+});
+
 it('sorts po lines with not-arrived first by estimated arrival desc, then arrived by received desc', function (): void {
     $p = Product::query()->create([
         'sku' => 'PO-LINES-SORT',
@@ -229,4 +323,3 @@ it('sorts po lines with not-arrived first by estimated arrival desc, then arrive
     expect($res->json('lines.2.vendor'))->toBe('Vendor A 2');
     expect($res->json('lines.3.vendor'))->toBe('Vendor A 1');
 });
-

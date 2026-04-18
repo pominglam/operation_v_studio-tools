@@ -20,6 +20,7 @@ final class ProductsBackfillLatestCostsCommand extends Command
         $this->warn('This will update cached latest costs for ALL products based on purchase order history.');
         if (! $yes && ! $this->confirm('Proceed?', false)) {
             $this->info('Cancelled.');
+
             return self::SUCCESS;
         }
 
@@ -29,4 +30,3 @@ final class ProductsBackfillLatestCostsCommand extends Command
         return self::SUCCESS;
     }
 }
-

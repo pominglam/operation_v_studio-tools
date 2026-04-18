@@ -30,4 +30,3 @@ interface BandaiTcgPlusApi
      */
     public function getGameFormatMap(): array;
 }
-

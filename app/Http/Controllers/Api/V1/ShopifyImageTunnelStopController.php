@@ -15,5 +15,3 @@ final class ShopifyImageTunnelStopController extends Controller
         return response()->json($tunnel->stop());
     }
 }
-
-

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
-use App\Models\Product;
 use Illuminate\Http\UploadedFile;
 
 it('imports a DSPIAE CSV (HKD) and stores vendor currency + vendor product total', function (): void {
@@ -46,4 +46,3 @@ it('imports a DSPIAE CSV (HKD) and stores vendor currency + vendor product total
     expect($item->qty_shipped)->toBeNull();
     expect($item->qty_received)->toBeNull();
 });
-

@@ -129,6 +129,12 @@ const props = defineProps<{
     onBulkRenamePlamodAssets: (ids: string[]) => Promise<{ queued: number; batchId: string }>;
     onBulkExportSelected: (ids: string[], exportType: ProductsBulkExportType) => Promise<void>;
     onBulkRecrawlSelected: (ids: string[], sources: ProductsRecrawlSource[]) => Promise<void>;
+    onCreateDraftPurchaseOrder?: (ids: string[]) => Promise<{
+        purchase_order_uuid: string;
+        added: number;
+        skipped_existing: number;
+        skipped_vendor_mismatch: number;
+    }>;
     onUpdate: (id: string, payload: UpdateProductPayload) => Promise<void>;
     onUpdateAvailable: (id: string, available: number | null) => Promise<void>;
     onUpdateMaintain: (id: string, maintain: number | null) => Promise<void>;
@@ -208,6 +214,7 @@ const bulkDeleting = ref(false);
 const bulkArchiving = ref(false);
 const bulkUpdating = ref(false);
 const bulkExporting = ref(false);
+const creatingDraftPo = ref(false);
 const showCost = ref(false);
 const showClassificationColumns = ref(true);
 const bulkMessage = ref<string | null>(null);
@@ -724,6 +731,33 @@ async function confirmBulkRecrawl(payload: { sources: ProductsRecrawlSource[] })
     }
 }
 
+async function createDraftPurchaseOrder(): Promise<void> {
+    bulkError.value = null;
+    bulkMessage.value = null;
+
+    const ids = Array.from(selected.value);
+    if (ids.length === 0) {
+        bulkError.value = 'No products selected.';
+        return;
+    }
+
+    creatingDraftPo.value = true;
+    try {
+        if (!props.onCreateDraftPurchaseOrder) {
+            throw new Error('Draft PO action is not available.');
+        }
+        const out = await props.onCreateDraftPurchaseOrder(ids);
+        bulkMessage.value =
+            `Draft PO created (${out.purchase_order_uuid.slice(0, 8)}). ` +
+            `Added ${out.added}, skipped vendor mismatch: ${out.skipped_vendor_mismatch}.`;
+        window.location.assign(`/purchase-orders/${out.purchase_order_uuid}`);
+    } catch (e: unknown) {
+        bulkError.value = formatBulkError(e, 'Failed to create draft PO.');
+    } finally {
+        creatingDraftPo.value = false;
+    }
+}
+
 function startEdit(p: ProductRow): void {
     rowError.value = null;
     editingId.value = p.id;
@@ -839,6 +873,20 @@ onUnmounted(() => {
                         @click="requestBulkUpdate"
                     >
                         {{ bulkUpdating ? 'Updating…' : 'Update selected' }}
+                    </button>
+                    <button
+                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                        type="button"
+                        :disabled="
+                            bulkDeleting ||
+                            bulkArchiving ||
+                            bulkUpdating ||
+                            bulkExporting ||
+                            creatingDraftPo
+                        "
+                        @click="createDraftPurchaseOrder"
+                    >
+                        {{ creatingDraftPo ? 'Creating draft…' : 'Create draft PO' }}
                     </button>
                     <button
                         class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"

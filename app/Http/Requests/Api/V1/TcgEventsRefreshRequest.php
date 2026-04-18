@@ -23,4 +23,3 @@ final class TcgEventsRefreshRequest extends FormRequest
         ];
     }
 }
-

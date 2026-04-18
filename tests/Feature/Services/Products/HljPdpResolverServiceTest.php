@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Models\Product;
 use App\Services\Products\Hlj\HljPdpResolverService;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\RateLimiter;
 
 beforeEach(function (): void {
     // Avoid ExternalHtmlClient throttling sleeps in unit/feature tests.
@@ -32,12 +32,12 @@ it('resolves HLJ PDP by matching JAN Code when multiple candidates exist', funct
     $wrongUrl = 'https://www.hlj.com/wrong-kit-ban11111';
     $correctUrl = 'https://www.hlj.com/1-100-scale-mg-zz-gundam-ver-ka-w-premium-decal-bann22236';
 
-    $wrongPdp = <<<HTML
+    $wrongPdp = <<<'HTML'
 <!doctype html><html><head><meta property="og:title" content="ZZ Gundam Something Else" /></head>
 <body><div class="product-detail">JAN Code: 0000000000000</div></body></html>
 HTML;
 
-    $correctPdp = <<<HTML
+    $correctPdp = <<<'HTML'
 <!doctype html><html><head><meta property="og:title" content="MG ZZ Gundam Ver.Ka w/Premium Decal" /></head>
 <body><div class="product-detail">JAN Code: 4549660222361</div></body></html>
 HTML;
@@ -53,6 +53,7 @@ HTML;
         if ($url === $correctUrl) {
             return Http::response($correctPdp, 200);
         }
+
         return Http::response('not_found', 404);
     });
 
@@ -93,6 +94,7 @@ it('resolves HLJ PDP by title similarity when JAN code is missing', function ():
         if ($url === $mgUrl) {
             return Http::response($mgPdp, 200);
         }
+
         return Http::response('not_found', 404);
     });
 
@@ -134,6 +136,7 @@ it('resolves the correct PDP by JAN even if the product title query would match 
         if ($url === $victoryUrl) {
             return Http::response($victoryPdp, 200);
         }
+
         return Http::response('not_found', 404);
     });
 
@@ -311,4 +314,3 @@ it('can resolve HLJ PDP using a human query that drops grade/scale/model-code an
 
     expect($url)->toBe($pdpUrl);
 });
-

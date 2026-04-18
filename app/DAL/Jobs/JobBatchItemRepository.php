@@ -55,5 +55,3 @@ interface JobBatchItemRepository
      */
     public function getAnyDebugLog(string $batchId): ?string;
 }
-
-

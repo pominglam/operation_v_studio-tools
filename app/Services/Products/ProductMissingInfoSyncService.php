@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Products;
 
-use App\DTOs\Products\MissingInfoSyncResultDTO;
 use App\DAL\Jobs\JobBatchItemRepository;
 use App\DAL\Products\ProductRepository;
+use App\DTOs\Products\MissingInfoSyncResultDTO;
 use App\Jobs\SyncPlamodAssetsJob;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Str;
@@ -78,5 +78,3 @@ final class ProductMissingInfoSyncService
         );
     }
 }
-
-

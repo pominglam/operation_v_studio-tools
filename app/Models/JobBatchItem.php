@@ -36,5 +36,3 @@ final class JobBatchItem extends Model
         'finished_at' => 'datetime',
     ];
 }
-
-

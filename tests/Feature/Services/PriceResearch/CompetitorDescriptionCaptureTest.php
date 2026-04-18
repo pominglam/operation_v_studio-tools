@@ -50,9 +50,3 @@ it('stores competitor description_html when a competitor PDP is fetched and matc
     expect($content?->description_html)->toContain('competitor description');
     expect($content?->source_url)->toContain('/products/test-product-abc123');
 });
-
-
-
-
-
-

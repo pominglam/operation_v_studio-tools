@@ -51,4 +51,3 @@ final class ProductsRenameDspiaePaintsCommand extends Command
         return self::SUCCESS;
     }
 }
-

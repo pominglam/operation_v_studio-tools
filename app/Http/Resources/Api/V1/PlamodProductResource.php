@@ -45,5 +45,3 @@ final class PlamodProductResource extends JsonResource
         ];
     }
 }
-
-

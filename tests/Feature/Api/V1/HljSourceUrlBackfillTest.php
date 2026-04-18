@@ -46,5 +46,3 @@ it('backfills HLJ content source_url to a PDP (not a search URL) when missing', 
         'source_url' => 'https://www.hlj.com/bb-368-00-gundam-seven-sword-g-ban999999',
     ]);
 });
-
-

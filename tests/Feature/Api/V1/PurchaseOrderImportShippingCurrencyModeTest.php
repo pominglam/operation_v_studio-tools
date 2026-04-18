@@ -64,4 +64,3 @@ it('returns validation error when shipping_currency_mode=vendor but fx cannot be
         'file' => $file,
     ])->assertStatus(422);
 });
-

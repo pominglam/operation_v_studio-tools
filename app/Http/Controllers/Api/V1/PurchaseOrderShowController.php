@@ -21,5 +21,3 @@ final class PurchaseOrderShowController extends Controller
         );
     }
 }
-
-

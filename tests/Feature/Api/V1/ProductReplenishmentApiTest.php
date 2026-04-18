@@ -173,4 +173,3 @@ it('includes not-arrived and reorder columns on products list rows', function ()
     $res->assertJsonPath('data.0.not_arrived', 8);
     $res->assertJsonPath('data.0.reorder', 0);
 });
-

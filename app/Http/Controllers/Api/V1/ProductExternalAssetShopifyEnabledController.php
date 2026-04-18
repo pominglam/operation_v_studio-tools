@@ -31,4 +31,3 @@ final class ProductExternalAssetShopifyEnabledController extends Controller
         ]);
     }
 }
-

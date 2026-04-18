@@ -20,4 +20,3 @@ final class BulkArchiveProductsRequest extends FormRequest
         ];
     }
 }
-

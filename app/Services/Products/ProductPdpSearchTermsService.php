@@ -28,8 +28,12 @@ final class ProductPdpSearchTermsService
         $name = is_string($product->description ?? null) ? trim((string) $product->description) : '';
 
         $terms = [];
-        if ($barcode !== '') $terms[] = $barcode;
-        if ($sku !== '') $terms[] = $sku;
+        if ($barcode !== '') {
+            $terms[] = $barcode;
+        }
+        if ($sku !== '') {
+            $terms[] = $sku;
+        }
 
         if ($name !== '') {
             $terms[] = $name;
@@ -55,7 +59,9 @@ final class ProductPdpSearchTermsService
     private function bandaiStyleNormalizeName(string $name): string
     {
         $name = trim($name);
-        if ($name === '') return '';
+        if ($name === '') {
+            return '';
+        }
 
         // Remove scale tokens like "1/100".
         $name = preg_replace('/\b\d+\s*\/\s*\d+\b/u', '', $name) ?? $name;
@@ -64,7 +70,7 @@ final class ProductPdpSearchTermsService
         $name = preg_replace('/\b[A-Z]{2,}-\d+[A-Z0-9-]*\b/iu', '', $name) ?? $name;
 
         $name = trim(preg_replace('/\s+/u', ' ', $name) ?? $name);
+
         return $name;
     }
 }
-

@@ -17,8 +17,11 @@ final class ExternalAccessSettingsService
     public function isEnabled(): bool
     {
         $raw = $this->settings->getString(self::KEY_ENABLED);
-        if (! is_string($raw) || trim($raw) === '') return false;
+        if (! is_string($raw) || trim($raw) === '') {
+            return false;
+        }
         $v = strtolower(trim($raw));
+
         return in_array($v, ['1', 'true', 'yes', 'on'], true);
     }
 
@@ -27,4 +30,3 @@ final class ExternalAccessSettingsService
         $this->settings->putString(self::KEY_ENABLED, $enabled ? 'true' : 'false');
     }
 }
-

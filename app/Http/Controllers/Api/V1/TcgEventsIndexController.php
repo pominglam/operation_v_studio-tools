@@ -42,4 +42,3 @@ final class TcgEventsIndexController extends Controller
         ])->response();
     }
 }
-

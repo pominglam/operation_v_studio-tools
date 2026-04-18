@@ -25,6 +25,7 @@ final class ExternalAccessPasswordMiddleware
         if (! $this->isExternalRequest($request)) {
             // Local access: no login prompt.
             $request->attributes->set('external_access_role', ExternalAccessAuthService::ROLE_ADMIN);
+
             return $next($request);
         }
 
@@ -52,6 +53,7 @@ final class ExternalAccessPasswordMiddleware
                 }
                 abort(404);
             }
+
             return $next($request);
         }
 
@@ -67,6 +69,7 @@ final class ExternalAccessPasswordMiddleware
         // Redirect to login page.
         $nextUrl = $request->getRequestUri();
         $login = '/external-login?next='.rawurlencode($nextUrl);
+
         return redirect($login);
     }
 
@@ -81,17 +84,29 @@ final class ExternalAccessPasswordMiddleware
     {
         $path = '/'.ltrim($request->path(), '/');
 
-        if (str_starts_with($path, '/build/')) return true;
-        if (str_starts_with($path, '/external-login')) return true;
-        if ($path === '/favicon.ico') return true;
-        if ($path === '/up') return true;
+        if (str_starts_with($path, '/build/')) {
+            return true;
+        }
+        if (str_starts_with($path, '/external-login')) {
+            return true;
+        }
+        if ($path === '/favicon.ico') {
+            return true;
+        }
+        if ($path === '/up') {
+            return true;
+        }
 
         if (str_starts_with($path, '/api/')) {
             return $this->isEmployeeAllowedApiPath($path);
         }
 
-        if ($path === '/' || $path === '/employee' || $path === '/employee/') return true;
-        if (str_starts_with($path, '/employee/inventory-count')) return true;
+        if ($path === '/' || $path === '/employee' || $path === '/employee/') {
+            return true;
+        }
+        if (str_starts_with($path, '/employee/inventory-count')) {
+            return true;
+        }
 
         return false;
     }
@@ -119,7 +134,10 @@ final class ExternalAccessPasswordMiddleware
             : (string) $request->getHost();
 
         $host = strtolower(trim($host));
-        if ($host === '') return false;
+        if ($host === '') {
+            return false;
+        }
+
         return str_ends_with($host, '.trycloudflare.com');
     }
 
@@ -127,20 +145,26 @@ final class ExternalAccessPasswordMiddleware
     {
         $rawCookieHeader = is_string($rawCookieHeader) ? trim($rawCookieHeader) : '';
         $name = trim($name);
-        if ($rawCookieHeader === '' || $name === '') return null;
+        if ($rawCookieHeader === '' || $name === '') {
+            return null;
+        }
 
         foreach (explode(';', $rawCookieHeader) as $part) {
             $part = trim($part);
-            if ($part === '') continue;
+            if ($part === '') {
+                continue;
+            }
             $kv = explode('=', $part, 2);
             $k = trim((string) ($kv[0] ?? ''));
-            if ($k !== $name) continue;
+            if ($k !== $name) {
+                continue;
+            }
             $v = (string) ($kv[1] ?? '');
             $v = trim($v);
+
             return $v !== '' ? $v : null;
         }
 
         return null;
     }
 }
-

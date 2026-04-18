@@ -62,5 +62,3 @@ final class PurchaseOrderItem extends Model
         return $this->hasMany(InventoryLot::class);
     }
 }
-
-

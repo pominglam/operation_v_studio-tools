@@ -61,5 +61,3 @@ final class EloquentProductExternalContentRepository implements ProductExternalC
             ->update(['source_url' => $sourceUrl]);
     }
 }
-
-

@@ -28,4 +28,3 @@ final class ProductBulkArchiveController extends Controller
         ]);
     }
 }
-

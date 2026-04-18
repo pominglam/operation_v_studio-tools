@@ -10,5 +10,3 @@ interface HljContentSync
 {
     public function syncForProduct(Product $product): void;
 }
-
-

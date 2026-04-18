@@ -18,5 +18,3 @@ final class UpdateProductBarcodeRequest extends FormRequest
         ];
     }
 }
-
-

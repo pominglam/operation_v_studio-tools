@@ -73,7 +73,7 @@ final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
     /**
      * @return LengthAwarePaginator<PurchaseOrder>
      */
-    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created', array $vendors = []): LengthAwarePaginator
+    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created', array $vendors = [], array $statuses = []): LengthAwarePaginator
     {
         $sortDir = strtolower(trim($sortDir)) === 'asc' ? 'asc' : 'desc';
         $sortBy = strtolower(trim($sortBy));
@@ -90,10 +90,65 @@ final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
         }
         $vendorFilters = array_values(array_unique($vendorFilters));
 
+        $statusFilters = [];
+        foreach ($statuses as $status) {
+            $next = trim(strtolower((string) $status));
+            if (in_array($next, ['draft', 'ordered', 'shipped', 'received', 'on_shelves'], true)) {
+                $statusFilters[] = $next;
+            }
+        }
+        $statusFilters = array_values(array_unique($statusFilters));
+
         $q = PurchaseOrder::query()->withCount('items');
 
         if ($vendorFilters !== []) {
             $q->whereIn('vendor', $vendorFilters);
+        }
+        if ($statusFilters !== []) {
+            $q->where(function (Builder $sub) use ($statusFilters): void {
+                foreach ($statusFilters as $status) {
+                    if ($status === 'on_shelves') {
+                        $sub->orWhereNotNull('fully_on_shelves_date');
+
+                        continue;
+                    }
+                    if ($status === 'received') {
+                        $sub->orWhere(function (Builder $rx): void {
+                            $rx->whereNull('fully_on_shelves_date')
+                                ->whereNotNull('received_date');
+                        });
+
+                        continue;
+                    }
+                    if ($status === 'shipped') {
+                        $sub->orWhere(function (Builder $sx): void {
+                            $sx->whereNull('fully_on_shelves_date')
+                                ->whereNull('received_date')
+                                ->whereNotNull('shipped_date');
+                        });
+
+                        continue;
+                    }
+                    if ($status === 'ordered') {
+                        $sub->orWhere(function (Builder $ox): void {
+                            $ox->whereNull('fully_on_shelves_date')
+                                ->whereNull('received_date')
+                                ->whereNull('shipped_date')
+                                ->whereNotNull('ordered_date');
+                        });
+
+                        continue;
+                    }
+                    if ($status === 'draft') {
+                        $sub->orWhere(function (Builder $dx): void {
+                            $dx->whereNull('fully_on_shelves_date')
+                                ->whereNull('received_date')
+                                ->whereNull('shipped_date')
+                                ->whereNull('ordered_date');
+                        });
+                    }
+                }
+            });
         }
 
         if ($sortBy === 'filter') {

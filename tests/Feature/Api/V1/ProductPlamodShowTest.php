@@ -44,5 +44,3 @@ it('includes content source_url when present', function (): void {
     $res->assertJsonPath('data.content.source', 'hlj');
     $res->assertJsonPath('data.content.source_url', 'https://www.hlj.com/1-100-scale-mg-gundam-gp03s-ban901788');
 });
-
-

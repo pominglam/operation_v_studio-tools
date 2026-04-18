@@ -27,4 +27,3 @@ interface TcgEventRepository
 
     public function findByUuidOrFail(string $uuid): TcgEvent;
 }
-

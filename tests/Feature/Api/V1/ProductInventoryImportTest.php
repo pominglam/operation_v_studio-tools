@@ -97,5 +97,3 @@ it('treats -1 inventory qty as 0 and excludes archived products from not-updated
     expect($notUpdated)->toBeArray();
     expect(collect($notUpdated)->pluck('sku')->all())->not->toContain('INV-ARCH-1');
 });
-
-

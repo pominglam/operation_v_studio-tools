@@ -17,4 +17,3 @@ final class ProductInfoShowController extends Controller
         return ProductInfoResource::make($data);
     }
 }
-

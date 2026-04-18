@@ -11,7 +11,9 @@ use Illuminate\Support\Str;
 final class HljPdpResolverService
 {
     public const string SOURCE = 'hlj';
+
     private const int MAX_PDP_PROBES = 8;
+
     private const float MIN_TITLE_MATCH_SCORE = 0.45;
 
     public function __construct(
@@ -24,10 +26,14 @@ final class HljPdpResolverService
         $candidates = [];
 
         $barcode = is_string($product->barcode) ? trim($product->barcode) : '';
-        if ($barcode !== '') $candidates[] = $barcode;
+        if ($barcode !== '') {
+            $candidates[] = $barcode;
+        }
 
         $sku = is_string($product->sku) ? trim($product->sku) : '';
-        if ($sku !== '') $candidates[] = $sku;
+        if ($sku !== '') {
+            $candidates[] = $sku;
+        }
 
         $name = is_string($product->description) ? trim($product->description) : '';
         $constraints = $name !== '' ? $this->queryConstraints($name) : null;
@@ -74,7 +80,9 @@ final class HljPdpResolverService
     private function resolveBestPdpUrlForQuery(string $query, ?string $expectedJanCode, ?array $constraints): ?string
     {
         $raw = trim($query);
-        if ($raw === '') return null;
+        if ($raw === '') {
+            return null;
+        }
 
         $candidates = $this->fetchSearchCandidates($raw);
         if ($candidates === []) {
@@ -134,7 +142,9 @@ final class HljPdpResolverService
     private function fetchSearchCandidates(string $query): array
     {
         $q = rawurlencode(trim($query));
-        if ($q === '') return [];
+        if ($q === '') {
+            return [];
+        }
 
         // HLJ search uses "Word" (not "q") for their public search UI.
         $urls = [
@@ -253,7 +263,9 @@ final class HljPdpResolverService
     private function simplifyQuery(string $name): string
     {
         $q = trim($name);
-        if ($q === '') return '';
+        if ($q === '') {
+            return '';
+        }
 
         // Drop common scale fragments.
         $q = preg_replace('/\\b\\d+\\s*\\/\\s*\\d+\\b/u', ' ', $q) ?? $q; // 1/144 etc
@@ -330,7 +342,9 @@ final class HljPdpResolverService
         $t = preg_replace('/[^\\p{L}\\p{N}\\s]+/u', ' ', $t) ?? $t;
         $t = preg_replace('/\\s+/u', ' ', $t) ?? $t;
         $t = trim($t);
-        if ($t === '') return [];
+        if ($t === '') {
+            return [];
+        }
 
         $tokens = explode(' ', $t);
         $tokens = array_values(array_filter($tokens, static fn (string $x): bool => $x !== '' && strlen($x) >= 2));
@@ -350,7 +364,9 @@ final class HljPdpResolverService
      */
     private function titleMatchScore(array $queryTokens, array $titleTokens): float
     {
-        if ($queryTokens === [] || $titleTokens === []) return 0.0;
+        if ($queryTokens === [] || $titleTokens === []) {
+            return 0.0;
+        }
 
         $titleSet = array_fill_keys($titleTokens, true);
         $hits = 0;
@@ -399,5 +415,3 @@ final class HljPdpResolverService
         return true;
     }
 }
-
-

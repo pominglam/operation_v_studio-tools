@@ -103,7 +103,7 @@ it('does not apply updates when quantity in store is blank and flags the row', f
 
     $csv = implode("\n", [
         'Handle,Vendor,SKU,Type,Product Name,English name,Available amount,Selling price,Quantity in store,Difference,Notes',
-        ',Plamod,Q-001,HG,Qty blank,,2,,,' . '-2' . ',Missing qty',
+        ',Plamod,Q-001,HG,Qty blank,,2,,,'.'-2'.',Missing qty',
         '',
     ]);
 
@@ -151,7 +151,7 @@ it('can still apply Stedi English name updates even when quantity in store is bl
 
     $csv = implode("\n", [
         'Handle,Vendor,SKU,Type,Product Name,English name,Available amount,Selling price,Quantity in store,Difference,Notes',
-        'stedi-blank-qty,Stedi,S-BLANK-1,TOOLS,Test,English Name,2,,,' . '-2' . ',Missing qty',
+        'stedi-blank-qty,Stedi,S-BLANK-1,TOOLS,Test,English Name,2,,,'.'-2'.',Missing qty',
         '',
     ]);
 
@@ -236,7 +236,3 @@ it('marks a row as ambiguous when multiple products share the same handle', func
     expect($data['unmatched'])->toBe(0);
     expect($data['ambiguous'])->toBe(1);
 });
-
-
-
-

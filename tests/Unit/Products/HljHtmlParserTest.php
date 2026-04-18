@@ -31,7 +31,7 @@ it('extracts HLJ image urls from JSON-LD and meta tags and normalizes them', fun
 </html>
 HTML;
 
-    $parser = new HljHtmlParser();
+    $parser = new HljHtmlParser;
     $urls = $parser->extractImageUrls($html);
 
     expect($urls)->toContain('https://www.hlj.com/media/catalog/product/a/b/ab123_main.jpg');
@@ -63,7 +63,7 @@ it('extracts images from the fotorama gallery and filters non-product slides (sh
 </html>
 HTML;
 
-    $parser = new HljHtmlParser();
+    $parser = new HljHtmlParser;
     $urls = $parser->extractImageUrls($html);
 
     expect($urls)->toContain('https://www.hlj.com/productimages/ban/ban12345_01.jpg');
@@ -90,7 +90,7 @@ it('restricts /productimages/ URLs to the expected PDP product code when provide
 </html>
 HTML;
 
-    $parser = new HljHtmlParser();
+    $parser = new HljHtmlParser;
     $urls = $parser->extractImageUrls($html, 'bans60760');
 
     expect($urls)->toContain('https://www.hlj.com/productimages/ban/bans60760_0.jpg');
@@ -100,7 +100,7 @@ HTML;
 });
 
 it('can extract the HLJ product code suffix from the PDP URL', function (): void {
-    $parser = new HljHtmlParser();
+    $parser = new HljHtmlParser;
 
     expect($parser->productCodeFromPdpUrl('https://www.hlj.com/1-100-scale-mg-wing-gundam-zero-ew-ver-ka-bans60760'))->toBe('bans60760');
     expect($parser->productCodeFromPdpUrl('https://www.hlj.com/1-144-scale-hg-gundam-gp01fb-banh603920-up'))->toBe('banh603920-up');
@@ -121,7 +121,7 @@ it('normalizes HLJ product image URLs by stripping versioning query params', fun
 </html>
 HTML;
 
-    $parser = new HljHtmlParser();
+    $parser = new HljHtmlParser;
     $urls = $parser->extractImageUrls($html);
 
     expect($urls)->toContain('https://www.hlj.com/productimages/hbj/hbj60934_0.jpg');
@@ -151,7 +151,7 @@ it('extracts product image URLs embedded in scripts/attrs while excluding shippi
 </html>
 HTML;
 
-    $parser = new HljHtmlParser();
+    $parser = new HljHtmlParser;
     $urls = $parser->extractImageUrls($html);
 
     expect($urls)->toContain('https://www.hlj.com/productimages/ban/ban978539_0.jpg');
@@ -174,7 +174,7 @@ it('extracts HLJ PDP URLs from search HTML including "-up" suffix', function ():
 </html>
 HTML;
 
-    $parser = new HljHtmlParser();
+    $parser = new HljHtmlParser;
     $url = $parser->extractPdpUrlFromSearchHtml($html);
 
     expect($url)->toBe('https://www.hlj.com/1-144-scale-hg-gundam-gp01fb-banh603920-up');
@@ -203,7 +203,7 @@ it('selects the best fotorama when multiple carousels exist (avoid payment/shipp
 </html>
 HTML;
 
-    $parser = new HljHtmlParser();
+    $parser = new HljHtmlParser;
     $urls = $parser->extractImageUrls($html);
 
     expect($urls)->toContain('https://www.hlj.com/productimages/ban/ban99999_01.jpg');
@@ -232,7 +232,6 @@ it('extracts HLJ JAN code from JSON-LD GTIN fields when not present as "JAN Code
 </html>
 HTML;
 
-    $parser = new HljHtmlParser();
+    $parser = new HljHtmlParser;
     expect($parser->extractJanCodeFromPdpHtml($html))->toBe('4573102554543');
 });
-

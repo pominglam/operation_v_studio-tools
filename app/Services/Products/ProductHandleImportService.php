@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services\Products;
 
-use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\DAL\Products\ProductRepository;
+use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\Services\Products\Exceptions\InvalidProductImportFileException;
 use Illuminate\Http\UploadedFile;
 
 final class ProductHandleImportService
 {
     public const string SKU_COLUMN = 'Variant SKU';
+
     public const string HANDLE_COLUMN = 'Handle';
 
     public function __construct(
@@ -164,12 +165,14 @@ final class ProductHandleImportService
                 $sku = $this->stringAt($row, $skuIdx);
                 if ($sku === '') {
                     $missingSkuRows++;
+
                     continue;
                 }
 
                 $h = $this->stringAt($row, $handleIdx);
                 if ($h === '') {
                     $missingHandleRows++;
+
                     continue;
                 }
 
@@ -196,9 +199,12 @@ final class ProductHandleImportService
         $map = [];
         foreach ($header as $i => $name) {
             $key = trim((string) $name);
-            if ($key === '') continue;
+            if ($key === '') {
+                continue;
+            }
             $map[$key] = $i;
         }
+
         return $map;
     }
 
@@ -208,8 +214,11 @@ final class ProductHandleImportService
     private function isBlankRow(array $row): bool
     {
         foreach ($row as $cell) {
-            if (trim((string) $cell) !== '') return false;
+            if (trim((string) $cell) !== '') {
+                return false;
+            }
         }
+
         return true;
     }
 
@@ -221,8 +230,7 @@ final class ProductHandleImportService
         if (! array_key_exists($idx, $row)) {
             return '';
         }
+
         return trim((string) $row[$idx]);
     }
 }
-
-

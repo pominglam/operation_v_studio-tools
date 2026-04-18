@@ -98,4 +98,3 @@ final class DspiaePaintRenameService
         return trim($new);
     }
 }
-

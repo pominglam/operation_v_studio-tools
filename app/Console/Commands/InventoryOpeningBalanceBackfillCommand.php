@@ -46,5 +46,3 @@ final class InventoryOpeningBalanceBackfillCommand extends Command
         return self::SUCCESS;
     }
 }
-
-

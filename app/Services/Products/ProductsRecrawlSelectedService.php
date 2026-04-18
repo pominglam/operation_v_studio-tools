@@ -99,7 +99,9 @@ final class ProductsRecrawlSelectedService
         $limit = 10;
         foreach (array_slice($terms, 0, $limit) as $t) {
             $q = trim((string) $t);
-            if ($q === '') continue;
+            if ($q === '') {
+                continue;
+            }
             $url = $this->gundamPlanetSearchUrl($q);
             $lines[] = "[gundamplanet][plan] q={$q} url={$url}";
         }
@@ -120,7 +122,9 @@ final class ProductsRecrawlSelectedService
         $limit = 10;
         foreach (array_slice($terms, 0, $limit) as $t) {
             $q = trim((string) $t);
-            if ($q === '') continue;
+            if ($q === '') {
+                continue;
+            }
             $url = $this->newtypeSearchUrl($q);
             $lines[] = "[newtype][plan] q={$q} url={$url}";
         }
@@ -134,12 +138,14 @@ final class ProductsRecrawlSelectedService
     private function gundamPlanetSearchUrl(string $query): string
     {
         $q = rawurlencode(trim($query));
+
         return 'https://www.gundamplanet.com/search?q='.$q.'&options%5Bprefix%5D=last';
     }
 
     private function newtypeSearchUrl(string $query): string
     {
         $qs = http_build_query(['q' => trim($query)]);
+
         return NewtypeHtmlParser::BASE_URL.'/search?'.$qs;
     }
 
@@ -152,7 +158,9 @@ final class ProductsRecrawlSelectedService
         $limit = 10;
         foreach (array_slice($terms, 0, $limit) as $t) {
             $q = trim((string) $t);
-            if ($q === '') continue;
+            if ($q === '') {
+                continue;
+            }
             $url = $this->gundamHangarSearchUrl($q);
             $lines[] = "[gundamhangar][plan] q={$q} url={$url}";
         }
@@ -171,7 +179,7 @@ final class ProductsRecrawlSelectedService
             'outofstock' => '',
             'limit' => 10,
         ]);
+
         return GundamHangarContentSyncService::API_BASE_URL.'/products?'.$qs;
     }
 }
-

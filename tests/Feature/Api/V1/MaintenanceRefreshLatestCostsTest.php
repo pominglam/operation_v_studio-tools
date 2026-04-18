@@ -37,4 +37,3 @@ it('recomputes cached latest unit/landed costs via maintenance endpoint', functi
     expect((string) $p->latest_unit_cost)->toBe('4.00')
         ->and((string) $p->latest_landed_unit_cost)->toBe('9.00');
 });
-

@@ -39,5 +39,3 @@ final class ShopifyContentExportPrepareController extends Controller
         ]);
     }
 }
-
-

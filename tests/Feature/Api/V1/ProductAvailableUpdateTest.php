@@ -31,5 +31,3 @@ it('updates product available quantity without requiring full product payload', 
         ->and($product->vendor)->toBe('Plamod')
         ->and((string) $product->latest_unit_cost)->toBe('12.34');
 });
-
-

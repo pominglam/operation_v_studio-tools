@@ -33,11 +33,13 @@ final class DatabaseBackupService
 
         if ($driver === 'sqlite') {
             $db = $this->backupSqlite($timestamp, $prefix);
+
             return $this->bundleWithImages($db, $timestamp, $prefix);
         }
 
         if ($driver === 'mysql') {
             $db = $this->backupMysql($conn, $timestamp, $prefix);
+
             return $this->bundleWithImages($db, $timestamp, $prefix);
         }
 
@@ -53,7 +55,7 @@ final class DatabaseBackupService
         $bundleFilename = "{$prefix}-{$timestamp}.zip";
         $bundleDest = storage_path("backups/{$bundleFilename}");
 
-        $zip = new \ZipArchive();
+        $zip = new \ZipArchive;
         $ok = $zip->open($bundleDest, \ZipArchive::CREATE | \ZipArchive::OVERWRITE);
         if ($ok !== true) {
             throw new \RuntimeException('Failed to create backup archive.');
@@ -215,7 +217,3 @@ final class DatabaseBackupService
         ];
     }
 }
-
-
-
-

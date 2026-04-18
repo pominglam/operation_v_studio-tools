@@ -1,0 +1,16 @@
+---
+description: Always run relevant tests before finishing any change
+alwaysApply: true
+---
+
+# Always Test Before Done
+
+Before marking any task complete, the agent must run tests that directly cover the changed behavior.
+
+- Run at least one **targeted automated test** for each changed backend/frontend flow.
+- If a user reports a runtime bug, run the exact affected test file (or add one first), then re-run after the fix.
+- For API changes, run the corresponding feature test file(s) in `tests/Feature`.
+- For frontend behavior changes, run the corresponding Vitest/Playwright test file(s).
+- Report which commands were run and whether they passed.
+- If a test cannot be run, explicitly explain why and what is needed to unblock it.
+

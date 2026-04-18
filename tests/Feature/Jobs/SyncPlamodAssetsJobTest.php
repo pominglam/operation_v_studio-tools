@@ -12,5 +12,3 @@ it('skips execution for cancelled batches', function (): void {
     expect($mw)->toBeArray();
     expect(array_filter($mw, fn ($m): bool => $m instanceof SkipIfBatchCancelled))->not->toBeEmpty();
 });
-
-

@@ -21,11 +21,11 @@ it('decodes double-encoded entities in JSON-LD description', function (): void {
 </html>
 HTML;
 
-    $parser = new HljHtmlParser();
+    $parser = new HljHtmlParser;
     $out = $parser->extractTitleAndDescription($html);
 
     expect($out['title'])->toBe('Test');
-    expect($out['description_html'])->toContain("wasn&#039;t");
+    expect($out['description_html'])->toContain('wasn&#039;t');
     expect($out['description_html'])->not->toContain('&amp;#39;');
     expect($out['description_html'])->not->toContain('&amp;nbsp;');
 });
@@ -57,7 +57,7 @@ it('prefers the PDP HTML description block over JSON-LD to preserve formatting',
 </html>
 HTML;
 
-    $parser = new HljHtmlParser();
+    $parser = new HljHtmlParser;
     $out = $parser->extractTitleAndDescription($html);
 
     expect($out['title'])->toBe('RG 1/144 GOD GUNDAM');
@@ -66,5 +66,3 @@ HTML;
     expect($out['description_html'])->toContain('<li>Item A</li>');
     expect($out['description_html'])->not->toContain('Plain text description');
 });
-
-

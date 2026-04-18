@@ -23,5 +23,3 @@ final class ProductPlamodSyncController extends Controller
         ], 202);
     }
 }
-
-

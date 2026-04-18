@@ -26,6 +26,7 @@ final class AliExpressScraperClient
         $json = $res->json() ?? [];
         if (! $res->successful()) {
             $msg = (string) ($json['error_message'] ?? $json['message'] ?? 'AliExpress scraper error');
+
             return [
                 'status' => 'error',
                 'error_message' => $msg,
@@ -49,5 +50,3 @@ final class AliExpressScraperClient
         return $res->successful();
     }
 }
-
-

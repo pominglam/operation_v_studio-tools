@@ -23,6 +23,7 @@ final class ProductUpdateService
         }
 
         $msg = $e->getMessage();
+
         return str_contains($msg, 'products.sku')
             || str_contains($msg, 'products_sku_unique')
             || str_contains($msg, 'Duplicate entry')
@@ -38,6 +39,7 @@ final class ProductUpdateService
         if (strtolower($v) === 'empty (no shopify tags)') {
             return '';
         }
+
         return $v;
     }
 

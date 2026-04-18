@@ -96,5 +96,3 @@ it('validates reorder request payload', function (): void {
     $this->putJson("/api/v1/products/{$p->uuid}/plamod/assets/order", [])
         ->assertStatus(422);
 });
-
-

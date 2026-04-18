@@ -18,5 +18,3 @@ interface DatabaseBackupRepository
      */
     public function listRecent(int $limit = 100): Collection;
 }
-
-

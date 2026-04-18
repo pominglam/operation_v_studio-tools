@@ -40,4 +40,3 @@ it('returns item unit_cost in CAD for a foreign-currency PO when fx_rate_to_cad 
         ->assertOk()
         ->assertJsonPath('data.items.0.unit_cost', '15.00');
 });
-

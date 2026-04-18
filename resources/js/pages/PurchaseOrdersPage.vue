@@ -4,11 +4,13 @@ import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/Mult
 import { api } from '../lib/api';
 import { formatTorontoDate } from '../lib/datetime';
 import { formatMoney2OrEmpty, parseMoney } from '../lib/money';
+import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
 
 type PurchaseOrderListRow = {
     id: string;
-    is_done: boolean;
+    status: 'draft' | 'ordered' | 'shipped' | 'received' | 'on_shelves';
     vendor: string;
+    supplier_order_id: string | null;
     ordered_date: string | null;
     shipped_date: string | null;
     estimated_arrival_date: string | null;
@@ -21,6 +23,21 @@ type PurchaseOrderListRow = {
     counts: { items: number };
     created_at: string | null;
 };
+
+function poStatusLabel(status: PurchaseOrderListRow['status']): string {
+    switch (status) {
+        case 'on_shelves':
+            return 'On shelves';
+        case 'received':
+            return 'Received';
+        case 'shipped':
+            return 'Shipped';
+        case 'ordered':
+            return 'Ordered';
+        default:
+            return 'Draft';
+    }
+}
 
 type Paginated<T> = {
     data: T[];
@@ -54,17 +71,19 @@ const DEFAULT_VENDOR_OPTIONS = [
     'PM',
     'JS',
 ] as const;
+const STATE_KEY = 'purchase-orders:history-filters:v1';
 
 const loading = ref(false);
 const error = ref<string | null>(null);
 const pos = ref<PurchaseOrderListRow[]>([]);
 const meta = ref<Paginated<PurchaseOrderListRow>['meta'] | null>(null);
+const hydrating = ref(true);
 
 type PurchaseOrderSortBy = 'created' | 'ordered' | 'received';
 const sortBy = ref<PurchaseOrderSortBy>('created');
 const sortDir = ref<'asc' | 'desc'>('desc');
 const selectedVendors = ref<string[]>([]);
-const savingDoneById = ref<Record<string, true>>({});
+const selectedStatuses = ref<PurchaseOrderListRow['status'][]>([]);
 
 const file = ref<File | null>(null);
 const importing = ref(false);
@@ -74,6 +93,7 @@ const importResult = ref<ImportResult | null>(null);
 
 const vendors = ref<string[]>([]);
 const vendor = ref<string>('');
+const supplierOrderId = ref<string>('');
 const orderedDate = ref<string>('');
 const shippedDate = ref<string>('');
 const estimatedArrivalDate = ref<string>('');
@@ -89,11 +109,38 @@ const hasImportResult = computed(() => importResult.value !== null);
 const vendorFilterOptions = computed<MultiSelectOption[]>(() =>
     vendors.value.map((v) => ({ value: v, label: v })),
 );
+const statusFilterOptions = computed<MultiSelectOption[]>(() => [
+    { value: 'draft', label: 'Draft' },
+    { value: 'ordered', label: 'Ordered' },
+    { value: 'shipped', label: 'Shipped' },
+    { value: 'received', label: 'Received' },
+    { value: 'on_shelves', label: 'On shelves' },
+]);
 
 watch(
     selectedVendors,
     () => {
+        if (hydrating.value) return;
         void loadHistory();
+    },
+    { deep: true },
+);
+watch(
+    selectedStatuses,
+    () => {
+        if (hydrating.value) return;
+        void loadHistory();
+    },
+    { deep: true },
+);
+watch(
+    [selectedVendors, selectedStatuses],
+    () => {
+        if (hydrating.value) return;
+        savePageState(STATE_KEY, {
+            selectedVendors: selectedVendors.value,
+            selectedStatuses: selectedStatuses.value,
+        });
     },
     { deep: true },
 );
@@ -160,6 +207,9 @@ async function loadHistory(): Promise<void> {
         };
         if (selectedVendors.value.length > 0) {
             params.vendors = selectedVendors.value;
+        }
+        if (selectedStatuses.value.length > 0) {
+            params.statuses = selectedStatuses.value;
         }
         const res = await api.get<Paginated<PurchaseOrderListRow>>('/api/v1/purchase-orders', {
             params,
@@ -233,42 +283,6 @@ function poTotal(po: PurchaseOrderListRow): string | null {
     return total.toFixed(2);
 }
 
-function isSavingDone(id: string): boolean {
-    return savingDoneById.value[id] === true;
-}
-
-async function toggleDone(id: string, next: boolean): Promise<void> {
-    const row = pos.value.find((p) => p.id === id);
-    if (!row || isSavingDone(id)) {
-        return;
-    }
-
-    const prev = Boolean(row.is_done);
-    row.is_done = next;
-    savingDoneById.value = { ...savingDoneById.value, [id]: true };
-
-    try {
-        const res = await api.patch(
-            `/api/v1/purchase-orders/${id}`,
-            { is_done: next },
-            { validateStatus: () => true },
-        );
-        if (res.status < 200 || res.status >= 300) {
-            row.is_done = prev;
-            error.value = res.data?.message ?? 'Failed to update done flag.';
-            return;
-        }
-        const saved = (res.data?.data?.is_done as boolean | null | undefined) ?? next;
-        row.is_done = Boolean(saved);
-    } catch {
-        row.is_done = prev;
-        error.value = 'Failed to update done flag.';
-    } finally {
-        const { [id]: _omit, ...rest } = savingDoneById.value;
-        savingDoneById.value = rest;
-    }
-}
-
 function onFileChange(e: Event): void {
     const input = e.target as HTMLInputElement;
     file.value = input.files?.[0] ?? null;
@@ -295,6 +309,9 @@ async function runImport(): Promise<void> {
         const fd = new FormData();
         fd.append('file', file.value);
         fd.append('vendor', vendor.value);
+        if (supplierOrderId.value.trim() !== '') {
+            fd.append('supplier_order_id', supplierOrderId.value.trim());
+        }
         if (orderedDate.value) fd.append('ordered_date', orderedDate.value);
         if (shippedDate.value) fd.append('shipped_date', shippedDate.value);
         if (estimatedArrivalDate.value)
@@ -325,7 +342,24 @@ async function runImport(): Promise<void> {
     }
 }
 
+function resetHistoryFilters(): void {
+    clearPageState(STATE_KEY);
+    selectedVendors.value = [];
+    selectedStatuses.value = [];
+    void loadHistory();
+}
+
 onMounted(() => {
+    const saved = loadPageState<{
+        selectedVendors?: string[];
+        selectedStatuses?: PurchaseOrderListRow['status'][];
+    }>(STATE_KEY);
+    if (saved) {
+        if (Array.isArray(saved.selectedVendors)) selectedVendors.value = saved.selectedVendors;
+        if (Array.isArray(saved.selectedStatuses)) selectedStatuses.value = saved.selectedStatuses;
+    }
+
+    hydrating.value = false;
     mergeVendorOptions([...DEFAULT_VENDOR_OPTIONS]);
     void loadVendors();
     void loadHistory();
@@ -358,6 +392,15 @@ onMounted(() => {
                     <datalist id="vendor-options">
                         <option v-for="v in vendors" :key="v" :value="v" />
                     </datalist>
+                </div>
+                <div>
+                    <label class="text-xs font-medium text-slate-700">Supplier order ID</label>
+                    <input
+                        v-model="supplierOrderId"
+                        type="text"
+                        class="mt-1 block w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                        placeholder="Optional"
+                    />
                 </div>
                 <div>
                     <label class="text-xs font-medium text-slate-700">Ordered</label>
@@ -506,14 +549,24 @@ onMounted(() => {
         <section class="mt-6 rounded-lg border border-slate-200 bg-white p-4">
             <div class="flex items-center justify-between">
                 <h2 class="text-sm font-semibold text-slate-900">History</h2>
-                <button
-                    type="button"
-                    class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-                    :disabled="loading"
-                    @click="loadHistory"
-                >
-                    Refresh
-                </button>
+                <div class="flex items-center gap-2">
+                    <button
+                        type="button"
+                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                        :disabled="loading"
+                        @click="resetHistoryFilters"
+                    >
+                        Reset filters
+                    </button>
+                    <button
+                        type="button"
+                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                        :disabled="loading"
+                        @click="loadHistory"
+                    >
+                        Refresh
+                    </button>
+                </div>
             </div>
 
             <div class="mt-3 max-w-md">
@@ -525,6 +578,15 @@ onMounted(() => {
                     test-id="po-history-vendor-filter"
                 />
             </div>
+            <div class="mt-3 max-w-md">
+                <MultiSelectFilter
+                    v-model="selectedStatuses"
+                    label="Status"
+                    :options="statusFilterOptions"
+                    placeholder="All statuses"
+                    test-id="po-history-status-filter"
+                />
+            </div>
 
             <p v-if="error" class="mt-3 text-sm text-red-700">{{ error }}</p>
             <p v-else-if="loading" class="mt-3 text-sm text-slate-600">Loading…</p>
@@ -534,7 +596,7 @@ onMounted(() => {
                     <thead class="text-slate-600">
                         <tr>
                             <th class="px-2 py-2">ID</th>
-                            <th class="px-2 py-2 text-center">Done</th>
+                            <th class="px-2 py-2">Status</th>
                             <th class="px-2 py-2">
                                 <button
                                     type="button"
@@ -587,22 +649,11 @@ onMounted(() => {
                                     :href="`/purchase-orders/${po.id}`"
                                     >{{ po.id }}</a
                                 >
+                                <div class="mt-0.5 text-[11px] text-slate-500">
+                                    Supplier order ID: {{ po.supplier_order_id ?? '—' }}
+                                </div>
                             </td>
-                            <td class="px-2 py-2 text-center">
-                                <input
-                                    :checked="Boolean(po.is_done)"
-                                    :disabled="isSavingDone(po.id)"
-                                    type="checkbox"
-                                    class="h-4 w-4 rounded border-slate-300 text-slate-900"
-                                    :data-testid="`po-history-done:${po.id}`"
-                                    @change="
-                                        toggleDone(
-                                            po.id,
-                                            ($event.target as HTMLInputElement).checked,
-                                        )
-                                    "
-                                />
-                            </td>
+                            <td class="px-2 py-2">{{ poStatusLabel(po.status) }}</td>
                             <td class="px-2 py-2 text-slate-600">
                                 {{ formatTorontoDate(po.created_at) }}
                             </td>

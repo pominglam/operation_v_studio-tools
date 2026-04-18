@@ -84,4 +84,3 @@ it('adds qty received from PO lines to product available qty by exact linked pro
     expect($b->available_qty)->toBe(1);
     expect($c->available_qty)->toBe(7);
 });
-

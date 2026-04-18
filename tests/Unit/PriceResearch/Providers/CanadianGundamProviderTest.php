@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
+use App\DAL\Products\ProductExternalContentRepository;
 use App\Models\Product;
+use App\Models\ProductExternalContent;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\PriceResearch\Providers\CanadianGundamProvider;
 use App\Services\PriceResearch\Support\HtmlPriceParser;
-use App\DAL\Products\ProductExternalContentRepository;
-use App\Models\ProductExternalContent;
 
 /**
  * Call a protected method without adding production test hooks.

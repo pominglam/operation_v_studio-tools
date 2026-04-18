@@ -35,10 +35,9 @@ it('filters products by multiple search terms (OR across terms)', function (): v
 
 it('rejects too many search terms', function (): void {
     $terms = implode('&', array_map(
-        static fn (int $i): string => "search_terms[]=" . urlencode("TERM-{$i}"),
+        static fn (int $i): string => 'search_terms[]='.urlencode("TERM-{$i}"),
         range(1, 61),
     ));
 
     $this->getJson("/api/v1/products?per_page=100&{$terms}")->assertStatus(422);
 });
-

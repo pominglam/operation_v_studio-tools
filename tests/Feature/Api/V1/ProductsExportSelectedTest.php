@@ -165,6 +165,33 @@ it('accepts selling_price sort_by for selected Shopify no-inventory export', fun
     expect($res->streamedContent())->toContain('EXP-SEL-SHOPIFY-NO-INV-SORT');
 });
 
+it('accepts reorder sort_by for selected exports', function (): void {
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000090013',
+        'sku' => 'EXP-SEL-REORDER-SORT',
+        'description' => 'Export Selected reorder sort',
+        'type' => 'HG',
+        'vendor' => 'Plamod',
+        'available_qty' => 0,
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $p->id,
+        'product_uuid' => $p->uuid,
+        'selling_price' => '9.99',
+        'currency' => 'CAD',
+    ]);
+
+    $res = $this->postJson('/api/v1/products/export/selected', [
+        'export_type' => 'shopify_no_inventory',
+        'ids' => [$p->uuid],
+        'sort_by' => 'reorder',
+        'sort_dir' => 'desc',
+    ]);
+
+    $res->assertOk();
+    expect($res->streamedContent())->toContain('EXP-SEL-REORDER-SORT');
+});
+
 it('can include products missing selling price in Shopify selected export when requested', function (): void {
     $withPrice = Product::query()->create([
         'uuid' => '00000000-0000-0000-0000-000000090020',

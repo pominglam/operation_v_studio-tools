@@ -11,6 +11,7 @@ final class HljHtmlParser
     public function extractPdpUrlFromSearchHtml(string $html): ?string
     {
         $urls = $this->extractPdpUrlsFromSearchHtml($html);
+
         return $urls[0] ?? null;
     }
 
@@ -30,6 +31,7 @@ final class HljHtmlParser
             if (Str::startsWith($u, '/')) {
                 return 'https://www.hlj.com'.$u;
             }
+
             return $u;
         }, $m[1] ?? []);
 
@@ -41,12 +43,14 @@ final class HljHtmlParser
         // Common PDP detail label: "JAN Code: 4573102603920"
         if (preg_match('/\\bJAN\\s*Code\\s*:\\s*([0-9]{8,14})\\b/i', $html, $m) === 1) {
             $v = trim((string) ($m[1] ?? ''));
+
             return $v !== '' ? $v : null;
         }
 
         // Sometimes rendered as "JAN: 4573102603920"
         if (preg_match('/\\bJAN\\s*:\\s*([0-9]{8,14})\\b/i', $html, $m) === 1) {
             $v = trim((string) ($m[1] ?? ''));
+
             return $v !== '' ? $v : null;
         }
 
@@ -200,6 +204,7 @@ final class HljHtmlParser
 
         if (preg_match('/(?:^|-)((?:ban[a-z]{0,2}|hbj)\\d+(?:-up)?)(?:$)/i', $slug, $m) === 1) {
             $v = strtolower((string) ($m[1] ?? ''));
+
             return $v !== '' ? $v : null;
         }
 
@@ -301,12 +306,16 @@ final class HljHtmlParser
             if (is_array($v)) {
                 if ($this->isAssoc($v)) {
                     $found = $this->findProductNode($v);
-                    if ($found !== null) return $found;
+                    if ($found !== null) {
+                        return $found;
+                    }
                 } else {
                     foreach ($v as $vv) {
                         if (is_array($vv) && $this->isAssoc($vv)) {
                             $found = $this->findProductNode($vv);
-                            if ($found !== null) return $found;
+                            if ($found !== null) {
+                                return $found;
+                            }
                         }
                     }
                 }
@@ -321,11 +330,13 @@ final class HljHtmlParser
         if (preg_match('/<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m) === 1) {
             $t = html_entity_decode((string) $m[1], ENT_QUOTES | ENT_HTML5);
             $t = trim($t);
+
             return $t !== '' ? $t : null;
         }
 
         if (preg_match('/<title[^>]*>(.*?)<\\/title>/is', $html, $m) === 1) {
             $t = trim(strip_tags((string) $m[1]));
+
             return $t !== '' ? $t : null;
         }
 
@@ -343,7 +354,7 @@ final class HljHtmlParser
 
         $prev = libxml_use_internal_errors(true);
         try {
-            $dom = new \DOMDocument();
+            $dom = new \DOMDocument;
             $dom->loadHTML($html);
             $xpath = new \DOMXPath($dom);
 
@@ -462,7 +473,9 @@ final class HljHtmlParser
         return array_values(array_filter($urls, static function (string $u) use ($blockedTokens): bool {
             $path = parse_url($u, PHP_URL_PATH);
             $path = is_string($path) ? strtolower($path) : '';
-            if ($path === '') return true;
+            if ($path === '') {
+                return true;
+            }
 
             // Common non-product asset buckets on HLJ.
             if (
@@ -582,6 +595,7 @@ final class HljHtmlParser
         $productImages = array_values(array_filter($urls, static function (string $u): bool {
             $path = parse_url($u, PHP_URL_PATH);
             $path = is_string($path) ? strtolower($path) : '';
+
             return str_contains($path, '/productimages/') || str_contains($path, '/media/catalog/product/');
         }));
 
@@ -631,27 +645,38 @@ final class HljHtmlParser
 
     private function normalizeDescriptionToHtml(?string $text): ?string
     {
-        if ($text === null) return null;
+        if ($text === null) {
+            return null;
+        }
         $text = trim($text);
-        if ($text === '') return null;
+        if ($text === '') {
+            return null;
+        }
 
         // Convert blank-line separated blocks into paragraphs.
-        $blocks = preg_split("/\\R\\s*\\R+/u", $text) ?: [];
+        $blocks = preg_split('/\\R\\s*\\R+/u', $text) ?: [];
         $blocks = array_values(array_filter(array_map('trim', $blocks)));
-        if ($blocks === []) return null;
+        if ($blocks === []) {
+            return null;
+        }
 
         $parts = array_map(static fn (string $b): string => '<p>'.e($b).'</p>', $blocks);
+
         return implode('', $parts);
     }
 
     private function sanitizeHtml(string $html): ?string
     {
         $html = trim($html);
-        if ($html === '') return null;
+        if ($html === '') {
+            return null;
+        }
 
         $html = $this->decodeEntitiesDeep($html) ?? '';
         $html = trim($html);
-        if ($html === '') return null;
+        if ($html === '') {
+            return null;
+        }
 
         // Keep a conservative tag allowlist; strip attributes by normalizing opening tags.
         $html = strip_tags($html, '<p><br><b><strong><em><i><ul><ol><li>');
@@ -659,14 +684,19 @@ final class HljHtmlParser
         $html = preg_replace('/<br\\b[^>]*>/i', '<br>', $html) ?? $html;
 
         $html = trim($html);
+
         return $html !== '' ? $html : null;
     }
 
     private function decodeEntitiesDeep(?string $value): ?string
     {
-        if ($value === null) return null;
+        if ($value === null) {
+            return null;
+        }
         $value = trim($value);
-        if ($value === '') return null;
+        if ($value === '') {
+            return null;
+        }
 
         // Some sources double/triple-encode entities (e.g. "&amp;amp;nbsp;" or "&amp;amp;#39;").
         // Decode a few passes until stable.
@@ -675,10 +705,13 @@ final class HljHtmlParser
         for ($i = 0; $i < 3; $i++) {
             $prev = $cur;
             $cur = html_entity_decode($cur, ENT_QUOTES | ENT_HTML5);
-            if ($cur === $prev) break;
+            if ($cur === $prev) {
+                break;
+            }
         }
 
         $cur = trim($cur);
+
         return $cur !== '' ? $cur : null;
     }
 
@@ -690,5 +723,3 @@ final class HljHtmlParser
         return array_keys($arr) !== range(0, count($arr) - 1);
     }
 }
-
-

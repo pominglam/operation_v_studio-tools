@@ -51,7 +51,6 @@ it('imports a Plamod order-details CSV and stops before SUMMARY rows', function 
     expect($preorder->qty_ordered)->toBe(4);
     expect($preorder->qty_received)->toBe(4);
 
-
     /** @var PurchaseOrderItem $item1 */
     $item1 = PurchaseOrderItem::query()->where('purchase_order_id', $po->id)->where('sku', '5055897')->firstOrFail();
     expect((string) $item1->unit_cost)->toBe('16.3100');
@@ -76,4 +75,3 @@ it('imports a Plamod order-details CSV and stops before SUMMARY rows', function 
     $lot = InventoryLot::query()->where('purchase_order_item_id', $item1->id)->firstOrFail();
     expect((string) $lot->shipping_per_unit)->toBe('1.428571');
 });
-

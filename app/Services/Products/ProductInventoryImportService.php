@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Storage;
 final class ProductInventoryImportService
 {
     public const string MATCH_COLUMN = 'Variant SKU';
+
     public const string QTY_COLUMN = 'Variant Inventory Qty';
 
     public function __construct(
@@ -231,6 +232,7 @@ final class ProductInventoryImportService
             }
             $map[$key] = $i;
         }
+
         return $map;
     }
 
@@ -244,6 +246,7 @@ final class ProductInventoryImportService
                 return false;
             }
         }
+
         return true;
     }
 
@@ -255,6 +258,7 @@ final class ProductInventoryImportService
         if (! array_key_exists($idx, $row)) {
             return '';
         }
+
         return trim((string) $row[$idx]);
     }
 
@@ -279,5 +283,3 @@ final class ProductInventoryImportService
         return $csv === false ? '' : $csv;
     }
 }
-
-

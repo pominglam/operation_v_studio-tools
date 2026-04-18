@@ -40,5 +40,3 @@ final class JobBatchShowController extends Controller
         ]);
     }
 }
-
-

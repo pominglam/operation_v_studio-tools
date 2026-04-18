@@ -59,4 +59,3 @@ final class ProductsBackfillStediEnglishNamesCommand extends Command
         return self::SUCCESS;
     }
 }
-

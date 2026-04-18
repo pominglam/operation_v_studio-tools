@@ -11,5 +11,3 @@ it('has job_batch_items table', function (): void {
     expect(Schema::hasColumn('job_batch_items', 'status'))->toBeTrue();
     expect(Schema::hasColumn('job_batch_items', 'debug_log'))->toBeTrue();
 });
-
-

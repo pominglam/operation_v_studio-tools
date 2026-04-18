@@ -44,5 +44,3 @@ final class DatabaseBackupCreateController extends Controller
         ], 201);
     }
 }
-
-

@@ -11,8 +11,7 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 
-final class DatabaseRestoreService
-    implements DatabaseRestore
+final class DatabaseRestoreService implements DatabaseRestore
 {
     public function restore(DatabaseBackup $backup): void
     {
@@ -30,16 +29,19 @@ final class DatabaseRestoreService
 
         if (str_ends_with(strtolower($fullPath), '.zip')) {
             $this->restoreFromBundleZip($conn, $driver, $fullPath, $backup->uuid);
+
             return;
         }
 
         if ($driver === 'sqlite') {
             $this->restoreSqlite($fullPath);
+
             return;
         }
 
         if ($driver === 'mysql') {
             $this->restoreMysql($conn, $fullPath);
+
             return;
         }
 
@@ -128,7 +130,7 @@ final class DatabaseRestoreService
 
     private function extractZipSafely(string $zipPath, string $tmpDir): void
     {
-        $zip = new \ZipArchive();
+        $zip = new \ZipArchive;
         if ($zip->open($zipPath) !== true) {
             throw new \RuntimeException('Could not open backup archive.');
         }
@@ -152,6 +154,7 @@ final class DatabaseRestoreService
                 $out = fopen($target, 'wb');
                 if ($out === false) {
                     fclose($stream);
+
                     continue;
                 }
 
@@ -232,5 +235,3 @@ final class DatabaseRestoreService
         }
     }
 }
-
-

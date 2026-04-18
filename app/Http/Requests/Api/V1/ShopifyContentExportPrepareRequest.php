@@ -29,4 +29,3 @@ final class ShopifyContentExportPrepareRequest extends FormRequest
         ];
     }
 }
-

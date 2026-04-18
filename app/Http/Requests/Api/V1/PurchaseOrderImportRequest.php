@@ -17,6 +17,7 @@ final class PurchaseOrderImportRequest extends FormRequest
         return [
             'file' => ['required', 'file', 'mimes:csv,txt', 'max:51200'],
             'vendor' => ['required', 'string', 'max:128'],
+            'supplier_order_id' => ['sometimes', 'nullable', 'string', 'max:128'],
             'purchase_order_uuid' => ['sometimes', 'uuid'],
             'import_mode' => ['sometimes', 'string', Rule::in(['replace', 'append'])],
             'ordered_date' => ['sometimes', 'nullable', 'date'],

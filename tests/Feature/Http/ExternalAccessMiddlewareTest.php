@@ -59,4 +59,3 @@ it('allows external access after login for this session', function (): void {
 
     $res->assertStatus(200);
 });
-

@@ -33,6 +33,3 @@ final class AliExpressCookiesController extends Controller
         ]);
     }
 }
-
-
-

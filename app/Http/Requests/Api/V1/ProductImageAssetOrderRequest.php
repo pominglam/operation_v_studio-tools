@@ -19,4 +19,3 @@ final class ProductImageAssetOrderRequest extends FormRequest
         ];
     }
 }
-

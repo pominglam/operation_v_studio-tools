@@ -7,7 +7,7 @@ use App\Services\Products\Hlj\HljImageAcceptanceService;
 require_once __DIR__.'/../../Support/PngTestUtils.php';
 
 it('rejects a wide, very-compressible banner image even if the URL looks like a product image', function (): void {
-    $svc = new HljImageAcceptanceService();
+    $svc = new HljImageAcceptanceService;
 
     $url = 'https://www.hlj.com/productimages/ban/bans64015_0.png';
     $expected = 'bans64015';
@@ -21,7 +21,7 @@ it('rejects a wide, very-compressible banner image even if the URL looks like a 
 });
 
 it('accepts a square image when entropy is not suspicious', function (): void {
-    $svc = new HljImageAcceptanceService();
+    $svc = new HljImageAcceptanceService;
 
     $url = 'https://www.hlj.com/productimages/ban/bans64015_2.jpg';
     $expected = 'bans64015';
@@ -39,4 +39,3 @@ it('accepts a square image when entropy is not suspicious', function (): void {
     expect($a['height'])->toBe(800);
     expect(strlen($a['sha256']))->toBe(64);
 });
-

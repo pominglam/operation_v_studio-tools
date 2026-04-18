@@ -42,4 +42,3 @@ it('unarchives selected products by uuid', function (): void {
 
     expect(Product::query()->where('uuid', $p->uuid)->value('archived_at'))->toBeNull();
 });
-

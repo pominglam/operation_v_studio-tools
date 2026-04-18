@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Models\InventoryLot;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
-use App\Models\InventoryLot;
 
 it('deletes an empty purchase order', function (): void {
     $po = PurchaseOrder::query()->create([
@@ -104,5 +104,3 @@ it('returns 409 when deleting a purchase order that has inventory lots', functio
     $this->assertDatabaseHas('purchase_orders', ['id' => $po->id]);
     $this->assertDatabaseHas('purchase_order_items', ['id' => $item->id]);
 });
-
-

@@ -25,7 +25,7 @@ it('updates Stedi product descriptions when incoming name differs (match by vend
         'vendor' => 'OtherVendor',
     ]);
 
-    $csv = <<<CSV
+    $csv = <<<'CSV'
 名称,司特力型号,每盒入数,order qty,received qty,english name
 MC-01哑光大红（基础色）,MC-01,瓶,10,10,Matte Red
 MC-02哑光浓绯红（基础色）,MC-02,瓶,10,10,Matte Intense Scarlet
@@ -57,7 +57,7 @@ it('can use the last non-empty column as the name source', function (): void {
         'vendor' => 'Stedi',
     ]);
 
-    $csv = <<<CSV
+    $csv = <<<'CSV'
 名称,司特力型号,每盒入数,order qty,received qty,english name,,,,,
 MC-01哑光大红（基础色）,MC-01,瓶,10,10,Matte Red,Stedi,MC-01,Matte Red,Stedi MC-01 Matte Red,Stedi MC-01 Matte Red
 CSV;
@@ -82,4 +82,3 @@ it('throws when CSV path is missing', function (): void {
     $service = app(StediEnglishNameBackfillService::class);
     $service->backfillFromShipmentCsv('storage/framework/testing/does-not-exist.csv', false, 'Stedi');
 })->throws(InvalidArgumentException::class);
-

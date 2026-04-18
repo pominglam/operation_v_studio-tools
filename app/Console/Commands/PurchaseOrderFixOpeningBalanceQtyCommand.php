@@ -43,5 +43,3 @@ final class PurchaseOrderFixOpeningBalanceQtyCommand extends Command
         return self::SUCCESS;
     }
 }
-
-

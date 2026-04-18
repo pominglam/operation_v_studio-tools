@@ -32,9 +32,3 @@ final class ShopifyImagesOnlyMiddleware
         abort(404);
     }
 }
-
-
-
-
-
-

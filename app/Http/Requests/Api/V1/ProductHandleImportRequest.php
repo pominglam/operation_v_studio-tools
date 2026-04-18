@@ -19,5 +19,3 @@ final class ProductHandleImportRequest extends FormRequest
         ];
     }
 }
-
-

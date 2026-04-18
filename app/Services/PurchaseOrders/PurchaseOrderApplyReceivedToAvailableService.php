@@ -37,12 +37,14 @@ final class PurchaseOrderApplyReceivedToAvailableService
                 $qty = (int) ($item->qty_received ?? 0);
                 if ($qty <= 0) {
                     $skippedNonPositiveQty++;
+
                     continue;
                 }
 
                 $productId = (int) ($item->product_id ?? 0);
                 if ($productId <= 0) {
                     $skippedMissingProductId++;
+
                     continue;
                 }
 
@@ -76,4 +78,3 @@ final class PurchaseOrderApplyReceivedToAvailableService
         });
     }
 }
-

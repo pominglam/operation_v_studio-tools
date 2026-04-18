@@ -23,5 +23,3 @@ final class ProductTypeRecomputeController extends Controller
         ]);
     }
 }
-
-

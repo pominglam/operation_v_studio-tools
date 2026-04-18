@@ -33,4 +33,3 @@ final class ProductsRecrawlSelectedController extends Controller
         ], 202);
     }
 }
-

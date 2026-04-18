@@ -17,5 +17,3 @@ final class ProductPlamodShowController extends Controller
         return PlamodProductResource::make($data);
     }
 }
-
-

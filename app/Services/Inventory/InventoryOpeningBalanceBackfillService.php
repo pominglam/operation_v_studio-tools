@@ -55,12 +55,14 @@ final class InventoryOpeningBalanceBackfillService
                     $key = $hasSelling ? 'Stedi-arrived' : 'Stedi-not-arrived';
                     $groups[$key] ??= [];
                     $groups[$key][] = $p;
+
                     continue;
                 }
 
                 if (strcasecmp($vendor, 'Plamod') === 0) {
                     $groups['Plamod'] ??= [];
                     $groups['Plamod'][] = $p;
+
                     continue;
                 }
 
@@ -79,7 +81,7 @@ final class InventoryOpeningBalanceBackfillService
 
                 $vendor = str_starts_with($groupKey, 'Stedi') ? 'Stedi' : $groupKey;
 
-                $po = new PurchaseOrder();
+                $po = new PurchaseOrder;
                 $po->vendor = $vendor;
                 $po->shipping_total = '0.00';
                 $po->received_date = now()->toDateString();
@@ -90,7 +92,7 @@ final class InventoryOpeningBalanceBackfillService
                 foreach ($products as $p) {
                     $available = (int) ($p->available_qty ?? 0);
 
-                    $item = new PurchaseOrderItem();
+                    $item = new PurchaseOrderItem;
                     $item->purchase_order_id = $po->id;
                     $item->product_id = (int) $p->id;
                     $item->sku = (string) $p->sku;
@@ -106,7 +108,7 @@ final class InventoryOpeningBalanceBackfillService
                         continue;
                     }
 
-                    $lot = new InventoryLot();
+                    $lot = new InventoryLot;
                     $lot->product_id = (int) $p->id;
                     $lot->purchase_order_item_id = $item->id;
                     $lot->source_type = 'opening_balance';
@@ -128,5 +130,3 @@ final class InventoryOpeningBalanceBackfillService
         });
     }
 }
-
-

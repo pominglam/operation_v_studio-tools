@@ -28,5 +28,3 @@ final class ShopifyContentExportDownloadController extends Controller
         return $disk->download($path, $filename);
     }
 }
-
-

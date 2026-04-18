@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Services\Maintenance\DatabaseBackupService;
 use Illuminate\Console\Command;
 
 final class DatabaseBackupCommand extends Command
@@ -47,7 +46,3 @@ final class DatabaseBackupCommand extends Command
         return self::SUCCESS;
     }
 }
-
-
-
-

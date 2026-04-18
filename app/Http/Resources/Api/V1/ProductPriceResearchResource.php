@@ -42,6 +42,7 @@ final class ProductPriceResearchResource extends JsonResource
 
         if (! extension_loaded('bcmath')) {
             $out = (float) $a + (float) $b;
+
             return number_format($out, $scale, '.', '');
         }
 

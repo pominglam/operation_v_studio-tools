@@ -95,5 +95,3 @@ it('validates required columns for handle import', function (): void {
     $res->assertStatus(422);
     $res->assertJsonPath('message', 'Missing required column: Handle');
 });
-
-

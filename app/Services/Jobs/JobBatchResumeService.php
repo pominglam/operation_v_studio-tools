@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Jobs;
 
 use App\DAL\Jobs\JobBatchItemRepository;
-use App\DTOs\Products\ProductsRecrawlSelectedResultDTO;
 use App\Services\Products\ProductsRecrawlSelectedService;
 use Illuminate\Support\Facades\Bus;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
@@ -73,6 +72,7 @@ final class JobBatchResumeService
         }
 
         $res = $this->recrawl->recrawlSelected($unfinished, $sources);
+
         return [
             'resumed' => true,
             'new_batch_id' => $res->batchId,
@@ -107,4 +107,3 @@ final class JobBatchResumeService
         return $parts;
     }
 }
-

@@ -75,4 +75,3 @@ final class ProductReplenishmentService
         return "case when ({$delta}) > 0 then ({$delta}) else 0 end";
     }
 }
-

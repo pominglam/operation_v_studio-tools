@@ -121,4 +121,3 @@ final class EloquentTcgEventRepository implements TcgEventRepository
         return $event;
     }
 }
-

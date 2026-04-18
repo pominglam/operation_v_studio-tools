@@ -8,8 +8,8 @@ use App\DAL\Maintenance\DatabaseBackupRepository;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\DatabaseBackupRestoreRequest;
 use App\Services\Maintenance\DatabaseRestore;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\JsonResponse;
 
 final class DatabaseBackupRestoreController extends Controller
 {
@@ -42,5 +42,3 @@ final class DatabaseBackupRestoreController extends Controller
         return response()->json(['ok' => true]);
     }
 }
-
-

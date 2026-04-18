@@ -15,5 +15,3 @@ interface DatabaseBackupManager
 
     public function create(string $description, string $createdBy = 'manual'): DatabaseBackup;
 }
-
-

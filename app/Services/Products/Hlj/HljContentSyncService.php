@@ -10,8 +10,7 @@ use App\Models\Product;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use Illuminate\Support\Facades\Storage;
 
-final class HljContentSyncService
-    implements HljContentSync
+final class HljContentSyncService implements HljContentSync
 {
     public const string SOURCE = 'hlj';
 
@@ -162,7 +161,4 @@ final class HljContentSyncService
             default => null,
         };
     }
-
 }
-
-

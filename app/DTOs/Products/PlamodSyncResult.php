@@ -19,5 +19,3 @@ final class PlamodSyncResult
         public array $assets,
     ) {}
 }
-
-

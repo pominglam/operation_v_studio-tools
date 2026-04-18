@@ -63,5 +63,3 @@ it('deducts FIFO lots when inventory check decreases available qty and goes nega
 
     fclose($tmp);
 });
-
-

@@ -11,5 +11,3 @@ interface PlamodScraper
      */
     public function downloadZip(string $sku): array;
 }
-
-

@@ -29,4 +29,3 @@ final class NoCacheHtmlMiddleware
         return $response;
     }
 }
-

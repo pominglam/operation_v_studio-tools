@@ -44,5 +44,3 @@ final class DatabaseBackup extends Model
         });
     }
 }
-
-

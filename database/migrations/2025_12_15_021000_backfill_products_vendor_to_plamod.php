@@ -21,5 +21,3 @@ return new class extends Migration
             ->update(['vendor' => null]);
     }
 };
-
-

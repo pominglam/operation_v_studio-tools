@@ -21,7 +21,3 @@ final class InventoryCheckShowController extends Controller
         );
     }
 }
-
-
-
-

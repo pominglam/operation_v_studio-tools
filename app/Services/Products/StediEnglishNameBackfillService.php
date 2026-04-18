@@ -19,8 +19,7 @@ final class StediEnglishNameBackfillService
         bool $apply,
         string $vendor = 'Stedi',
         string $nameSource = 'english_name',
-    ): StediEnglishNameBackfillResultDTO
-    {
+    ): StediEnglishNameBackfillResultDTO {
         $path = trim($path);
         if ($path === '' || ! is_file($path)) {
             throw new \InvalidArgumentException('CSV file not found.');
@@ -68,6 +67,7 @@ final class StediEnglishNameBackfillService
                         'sku' => $sku !== '' ? $sku : '(missing)',
                         'reason' => 'missing sku or name',
                     ];
+
                     continue;
                 }
 
@@ -82,6 +82,7 @@ final class StediEnglishNameBackfillService
                         'sku' => $sku,
                         'reason' => "no product found for vendor={$vendor}",
                     ];
+
                     continue;
                 }
 
@@ -96,6 +97,7 @@ final class StediEnglishNameBackfillService
                         'sku' => $sku,
                         'reason' => 'name empty or same as current',
                     ];
+
                     continue;
                 }
 
@@ -190,4 +192,3 @@ final class StediEnglishNameBackfillService
         return $this->stringAt($row, $idxEnglish);
     }
 }
-

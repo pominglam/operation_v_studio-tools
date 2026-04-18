@@ -53,9 +53,3 @@ final class ShopifyImageUrlSigner
         return hash_hmac('sha256', $assetId.'|'.$expiresAtUnix, $secret);
     }
 }
-
-
-
-
-
-

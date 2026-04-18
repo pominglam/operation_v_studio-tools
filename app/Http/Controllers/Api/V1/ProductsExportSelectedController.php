@@ -7,9 +7,8 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\ProductsExportSelectedRequest;
 use App\Services\Products\ProductExportService;
-use Illuminate\Http\Response;
 use RuntimeException;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 final class ProductsExportSelectedController extends Controller
 {
@@ -17,7 +16,7 @@ final class ProductsExportSelectedController extends Controller
         private readonly ProductExportService $exports,
     ) {}
 
-    public function __invoke(ProductsExportSelectedRequest $request): StreamedResponse
+    public function __invoke(ProductsExportSelectedRequest $request): Response
     {
         /** @var string $exportType */
         $exportType = $request->validated('export_type');

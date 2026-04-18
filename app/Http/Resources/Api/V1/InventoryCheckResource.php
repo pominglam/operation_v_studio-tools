@@ -41,7 +41,3 @@ final class InventoryCheckResource extends JsonResource
         ];
     }
 }
-
-
-
-

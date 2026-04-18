@@ -230,6 +230,7 @@ final class HtmlPriceParser
                 $desc = html_entity_decode($desc, ENT_QUOTES | ENT_HTML5);
                 $descEsc = htmlspecialchars($desc, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
                 $descEsc = nl2br($descEsc);
+
                 // Simple, safe HTML wrapper.
                 return '<p>'.$descEsc.'</p>';
             }
@@ -299,11 +300,16 @@ final class HtmlPriceParser
 
         foreach ($candidates as $raw) {
             $t = trim(html_entity_decode($raw, ENT_QUOTES | ENT_HTML5));
-            if ($t === '') continue;
+            if ($t === '') {
+                continue;
+            }
             // Avoid useless one-liners.
-            if (mb_strlen($t) < 30) continue;
+            if (mb_strlen($t) < 30) {
+                continue;
+            }
 
             $esc = htmlspecialchars($t, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
             return '<p>'.$esc.'</p>';
         }
 

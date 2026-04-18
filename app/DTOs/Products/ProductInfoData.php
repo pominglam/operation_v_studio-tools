@@ -19,4 +19,3 @@ final class ProductInfoData
         public ?string $preferredDescriptionSource = null,
     ) {}
 }
-

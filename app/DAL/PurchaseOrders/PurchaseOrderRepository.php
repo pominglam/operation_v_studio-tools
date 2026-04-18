@@ -28,9 +28,10 @@ interface PurchaseOrderRepository
 
     /**
      * @param  array<int, string>  $vendors  When non-empty, only rows whose vendor is in this list (exact match).
+     * @param  array<int, string>  $statuses  When non-empty, only rows whose derived status is in this list.
      * @return LengthAwarePaginator<PurchaseOrder>
      */
-    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created', array $vendors = []): LengthAwarePaginator;
+    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created', array $vendors = [], array $statuses = []): LengthAwarePaginator;
 
     /**
      * @return array<int, string>

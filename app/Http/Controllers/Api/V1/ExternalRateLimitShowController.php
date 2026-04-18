@@ -19,4 +19,3 @@ final class ExternalRateLimitShowController extends Controller
         ]);
     }
 }
-

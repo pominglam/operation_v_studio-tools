@@ -64,6 +64,7 @@ final class ProductBarcodeImportService
                         'sku' => $sku !== '' ? $sku : '(missing)',
                         'reason' => 'missing vendor, sku, or barcode',
                     ];
+
                     continue;
                 }
 
@@ -79,6 +80,7 @@ final class ProductBarcodeImportService
                         'sku' => $sku,
                         'reason' => 'no product found',
                     ];
+
                     continue;
                 }
 
@@ -88,6 +90,7 @@ final class ProductBarcodeImportService
                         'sku' => $sku,
                         'reason' => 'multiple products matched',
                     ];
+
                     continue;
                 }
 
@@ -102,6 +105,7 @@ final class ProductBarcodeImportService
                         'sku' => $sku,
                         'reason' => 'barcode already set to same value',
                     ];
+
                     continue;
                 }
 
@@ -111,6 +115,7 @@ final class ProductBarcodeImportService
                         'sku' => $sku,
                         'reason' => 'barcode already set (use --overwrite to replace)',
                     ];
+
                     continue;
                 }
 
@@ -250,4 +255,3 @@ final class ProductBarcodeImportService
         return $barcode;
     }
 }
-

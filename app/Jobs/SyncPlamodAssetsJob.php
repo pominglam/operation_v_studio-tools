@@ -28,7 +28,7 @@ final class SyncPlamodAssetsJob implements ShouldQueue
      */
     public function middleware(): array
     {
-        return [new SkipIfBatchCancelled()];
+        return [new SkipIfBatchCancelled];
     }
 
     public function __construct(
@@ -47,6 +47,7 @@ final class SyncPlamodAssetsJob implements ShouldQueue
             if (is_string($batchId) && $batchId !== '') {
                 $batchItems->markSkipped($batchId, $this->productUuid, 'cancelled');
             }
+
             return;
         }
 
@@ -76,5 +77,3 @@ final class SyncPlamodAssetsJob implements ShouldQueue
         ]);
     }
 }
-
-

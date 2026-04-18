@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Models\PurchaseOrder;
 use App\Models\Product;
+use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 
 it('derives fx_rate_to_cad from product_total (CAD) and vendor_product_total (foreign) when currency != CAD', function (): void {
@@ -66,4 +66,3 @@ it('does not set fx_rate_to_cad when vendor currency is CAD', function (): void 
     $po->refresh();
     expect($po->fx_rate_to_cad)->toBeNull();
 });
-

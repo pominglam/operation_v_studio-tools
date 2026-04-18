@@ -30,5 +30,3 @@ return new class extends Migration
         Schema::dropIfExists('database_backups');
     }
 };
-
-

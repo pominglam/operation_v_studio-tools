@@ -38,8 +38,7 @@ final class ProductsQueryService
         ?int $notArrived = null,
         ?int $reorder = null,
         bool $reorderGtOne = false,
-    ): LengthAwarePaginator
-    {
+    ): LengthAwarePaginator {
         return $this->products->paginate(
             $perPage,
             $search,

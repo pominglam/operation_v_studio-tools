@@ -26,4 +26,3 @@ final class ProductLatestArrivalController extends Controller
         return ProductResource::make($product)->response();
     }
 }
-

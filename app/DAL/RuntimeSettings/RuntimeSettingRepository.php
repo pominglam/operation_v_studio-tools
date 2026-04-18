@@ -10,4 +10,3 @@ interface RuntimeSettingRepository
 
     public function putString(string $key, ?string $value): void;
 }
-

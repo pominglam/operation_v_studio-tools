@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Products;
 
-use App\DAL\Products\ProductSellingPriceRepository;
 use App\DAL\Products\ProductRepository;
+use App\DAL\Products\ProductSellingPriceRepository;
 use App\DTOs\Products\ProductImportRowDTO;
 use App\Services\Products\Exceptions\InvalidProductImportFileException;
 use App\Services\Products\Exceptions\ProductImportConflictsException;

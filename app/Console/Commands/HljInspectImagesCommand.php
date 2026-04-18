@@ -9,8 +9,8 @@ use App\Models\ProductExternalAsset;
 use App\Models\ProductExternalContent;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\Products\Hlj\HljContentSyncService;
-use App\Services\Products\Hlj\HljImageAcceptanceService;
 use App\Services\Products\Hlj\HljHtmlParser;
+use App\Services\Products\Hlj\HljImageAcceptanceService;
 use Illuminate\Console\Command;
 
 final class HljInspectImagesCommand extends Command
@@ -30,6 +30,7 @@ final class HljInspectImagesCommand extends Command
         $sku = trim((string) $this->argument('sku'));
         if ($sku === '') {
             $this->error('SKU is required.');
+
             return self::FAILURE;
         }
 
@@ -37,6 +38,7 @@ final class HljInspectImagesCommand extends Command
         $product = Product::query()->where('sku', $sku)->first();
         if ($product === null) {
             $this->error("No product found for sku: {$sku}");
+
             return self::FAILURE;
         }
 
@@ -69,6 +71,7 @@ final class HljInspectImagesCommand extends Command
             if (! (bool) $this->option('run-sync')) {
                 $this->warn('Tip: re-run with --run-sync (and optionally --probe-search) to see why it is not finding a PDP.');
             }
+
             return self::SUCCESS;
         }
 
@@ -77,6 +80,7 @@ final class HljInspectImagesCommand extends Command
         $this->info('HTTP status: '.$res->status());
         if (! $res->successful()) {
             $this->error('Failed to fetch HLJ PDP.');
+
             return self::FAILURE;
         }
 
@@ -160,13 +164,19 @@ final class HljInspectImagesCommand extends Command
     {
         $out = [];
         $barcode = is_string($product->barcode) ? trim($product->barcode) : '';
-        if ($barcode !== '') $out[] = $barcode;
+        if ($barcode !== '') {
+            $out[] = $barcode;
+        }
 
         $sku = is_string($product->sku) ? trim($product->sku) : '';
-        if ($sku !== '') $out[] = $sku;
+        if ($sku !== '') {
+            $out[] = $sku;
+        }
 
         $name = is_string($product->description) ? trim($product->description) : '';
-        if ($name !== '') $out[] = $name;
+        if ($name !== '') {
+            $out[] = $name;
+        }
 
         return array_values(array_unique(array_filter($out)));
     }
@@ -228,4 +238,3 @@ final class HljInspectImagesCommand extends Command
         return ['status' => $status, 'title' => $title, 'pdp' => null];
     }
 }
-

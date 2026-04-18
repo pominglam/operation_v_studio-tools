@@ -26,5 +26,3 @@ interface ProductExternalContentRepository
 
     public function updateSourceUrl(int $id, ?string $sourceUrl): void;
 }
-
-

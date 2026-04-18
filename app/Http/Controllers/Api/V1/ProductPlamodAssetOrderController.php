@@ -21,9 +21,3 @@ final class ProductPlamodAssetOrderController extends Controller
         return response()->json(['ok' => true]);
     }
 }
-
-
-
-
-
-

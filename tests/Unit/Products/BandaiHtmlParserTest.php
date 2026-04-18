@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Services\Products\Bandai\BandaiHtmlParser;
 
 it('extracts pdp candidates from search html and picks best match', function (): void {
-    $html = <<<HTML
+    $html = <<<'HTML'
     <html><body>
       <a href="/en-us/item/01_9999/">MG 1/100 GUNDAM SOMETHING ELSE</a>
       <a href="/en-us/item/01_6764/">MG 1/100 GUNDAM BARBATOS LUPUS</a>
@@ -13,7 +13,7 @@ it('extracts pdp candidates from search html and picks best match', function ():
     </body></html>
     HTML;
 
-    $parser = new BandaiHtmlParser();
+    $parser = new BandaiHtmlParser;
     $cands = $parser->extractPdpCandidatesFromSearchHtml($html);
     expect($cands)->toHaveCount(2);
 
@@ -23,7 +23,7 @@ it('extracts pdp candidates from search html and picks best match', function ():
 });
 
 it('parses pdp description, grade, series, yen price, launch date, and age', function (): void {
-    $html = <<<HTML
+    $html = <<<'HTML'
     <html><body>
       <main>
       <h1>MG 1/100 GUNDAM BARBATOS LUPUS</h1>
@@ -48,7 +48,7 @@ it('parses pdp description, grade, series, yen price, launch date, and age', fun
     </body></html>
     HTML;
 
-    $parser = new BandaiHtmlParser();
+    $parser = new BandaiHtmlParser;
     $parsed = $parser->parsePdp($html);
 
     expect($parsed['grade'])->toBe('MG');
@@ -59,4 +59,3 @@ it('parses pdp description, grade, series, yen price, launch date, and age', fun
     expect($parsed['description_html'])->toContain('<p>Hello</p>');
     expect($parsed['image_urls'])->toHaveCount(2);
 });
-

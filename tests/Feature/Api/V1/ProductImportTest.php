@@ -188,7 +188,7 @@ it('imports Stedi products and computes selling price when multiplier is present
         '单刃模型钳,MS-104,个,"HK$30.7 ",5.59,30,"HK$921.9 ",167.62,2.6,14.53,30,',
         '直镊子,MS-11,个,"HK$16.8 ",3.05,5,"HK$83.8 ",15.24,3.7,11.28,5,6975400111004',
         // no multiplier -> no selling price
-        '双刃模型钳,MS-100,个,"HK$53.9 ",9.80,,HK$0.0,0.00,,,,' ,
+        '双刃模型钳,MS-100,个,"HK$53.9 ",9.80,,HK$0.0,0.00,,,,',
         // trailing totals row (should not be imported; used for crosscheck)
         ',,,,Total Amount,35,,182.86,,,,',
     ]);

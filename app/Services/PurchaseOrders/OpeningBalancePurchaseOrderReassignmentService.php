@@ -33,7 +33,7 @@ final class OpeningBalancePurchaseOrderReassignmentService
             /** @var Product|null $product */
             $product = Product::query()->where('sku', '=', $sku)->first();
             if ($product === null) {
-                throw (new ModelNotFoundException())->setModel(Product::class, [$sku]);
+                throw (new ModelNotFoundException)->setModel(Product::class, [$sku]);
             }
 
             $groupKey = $this->groupKeyForProduct($product);
@@ -47,7 +47,7 @@ final class OpeningBalancePurchaseOrderReassignmentService
                 ->first();
 
             if ($targetPo === null) {
-                $targetPo = new PurchaseOrder();
+                $targetPo = new PurchaseOrder;
                 $targetPo->vendor = $poVendor;
                 $targetPo->shipping_total = '0.00';
                 $targetPo->received_date = now()->toDateString();
@@ -106,6 +106,7 @@ final class OpeningBalancePurchaseOrderReassignmentService
         if (strcasecmp($vendor, 'Stedi') === 0) {
             $set = array_fill_keys($this->sellingPrices->productIdsWithSellingPriceSet(), true);
             $hasSelling = array_key_exists((int) $product->id, $set);
+
             return $hasSelling ? 'Stedi-arrived' : 'Stedi-not-arrived';
         }
 
@@ -116,5 +117,3 @@ final class OpeningBalancePurchaseOrderReassignmentService
         return $vendor;
     }
 }
-
-

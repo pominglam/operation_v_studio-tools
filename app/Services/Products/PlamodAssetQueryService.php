@@ -13,6 +13,7 @@ use App\Services\Products\Hlj\HljPdpResolverService;
 final class PlamodAssetQueryService
 {
     public const string SOURCE = PlamodAssetSyncService::SOURCE;
+
     private const string HLJ_SOURCE = 'hlj';
 
     public function __construct(
@@ -44,5 +45,3 @@ final class PlamodAssetQueryService
         return new PlamodProductData($content, $assets);
     }
 }
-
-

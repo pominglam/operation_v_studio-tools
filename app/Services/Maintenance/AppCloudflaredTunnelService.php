@@ -9,8 +9,11 @@ use Illuminate\Support\Facades\Storage;
 final class AppCloudflaredTunnelService
 {
     private const string DOCKER_SOCKET = '/var/run/docker.sock';
+
     private const string CONTAINER_NAME = 'pricing-tool-cloudflared-app';
+
     private const string IMAGE = 'cloudflare/cloudflared:2024.12.0';
+
     private const string URL_CACHE_PATH = 'maintenance/cloudflared_app_tunnel_urls.json';
 
     public function __construct(
@@ -135,13 +138,17 @@ final class AppCloudflaredTunnelService
                 for ($i = 0; $i < 10; $i++) {
                     usleep(300_000);
                     $url = $this->extractTryCloudflareUrlFromLogs($id, $startedAtUnix);
-                    if (is_string($url) && trim($url) !== '') break;
+                    if (is_string($url) && trim($url) !== '') {
+                        break;
+                    }
                 }
             }
             if (is_string($url) && trim($url) !== '') {
                 $this->cacheTunnelUrl($id, $url);
+
                 return ['ok' => true, 'tunnel_url' => $url, 'error' => null];
             }
+
             // Container is running; tunnel URL may simply not be in the logs yet.
             // Return quickly and let the UI use Refresh to pick up the URL.
             return ['ok' => true, 'tunnel_url' => null, 'error' => null];
@@ -157,7 +164,9 @@ final class AppCloudflaredTunnelService
         for ($i = 0; $i < 30; $i++) {
             usleep(300_000);
             $url = $this->extractTryCloudflareUrlFromLogs($id, $startedAtUnix);
-            if (is_string($url) && trim($url) !== '') break;
+            if (is_string($url) && trim($url) !== '') {
+                break;
+            }
         }
         if (is_string($url) && trim($url) !== '') {
             $this->cacheTunnelUrl($id, $url);
@@ -212,7 +221,7 @@ final class AppCloudflaredTunnelService
             ],
             'NetworkingConfig' => [
                 'EndpointsConfig' => [
-                    'pricing-tool-net' => new \stdClass(),
+                    'pricing-tool-net' => new \stdClass,
                 ],
             ],
         ];
@@ -233,16 +242,22 @@ final class AppCloudflaredTunnelService
     private function getContainerByName(string $name): ?array
     {
         $json = $this->dockerGet('/containers/'.rawurlencode($name).'/json');
-        if ($json === null) return null;
+        if ($json === null) {
+            return null;
+        }
         $decoded = json_decode($json, true);
+
         return is_array($decoded) ? $decoded : null;
     }
 
     private function containerStartedAtUnix(array $container): ?int
     {
         $startedAt = $container['State']['StartedAt'] ?? null;
-        if (! is_string($startedAt) || trim($startedAt) === '') return null;
+        if (! is_string($startedAt) || trim($startedAt) === '') {
+            return null;
+        }
         $ts = strtotime($startedAt);
+
         return is_int($ts) ? $ts : null;
     }
 
@@ -251,12 +266,15 @@ final class AppCloudflaredTunnelService
         // Always prefer tail: since/until can be huge and slow for long-lived containers.
         // The trycloudflare hostname is printed on startup and should be present in the recent log tail.
         $raw = $this->dockerGet("/containers/{$containerId}/logs?stdout=1&stderr=1&tail=600");
+
         return $this->parseTryCloudflareUrl($raw);
     }
 
     private function parseTryCloudflareUrl(?string $raw): ?string
     {
-        if (! is_string($raw) || trim($raw) === '') return null;
+        if (! is_string($raw) || trim($raw) === '') {
+            return null;
+        }
         if (preg_match_all('#https?://[a-z0-9-]+\\.trycloudflare\\.com#i', $raw, $m)) {
             $all = $m[0] ?? [];
             $last = $all !== [] ? $all[count($all) - 1] : null;
@@ -264,13 +282,17 @@ final class AppCloudflaredTunnelService
                 return trim($last);
             }
         }
+
         return null;
     }
 
     private function looksLikeDnsFailure(string $error): bool
     {
         $e = strtolower(trim($error));
-        if ($e === '') return false;
+        if ($e === '') {
+            return false;
+        }
+
         return str_contains($e, 'could not resolve host')
             || str_contains($e, 'name resolution')
             || str_contains($e, 'enotfound')
@@ -284,7 +306,9 @@ final class AppCloudflaredTunnelService
     private function waitUntilTunnelReady(string $tunnelUrl, int $maxSeconds): bool
     {
         $tunnelUrl = rtrim(trim($tunnelUrl), '/');
-        if ($tunnelUrl === '') return false;
+        if ($tunnelUrl === '') {
+            return false;
+        }
 
         $deadline = microtime(true) + max(1, $maxSeconds);
         $probeUrl = "{$tunnelUrl}/";
@@ -292,7 +316,9 @@ final class AppCloudflaredTunnelService
         while (microtime(true) < $deadline) {
             try {
                 $res = \Illuminate\Support\Facades\Http::timeout(4)->connectTimeout(2)->head($probeUrl);
-                if ($res->status() !== 530) return true;
+                if ($res->status() !== 530) {
+                    return true;
+                }
             } catch (\Throwable) {
                 // ignore and retry
             }
@@ -305,17 +331,23 @@ final class AppCloudflaredTunnelService
     private function cachedTunnelUrl(string $containerId): ?string
     {
         $containerId = trim($containerId);
-        if ($containerId === '') return null;
+        if ($containerId === '') {
+            return null;
+        }
 
         $container = $this->getContainerByName(self::CONTAINER_NAME);
         $startedAtUnix = is_array($container) ? $this->containerStartedAtUnix($container) : null;
 
         $disk = Storage::disk('local');
-        if (! $disk->exists(self::URL_CACHE_PATH)) return null;
+        if (! $disk->exists(self::URL_CACHE_PATH)) {
+            return null;
+        }
 
         $raw = (string) $disk->get(self::URL_CACHE_PATH);
         $decoded = json_decode($raw, true);
-        if (! is_array($decoded)) return null;
+        if (! is_array($decoded)) {
+            return null;
+        }
 
         // Invalidate cache if the container restarted since we cached the URL.
         $cachedStarted = $decoded[$containerId]['started_at_unix'] ?? null;
@@ -324,6 +356,7 @@ final class AppCloudflaredTunnelService
         }
 
         $url = $decoded[$containerId]['tunnel_url'] ?? null;
+
         return is_string($url) && trim($url) !== '' ? trim($url) : null;
     }
 
@@ -331,7 +364,9 @@ final class AppCloudflaredTunnelService
     {
         $containerId = trim($containerId);
         $tunnelUrl = trim($tunnelUrl);
-        if ($containerId === '' || $tunnelUrl === '') return;
+        if ($containerId === '' || $tunnelUrl === '') {
+            return;
+        }
 
         $container = $this->getContainerByName(self::CONTAINER_NAME);
         $startedAtUnix = is_array($container) ? $this->containerStartedAtUnix($container) : null;
@@ -343,7 +378,9 @@ final class AppCloudflaredTunnelService
         if ($disk->exists(self::URL_CACHE_PATH)) {
             $raw = (string) $disk->get(self::URL_CACHE_PATH);
             $decoded = json_decode($raw, true);
-            if (is_array($decoded)) $data = $decoded;
+            if (is_array($decoded)) {
+                $data = $decoded;
+            }
         }
 
         $data[$containerId] = [
@@ -359,7 +396,9 @@ final class AppCloudflaredTunnelService
     {
         $path = '/'.ltrim($path, '/');
         $ch = curl_init('http://localhost'.$path);
-        if ($ch === false) return null;
+        if ($ch === false) {
+            return null;
+        }
 
         curl_setopt($ch, CURLOPT_UNIX_SOCKET_PATH, self::DOCKER_SOCKET);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -369,9 +408,16 @@ final class AppCloudflaredTunnelService
         $code = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
         curl_close($ch);
 
-        if ($out === false) return null;
-        if ($code === 404) return null;
-        if ($code < 200 || $code >= 300) return null;
+        if ($out === false) {
+            return null;
+        }
+        if ($code === 404) {
+            return null;
+        }
+        if ($code < 200 || $code >= 300) {
+            return null;
+        }
+
         return is_string($out) ? $out : null;
     }
 
@@ -382,7 +428,9 @@ final class AppCloudflaredTunnelService
     {
         $path = '/'.ltrim($path, '/');
         $ch = curl_init('http://localhost'.$path);
-        if ($ch === false) return ['ok' => false, 'code' => null, 'body' => null];
+        if ($ch === false) {
+            return ['ok' => false, 'code' => null, 'body' => null];
+        }
 
         curl_setopt($ch, CURLOPT_UNIX_SOCKET_PATH, self::DOCKER_SOCKET);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -399,7 +447,7 @@ final class AppCloudflaredTunnelService
         curl_close($ch);
 
         $ok = $code >= 200 && $code < 300;
+
         return ['ok' => $ok, 'code' => $code, 'body' => is_string($out) ? $out : null];
     }
 }
-

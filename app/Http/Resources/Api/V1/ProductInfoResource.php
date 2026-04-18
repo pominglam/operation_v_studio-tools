@@ -62,4 +62,3 @@ final class ProductInfoResource extends JsonResource
         ];
     }
 }
-

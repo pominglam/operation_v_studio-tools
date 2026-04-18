@@ -43,4 +43,3 @@ it('queues a recrawl batch for selected products and sources', function (): void
         return $batch->name === 'recrawl_selected_products';
     });
 });
-

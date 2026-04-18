@@ -16,6 +16,7 @@ use Throwable;
 final class GundamHangarContentSyncService
 {
     public const string SOURCE = 'gundamhangar';
+
     public const string API_BASE_URL = 'https://server.gundamhangar.com/api';
 
     public function __construct(
@@ -46,6 +47,7 @@ final class GundamHangarContentSyncService
         if ($terms === []) {
             $this->clearExternal($product);
             $this->trace($trace, 'summary', ['result' => 'no_terms']);
+
             return;
         }
 
@@ -53,6 +55,7 @@ final class GundamHangarContentSyncService
         if ($picked === null) {
             $this->clearExternal($product);
             $this->trace($trace, 'summary', ['result' => 'pdp_not_found']);
+
             return;
         }
 
@@ -149,7 +152,9 @@ final class GundamHangarContentSyncService
         $bestScore = -1.0;
         foreach ($terms as $term) {
             $q = trim((string) $term);
-            if ($q === '') continue;
+            if ($q === '') {
+                continue;
+            }
 
             $searchUrl = $this->searchUrlForQuery($q);
             $this->trace($trace, 'search_try', ['q' => $q, 'url' => $searchUrl]);
@@ -161,6 +166,7 @@ final class GundamHangarContentSyncService
                     'q' => $q,
                     'error' => $e->getMessage(),
                 ]);
+
                 continue;
             }
             if (! $res->successful()) {
@@ -168,18 +174,21 @@ final class GundamHangarContentSyncService
                     'q' => $q,
                     'http' => (string) $res->status(),
                 ]);
+
                 continue;
             }
 
             $cands = $this->parser->extractSearchCandidatesFromJson((string) $res->body());
             if ($cands === []) {
                 $this->trace($trace, 'search_no_candidates', ['q' => $q]);
+
                 continue;
             }
 
             $picked = $this->parser->pickBestCandidate($cands, $q);
             if ($picked === null) {
                 $this->trace($trace, 'search_pick_failed', ['q' => $q]);
+
                 continue;
             }
 
@@ -215,6 +224,7 @@ final class GundamHangarContentSyncService
             'page' => 1,
             'search' => $search,
         ]);
+
         return self::API_BASE_URL.'/products?'.$qs;
     }
 
@@ -242,7 +252,9 @@ final class GundamHangarContentSyncService
     private function buildImageUrlsFromCandidate(array $candidate): array
     {
         $featured = trim((string) ($candidate['featured_image'] ?? ''));
-        if ($featured === '') return [];
+        if ($featured === '') {
+            return [];
+        }
 
         $count = max(1, min((int) ($candidate['image_number'] ?? 1), 30));
         $path = parse_url($featured, PHP_URL_PATH);
@@ -262,6 +274,7 @@ final class GundamHangarContentSyncService
         for ($i = 0; $i < $count; $i++) {
             $urls[] = "{$root}/{$i}.{$ext}";
         }
+
         return array_values(array_unique($urls));
     }
 
@@ -269,12 +282,17 @@ final class GundamHangarContentSyncService
     {
         $a = $this->tokens($title);
         $b = $this->tokens($target);
-        if ($a === [] || $b === []) return 0.0;
+        if ($a === [] || $b === []) {
+            return 0.0;
+        }
         $set = array_fill_keys($a, true);
         $hits = 0;
         foreach ($b as $t) {
-            if (isset($set[$t])) $hits++;
+            if (isset($set[$t])) {
+                $hits++;
+            }
         }
+
         return $hits / max(1, count($b));
     }
 
@@ -284,11 +302,16 @@ final class GundamHangarContentSyncService
     private function tokens(string $s): array
     {
         $s = mb_strtolower(trim($s));
-        if ($s === '') return [];
+        if ($s === '') {
+            return [];
+        }
         $s = preg_replace('/\b\d+\s*\/\s*\d+\b/u', ' ', $s) ?? $s;
         $s = preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $s) ?? $s;
         $s = trim(preg_replace('/\s+/u', ' ', $s) ?? $s);
-        if ($s === '') return [];
+        if ($s === '') {
+            return [];
+        }
+
         return array_values(array_unique(array_filter(explode(' ', $s), static fn (string $t): bool => $t !== '')));
     }
 
@@ -310,7 +333,9 @@ final class GundamHangarContentSyncService
         $skippedException = 0;
         foreach ($imageUrls as $url) {
             $url = trim((string) $url);
-            if ($url === '') continue;
+            if ($url === '') {
+                continue;
+            }
             $attempted++;
             $index++;
 
@@ -325,10 +350,12 @@ final class GundamHangarContentSyncService
                     'url' => $url,
                     'error' => $e->getMessage(),
                 ]);
+
                 continue;
             }
             if (! $res->successful()) {
                 $skippedNon200++;
+
                 continue;
             }
 
@@ -338,6 +365,7 @@ final class GundamHangarContentSyncService
                 $fallbackMime = $this->mimeFromImageUrl($url);
                 if ($fallbackMime === null) {
                     $skippedNonImage++;
+
                     continue;
                 }
                 $mime = $fallbackMime;
@@ -346,6 +374,7 @@ final class GundamHangarContentSyncService
             $body = $res->body();
             if (! is_string($body) || $body === '') {
                 $skippedEmpty++;
+
                 continue;
             }
 
@@ -373,6 +402,7 @@ final class GundamHangarContentSyncService
             'skipped_empty' => $skippedEmpty,
             'skipped_exception' => $skippedException,
         ]);
+
         return $rows;
     }
 
@@ -395,6 +425,7 @@ final class GundamHangarContentSyncService
         }
 
         $ext = mb_strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+
         return match ($ext) {
             'jpg', 'jpeg' => 'image/jpeg',
             'png' => 'image/png',
@@ -423,19 +454,28 @@ final class GundamHangarContentSyncService
      */
     private function trace(?callable $trace, string $event, array $data): void
     {
-        if ($trace === null) return;
+        if ($trace === null) {
+            return;
+        }
         $parts = [];
         foreach ($data as $k => $v) {
-            if (is_bool($v)) $v = $v ? 'true' : 'false';
-            if (is_array($v)) $v = json_encode($v, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if (is_bool($v)) {
+                $v = $v ? 'true' : 'false';
+            }
+            if (is_array($v)) {
+                $v = json_encode($v, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            }
             $s = is_string($v) ? $v : (is_numeric($v) ? (string) $v : null);
-            if ($s === null || trim($s) === '') continue;
+            if ($s === null || trim($s) === '') {
+                continue;
+            }
             $s = str_replace(["\r", "\n"], ' ', trim($s));
-            if (mb_strlen($s) > 500) $s = mb_substr($s, 0, 500).'…';
+            if (mb_strlen($s) > 500) {
+                $s = mb_substr($s, 0, 500).'…';
+            }
             $parts[] = "{$k}={$s}";
         }
         $line = '[gundamhangar]['.$event.']'.($parts !== [] ? ' '.implode(' ', $parts) : '');
         $trace($line);
     }
 }
-

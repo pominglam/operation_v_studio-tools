@@ -247,4 +247,3 @@ final class HttpBandaiTcgPlusApi implements BandaiTcgPlusApi
         return $success;
     }
 }
-

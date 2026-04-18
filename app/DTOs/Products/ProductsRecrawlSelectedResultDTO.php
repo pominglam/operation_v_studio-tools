@@ -11,4 +11,3 @@ final class ProductsRecrawlSelectedResultDTO
         public string $batchId,
     ) {}
 }
-

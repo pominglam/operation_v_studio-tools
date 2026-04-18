@@ -28,8 +28,7 @@ final class PurchaseOrderItemUpdateService
         ?int $qtyShipped,
         bool $hasQtyReceived,
         ?int $qtyReceived,
-    ): PurchaseOrderItem
-    {
+    ): PurchaseOrderItem {
         return DB::transaction(function () use ($purchaseOrderItemId, $hasQtyOrdered, $qtyOrdered, $hasQtyShipped, $qtyShipped, $hasQtyReceived, $qtyReceived): PurchaseOrderItem {
             $item = $this->purchaseOrders->findItemByIdOrFail($purchaseOrderItemId);
 
@@ -161,6 +160,7 @@ final class PurchaseOrderItemUpdateService
                             'qty_shipped' => $qtyShippedAll,
                             'qty_ordered' => $ordered,
                         ];
+
                         continue;
                     }
                     $it->qty_shipped = $qtyShippedAll;
@@ -273,4 +273,3 @@ final class PurchaseOrderItemUpdateService
         });
     }
 }
-

@@ -83,4 +83,3 @@ final class ProductsImportBarcodesCommand extends Command
         return self::SUCCESS;
     }
 }
-

@@ -37,5 +37,3 @@ it('does not retry non-transient errors', function (): void {
     expect($out['ok'])->toBeFalse();
     expect($out['error_message'])->toContain('Download ZIP');
 });
-
-

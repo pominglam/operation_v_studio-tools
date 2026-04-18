@@ -25,4 +25,3 @@ final class LatestProductCostsRefreshController extends Controller
         ]);
     }
 }
-

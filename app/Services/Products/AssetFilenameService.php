@@ -45,9 +45,3 @@ final class AssetFilenameService
         return "{$titleSlug}-{$indexPart}-{$assetId}.{$ext}";
     }
 }
-
-
-
-
-
-

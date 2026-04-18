@@ -34,5 +34,3 @@ it('filters price research products by barcode set vs missing', function (): voi
     $missingSkus = array_map(static fn (array $row): string => $row['sku'], $missing->json('data') ?? []);
     expect($missingSkus)->toEqual(['BC-MISSING-EMPTY', 'BC-MISSING-NULL']);
 });
-
-

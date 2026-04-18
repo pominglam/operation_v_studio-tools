@@ -355,6 +355,7 @@ final class ProductExportService
             }
             if ($best === null) {
                 $best = $c;
+
                 continue;
             }
             $bestAt = $best->updated_at?->getTimestamp() ?? 0;

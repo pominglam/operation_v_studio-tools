@@ -25,4 +25,3 @@ final class ProductsRecrawlSelectedRequest extends FormRequest
         ];
     }
 }
-

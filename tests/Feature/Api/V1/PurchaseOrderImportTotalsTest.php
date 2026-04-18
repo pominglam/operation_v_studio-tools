@@ -40,4 +40,3 @@ it('stores product_total and surcharge_total when importing a PO', function (): 
     expect((string) $po->product_total)->toBe('123.45');
     expect((string) $po->surcharge_total)->toBe('6.78');
 });
-

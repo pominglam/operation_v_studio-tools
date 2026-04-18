@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Products;
 
 use App\DAL\Products\ProductRepository;
-use App\Models\Product;
+use App\Support\PurchaseOrders\PurchaseOrderAllocation;
 use Illuminate\Support\Facades\DB;
 
 final class ProductPoLinesQueryService
@@ -73,15 +73,11 @@ final class ProductPoLinesQueryService
 
         return $rows->map(function (object $r) use ($alloc): array {
             $poId = (int) $r->purchase_order_id;
-            $receivedDate = $r->received_date !== null ? trim((string) $r->received_date) : null;
-
             $sumReceived = $alloc[$poId]['sum_received'] ?? 0;
             $sumOrdered = $alloc[$poId]['sum_ordered'] ?? 0;
-            // Align with PO detail page behavior:
-            // only switch to received-based allocation when there is at least one received unit.
-            $units = ($receivedDate !== null && $receivedDate !== '' && $sumReceived > 0)
-                ? $sumReceived
-                : $sumOrdered;
+            $receivedEntriesCount = $alloc[$poId]['received_entries_count'] ?? 0;
+            // Use received totals when qty_received has been entered (including 0); otherwise use ordered totals.
+            $units = PurchaseOrderAllocation::unitsFromTotals($sumReceived, $sumOrdered, $receivedEntriesCount);
 
             $unitCents = $this->moneyToCentsOrNull($r->unit_cost);
             $shipPerUnit = $this->perUnitOrZero($r->shipping_total, $units);
@@ -114,7 +110,7 @@ final class ProductPoLinesQueryService
 
     /**
      * @param  array<int, int>  $purchaseOrderIds
-     * @return array<int, array{sum_received:int, sum_ordered:int}>
+     * @return array<int, array{sum_received:int, sum_ordered:int, received_entries_count:int}>
      */
     private function allocationTotalsByPo(array $purchaseOrderIds): array
     {
@@ -130,12 +126,14 @@ final class ProductPoLinesQueryService
                 'purchase_order_id',
                 DB::raw('SUM(COALESCE(qty_received, 0)) as sum_received'),
                 DB::raw('SUM(COALESCE(qty_ordered, 0)) as sum_ordered'),
+                DB::raw('SUM(CASE WHEN qty_received IS NULL THEN 0 ELSE 1 END) as received_entries_count'),
             ]);
 
         foreach ($rows as $r) {
             $out[(int) $r->purchase_order_id] = [
                 'sum_received' => (int) $r->sum_received,
                 'sum_ordered' => (int) $r->sum_ordered,
+                'received_entries_count' => (int) $r->received_entries_count,
             ];
         }
 
@@ -200,4 +198,3 @@ final class ProductPoLinesQueryService
         return $neg ? -$cents : $cents;
     }
 }
-

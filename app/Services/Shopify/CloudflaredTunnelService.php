@@ -9,7 +9,9 @@ use Illuminate\Support\Facades\Storage;
 final class CloudflaredTunnelService implements CloudflaredTunnel
 {
     private const string DOCKER_SOCKET = '/var/run/docker.sock';
+
     private const string CONTAINER_NAME = 'pricing-tool-cloudflared';
+
     private const string URL_CACHE_PATH = 'shopify/cloudflared_tunnel_urls.json';
 
     public function __construct(
@@ -141,7 +143,9 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
             $url = null;
             for ($i = 0; $i < 10; $i++) {
                 $url = $this->extractTryCloudflareUrlFromLogs($id, $startedAtUnix);
-                if (is_string($url) && trim($url) !== '') break;
+                if (is_string($url) && trim($url) !== '') {
+                    break;
+                }
                 usleep(250_000);
             }
             if (is_string($url) && trim($url) !== '') {
@@ -173,7 +177,9 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
             usleep(200_000);
             $fresh = $this->getContainerByName(self::CONTAINER_NAME);
             $isRunning = (bool) (($fresh['State']['Running'] ?? false));
-            if ($isRunning) break;
+            if ($isRunning) {
+                break;
+            }
         }
 
         if (! $isRunning) {
@@ -188,7 +194,9 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
         $url = null;
         for ($i = 0; $i < 10; $i++) {
             $url = $this->extractTryCloudflareUrlFromLogs($id, $startedAtUnix);
-            if (is_string($url) && trim($url) !== '') break;
+            if (is_string($url) && trim($url) !== '') {
+                break;
+            }
             usleep(250_000);
         }
         if (is_string($url) && trim($url) !== '') {
@@ -216,6 +224,7 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
         }
 
         $url = $decoded[$containerId]['tunnel_url'] ?? null;
+
         return is_string($url) && trim($url) !== '' ? $url : null;
     }
 
@@ -282,10 +291,15 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
     private function getContainerByName(string $name): ?array
     {
         $json = $this->dockerGet('/containers/'.rawurlencode($name).'/json');
-        if ($json === null) return null;
+        if ($json === null) {
+            return null;
+        }
         /** @var array<string, mixed> $decoded */
         $decoded = json_decode($json, true) ?? [];
-        if ($decoded === []) return null;
+        if ($decoded === []) {
+            return null;
+        }
+
         return $decoded;
     }
 
@@ -302,6 +316,7 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
             if (preg_match_all('~https://[a-z0-9-]+\\.trycloudflare\\.com~i', $raw, $m) >= 1) {
                 $all = $m[0] ?? [];
                 $last = is_array($all) ? end($all) : null;
+
                 return is_string($last) ? $last : null;
             }
         }
@@ -314,6 +329,7 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
             if ($raw !== null && preg_match_all('~https://[a-z0-9-]+\\.trycloudflare\\.com~i', $raw, $m) >= 1) {
                 $all = $m[0] ?? [];
                 $last = is_array($all) ? end($all) : null;
+
                 return is_string($last) ? $last : null;
             }
         }
@@ -332,13 +348,16 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
         }
 
         $ts = strtotime($startedAt);
+
         return is_int($ts) && $ts > 0 ? $ts : null;
     }
 
     private function dockerGet(string $path): ?string
     {
         $ch = curl_init();
-        if ($ch === false) return null;
+        if ($ch === false) {
+            return null;
+        }
 
         curl_setopt($ch, CURLOPT_UNIX_SOCKET_PATH, self::DOCKER_SOCKET);
         curl_setopt($ch, CURLOPT_URL, 'http://localhost'.$path);
@@ -381,6 +400,7 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
         curl_close($ch);
 
         $body = is_string($out) && trim($out) !== '' ? $out : null;
+
         return [
             'ok' => $code >= 200 && $code < 300,
             'code' => $code,
@@ -388,5 +408,3 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
         ];
     }
 }
-
-

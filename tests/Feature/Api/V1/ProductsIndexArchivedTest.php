@@ -28,4 +28,3 @@ it('hides archived products by default, and includes them when include_archived=
     expect($idsIncl)->toContain($active->uuid);
     expect($idsIncl)->toContain($archived->uuid);
 });
-

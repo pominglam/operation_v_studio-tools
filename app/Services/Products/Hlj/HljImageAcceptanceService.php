@@ -156,4 +156,3 @@ final class HljImageAcceptanceService
         return strlen($compressed) / $raw;
     }
 }
-

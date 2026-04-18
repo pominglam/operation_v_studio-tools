@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-use App\Models\ProductExternalAsset;
 use App\Jobs\RecrawlSelectedProductJob;
 use App\Models\Product;
+use App\Models\ProductExternalAsset;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Facades\DB;
 
 it('runs gundamplanet sync when selected as a recrawl source', function (): void {
     Storage::fake('local');
@@ -19,13 +19,13 @@ it('runs gundamplanet sync when selected as a recrawl source', function (): void
         'vendor' => 'V',
     ]);
 
-    $searchHtml = <<<HTML
+    $searchHtml = <<<'HTML'
     <html><body>
       <a href="/products/rg-god-gundam">RG God Gundam (Burning Gundam)</a>
     </body></html>
     HTML;
 
-    $pdpHtml = <<<HTML
+    $pdpHtml = <<<'HTML'
     <html><body>
       <img src="https://cdn.example.com/outside.jpg" />
       <product-gallery>
@@ -49,6 +49,7 @@ it('runs gundamplanet sync when selected as a recrawl source', function (): void
         if (str_contains($url, 'cdn.shopify.com/files/gp2_900.jpg')) {
             return Http::response('img2', 200, ['Content-Type' => 'image/jpeg']);
         }
+
         return Http::response('not found', 404);
     });
 
@@ -112,13 +113,13 @@ it('runs newtype sync when selected as a recrawl source', function (): void {
         'vendor' => 'V',
     ]);
 
-    $searchHtml = <<<HTML
+    $searchHtml = <<<'HTML'
     <html><body>
       <a href="/p/AAA/h/hgac-174-wing-gundam-zero">Bandai HGAC 174 Wing Gundam Zero</a>
     </body></html>
     HTML;
 
-    $pdpHtml = <<<HTML
+    $pdpHtml = <<<'HTML'
     <html><head>
       <meta property="og:title" content="Bandai HGAC 174 Wing Gundam Zero - Newtype" />
       <script type="application/ld+json">
@@ -153,6 +154,7 @@ it('runs newtype sync when selected as a recrawl source', function (): void {
         if (str_contains($url, 'cdn.shopify.com/s/files/1/2786/5582/products/other.jpg')) {
             return Http::response('img2', 200, ['Content-Type' => 'image/jpeg']);
         }
+
         return Http::response('not found', 404);
     });
 
@@ -253,6 +255,7 @@ it('runs gundamhangar sync when selected as a recrawl source', function (): void
         if (str_contains($url, '/p-bandai-mg-1-100-rx78frgmt-gundam-frgmt-va-exclusive-ver/1.jpg')) {
             return Http::response('img1', 200, ['Content-Type' => 'image/jpeg']);
         }
+
         return Http::response('not found', 404);
     });
 
@@ -350,6 +353,7 @@ it('continues gundamhangar sync when one search term throws', function (): void 
         if (str_contains($url, '/black-trojan-1-100-gangsuosi-gundzilla-model-kit/1.jpg')) {
             return Http::response('img1', 200, ['Content-Type' => 'image/jpeg']);
         }
+
         return Http::response('not found', 404);
     });
 
@@ -432,6 +436,7 @@ it('continues gundamhangar sync when pdp ajax call throws', function (): void {
         if (str_contains($url, '/mg-test-product/1.jpg')) {
             return Http::response('img1', 200, ['Content-Type' => 'image/jpeg']);
         }
+
         return Http::response('not found', 404);
     });
 
@@ -514,6 +519,7 @@ it('continues gundamhangar sync when one image download throws', function (): vo
         if (str_contains($url, '/mg-partial-image-product/1.jpg')) {
             return Http::response('img1', 200, ['Content-Type' => 'image/jpeg']);
         }
+
         return Http::response('not found', 404);
     });
 
@@ -579,6 +585,7 @@ it('resolves black trojan via encoded search and product detail endpoint', funct
             if (! str_contains($url, '%25')) {
                 return Http::response(['data' => []], 200, ['Content-Type' => 'application/json']);
             }
+
             return Http::response([
                 'data' => [[
                     'title' => 'Black Trojan 1/100 Gangsuosi (Gundzilla) Model Kit',
@@ -615,6 +622,7 @@ it('resolves black trojan via encoded search and product detail endpoint', funct
         if (str_contains($url, '/black-trojan-1-100-gangsuosi-gundzilla-model-kit/2.jpg')) {
             return Http::response('img2', 200, ['Content-Type' => 'image/jpeg']);
         }
+
         return Http::response('not found', 404);
     });
 
@@ -710,6 +718,7 @@ it('accepts gundamhangar image urls when content-type is generic', function (): 
         if (str_contains($url, '/mg-generic-header-product/2.jpg')) {
             return Http::response('img2', 200, ['Content-Type' => 'application/octet-stream']);
         }
+
         return Http::response('not found', 404);
     });
 
@@ -751,4 +760,3 @@ it('accepts gundamhangar image urls when content-type is generic', function (): 
 
     expect(ProductExternalAsset::query()->where('product_id', $p->id)->where('source', 'gundamhangar')->count())->toBe(2);
 });
-

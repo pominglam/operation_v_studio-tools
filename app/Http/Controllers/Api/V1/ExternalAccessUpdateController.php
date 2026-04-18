@@ -26,4 +26,3 @@ final class ExternalAccessUpdateController extends Controller
         }
     }
 }
-

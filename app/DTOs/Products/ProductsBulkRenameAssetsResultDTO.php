@@ -11,4 +11,3 @@ final class ProductsBulkRenameAssetsResultDTO
         public string $batchId,
     ) {}
 }
-

@@ -17,4 +17,3 @@ final class ExternalAccessShowController extends Controller
         ]);
     }
 }
-

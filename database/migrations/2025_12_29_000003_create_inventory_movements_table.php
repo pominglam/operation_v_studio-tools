@@ -43,5 +43,3 @@ return new class extends Migration
         Schema::dropIfExists('inventory_movements');
     }
 };
-
-

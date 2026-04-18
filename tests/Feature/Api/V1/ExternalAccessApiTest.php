@@ -43,4 +43,3 @@ it('can disable external access', function (): void {
     $res->assertStatus(200);
     $res->assertJsonPath('data.enabled', false);
 });
-

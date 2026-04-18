@@ -32,5 +32,3 @@ final class ProductExternalAssetViewController extends Controller
         ]);
     }
 }
-
-

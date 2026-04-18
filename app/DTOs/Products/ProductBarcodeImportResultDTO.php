@@ -25,4 +25,3 @@ final class ProductBarcodeImportResultDTO
         public readonly array $ambiguous,
     ) {}
 }
-

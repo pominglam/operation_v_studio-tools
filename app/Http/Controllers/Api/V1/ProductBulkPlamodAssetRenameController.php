@@ -31,9 +31,3 @@ final class ProductBulkPlamodAssetRenameController extends Controller
         ], 202);
     }
 }
-
-
-
-
-
-

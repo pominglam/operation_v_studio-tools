@@ -26,5 +26,3 @@ it('cancels a job batch', function (): void {
     expect($row)->not->toBeNull();
     expect($row->cancelled_at)->not->toBeNull();
 });
-
-

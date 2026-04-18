@@ -21,4 +21,3 @@ it('gets and updates the global external hits per minute setting', function (): 
     $res3->assertStatus(200);
     $res3->assertJsonPath('data.hits_per_minute', 17);
 });
-

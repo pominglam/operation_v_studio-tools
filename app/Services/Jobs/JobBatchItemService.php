@@ -35,5 +35,3 @@ final class JobBatchItemService
         $this->repo->appendDebugLog($batchId, $productUuid, $line);
     }
 }
-
-

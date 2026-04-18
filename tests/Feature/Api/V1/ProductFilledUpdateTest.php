@@ -30,5 +30,3 @@ it('updates product filled (shipped) quantity without requiring full product pay
         ->and($product->vendor)->toBe('Plamod')
         ->and((string) $product->latest_unit_cost)->toBe('12.34');
 });
-
-

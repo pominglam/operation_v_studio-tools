@@ -237,5 +237,3 @@ it('runs missing PDP info sync as a batch that allows failures', function (): vo
             && (($batch->options['allowFailures'] ?? false) === true);
     });
 });
-
-

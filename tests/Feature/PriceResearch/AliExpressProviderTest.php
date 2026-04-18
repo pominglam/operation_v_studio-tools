@@ -74,5 +74,3 @@ it('treats blocked_by_antibot from the scraper as an error result (no crash)', f
     expect($result->errorMessage)->toBe('blocked_by_antibot');
     expect($result->price)->toBeNull();
 });
-
-

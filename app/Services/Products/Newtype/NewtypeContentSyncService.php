@@ -53,7 +53,9 @@ final class NewtypeContentSyncService
         $limit = 10;
         foreach (array_slice($terms, 0, $limit) as $t) {
             $q = trim((string) $t);
-            if ($q === '') continue;
+            if ($q === '') {
+                continue;
+            }
             $this->trace($trace, 'plan', ['q' => $q, 'url' => $this->searchUrlForQuery($q)]);
         }
         if (count($terms) > $limit) {
@@ -63,6 +65,7 @@ final class NewtypeContentSyncService
         if ($terms === []) {
             $this->clearExternal($product);
             $this->trace($trace, 'summary', ['result' => 'no_terms']);
+
             return;
         }
 
@@ -71,6 +74,7 @@ final class NewtypeContentSyncService
             $this->clearExternal($product);
             $this->trace($trace, 'pdp_not_found', []);
             $this->trace($trace, 'summary', ['result' => 'pdp_not_found']);
+
             return;
         }
 
@@ -90,6 +94,7 @@ final class NewtypeContentSyncService
             ]);
             $this->trace($trace, 'pdp_fetch_failed', ['pdp' => $best['url'], 'http' => (string) $pdpRes->status()]);
             $this->trace($trace, 'summary', ['result' => 'pdp_fetch_failed', 'http' => (string) $pdpRes->status()]);
+
             return;
         }
 
@@ -145,7 +150,9 @@ final class NewtypeContentSyncService
 
         foreach ($terms as $term) {
             $q = trim((string) $term);
-            if ($q === '') continue;
+            if ($q === '') {
+                continue;
+            }
 
             $searchUrl = $this->searchUrlForQuery($q);
             $this->trace($trace, 'search_try', ['q' => $q, 'url' => $searchUrl]);
@@ -159,18 +166,21 @@ final class NewtypeContentSyncService
                     'http_status' => $res->status(),
                 ]);
                 $this->trace($trace, 'search_http_failed', ['q' => $q, 'http' => (string) $res->status()]);
+
                 continue;
             }
 
             $cands = $this->parser->extractSearchCandidatesFromSearchHtml((string) $res->body());
             if ($cands === []) {
                 $this->trace($trace, 'search_no_candidates', ['q' => $q]);
+
                 continue;
             }
 
             $picked = $this->parser->pickBestCandidate($cands, $q);
             if ($picked === null) {
                 $this->trace($trace, 'search_pick_failed', ['q' => $q, 'cands' => (string) count($cands)]);
+
                 continue;
             }
 
@@ -200,6 +210,7 @@ final class NewtypeContentSyncService
     private function searchUrlForQuery(string $query): string
     {
         $qs = http_build_query(['q' => trim($query)]);
+
         return NewtypeHtmlParser::BASE_URL.'/search?'.$qs;
     }
 
@@ -221,7 +232,9 @@ final class NewtypeContentSyncService
 
         foreach (array_slice($imageUrls, 0, 30) as $url) {
             $url = trim((string) $url);
-            if ($url === '') continue;
+            if ($url === '') {
+                continue;
+            }
             $attempted++;
             $index++;
 
@@ -231,6 +244,7 @@ final class NewtypeContentSyncService
             ], siteKey: self::SOURCE);
             if (! $res->successful()) {
                 $skippedNon200++;
+
                 continue;
             }
 
@@ -238,12 +252,14 @@ final class NewtypeContentSyncService
             $mime = is_string($mime) ? trim(explode(';', $mime)[0]) : null;
             if (! is_string($mime) || ! str_starts_with($mime, 'image/')) {
                 $skippedNonImage++;
+
                 continue;
             }
 
             $body = $res->body();
             if (! is_string($body) || $body === '') {
                 $skippedEmpty++;
+
                 continue;
             }
 
@@ -314,11 +330,15 @@ final class NewtypeContentSyncService
     private function gradeFromLine(string $line): string
     {
         $line = trim($line);
-        if ($line === '') return $line;
+        if ($line === '') {
+            return $line;
+        }
         if (preg_match('/^([A-Z0-9]+)/', $line, $m)) {
             $g = trim((string) ($m[1] ?? ''));
+
             return $g !== '' ? $g : $line;
         }
+
         return $line;
     }
 
@@ -326,11 +346,16 @@ final class NewtypeContentSyncService
     {
         $a = $this->tokens($title);
         $b = $this->tokens($name);
-        if ($a === [] || $b === []) return 0.0;
+        if ($a === [] || $b === []) {
+            return 0.0;
+        }
         $hits = 0;
         foreach ($a as $t) {
-            if (in_array($t, $b, true)) $hits++;
+            if (in_array($t, $b, true)) {
+                $hits++;
+            }
         }
+
         return $hits / max(1, count($b));
     }
 
@@ -342,7 +367,10 @@ final class NewtypeContentSyncService
         $s = mb_strtolower($s);
         $s = preg_replace('/[^a-z0-9]+/u', ' ', $s) ?? $s;
         $s = trim(preg_replace('/\\s+/u', ' ', $s) ?? $s);
-        if ($s === '') return [];
+        if ($s === '') {
+            return [];
+        }
+
         return array_values(array_filter(explode(' ', $s), static fn (string $t): bool => $t !== ''));
     }
 
@@ -356,6 +384,7 @@ final class NewtypeContentSyncService
         $path = parse_url($url, PHP_URL_PATH);
         $path = is_string($path) ? $path : '';
         $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
         return $ext !== '' ? $ext : null;
     }
 
@@ -390,19 +419,28 @@ final class NewtypeContentSyncService
      */
     private function trace(?callable $trace, string $event, array $data): void
     {
-        if ($trace === null) return;
+        if ($trace === null) {
+            return;
+        }
         $parts = [];
         foreach ($data as $k => $v) {
-            if (is_bool($v)) $v = $v ? 'true' : 'false';
-            if (is_array($v)) $v = json_encode($v, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if (is_bool($v)) {
+                $v = $v ? 'true' : 'false';
+            }
+            if (is_array($v)) {
+                $v = json_encode($v, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            }
             $s = is_string($v) ? $v : (is_numeric($v) ? (string) $v : null);
-            if ($s === null || trim($s) === '') continue;
+            if ($s === null || trim($s) === '') {
+                continue;
+            }
             $s = str_replace(["\r", "\n"], ' ', trim($s));
-            if (mb_strlen($s) > 500) $s = mb_substr($s, 0, 500).'…';
+            if (mb_strlen($s) > 500) {
+                $s = mb_substr($s, 0, 500).'…';
+            }
             $parts[] = "{$k}={$s}";
         }
         $line = '[newtype]['.$event.']'.($parts !== [] ? ' '.implode(' ', $parts) : '');
         $trace($line);
     }
 }
-

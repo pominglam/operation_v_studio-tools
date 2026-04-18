@@ -83,6 +83,7 @@ final class EloquentProductRepository implements ProductRepository
         foreach ($mainTypes as $mt) {
             if (strtolower($mt) === self::MAIN_TYPE_EMPTY_SENTINEL) {
                 $wantEmptyMainType = true;
+
                 continue;
             }
             $mainTypesForWhereIn[] = $mt;
@@ -152,6 +153,22 @@ final class EloquentProductRepository implements ProductRepository
         $sortColumn = $sortBy !== null && array_key_exists($sortBy, $sortMap) ? $sortMap[$sortBy] : 'sku';
 
         return [$sortColumn, $sortDir];
+    }
+
+    private function normalizeSortForSimpleExportQuery(string $sortColumn): string
+    {
+        // These computed aliases are only available in the heavier listing query.
+        // Simple export queries should gracefully fall back to a stable column.
+        return in_array($sortColumn, [
+            '__received_date',
+            '__selling_price',
+            'total_ordered_qty',
+            'total_sold_qty',
+            'inbound_open_po_qty',
+            'reorder_qty',
+        ], true)
+            ? 'sku'
+            : $sortColumn;
     }
 
     private function inboundOpenPoQtyExpression(): string
@@ -663,6 +680,7 @@ final class EloquentProductRepository implements ProductRepository
     public function listForExport(?string $search = null, array $types = [], ?string $sortBy = null, string $sortDir = 'asc'): Collection
     {
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+        $sortColumn = $this->normalizeSortForSimpleExportQuery($sortColumn);
 
         $q = Product::query()->with(['sellingPrice', 'hljExternalContent', 'plamodExternalContent', 'externalContents']);
         $this->applyListQueryFilters($q, $search, [], $types);
@@ -673,6 +691,7 @@ final class EloquentProductRepository implements ProductRepository
     public function listMissingSellingPriceForExport(?string $sortBy = null, string $sortDir = 'asc'): Collection
     {
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+        $sortColumn = $this->normalizeSortForSimpleExportQuery($sortColumn);
 
         return Product::query()
             ->with(['sellingPrice'])
@@ -689,6 +708,7 @@ final class EloquentProductRepository implements ProductRepository
     public function listMissingBarcodeForExport(?string $sortBy = null, string $sortDir = 'asc'): Collection
     {
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+        $sortColumn = $this->normalizeSortForSimpleExportQuery($sortColumn);
 
         return Product::query()
             ->with(['sellingPrice'])
@@ -706,6 +726,7 @@ final class EloquentProductRepository implements ProductRepository
     public function listByUuidsForExport(array $uuids, ?string $sortBy = null, string $sortDir = 'asc'): Collection
     {
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+        $sortColumn = $this->normalizeSortForSimpleExportQuery($sortColumn);
 
         $uuids = array_values(array_unique(array_filter(array_map('trim', $uuids), static fn (string $v): bool => $v !== '')));
         if ($uuids === []) {
@@ -725,6 +746,7 @@ final class EloquentProductRepository implements ProductRepository
     public function listMissingBarcodeByUuidsForExport(array $uuids, ?string $sortBy = null, string $sortDir = 'asc'): Collection
     {
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+        $sortColumn = $this->normalizeSortForSimpleExportQuery($sortColumn);
 
         $uuids = array_values(array_unique(array_filter(array_map('trim', $uuids), static fn (string $v): bool => $v !== '')));
         if ($uuids === []) {

@@ -72,5 +72,3 @@ final class InventoryLot extends Model
         return $this->hasMany(InventoryMovement::class);
     }
 }
-
-

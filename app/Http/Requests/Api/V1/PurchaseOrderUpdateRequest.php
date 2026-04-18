@@ -15,6 +15,7 @@ final class PurchaseOrderUpdateRequest extends FormRequest
     {
         return [
             'vendor' => ['sometimes', 'string', 'max:128'],
+            'supplier_order_id' => ['sometimes', 'nullable', 'string', 'max:128'],
             'ordered_date' => ['nullable', 'date'],
             'shipped_date' => ['nullable', 'date'],
             'estimated_arrival_date' => ['nullable', 'date'],
@@ -30,5 +31,3 @@ final class PurchaseOrderUpdateRequest extends FormRequest
         ];
     }
 }
-
-

@@ -28,7 +28,3 @@ final class InventoryCheckDownloadController extends Controller
         return Storage::disk('local')->download($path, $filename);
     }
 }
-
-
-
-

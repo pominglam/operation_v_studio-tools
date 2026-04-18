@@ -44,6 +44,7 @@ describe('PurchaseOrderDetailPage export', () => {
                         data: {
                             id: poId,
                             vendor: 'Plamod',
+                            supplier_order_id: null,
                             vendor_currency_code: 'CAD',
                             ordered_date: null,
                             shipped_date: null,
@@ -57,6 +58,7 @@ describe('PurchaseOrderDetailPage export', () => {
                             fx_rate_cad_to_vendor: null,
                             notes: null,
                             workflow_checklist: null,
+                            status: 'draft',
                             counts: { items: 2 },
                             items: [
                                 {
@@ -72,6 +74,15 @@ describe('PurchaseOrderDetailPage export', () => {
                                     qty_ordered: 1,
                                     qty_shipped: null,
                                     qty_received: null,
+                                    available: 1,
+                                    maintain: 2,
+                                    not_arrived: 0,
+                                    reorder: 1,
+                                    total_ordered: 0,
+                                    total_sold: 0,
+                                    latest_landed_unit_cost: null,
+                                    selling_price: null,
+                                    multiplier: null,
                                 },
                                 {
                                     id: 2,
@@ -86,6 +97,15 @@ describe('PurchaseOrderDetailPage export', () => {
                                     qty_ordered: 1,
                                     qty_shipped: null,
                                     qty_received: null,
+                                    available: 1,
+                                    maintain: 2,
+                                    not_arrived: 0,
+                                    reorder: 1,
+                                    total_ordered: 0,
+                                    total_sold: 0,
+                                    latest_landed_unit_cost: null,
+                                    selling_price: null,
+                                    multiplier: null,
                                 },
                             ],
                             created_at: null,
@@ -159,4 +179,5 @@ describe('PurchaseOrderDetailPage export', () => {
         // Error is shown because download_url was empty, but the key assertion is that we hit the correct endpoint.
         expect(wrapper.text()).toContain('export_failed');
     });
+
 });

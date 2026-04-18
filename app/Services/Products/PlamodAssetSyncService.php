@@ -9,7 +9,6 @@ use App\DAL\Products\ProductExternalContentRepository;
 use App\DAL\Products\ProductRepository;
 use App\DTOs\Products\PlamodSyncResult;
 use App\Models\Product;
-use App\Models\ProductExternalAsset;
 use App\Models\ProductExternalContent;
 use App\Services\Products\Exceptions\PlamodSyncException;
 use App\Services\Products\Hlj\HljContentSync;
@@ -71,14 +70,20 @@ final class PlamodAssetSyncService
                 $localStorageKeys = is_array($debug['local_storage_keys'] ?? null) ? $debug['local_storage_keys'] : null;
 
                 $extra = [];
-                if ($url) $extra[] = "url={$url}";
-                if ($png) $extra[] = "png={$png}";
-                if ($html) $extra[] = "html={$html}";
+                if ($url) {
+                    $extra[] = "url={$url}";
+                }
+                if ($png) {
+                    $extra[] = "png={$png}";
+                }
+                if ($html) {
+                    $extra[] = "html={$html}";
+                }
 
                 if (is_array($cookieNames)) {
                     $names = array_values(array_filter($cookieNames, fn ($v) => is_string($v) && $v !== ''));
                     $extra[] = 'cookies='.count($names);
-                    if (!empty($names)) {
+                    if (! empty($names)) {
                         $extra[] = 'cookie_names='.implode('|', array_slice($names, 0, 10));
                     }
                 }
@@ -90,7 +95,7 @@ final class PlamodAssetSyncService
                 if (is_array($localStorageKeys)) {
                     $keys = array_values(array_filter($localStorageKeys, fn ($v) => is_string($v) && $v !== ''));
                     $extra[] = 'ls_keys='.count($keys);
-                    if (!empty($keys)) {
+                    if (! empty($keys)) {
                         $extra[] = 'ls_key_names='.implode('|', array_slice($keys, 0, 10));
                     }
                 }
@@ -100,7 +105,9 @@ final class PlamodAssetSyncService
                     $tail = array_slice(is_array($responses) ? $responses : [], -25);
                     $summaries = [];
                     foreach ($tail as $r) {
-                        if (!is_array($r)) continue;
+                        if (! is_array($r)) {
+                            continue;
+                        }
                         $method = is_string($r['method'] ?? null) ? (string) $r['method'] : '?';
                         $status = is_int($r['status'] ?? null) ? (int) $r['status'] : null;
                         $u = is_string($r['url'] ?? null) ? (string) $r['url'] : '';
@@ -112,12 +119,12 @@ final class PlamodAssetSyncService
                             $summaries[] = $method.' '.($status ?? '?').' '.($path ?: '');
                         }
                     }
-                    if (!empty($summaries)) {
+                    if (! empty($summaries)) {
                         $extra[] = 'netlog='.implode('; ', $summaries);
                     }
                 }
 
-                if (!empty($extra)) {
+                if (! empty($extra)) {
                     $msg .= ' (debug: '.implode(', ', $extra).')';
                 }
             }
@@ -204,7 +211,7 @@ final class PlamodAssetSyncService
         $baseDir = $this->newExtractBaseDir($productSku);
         $this->ensureStorageDirExists($disk->path($baseDir));
 
-        $zip = new \ZipArchive();
+        $zip = new \ZipArchive;
         if ($zip->open($zipAbs) !== true) {
             throw PlamodSyncException::zipOpenFailed();
         }
@@ -342,5 +349,3 @@ final class PlamodAssetSyncService
         return $n;
     }
 }
-
-

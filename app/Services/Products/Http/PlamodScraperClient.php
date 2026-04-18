@@ -44,5 +44,3 @@ final class PlamodScraperClient implements PlamodScraper
         return $json + ['ok' => true];
     }
 }
-
-

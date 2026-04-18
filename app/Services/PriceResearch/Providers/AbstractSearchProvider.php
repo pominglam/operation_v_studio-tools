@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\PriceResearch\Providers;
 
-use App\Models\Product;
 use App\DAL\Products\ProductExternalContentRepository;
+use App\Models\Product;
 use App\Services\PriceResearch\DTOs\PriceLookupResult;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\PriceResearch\Support\HtmlPriceParser;

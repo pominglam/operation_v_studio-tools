@@ -183,6 +183,26 @@ it('accepts selling_price sort_by for full Shopify no-inventory export', functio
     expect($res->streamedContent())->toContain('NO-INV-SORT-1');
 });
 
+it('accepts reorder sort_by for full Shopify no-inventory export', function (): void {
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000000008',
+        'sku' => 'NO-INV-REORDER-1',
+        'description' => 'No inventory export reorder sort',
+        'type' => 'HG',
+        'available_qty' => 0,
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $p->id,
+        'product_uuid' => $p->uuid,
+        'selling_price' => '22.22',
+        'currency' => 'CAD',
+    ]);
+
+    $res = $this->get('/api/v1/products/export?format=shopify_no_inventory&sort_by=reorder&sort_dir=desc');
+    $res->assertOk();
+    expect($res->streamedContent())->toContain('NO-INV-REORDER-1');
+});
+
 it('exports empty Tags when main_type is blank', function (): void {
     $p = Product::query()->create([
         'uuid' => '00000000-0000-0000-0000-000000000005',

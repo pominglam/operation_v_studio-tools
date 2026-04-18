@@ -24,4 +24,3 @@ final class ProductReadyController extends Controller
         return ProductResource::make($product)->response();
     }
 }
-

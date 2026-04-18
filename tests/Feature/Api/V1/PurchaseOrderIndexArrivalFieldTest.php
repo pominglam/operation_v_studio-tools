@@ -36,4 +36,3 @@ it('includes received_date in purchase order index payload', function (): void {
     expect($notArrivedRow['estimated_arrival_date'])->toBe('2026-01-09');
     expect($notArrivedRow['received_date'])->toBeNull();
 });
-

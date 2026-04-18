@@ -11,6 +11,24 @@ use Illuminate\Http\Resources\Json\JsonResource;
 /** @extends JsonResource<PurchaseOrder> */
 final class PurchaseOrderResource extends JsonResource
 {
+    private function statusFor(PurchaseOrder $po): string
+    {
+        if ($po->fully_on_shelves_date !== null) {
+            return 'on_shelves';
+        }
+        if ($po->received_date !== null) {
+            return 'received';
+        }
+        if ($po->shipped_date !== null) {
+            return 'shipped';
+        }
+        if ($po->ordered_date !== null) {
+            return 'ordered';
+        }
+
+        return 'draft';
+    }
+
     private function money2(?string $value): ?string
     {
         if ($value === null) {
@@ -58,10 +76,12 @@ final class PurchaseOrderResource extends JsonResource
         if (extension_loaded('bcmath')) {
             /** @var string $out */
             $out = bcdiv('1', $trimmed, 6);
+
             return $out;
         }
 
         $inv = 1 / (float) $trimmed;
+
         return number_format($inv, 6, '.', '');
     }
 
@@ -76,6 +96,7 @@ final class PurchaseOrderResource extends JsonResource
         return [
             'id' => $po->uuid,
             'vendor' => $po->vendor,
+            'supplier_order_id' => $po->supplier_order_id !== null ? trim((string) $po->supplier_order_id) : null,
             'vendor_currency_code' => $po->vendor_currency_code,
             'ordered_date' => $po->ordered_date?->toDateString(),
             'shipped_date' => $po->shipped_date?->toDateString(),
@@ -93,6 +114,7 @@ final class PurchaseOrderResource extends JsonResource
             'notes' => $po->notes,
             'is_done' => (bool) $po->is_done,
             'workflow_checklist' => is_array($po->workflow_checklist_json) ? $po->workflow_checklist_json : null,
+            'status' => $this->statusFor($po),
             'counts' => [
                 'items' => $po->relationLoaded('items') ? (int) $po->items->count() : (int) ($po->items_count ?? 0),
             ],
@@ -102,5 +124,3 @@ final class PurchaseOrderResource extends JsonResource
         ];
     }
 }
-
-

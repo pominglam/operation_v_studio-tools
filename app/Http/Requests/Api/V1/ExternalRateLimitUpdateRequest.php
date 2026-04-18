@@ -18,4 +18,3 @@ final class ExternalRateLimitUpdateRequest extends FormRequest
         ];
     }
 }
-

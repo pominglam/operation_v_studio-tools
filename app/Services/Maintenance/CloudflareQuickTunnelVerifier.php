@@ -55,6 +55,7 @@ final class CloudflareQuickTunnelVerifier
 
                 if ($lastStatus >= 500 && $attempt < 2) {
                     usleep(300_000);
+
                     continue;
                 }
 
@@ -67,6 +68,7 @@ final class CloudflareQuickTunnelVerifier
             } catch (Throwable $e) {
                 if ($attempt < 2) {
                     usleep(300_000);
+
                     continue;
                 }
 
@@ -87,4 +89,3 @@ final class CloudflareQuickTunnelVerifier
         ];
     }
 }
-

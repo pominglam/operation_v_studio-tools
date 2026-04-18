@@ -12,7 +12,9 @@ final class EloquentJobBatchItemRepository implements JobBatchItemRepository
 {
     public function insertQueued(string $batchId, array $products): void
     {
-        if ($products === []) return;
+        if ($products === []) {
+            return;
+        }
 
         $now = Carbon::now();
 
@@ -120,7 +122,9 @@ final class EloquentJobBatchItemRepository implements JobBatchItemRepository
     public function appendDebugLog(string $batchId, string $productUuid, string $line): void
     {
         $line = trim((string) $line);
-        if ($line === '') return;
+        if ($line === '') {
+            return;
+        }
 
         // Portable across MySQL/SQLite used by tests: read -> append -> update.
         $existing = DB::table('job_batch_items')
@@ -318,13 +322,21 @@ final class EloquentJobBatchItemRepository implements JobBatchItemRepository
             $productUuids = [];
             foreach ($jobs as $row) {
                 $payload = json_decode((string) $row->payload, true);
-                if (!is_array($payload)) continue;
+                if (! is_array($payload)) {
+                    continue;
+                }
                 $command = $payload['data']['command'] ?? null;
-                if (!is_string($command) || $command === '') continue;
+                if (! is_string($command) || $command === '') {
+                    continue;
+                }
 
                 $job = @unserialize($command, ['allowed_classes' => [SyncPlamodAssetsJob::class]]);
-                if (!($job instanceof SyncPlamodAssetsJob)) continue;
-                if (($job->batchId ?? null) !== $batchId) continue;
+                if (! ($job instanceof SyncPlamodAssetsJob)) {
+                    continue;
+                }
+                if (($job->batchId ?? null) !== $batchId) {
+                    continue;
+                }
 
                 $productUuid = (string) $job->productUuid;
                 $productUuids[] = $productUuid;
@@ -395,13 +407,21 @@ final class EloquentJobBatchItemRepository implements JobBatchItemRepository
             $failedProductUuids = [];
             foreach ($failed as $row) {
                 $payload = json_decode((string) $row->payload, true);
-                if (!is_array($payload)) continue;
+                if (! is_array($payload)) {
+                    continue;
+                }
                 $command = $payload['data']['command'] ?? null;
-                if (!is_string($command) || $command === '') continue;
+                if (! is_string($command) || $command === '') {
+                    continue;
+                }
 
                 $job = @unserialize($command, ['allowed_classes' => [SyncPlamodAssetsJob::class]]);
-                if (!($job instanceof SyncPlamodAssetsJob)) continue;
-                if (($job->batchId ?? null) !== $batchId) continue;
+                if (! ($job instanceof SyncPlamodAssetsJob)) {
+                    continue;
+                }
+                if (($job->batchId ?? null) !== $batchId) {
+                    continue;
+                }
 
                 $productUuid = (string) $job->productUuid;
                 $failedProductUuids[] = $productUuid;
@@ -520,7 +540,9 @@ final class EloquentJobBatchItemRepository implements JobBatchItemRepository
     public function listProductUuidsByStatus(string $batchId, array $statuses): array
     {
         $statuses = array_values(array_unique(array_filter(array_map('strval', $statuses), static fn (string $v): bool => trim($v) !== '')));
-        if ($statuses === []) return [];
+        if ($statuses === []) {
+            return [];
+        }
 
         /** @var array<int, string> $rows */
         $rows = DB::table('job_batch_items')
@@ -542,8 +564,7 @@ final class EloquentJobBatchItemRepository implements JobBatchItemRepository
             ->value('debug_log');
 
         $s = is_string($row) ? trim($row) : '';
+
         return $s !== '' ? $s : null;
     }
 }
-
-

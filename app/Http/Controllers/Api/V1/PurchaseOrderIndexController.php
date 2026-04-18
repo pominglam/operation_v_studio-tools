@@ -46,8 +46,22 @@ final class PurchaseOrderIndexController extends Controller
         $vendorFilters = array_values(array_unique($vendorFilters));
         $vendorFilters = array_slice($vendorFilters, 0, 50);
 
+        /** @var array<int, string> $statusFilters */
+        $statusFilters = [];
+        $rawStatuses = $request->query('statuses');
+        if (is_array($rawStatuses)) {
+            foreach ($rawStatuses as $status) {
+                $next = trim(strtolower((string) $status));
+                if (in_array($next, ['draft', 'ordered', 'shipped', 'received', 'on_shelves'], true)) {
+                    $statusFilters[] = $next;
+                }
+            }
+        }
+        $statusFilters = array_values(array_unique($statusFilters));
+        $statusFilters = array_slice($statusFilters, 0, 20);
+
         return PurchaseOrderResource::collection(
-            $this->purchaseOrders->paginate($perPage, $sortDir, $sortBy, $vendorFilters),
+            $this->purchaseOrders->paginate($perPage, $sortDir, $sortBy, $vendorFilters, $statusFilters),
         );
     }
 }

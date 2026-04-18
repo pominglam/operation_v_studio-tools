@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Models\Product;
 use App\DAL\Products\ProductExternalContentRepository;
+use App\Models\Product;
 use App\Models\ProductExternalContent;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\PriceResearch\Providers\AbstractSearchProvider;

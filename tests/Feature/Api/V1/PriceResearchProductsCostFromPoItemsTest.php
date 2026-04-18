@@ -56,3 +56,154 @@ it('shows unit cost + ship/unit + landed on price research page from latest PO w
         ->assertJsonPath('data.0.landed_cost', '20.00');
 });
 
+it('falls back to ordered allocation when latest PO is received but qty_received sum is zero', function (): void {
+    $product = Product::query()->create([
+        'sku' => 'PR-PO-COST-RECEIVED-ZERO',
+        'barcode' => '6977000000001',
+        'description' => 'PO received zero qty fallback',
+        'vendor' => 'Dspiae',
+    ]);
+
+    $po = PurchaseOrder::query()->create([
+        'vendor' => 'Dspiae',
+        'shipping_total' => '24.64',
+        'surcharge_total' => '0.00',
+        'ordered_date' => '2026-04-14',
+        'received_date' => '2026-04-18',
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => $product->sku,
+        'vendor' => 'Dspiae',
+        'unit_cost' => '70.00',
+        'qty_ordered' => 8,
+        'qty_received' => null,
+    ]);
+
+    /** @var PriceResearchQueryService $query */
+    $query = app(PriceResearchQueryService::class);
+    $page = $query->paginateProductsWithQuotes(perPage: 25, search: 'PR-PO-COST-RECEIVED-ZERO');
+    $row = $page->items()[0] ?? null;
+    expect($row)->not->toBeNull();
+    expect((float) ($row?->latest_shipping_per_unit ?? 0))->toBe(3.08);
+
+    $res = $this->getJson('/api/v1/price-research/products?per_page=25&search=PR-PO-COST-RECEIVED-ZERO');
+    $res->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-PO-COST-RECEIVED-ZERO')
+        ->assertJsonPath('data.0.shipping_per_unit', '3.08')
+        ->assertJsonPath('data.0.landed_cost', '73.08');
+});
+
+it('uses received allocation when latest PO has qty_received but received_date is null', function (): void {
+    $product = Product::query()->create([
+        'sku' => 'PR-PO-COST-RECV-WITHOUT-DATE',
+        'barcode' => '6977000000002',
+        'description' => 'PO received qty without received date',
+        'vendor' => 'Dspiae',
+    ]);
+
+    $other = Product::query()->create([
+        'sku' => 'PR-PO-COST-RECV-WITHOUT-DATE-OTHER',
+        'barcode' => '6977000000003',
+        'description' => 'PO received qty without received date other',
+        'vendor' => 'Dspiae',
+    ]);
+
+    $po = PurchaseOrder::query()->create([
+        'vendor' => 'Dspiae',
+        'shipping_total' => '30.00',
+        'surcharge_total' => '0.00',
+        'ordered_date' => '2026-04-14',
+        'received_date' => null,
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => $product->sku,
+        'vendor' => 'Dspiae',
+        'unit_cost' => '70.00',
+        'qty_ordered' => 5,
+        'qty_received' => 2,
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $other->id,
+        'sku' => $other->sku,
+        'vendor' => 'Dspiae',
+        'unit_cost' => '10.00',
+        'qty_ordered' => 5,
+        'qty_received' => 1,
+    ]);
+
+    /** @var PriceResearchQueryService $query */
+    $query = app(PriceResearchQueryService::class);
+    $page = $query->paginateProductsWithQuotes(perPage: 25, search: 'PR-PO-COST-RECV-WITHOUT-DATE');
+    $row = $page->items()[0] ?? null;
+    expect($row)->not->toBeNull();
+    expect((float) ($row?->latest_shipping_per_unit ?? 0))->toBe(10.0);
+
+    $res = $this->getJson('/api/v1/price-research/products?per_page=25&search=PR-PO-COST-RECV-WITHOUT-DATE');
+    $res->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-PO-COST-RECV-WITHOUT-DATE')
+        ->assertJsonPath('data.0.shipping_per_unit', '10.00')
+        ->assertJsonPath('data.0.landed_cost', '80.00');
+});
+
+it('treats entered qty_received=0 as received allocation (not ordered fallback)', function (): void {
+    $product = Product::query()->create([
+        'sku' => 'PR-PO-COST-RECV-ZERO',
+        'barcode' => '6977000000004',
+        'description' => 'PO received zero allocation',
+        'vendor' => 'Dspiae',
+    ]);
+
+    $other = Product::query()->create([
+        'sku' => 'PR-PO-COST-RECV-ZERO-OTHER',
+        'barcode' => '6977000000005',
+        'description' => 'PO received zero allocation other',
+        'vendor' => 'Dspiae',
+    ]);
+
+    $po = PurchaseOrder::query()->create([
+        'vendor' => 'Dspiae',
+        'shipping_total' => '30.00',
+        'surcharge_total' => '0.00',
+        'ordered_date' => '2026-04-14',
+        'received_date' => null,
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => $product->sku,
+        'vendor' => 'Dspiae',
+        'unit_cost' => '70.00',
+        'qty_ordered' => 5,
+        'qty_received' => 0,
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $other->id,
+        'sku' => $other->sku,
+        'vendor' => 'Dspiae',
+        'unit_cost' => '10.00',
+        'qty_ordered' => 5,
+        'qty_received' => 0,
+    ]);
+
+    /** @var PriceResearchQueryService $query */
+    $query = app(PriceResearchQueryService::class);
+    $page = $query->paginateProductsWithQuotes(perPage: 25, search: 'PR-PO-COST-RECV-ZERO');
+    $row = $page->items()[0] ?? null;
+    expect($row)->not->toBeNull();
+    expect($row?->latest_shipping_per_unit)->toBeNull();
+
+    $res = $this->getJson('/api/v1/price-research/products?per_page=25&search=PR-PO-COST-RECV-ZERO');
+    $res->assertOk()
+        ->assertJsonPath('data.0.sku', 'PR-PO-COST-RECV-ZERO')
+        ->assertJsonPath('data.0.shipping_per_unit', null)
+        ->assertJsonPath('data.0.landed_cost', '70.00');
+});

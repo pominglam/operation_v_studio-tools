@@ -43,7 +43,7 @@ it('creates a backup zip containing external asset images', function (): void {
     expect($result['filename'])->toEndWith('.zip');
     expect(File::exists($result['path']))->toBeTrue();
 
-    $zip = new \ZipArchive();
+    $zip = new \ZipArchive;
     expect($zip->open($result['path']))->toBeTrue();
     try {
         expect($zip->locateName('storage/app/'.$storagePath))->not->toBeFalse();
@@ -95,4 +95,3 @@ it('still creates a backup even if some referenced images are missing on disk', 
 
     File::delete($result['path']);
 });
-

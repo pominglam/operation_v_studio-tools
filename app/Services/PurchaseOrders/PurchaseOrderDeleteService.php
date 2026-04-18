@@ -32,6 +32,7 @@ final class PurchaseOrderDeleteService
             $itemIds = $po->items->pluck('id')->all();
             if ($itemIds === []) {
                 $this->purchaseOrders->delete($po);
+
                 return;
             }
 
@@ -49,5 +50,3 @@ final class PurchaseOrderDeleteService
         });
     }
 }
-
-

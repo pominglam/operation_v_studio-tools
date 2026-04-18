@@ -39,5 +39,3 @@ it('sorts price research products by shipped (filled) qty', function (): void {
     $descSkus = array_map(static fn (array $row): string => $row['sku'], $desc->json('data') ?? []);
     expect(array_slice($descSkus, 0, 3))->toEqual(['SORT-F-10', 'SORT-F-1', 'SORT-F-0']);
 });
-
-

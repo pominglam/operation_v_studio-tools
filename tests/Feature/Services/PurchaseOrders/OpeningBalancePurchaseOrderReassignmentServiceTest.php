@@ -54,5 +54,3 @@ it('moves an opening balance PO item to the correct vendor opening balance PO', 
         ->and($item->qty_ordered)->toBe(0)
         ->and($item->qty_shipped)->toBe(0);
 });
-
-

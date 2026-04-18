@@ -78,6 +78,7 @@ final class PurchaseOrderImportService
     /**
      * @param  array{
      *   vendor:string,
+     *   supplier_order_id?:string|null,
      *   purchase_order_uuid?:string,
      *   import_mode?:string,
      *   ordered_date?:string|null,
@@ -434,6 +435,7 @@ final class PurchaseOrderImportService
     /**
      * @param  array{
      *   vendor:string,
+     *   supplier_order_id?:string|null,
      *   purchase_order_uuid?:string,
      *   import_mode?:string,
      *   ordered_date?:string|null,
@@ -494,6 +496,10 @@ final class PurchaseOrderImportService
 
             // Update header fields (only when present in request).
             $po->vendor = $vendor;
+            if (array_key_exists('supplier_order_id', $meta)) {
+                $nextSupplierOrderId = trim((string) ($meta['supplier_order_id'] ?? ''));
+                $po->supplier_order_id = $nextSupplierOrderId !== '' ? $nextSupplierOrderId : null;
+            }
             if (! $appendMode) {
                 $po->vendor_currency_code = $preambleMeta['vendor_currency_code'] ?? $po->vendor_currency_code ?? 'CAD';
                 $po->vendor_product_total = $preambleMeta['vendor_product_total'] ?? $po->vendor_product_total;
@@ -531,6 +537,10 @@ final class PurchaseOrderImportService
 
         $po = new PurchaseOrder;
         $po->vendor = $vendor;
+        $supplierOrderId = array_key_exists('supplier_order_id', $meta)
+            ? trim((string) ($meta['supplier_order_id'] ?? ''))
+            : '';
+        $po->supplier_order_id = $supplierOrderId !== '' ? $supplierOrderId : null;
         $po->vendor_currency_code = $preambleMeta['vendor_currency_code'] ?? 'CAD';
         $po->vendor_product_total = $preambleMeta['vendor_product_total'] ?? null;
         $po->ordered_date = array_key_exists('ordered_date', $meta) ? $meta['ordered_date'] : null;

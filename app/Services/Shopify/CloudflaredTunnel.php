@@ -21,9 +21,3 @@ interface CloudflaredTunnel
      */
     public function stop(): array;
 }
-
-
-
-
-
-

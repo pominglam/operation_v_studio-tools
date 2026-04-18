@@ -36,4 +36,3 @@ final class ExternalRateLimitService
         return $hitsPerMinute;
     }
 }
-

@@ -45,5 +45,3 @@ it('clears barcode when empty string is provided', function (): void {
     $product->refresh();
     expect($product->barcode)->toBeNull();
 });
-
-

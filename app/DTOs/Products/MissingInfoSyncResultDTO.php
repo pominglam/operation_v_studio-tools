@@ -12,5 +12,3 @@ final readonly class MissingInfoSyncResultDTO
         public ?string $batchId,
     ) {}
 }
-
-

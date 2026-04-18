@@ -18,4 +18,3 @@ final class ExternalAccessUpdateRequest extends FormRequest
         ];
     }
 }
-

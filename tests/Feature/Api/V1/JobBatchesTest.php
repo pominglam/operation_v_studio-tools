@@ -28,5 +28,3 @@ it('lists recent job batches', function (): void {
         ->assertJsonPath('data.0.pending_jobs', 7)
         ->assertJsonPath('data.0.failed_jobs', 1);
 });
-
-

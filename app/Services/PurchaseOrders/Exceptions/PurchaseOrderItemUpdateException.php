@@ -20,4 +20,3 @@ final class PurchaseOrderItemUpdateException extends RuntimeException
         parent::__construct($message, $code, $previous);
     }
 }
-

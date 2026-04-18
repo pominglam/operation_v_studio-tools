@@ -21,5 +21,3 @@ final class PlamodSyncException extends \RuntimeException
         return new self('Failed to open ZIP.');
     }
 }
-
-

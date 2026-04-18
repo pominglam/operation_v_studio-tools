@@ -60,5 +60,3 @@ final class InventoryMovement extends Model
         return $this->belongsTo(InventoryLot::class);
     }
 }
-
-

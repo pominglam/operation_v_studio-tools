@@ -26,5 +26,3 @@ final class ProductExternalAssetDownloadController extends Controller
         return $disk->download($asset->storage_path, $asset->filename);
     }
 }
-
-

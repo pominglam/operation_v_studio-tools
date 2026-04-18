@@ -36,4 +36,3 @@ final class CanadaComputersProvider extends AbstractSearchProvider
         ];
     }
 }
-

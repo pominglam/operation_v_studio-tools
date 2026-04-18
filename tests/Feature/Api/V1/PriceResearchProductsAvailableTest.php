@@ -33,5 +33,3 @@ it('includes available qty on price research products payload and can sort by av
     expect($first)->toHaveKey('available');
     expect($first['available'])->toBe(1);
 });
-
-

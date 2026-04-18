@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Inventory;
 
 use App\DAL\Inventory\InventoryRepository;
-use App\Models\InventoryLot;
 use App\Models\InventoryMovement;
 use Illuminate\Support\Facades\DB;
 
@@ -46,7 +45,7 @@ final class InventoryFifoDeductionService
                 $lot->qty_remaining = $available - $consume;
                 $this->inventory->saveLot($lot);
 
-                $movement = new InventoryMovement();
+                $movement = new InventoryMovement;
                 $movement->product_id = $productId;
                 $movement->inventory_lot_id = (int) $lot->id;
                 $movement->kind = 'deduct';
@@ -68,7 +67,7 @@ final class InventoryFifoDeductionService
                 $neg->qty_remaining = (int) $neg->qty_remaining - $remaining;
                 $this->inventory->saveLot($neg);
 
-                $movement = new InventoryMovement();
+                $movement = new InventoryMovement;
                 $movement->product_id = $productId;
                 $movement->inventory_lot_id = (int) $neg->id;
                 $movement->kind = 'underflow';
@@ -83,5 +82,3 @@ final class InventoryFifoDeductionService
         });
     }
 }
-
-

@@ -39,5 +39,3 @@ final class ProductExternalContent extends Model
         return $this->belongsTo(Product::class);
     }
 }
-
-

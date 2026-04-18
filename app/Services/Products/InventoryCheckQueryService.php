@@ -24,7 +24,3 @@ final class InventoryCheckQueryService
         return $this->inventoryChecks->findByUuidOrFail($uuid);
     }
 }
-
-
-
-

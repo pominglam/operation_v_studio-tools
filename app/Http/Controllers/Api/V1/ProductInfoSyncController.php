@@ -24,5 +24,3 @@ final class ProductInfoSyncController extends Controller
         ], 202);
     }
 }
-
-

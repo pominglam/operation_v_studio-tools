@@ -30,6 +30,7 @@ final class BandaiContentSyncService
     public function syncByProductUuid(string $productUuid): bool
     {
         $product = $this->products->findByUuidOrFail($productUuid);
+
         return $this->syncForProduct($product);
     }
 
@@ -93,8 +94,13 @@ final class BandaiContentSyncService
         // Bandai search is name-based; drop pure digits (barcodes) and very short tokens.
         $terms = array_values(array_filter($terms, static function (string $t): bool {
             $t = trim($t);
-            if ($t === '') return false;
-            if (ctype_digit($t)) return false;
+            if ($t === '') {
+                return false;
+            }
+            if (ctype_digit($t)) {
+                return false;
+            }
+
             return mb_strlen($t) >= 4;
         }));
 
@@ -123,7 +129,9 @@ final class BandaiContentSyncService
         $bestScore = -1.0;
         foreach ($terms as $q) {
             $cand = $this->findBestPdpFromCmsApi($q);
-            if ($cand === null) continue;
+            if ($cand === null) {
+                continue;
+            }
 
             $score = $name !== '' ? $this->titleScore($cand['title'], $name) : 0.0;
             if ($score > $bestScore) {
@@ -132,7 +140,9 @@ final class BandaiContentSyncService
             }
 
             // Perfect-ish match: stop early.
-            if ($bestScore >= 0.95) break;
+            if ($bestScore >= 0.95) {
+                break;
+            }
         }
 
         return $best;
@@ -142,11 +152,16 @@ final class BandaiContentSyncService
     {
         $a = $this->tokens($title);
         $b = $this->tokens($name);
-        if ($a === [] || $b === []) return 0.0;
+        if ($a === [] || $b === []) {
+            return 0.0;
+        }
         $hits = 0;
         foreach ($a as $t) {
-            if (in_array($t, $b, true)) $hits++;
+            if (in_array($t, $b, true)) {
+                $hits++;
+            }
         }
+
         return $hits / max(1, count($b));
     }
 
@@ -158,13 +173,17 @@ final class BandaiContentSyncService
         $s = mb_strtolower($s);
         $s = preg_replace('/[^a-z0-9]+/u', ' ', $s) ?? $s;
         $s = trim(preg_replace('/\\s+/u', ' ', $s) ?? $s);
-        if ($s === '') return [];
+        if ($s === '') {
+            return [];
+        }
+
         return array_values(array_filter(explode(' ', $s), static fn (string $t): bool => $t !== ''));
     }
 
     private function buildSearchQuery(Product $product): ?string
     {
         $name = is_string($product->description) ? trim($product->description) : '';
+
         return $this->normalizeSearchQuery($name);
     }
 
@@ -245,15 +264,21 @@ final class BandaiContentSyncService
             }
 
             foreach ($items as $it) {
-                if (! is_array($it)) continue;
+                if (! is_array($it)) {
+                    continue;
+                }
 
                 $url = $it['url'] ?? $it['detail_url'] ?? $it['detail_path'] ?? null;
                 $title = $it['title'] ?? $it['name'] ?? null;
-                if (! is_string($url) || ! is_string($title)) continue;
+                if (! is_string($url) || ! is_string($title)) {
+                    continue;
+                }
 
                 $url = trim($url);
                 $title = trim($title);
-                if ($url === '' || $title === '') continue;
+                if ($url === '' || $title === '') {
+                    continue;
+                }
 
                 if (! str_starts_with($url, 'http')) {
                     $url = 'https://global.bandai-hobby.net'.(str_starts_with($url, '/') ? '' : '/').$url;
@@ -263,7 +288,9 @@ final class BandaiContentSyncService
                     $url .= '/';
                 }
 
-                if (! str_contains($url, '/en-us/item/')) continue;
+                if (! str_contains($url, '/en-us/item/')) {
+                    continue;
+                }
 
                 $all[] = ['url' => $url, 'title' => $title];
             }
@@ -451,6 +478,7 @@ final class BandaiContentSyncService
         $path = parse_url($url, PHP_URL_PATH);
         $path = is_string($path) ? $path : '';
         $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
         return $ext !== '' ? $ext : null;
     }
 
@@ -481,4 +509,3 @@ final class BandaiContentSyncService
         return ! ($hasText || $hasImgs || $hasMeta);
     }
 }
-

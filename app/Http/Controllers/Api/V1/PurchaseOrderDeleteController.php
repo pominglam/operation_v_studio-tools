@@ -26,5 +26,3 @@ final class PurchaseOrderDeleteController extends Controller
         return response()->json(['message' => 'Purchase order deleted.']);
     }
 }
-
-

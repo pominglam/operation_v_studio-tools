@@ -21,7 +21,7 @@ it('imports barcodes using vendor + sku (and does not overwrite by default)', fu
         'barcode' => '1111111111111',
     ]);
 
-    $csv = <<<CSV
+    $csv = <<<'CSV'
 名称,司特力型号,每盒入数,order qty,received qty,english name,,,,,,barcode
 MC-01哑光大红（基础色）,MC-01,瓶,10,10,Matte Red,Stedi,MC-01,Matte Red,Stedi MC-01 Matte Red,Stedi MC-01 Matte Red,6975400111974
 MC-02哑光浓绯红（基础色）,MC-02,瓶,10,10,Matte Intense Scarlet,Stedi,MC-02,Matte Intense Scarlet,Stedi MC-02 Matte Intense Scarlet,Stedi MC-02 Matte Intense Scarlet,6975400111981
@@ -57,7 +57,7 @@ it('can overwrite existing barcodes when overwrite=true', function (): void {
         'barcode' => '1111111111111',
     ]);
 
-    $csv = <<<CSV
+    $csv = <<<'CSV'
 名称,司特力型号,每盒入数,order qty,received qty,english name,,,,,,barcode
 MC-02哑光浓绯红（基础色）,MC-02,瓶,10,10,Matte Intense Scarlet,Stedi,MC-02,Matte Intense Scarlet,Stedi MC-02 Matte Intense Scarlet,Stedi MC-02 Matte Intense Scarlet,6975400111981
 CSV;
@@ -82,4 +82,3 @@ it('throws when CSV path is missing', function (): void {
     $service = app(ProductBarcodeImportService::class);
     $service->importFromShipmentCsv('storage/framework/testing/does-not-exist.csv', false);
 })->throws(InvalidArgumentException::class);
-

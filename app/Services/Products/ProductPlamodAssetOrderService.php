@@ -26,7 +26,10 @@ final class ProductPlamodAssetOrderService
 
         $current = $this->assets->listForProduct($product->id, self::SOURCE);
         $images = array_values(array_filter($current, static function (ProductExternalAsset $a): bool {
-            if ($a->kind === 'image') return true;
+            if ($a->kind === 'image') {
+                return true;
+            }
+
             return str_starts_with((string) ($a->mime_type ?? ''), 'image/');
         }));
 
@@ -39,9 +42,15 @@ final class ProductPlamodAssetOrderService
         $desired = [];
         foreach ($imageAssetIds as $id) {
             $id = (int) $id;
-            if ($id <= 0) continue;
-            if (! isset($byId[$id])) continue;
-            if (in_array($id, $desired, true)) continue;
+            if ($id <= 0) {
+                continue;
+            }
+            if (! isset($byId[$id])) {
+                continue;
+            }
+            if (in_array($id, $desired, true)) {
+                continue;
+            }
             $desired[] = $id;
         }
 
@@ -63,9 +72,3 @@ final class ProductPlamodAssetOrderService
         $this->assets->updateSortOrders($map);
     }
 }
-
-
-
-
-
-

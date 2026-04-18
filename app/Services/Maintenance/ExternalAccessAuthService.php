@@ -7,7 +7,9 @@ namespace App\Services\Maintenance;
 final class ExternalAccessAuthService
 {
     public const string COOKIE_NAME = 'external_access_auth';
+
     public const string ROLE_ADMIN = 'admin';
+
     public const string ROLE_EMPLOYEE = 'employee';
 
     public function isPasswordConfigured(): bool
@@ -42,7 +44,9 @@ final class ExternalAccessAuthService
         $pw = $pw ?? '';
         $key = trim($key);
 
-        if ($pw === '' || $key === '') return null;
+        if ($pw === '' || $key === '') {
+            return null;
+        }
 
         $sig = hash_hmac('sha256', "{$role}:{$pw}", $key);
 
@@ -100,8 +104,12 @@ final class ExternalAccessAuthService
     private function normalizeRole(?string $role): ?string
     {
         $role = is_string($role) ? strtolower(trim($role)) : '';
-        if ($role === self::ROLE_ADMIN) return self::ROLE_ADMIN;
-        if ($role === self::ROLE_EMPLOYEE) return self::ROLE_EMPLOYEE;
+        if ($role === self::ROLE_ADMIN) {
+            return self::ROLE_ADMIN;
+        }
+        if ($role === self::ROLE_EMPLOYEE) {
+            return self::ROLE_EMPLOYEE;
+        }
 
         return null;
     }
@@ -133,4 +141,3 @@ final class ExternalAccessAuthService
         return $pw !== '' ? $pw : null;
     }
 }
-

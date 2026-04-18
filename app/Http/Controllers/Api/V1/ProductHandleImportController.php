@@ -36,5 +36,3 @@ final class ProductHandleImportController extends Controller
         }
     }
 }
-
-

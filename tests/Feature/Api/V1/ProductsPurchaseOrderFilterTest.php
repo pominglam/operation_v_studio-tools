@@ -176,4 +176,3 @@ it('filters selected PO products by novelty = existing', function (): void {
 it('rejects invalid novelty filter for products index', function (): void {
     $this->getJson('/api/v1/products?po_product_novelty=invalid')->assertStatus(422);
 });
-

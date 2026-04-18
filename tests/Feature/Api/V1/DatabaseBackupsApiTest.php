@@ -46,7 +46,7 @@ it('creates database backup with description', function (): void {
 it('returns 404 when restoring unknown backup uuid', function (): void {
     $this->mock(DatabaseBackupRepository::class, function ($mock): void {
         $mock->shouldReceive('findByUuidOrFail')
-            ->andThrow(new ModelNotFoundException());
+            ->andThrow(new ModelNotFoundException);
     });
 
     $this->mock(DatabaseRestore::class, function ($mock): void {
@@ -63,5 +63,3 @@ it('validates db backup create payload', function (): void {
     $res = $this->postJson('/api/v1/maintenance/db-backups', ['created_by' => 'nope']);
     $res->assertStatus(422);
 });
-
-

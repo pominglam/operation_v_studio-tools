@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Storage;
 final class GundamPlanetContentSyncService
 {
     public const string SOURCE = 'gundamplanet';
+
     public const string BASE_URL = GundamPlanetHtmlParser::BASE_URL;
 
     public function __construct(
@@ -61,6 +62,7 @@ final class GundamPlanetContentSyncService
                 'images_extracted' => 0,
                 'images_downloaded' => 0,
             ]);
+
             return;
         }
 
@@ -76,6 +78,7 @@ final class GundamPlanetContentSyncService
                 'images_extracted' => 0,
                 'images_downloaded' => 0,
             ]);
+
             return;
         }
 
@@ -111,6 +114,7 @@ final class GundamPlanetContentSyncService
                 'images_downloaded' => 0,
                 'pdp' => $resolved['url'],
             ]);
+
             return;
         }
 
@@ -162,7 +166,9 @@ final class GundamPlanetContentSyncService
 
         foreach ($terms as $term) {
             $q = trim((string) $term);
-            if ($q === '') continue;
+            if ($q === '') {
+                continue;
+            }
 
             $searchUrl = $this->searchUrlForQuery($q);
             Log::info('gundamplanet.sync.search.try', [
@@ -187,6 +193,7 @@ final class GundamPlanetContentSyncService
                     'q' => $q,
                     'http' => $res->status(),
                 ]);
+
                 continue;
             }
 
@@ -200,6 +207,7 @@ final class GundamPlanetContentSyncService
                 $this->trace($trace, 'search_no_candidates', [
                     'q' => $q,
                 ]);
+
                 continue;
             }
 
@@ -216,6 +224,7 @@ final class GundamPlanetContentSyncService
                     'q' => $q,
                     'cands' => count($cands),
                 ]);
+
                 continue;
             }
 
@@ -262,6 +271,7 @@ final class GundamPlanetContentSyncService
     {
         $q = rawurlencode(trim($query));
         $qs = "q={$q}&options%5Bprefix%5D=last";
+
         return GundamPlanetHtmlParser::BASE_URL."/search?{$qs}";
     }
 
@@ -269,24 +279,33 @@ final class GundamPlanetContentSyncService
     {
         $a = mb_strtolower(trim($title));
         $b = mb_strtolower(trim($target));
-        if ($a === '' || $b === '') return 0.0;
+        if ($a === '' || $b === '') {
+            return 0.0;
+        }
 
         // Normalize whitespace/punctuation for stable comparison.
         $a = preg_replace('/[^\\p{L}\\p{N}\\s]+/u', ' ', $a) ?? $a;
         $b = preg_replace('/[^\\p{L}\\p{N}\\s]+/u', ' ', $b) ?? $b;
         $a = trim(preg_replace('/\\s+/u', ' ', $a) ?? $a);
         $b = trim(preg_replace('/\\s+/u', ' ', $b) ?? $b);
-        if ($a === '' || $b === '') return 0.0;
+        if ($a === '' || $b === '') {
+            return 0.0;
+        }
 
         // Token overlap (0..1).
         $aTokens = array_values(array_filter(explode(' ', $a)));
         $bTokens = array_values(array_filter(explode(' ', $b)));
-        if ($aTokens === [] || $bTokens === []) return 0.0;
+        if ($aTokens === [] || $bTokens === []) {
+            return 0.0;
+        }
         $set = array_fill_keys($aTokens, true);
         $hits = 0;
         foreach ($bTokens as $t) {
-            if (isset($set[$t])) $hits++;
+            if (isset($set[$t])) {
+                $hits++;
+            }
         }
+
         return $hits / max(1, count($bTokens));
     }
 
@@ -308,7 +327,9 @@ final class GundamPlanetContentSyncService
 
         foreach (array_slice($imageUrls, 0, 30) as $url) {
             $url = trim((string) $url);
-            if ($url === '') continue;
+            if ($url === '') {
+                continue;
+            }
             $attempted++;
             $index++;
 
@@ -318,6 +339,7 @@ final class GundamPlanetContentSyncService
             ], siteKey: self::SOURCE);
             if (! $res->successful()) {
                 $skippedNon200++;
+
                 continue;
             }
 
@@ -325,12 +347,14 @@ final class GundamPlanetContentSyncService
             $mime = is_string($mime) ? trim(explode(';', $mime)[0]) : null;
             if (! is_string($mime) || ! str_starts_with($mime, 'image/')) {
                 $skippedNonImage++;
+
                 continue;
             }
 
             $body = $res->body();
             if (! is_string($body) || $body === '') {
                 $skippedEmpty++;
+
                 continue;
             }
 
@@ -382,6 +406,7 @@ final class GundamPlanetContentSyncService
         $path = parse_url($url, PHP_URL_PATH);
         $path = is_string($path) ? $path : '';
         $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
         return $ext !== '' ? $ext : null;
     }
 
@@ -405,6 +430,7 @@ final class GundamPlanetContentSyncService
     {
         $terms = array_values(array_unique(array_filter(array_map('strval', $terms), static fn (string $v): bool => trim($v) !== '')));
         $limit = 12;
+
         return [
             'terms_count' => count($terms),
             'terms_sample' => array_slice($terms, 0, $limit),
@@ -418,6 +444,7 @@ final class GundamPlanetContentSyncService
         $limit = 8;
         $sample = array_slice($terms, 0, $limit);
         $tail = count($terms) > $limit ? ' …' : '';
+
         return implode(' | ', $sample).$tail;
     }
 
@@ -427,14 +454,22 @@ final class GundamPlanetContentSyncService
      */
     private function trace(?callable $trace, string $event, array $data): void
     {
-        if ($trace === null) return;
+        if ($trace === null) {
+            return;
+        }
 
         $parts = [];
         foreach ($data as $k => $v) {
-            if (is_bool($v)) $v = $v ? 'true' : 'false';
-            if (is_array($v)) $v = json_encode($v, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            if (is_bool($v)) {
+                $v = $v ? 'true' : 'false';
+            }
+            if (is_array($v)) {
+                $v = json_encode($v, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            }
             $s = is_string($v) ? $v : (is_numeric($v) ? (string) $v : null);
-            if ($s === null || trim($s) === '') continue;
+            if ($s === null || trim($s) === '') {
+                continue;
+            }
             $parts[] = "{$k}={$s}";
         }
 
@@ -442,4 +477,3 @@ final class GundamPlanetContentSyncService
         $trace($line);
     }
 }
-

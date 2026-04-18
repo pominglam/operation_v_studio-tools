@@ -284,6 +284,31 @@ async function bulkRecrawlSelected(ids: string[], sources: ProductsRecrawlSource
     await router.push({ name: 'sync-progress', query: { batch_id: res.data.batch_id } });
 }
 
+async function createDraftPurchaseOrderFromSelectedProducts(ids: string[]): Promise<{
+    purchase_order_uuid: string;
+    added: number;
+    skipped_existing: number;
+    skipped_vendor_mismatch: number;
+}> {
+    const res = await api.post<{
+        purchase_order_uuid: string;
+        added: number;
+        skipped_existing: number;
+        skipped_vendor_mismatch: number;
+    }>(
+        '/api/v1/purchase-orders/drafts/create-from-products',
+        { ids },
+        { validateStatus: () => true },
+    );
+
+    if (res.status !== 200) {
+        const msg = (res.data as any)?.message as string | undefined;
+        throw new Error(msg ?? `Failed to create draft PO (HTTP ${res.status}).`);
+    }
+
+    return res.data;
+}
+
 async function loadMissingSellingPrice(): Promise<void> {
     missingSellingPriceLoading.value = true;
     missingSellingPriceError.value = null;
@@ -1909,6 +1934,7 @@ function resetListState(): void {
                         :on-bulk-rename-plamod-assets="bulkRenamePlamodAssets"
                         :on-bulk-export-selected="bulkExportSelected"
                         :on-bulk-recrawl-selected="bulkRecrawlSelected"
+                        :on-create-draft-purchase-order="createDraftPurchaseOrderFromSelectedProducts"
                         :on-update="updateProduct"
                         :on-update-available="updateProductAvailable"
                         :on-update-maintain="updateProductMaintain"

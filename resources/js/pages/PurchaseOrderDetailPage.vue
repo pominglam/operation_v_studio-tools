@@ -15,6 +15,7 @@ import BulkRecrawlDialog, {
 } from '../components/products/BulkRecrawlDialog.vue';
 import ImportHandlesCard from '../components/products/ImportHandlesCard.vue';
 import ImportInventoryQuantityOverrideCard from '../components/products/ImportInventoryQuantityOverrideCard.vue';
+import ProductPoLinesDrawer from '../components/products/ProductPoLinesDrawer.vue';
 
 type PurchaseOrderItem = {
     id: number;
@@ -28,6 +29,15 @@ type PurchaseOrderItem = {
     qty_ordered: number | null;
     qty_shipped: number | null;
     qty_received: number | null;
+    available: number | null;
+    maintain: number | null;
+    not_arrived: number | null;
+    reorder: number | null;
+    total_ordered: number | null;
+    total_sold: number | null;
+    latest_landed_unit_cost: string | null;
+    selling_price: string | null;
+    multiplier: string | null;
 };
 
 type InventoryCheckPickRow = {
@@ -56,6 +66,7 @@ type ApplyInventoryCheckWarning = {
 type PurchaseOrder = {
     id: string;
     vendor: string;
+    supplier_order_id: string | null;
     vendor_currency_code: string;
     ordered_date: string | null;
     shipped_date: string | null;
@@ -70,6 +81,7 @@ type PurchaseOrder = {
     fx_rate_cad_to_vendor: string | null;
     notes: string | null;
     workflow_checklist: Record<string, boolean> | null;
+    status: 'draft' | 'ordered' | 'shipped' | 'received' | 'on_shelves';
     counts: { items: number };
     items: PurchaseOrderItem[];
     created_at: string | null;
@@ -104,6 +116,10 @@ const savingQtyReceived = ref<number | null>(null);
 const editingQtyReceivedId = ref<number | null>(null);
 const qtyReceivedDrafts = reactive<Record<number, string>>({});
 
+const savingBarcodeProductId = ref<string | null>(null);
+const editingBarcodeItemId = ref<number | null>(null);
+const barcodeDrafts = reactive<Record<number, string>>({});
+
 const itemQtyError = ref<string | null>(null);
 
 const selectedItemIds = ref<Set<number>>(new Set());
@@ -126,6 +142,8 @@ const poHasProducts = computed<boolean>(() => poProductUuids.value.length > 0);
 const exportDialogOpen = ref(false);
 const exportBusy = ref(false);
 const exportError = ref<string | null>(null);
+const exportDraftLinesBusy = ref(false);
+const exportDraftLinesError = ref<string | null>(null);
 
 const recrawlDialogOpen = ref(false);
 const recrawlBusy = ref(false);
@@ -148,6 +166,14 @@ const applyInventoryCheckWarnings = ref<ApplyInventoryCheckWarning[]>([]);
 
 const checklistBusy = ref(false);
 const checklistError = ref<string | null>(null);
+const draftAddSkus = ref('');
+const addingDraftProducts = ref(false);
+const addDraftProductsError = ref<string | null>(null);
+const addDraftProductsSummary = ref<string | null>(null);
+const poLinesOpen = ref(false);
+const poLinesProductId = ref<string | null>(null);
+const poLinesProductSku = ref<string | null>(null);
+const poLinesProductName = ref<string | null>(null);
 
 type WorkflowChecklistKey =
     | 'import_po'
@@ -212,6 +238,33 @@ function parseFilenameFromContentDisposition(header: string | undefined): string
     } catch {
         return m[1];
     }
+}
+
+function draftStatusLabel(status: PurchaseOrder['status']): string {
+    switch (status) {
+        case 'on_shelves':
+            return 'On shelves';
+        case 'received':
+            return 'Received';
+        case 'shipped':
+            return 'Shipped';
+        case 'ordered':
+            return 'Ordered';
+        default:
+            return 'Draft';
+    }
+}
+
+function openPoLines(item: PurchaseOrderItem): void {
+    if (!item.product_id) return;
+    poLinesProductId.value = item.product_id;
+    poLinesProductSku.value = item.sku;
+    poLinesProductName.value = item.product_name ?? null;
+    poLinesOpen.value = true;
+}
+
+function closePoLines(): void {
+    poLinesOpen.value = false;
 }
 
 async function bulkExportSelected(
@@ -403,6 +456,83 @@ async function onConfirmRecrawl(payload: { sources: ProductsRecrawlSource[] }): 
     }
 }
 
+async function exportDraftLinesCsv(): Promise<void> {
+    if (!po.value) return;
+    exportDraftLinesError.value = null;
+    exportDraftLinesBusy.value = true;
+    try {
+        const res = await api.get(`/api/v1/purchase-orders/${po.value.id}/draft-lines-export`, {
+            responseType: 'blob',
+            validateStatus: () => true,
+        });
+        if (res.status !== 200) {
+            throw new Error(`Failed to export draft lines (HTTP ${res.status}).`);
+        }
+
+        const header = (res.headers as Record<string, string | undefined>)['content-disposition'];
+        const filename =
+            parseFilenameFromContentDisposition(header) ?? `purchase-order-${po.value.id}-lines.csv`;
+        const blob = res.data as Blob;
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+        exportDraftLinesError.value = e instanceof Error ? e.message : 'Failed to export draft lines.';
+    } finally {
+        exportDraftLinesBusy.value = false;
+    }
+}
+
+async function addProductsToDraftBySku(): Promise<void> {
+    if (!po.value) return;
+    addDraftProductsError.value = null;
+    addDraftProductsSummary.value = null;
+    const skus = draftAddSkus.value
+        .split(/[\s,]+/)
+        .map((s) => s.trim())
+        .filter((s) => s !== '');
+    if (skus.length === 0) {
+        addDraftProductsError.value = 'Enter at least one SKU.';
+        return;
+    }
+
+    addingDraftProducts.value = true;
+    try {
+        const res = await api.post<{
+            ok: boolean;
+            requested_skus: number;
+            found_products: number;
+            added: number;
+            skipped_existing: number;
+            skipped_vendor_mismatch: number;
+            skipped_not_found: number;
+        }>(
+            `/api/v1/purchase-orders/${po.value.id}/draft-products`,
+            { skus },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as any)?.message as string | undefined;
+            throw new Error(msg ?? `Failed to add products (HTTP ${res.status}).`);
+        }
+
+        addDraftProductsSummary.value =
+            `Added ${res.data.added} line(s). ` +
+            `Skipped existing: ${res.data.skipped_existing}, vendor mismatch: ${res.data.skipped_vendor_mismatch}, not found: ${res.data.skipped_not_found}.`;
+        draftAddSkus.value = '';
+        await load();
+    } catch (e: unknown) {
+        addDraftProductsError.value = e instanceof Error ? e.message : 'Failed to add products.';
+    } finally {
+        addingDraftProducts.value = false;
+    }
+}
+
 async function toggleChecklist(key: WorkflowChecklistKey, next: boolean): Promise<void> {
     if (!po.value) return;
     checklistError.value = null;
@@ -575,6 +705,7 @@ async function applyReceivedQtyToAvailable(): Promise<void> {
 }
 const draft = reactive<{
     vendor: string;
+    supplier_order_id: string;
     vendor_currency_code: string;
     ordered_date: string;
     shipped_date: string;
@@ -588,6 +719,7 @@ const draft = reactive<{
     notes: string;
 }>({
     vendor: '',
+    supplier_order_id: '',
     vendor_currency_code: 'CAD',
     ordered_date: '',
     shipped_date: '',
@@ -603,6 +735,10 @@ const draft = reactive<{
 
 const totalUnitsReceived = computed<number>(() => {
     return po.value?.items.reduce((sum, it) => sum + (it.qty_received ?? 0), 0) ?? 0;
+});
+
+const hasAnyQtyReceivedEntered = computed<boolean>(() => {
+    return (po.value?.items ?? []).some((it) => it.qty_received !== null);
 });
 
 const totalQtyOrdered = computed<number>(() => {
@@ -628,11 +764,14 @@ const totalSkuCount = computed<number>(() => {
 });
 
 const totalUnitsForAllocation = computed<number>(() => {
-    // Default to ordered quantities so ship/unit + landed are stable while the PO is in-flight.
-    // Only switch to received-based allocation once the PO is marked received.
-    if (po.value?.received_date && totalUnitsReceived.value > 0) return totalUnitsReceived.value;
+    // Use received totals when qty_received has been entered (including zero); otherwise use ordered totals.
+    if (hasAnyQtyReceivedEntered.value) return totalUnitsReceived.value;
     return po.value?.items.reduce((sum, it) => sum + (it.qty_ordered ?? 0), 0) ?? 0;
 });
+
+function qtyForAllocation(item: PurchaseOrderItem): number {
+    return item.qty_received !== null ? item.qty_received : (item.qty_ordered ?? 0);
+}
 
 const allocationQtyNote = computed<string | null>(() => {
     if (!po.value) return null;
@@ -721,7 +860,7 @@ const totalsCheck = computed<TotalsCheck>(() => {
     let computedProduct: number | null = 0;
     if (po.value?.items) {
         for (const it of po.value.items) {
-            const qty = (it.qty_received ?? 0) > 0 ? (it.qty_received ?? 0) : (it.qty_ordered ?? 0);
+            const qty = qtyForAllocation(it);
             if (qty <= 0) continue;
             const unitCents = moneyToCents(it.unit_cost ?? null);
             if (unitCents === null) continue;
@@ -764,7 +903,7 @@ const totalsCheck = computed<TotalsCheck>(() => {
     const surchargeUnit = surchargePerUnitCents.value ?? 0;
     if (po.value?.items) {
         for (const it of po.value.items) {
-            const qty = (it.qty_received ?? 0) > 0 ? (it.qty_received ?? 0) : (it.qty_ordered ?? 0);
+            const qty = qtyForAllocation(it);
             if (qty <= 0) continue;
             const unitCents = moneyToCents(it.unit_cost ?? null);
             if (unitCents === null) {
@@ -825,6 +964,7 @@ async function load(): Promise<void> {
         po.value = res.data.data;
         if (!editOpen.value && po.value) {
             draft.vendor = po.value.vendor ?? '';
+            draft.supplier_order_id = po.value.supplier_order_id ?? '';
             draft.vendor_currency_code = po.value.vendor_currency_code ?? 'CAD';
             draft.ordered_date = po.value.ordered_date ?? '';
             draft.shipped_date = po.value.shipped_date ?? '';
@@ -848,6 +988,7 @@ function startEdit(): void {
     if (!po.value) return;
     editOpen.value = true;
     draft.vendor = po.value.vendor ?? '';
+    draft.supplier_order_id = po.value.supplier_order_id ?? '';
     draft.vendor_currency_code = po.value.vendor_currency_code ?? 'CAD';
     draft.ordered_date = po.value.ordered_date ?? '';
     draft.shipped_date = po.value.shipped_date ?? '';
@@ -873,6 +1014,8 @@ async function save(): Promise<void> {
     try {
         const payload = {
             vendor: draft.vendor.trim(),
+            supplier_order_id:
+                draft.supplier_order_id.trim() === '' ? null : draft.supplier_order_id.trim(),
             vendor_currency_code: draft.vendor_currency_code.trim().toUpperCase(),
             ordered_date: draft.ordered_date || null,
             shipped_date: draft.shipped_date || null,
@@ -977,6 +1120,81 @@ function commitQtyShippedEdit(itemId: number): void {
     const value = qtyShippedDrafts[itemId] ?? '';
     delete qtyShippedDrafts[itemId];
     void saveQtyShipped(itemId, value);
+}
+
+function startBarcodeEdit(itemId: number, current: string | null): void {
+    editingBarcodeItemId.value = itemId;
+    if (barcodeDrafts[itemId] === undefined) {
+        barcodeDrafts[itemId] = current ?? '';
+    }
+}
+
+function updateBarcodeDraft(itemId: number, value: string): void {
+    barcodeDrafts[itemId] = value;
+}
+
+function commitBarcodeEdit(itemId: number): void {
+    if (editingBarcodeItemId.value !== itemId) return;
+    editingBarcodeItemId.value = null;
+    const value = barcodeDrafts[itemId] ?? '';
+    delete barcodeDrafts[itemId];
+    void saveBarcode(itemId, value);
+}
+
+function setProductBarcodeLocal(productId: string, barcode: string | null): void {
+    if (!po.value) return;
+    for (const item of po.value.items) {
+        if (item.product_id === productId) {
+            item.product_barcode = barcode;
+        }
+    }
+}
+
+async function saveBarcode(itemId: number, value: string | null): Promise<void> {
+    if (!po.value) return;
+    itemQtyError.value = null;
+
+    const row = po.value.items.find((it) => it.id === itemId);
+    if (!row) {
+        itemQtyError.value = 'Failed to save barcode.';
+        return;
+    }
+
+    const productId = typeof row.product_id === 'string' ? row.product_id.trim() : '';
+    if (productId === '') {
+        itemQtyError.value = 'Cannot save barcode for a line without product id.';
+        return;
+    }
+
+    const previous = row.product_barcode ?? null;
+    const barcode = value !== null && value.trim() !== '' ? value.trim() : null;
+    savingBarcodeProductId.value = productId;
+
+    try {
+        setProductBarcodeLocal(productId, barcode);
+
+        const res = await api.patch(
+            `/api/v1/products/${productId}/barcode`,
+            { barcode },
+            { validateStatus: () => true },
+        );
+
+        if (res.status < 200 || res.status >= 300) {
+            setProductBarcodeLocal(productId, previous);
+            itemQtyError.value = (res.data as any)?.message ?? 'Failed to save barcode.';
+            return;
+        }
+
+        const saved = (res.data as any)?.data?.barcode as string | null | undefined;
+        setProductBarcodeLocal(productId, saved ?? null);
+    } catch {
+        setProductBarcodeLocal(productId, previous);
+        itemQtyError.value = 'Failed to save barcode.';
+    } finally {
+        if (savingBarcodeProductId.value === productId) {
+            savingBarcodeProductId.value = null;
+        }
+    }
 }
 
 function parseQtyOrNull(value: string): number | null {
@@ -1278,11 +1496,27 @@ onMounted(() => {
                     <div class="text-sm text-slate-800">
                         <div><span class="font-medium">ID:</span> {{ po.id }}</div>
                         <div>
+                            <span class="font-medium">Supplier order ID:</span>
+                            {{ po.supplier_order_id ?? '—' }}
+                        </div>
+                        <div>
                             <span class="font-medium">Created:</span>
                             {{ formatTorontoDateTime(po.created_at) }}
                         </div>
+                        <div>
+                            <span class="font-medium">Status:</span>
+                            {{ draftStatusLabel(po.status) }}
+                        </div>
                     </div>
                     <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="exportDraftLinesBusy"
+                            @click="exportDraftLinesCsv"
+                        >
+                            {{ exportDraftLinesBusy ? 'Exporting…' : 'Export PO lines CSV' }}
+                        </button>
                         <button
                             type="button"
                             class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1306,6 +1540,9 @@ onMounted(() => {
                         </button>
                     </div>
                 </div>
+                <p v-if="exportDraftLinesError" class="mt-2 text-sm text-rose-700">
+                    {{ exportDraftLinesError }}
+                </p>
 
                 <div class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
                     <div class="text-xs font-semibold text-slate-800">
@@ -1539,6 +1776,38 @@ onMounted(() => {
                     </div>
                 </div>
 
+                <div
+                    v-if="po.status === 'draft'"
+                    class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3"
+                >
+                    <div class="text-xs font-semibold text-slate-800">Draft PO: add products by SKU</div>
+                    <p class="mt-1 text-xs text-slate-600">
+                        Paste SKUs separated by comma, space, or newline. Existing lines are skipped.
+                    </p>
+                    <textarea
+                        v-model="draftAddSkus"
+                        rows="4"
+                        class="mt-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                        placeholder="SKU-001&#10;SKU-002"
+                    />
+                    <div class="mt-2">
+                        <button
+                            type="button"
+                            class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="addingDraftProducts"
+                            @click="addProductsToDraftBySku"
+                        >
+                            {{ addingDraftProducts ? 'Adding…' : 'Add products' }}
+                        </button>
+                    </div>
+                    <p v-if="addDraftProductsError" class="mt-2 text-sm text-rose-700">
+                        {{ addDraftProductsError }}
+                    </p>
+                    <p v-if="addDraftProductsSummary" class="mt-2 text-sm text-emerald-800">
+                        {{ addDraftProductsSummary }}
+                    </p>
+                </div>
+
                 <div class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
                     <div class="flex items-start justify-between gap-3">
                         <div>
@@ -1588,6 +1857,16 @@ onMounted(() => {
                             <label class="text-xs font-medium text-slate-700">Vendor</label>
                             <input
                                 v-model="draft.vendor"
+                                type="text"
+                                class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                            />
+                        </div>
+                        <div class="lg:col-span-2">
+                            <label class="text-xs font-medium text-slate-700"
+                                >Supplier order ID</label
+                            >
+                            <input
+                                v-model="draft.supplier_order_id"
                                 type="text"
                                 class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                             />
@@ -1891,6 +2170,16 @@ onMounted(() => {
                                 <th class="px-2 py-1 text-right">Ship/unit</th>
                                 <th class="px-2 py-1 text-right">Surcharge/unit</th>
                                 <th class="px-2 py-1 text-right">Landed</th>
+                                <th class="px-2 py-1 text-right">Available</th>
+                                <th class="px-2 py-1 text-right">Maintain</th>
+                                <th class="px-2 py-1 text-right">Not arrived</th>
+                                <th class="px-2 py-1 text-right">Reorder</th>
+                                <th class="px-2 py-1 text-right">Total ordered</th>
+                                <th class="px-2 py-1 text-right">Total sold</th>
+                                <th class="px-2 py-1 text-right">Selling</th>
+                                <th class="px-2 py-1 text-right">Latest landed</th>
+                                <th class="px-2 py-1 text-right">Multiplier</th>
+                                <th class="px-2 py-1 text-right">PO Lines</th>
                                 <th class="px-2 py-1 text-right">Qty ordered</th>
                                 <th class="px-2 py-1 text-right">Qty shipped</th>
                                 <th class="px-2 py-1 text-right">Qty received</th>
@@ -1926,9 +2215,32 @@ onMounted(() => {
                                                 <span class="font-semibold text-slate-600"
                                                     >Barcode:</span
                                                 >
-                                                <span class="font-mono">{{
-                                                    it.product_barcode ?? '—'
-                                                }}</span>
+                                                <input
+                                                    :data-testid="`barcode-input-${it.id}`"
+                                                    class="w-56 rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700 disabled:bg-slate-50 disabled:text-slate-400"
+                                                    type="text"
+                                                    :value="
+                                                        barcodeDrafts[it.id] ??
+                                                        (it.product_barcode ?? '')
+                                                    "
+                                                    :disabled="
+                                                        !it.product_id ||
+                                                        savingBarcodeProductId === it.product_id
+                                                    "
+                                                    placeholder="—"
+                                                    @focus="
+                                                        startBarcodeEdit(it.id, it.product_barcode)
+                                                    "
+                                                    @input="
+                                                        updateBarcodeDraft(
+                                                            it.id,
+                                                            ($event.target as HTMLInputElement)
+                                                                .value,
+                                                        )
+                                                    "
+                                                    @keydown.enter.prevent="commitBarcodeEdit(it.id)"
+                                                    @blur="commitBarcodeEdit(it.id)"
+                                                />
                                             </div>
                                             <div class="truncate">
                                                 <span class="font-semibold text-slate-600"
@@ -1967,6 +2279,48 @@ onMounted(() => {
                                             surchargePerUnitCents,
                                         )
                                     }}
+                                </td>
+                                <td class="px-2 py-1 text-right tabular-nums">
+                                    {{ it.available ?? '—' }}
+                                </td>
+                                <td class="px-2 py-1 text-right tabular-nums">
+                                    {{ it.maintain ?? '—' }}
+                                </td>
+                                <td class="px-2 py-1 text-right tabular-nums">
+                                    {{ it.not_arrived ?? 0 }}
+                                </td>
+                                <td class="px-2 py-1 text-right tabular-nums">
+                                    {{ it.reorder ?? 0 }}
+                                </td>
+                                <td class="px-2 py-1 text-right tabular-nums">
+                                    {{ it.total_ordered ?? 0 }}
+                                </td>
+                                <td class="px-2 py-1 text-right tabular-nums">
+                                    {{ it.total_sold ?? 0 }}
+                                </td>
+                                <td class="px-2 py-1 text-right tabular-nums">
+                                    {{ it.selling_price ? formatMoney2(it.selling_price) : '—' }}
+                                </td>
+                                <td class="px-2 py-1 text-right tabular-nums">
+                                    {{
+                                        it.latest_landed_unit_cost
+                                            ? formatMoney2(it.latest_landed_unit_cost)
+                                            : '—'
+                                    }}
+                                </td>
+                                <td class="px-2 py-1 text-right tabular-nums">
+                                    {{ it.multiplier ? `${it.multiplier}x` : '—' }}
+                                </td>
+                                <td class="px-2 py-1 text-right">
+                                    <button
+                                        v-if="it.product_id"
+                                        type="button"
+                                        class="rounded border border-slate-200 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                                        @click="openPoLines(it)"
+                                    >
+                                        PO Lines
+                                    </button>
+                                    <span v-else>—</span>
                                 </td>
                                 <td class="px-2 py-1 text-right">
                                     <input
@@ -2055,6 +2409,16 @@ onMounted(() => {
                                 <td class="px-2 py-2"></td>
                                 <td class="px-2 py-2"></td>
                                 <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
+                                <td class="px-2 py-2"></td>
                                 <td class="px-2 py-2 text-right font-semibold tabular-nums">
                                     {{ totalQtyOrdered }}
                                 </td>
@@ -2093,5 +2457,12 @@ onMounted(() => {
         :busy="recrawlBusy"
         @cancel="recrawlDialogOpen = false"
         @confirm="onConfirmRecrawl"
+    />
+    <ProductPoLinesDrawer
+        :open="poLinesOpen"
+        :product-id="poLinesProductId"
+        :product-sku="poLinesProductSku"
+        :product-name="poLinesProductName"
+        @close="closePoLines"
     />
 </template>

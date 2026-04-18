@@ -204,4 +204,3 @@ final class ProductLatestCostCacheService
         return $neg ? -$cents : $cents;
     }
 }
-

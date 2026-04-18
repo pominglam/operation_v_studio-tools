@@ -21,8 +21,7 @@ final class JobBatchItemQueryService
     public function getSummary(string $batchId, int $limitPerSection = 25): array
     {
         $this->repo->backfillFromQueueTables($batchId);
+
         return $this->repo->getSummary($batchId, $limitPerSection);
     }
 }
-
-

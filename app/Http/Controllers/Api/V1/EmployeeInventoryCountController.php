@@ -90,4 +90,3 @@ final class EmployeeInventoryCountController extends Controller
         ]);
     }
 }
-

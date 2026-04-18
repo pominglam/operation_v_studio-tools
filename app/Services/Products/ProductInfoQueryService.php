@@ -88,4 +88,3 @@ final class ProductInfoQueryService
         return false;
     }
 }
-

@@ -43,4 +43,3 @@ it('bulk updates selected items qty_received', function (): void {
     $this->assertDatabaseHas('purchase_order_items', ['id' => $i1->id, 'qty_received' => 2]);
     $this->assertDatabaseHas('purchase_order_items', ['id' => $i2->id, 'qty_received' => null]);
 });
-
