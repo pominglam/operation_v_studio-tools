@@ -18,6 +18,7 @@ final class InventoryCheckApplyController extends Controller
             'line_item_ids.*' => ['integer', 'min:1'],
             'apply_quantity' => ['sometimes', 'boolean'],
             'apply_name' => ['sometimes', 'boolean'],
+            'apply_quantity_mode' => ['sometimes', 'string', 'in:overwrite,increment'],
         ]);
 
         /** @var array<int, int>|null $lineIds */
@@ -31,6 +32,7 @@ final class InventoryCheckApplyController extends Controller
                 $lineIds,
                 (bool) ($validated['apply_quantity'] ?? true),
                 (bool) ($validated['apply_name'] ?? true),
+                (string) ($validated['apply_quantity_mode'] ?? 'overwrite'),
             ),
         ]);
     }

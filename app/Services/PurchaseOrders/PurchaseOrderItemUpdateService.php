@@ -22,6 +22,8 @@ final class PurchaseOrderItemUpdateService
 
     public function updateItem(
         int $purchaseOrderItemId,
+        bool $hasUnitCost,
+        ?string $unitCost,
         bool $hasQtyOrdered,
         ?int $qtyOrdered,
         bool $hasQtyShipped,
@@ -29,8 +31,9 @@ final class PurchaseOrderItemUpdateService
         bool $hasQtyReceived,
         ?int $qtyReceived,
     ): PurchaseOrderItem {
-        return DB::transaction(function () use ($purchaseOrderItemId, $hasQtyOrdered, $qtyOrdered, $hasQtyShipped, $qtyShipped, $hasQtyReceived, $qtyReceived): PurchaseOrderItem {
+        return DB::transaction(function () use ($purchaseOrderItemId, $hasUnitCost, $unitCost, $hasQtyOrdered, $qtyOrdered, $hasQtyShipped, $qtyShipped, $hasQtyReceived, $qtyReceived): PurchaseOrderItem {
             $item = $this->purchaseOrders->findItemByIdOrFail($purchaseOrderItemId);
+            $item->loadMissing('purchaseOrder');
 
             $issues = [];
             $ordered = $hasQtyOrdered ? $qtyOrdered : $item->qty_ordered;
@@ -111,6 +114,28 @@ final class PurchaseOrderItemUpdateService
                 $item->qty_ordered = $qtyOrdered;
             }
 
+            if ($hasUnitCost) {
+                $nextUnitCost = $unitCost !== null ? $this->normalizeDecimalRounded($unitCost, 4) : null;
+                $po = $item->purchaseOrder;
+                $currency = strtoupper(trim((string) ($po?->vendor_currency_code ?? 'CAD')));
+                $fxRateToCad = $po?->fx_rate_to_cad !== null ? trim((string) $po->fx_rate_to_cad) : null;
+
+                $item->unit_cost = $nextUnitCost;
+                if ($nextUnitCost === null) {
+                    $item->vendor_unit_cost = null;
+                } elseif (
+                    $currency !== ''
+                    && $currency !== 'CAD'
+                    && $fxRateToCad !== null
+                    && is_numeric($fxRateToCad)
+                    && (float) $fxRateToCad > 0
+                ) {
+                    $item->vendor_unit_cost = $this->normalizeDecimalRounded($this->divideDecimalRounded($nextUnitCost, $fxRateToCad, 4), 4);
+                } elseif ($currency === '' || $currency === 'CAD') {
+                    $item->vendor_unit_cost = null;
+                }
+            }
+
             $this->purchaseOrders->saveItem($item);
 
             $po = $item->purchaseOrder()->with('items')->first();
@@ -120,6 +145,41 @@ final class PurchaseOrderItemUpdateService
 
             return $item->loadMissing('purchaseOrder');
         });
+    }
+
+    private function normalizeDecimalRounded(string $value, int $scale): string
+    {
+        $trimmed = trim($value);
+        if ($trimmed === '' || ! is_numeric($trimmed)) {
+            return number_format(0, $scale, '.', '');
+        }
+
+        return number_format((float) $trimmed, $scale, '.', '');
+    }
+
+    private function divideDecimalRounded(string $numerator, string $denominator, int $scale): string
+    {
+        $num = trim($numerator);
+        $den = trim($denominator);
+        if ($num === '' || $den === '' || ! is_numeric($num) || ! is_numeric($den) || (float) $den <= 0) {
+            return number_format(0, $scale, '.', '');
+        }
+
+        if (extension_loaded('bcmath')) {
+            $extra = $scale + 2;
+            /** @var string $raw */
+            $raw = bcdiv($num, $den, $extra);
+            $increment = '0.'.str_repeat('0', max(0, $scale - 1)).'5';
+            $adjusted = str_starts_with($raw, '-')
+                ? bcsub($raw, $increment, $extra)
+                : bcadd($raw, $increment, $extra);
+            /** @var string $out */
+            $out = bcadd($adjusted, '0', $scale);
+
+            return $out;
+        }
+
+        return number_format(((float) $num) / ((float) $den), $scale, '.', '');
     }
 
     /**

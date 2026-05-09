@@ -67,6 +67,16 @@ final class PurchaseOrderImportService
 
     private const COL_JS_PDF_TEXT_HEADER = 'Item Description Quantity Price Per Unit Total';
 
+    private const COL_AL_TITLE = 'Title';
+
+    private const COL_AL_OPTION1_VALUE = 'Option1 Value';
+
+    private const COL_AL_QUOTE = 'Quote';
+
+    private const COL_AL_QTY = 'Qty';
+
+    private const COL_AL_TOTAL = 'Total';
+
     public function __construct(
         private readonly ProductRepository $products,
         private readonly PurchaseOrderRepository $purchaseOrders,
@@ -242,6 +252,31 @@ final class PurchaseOrderImportService
                             'product_name' => null,
                             'barcode' => null,
                             'vendor_line_total' => $this->nullableDecimalAt($data, $map[self::COL_AMOUNT_HKD] ?? -1),
+                        ];
+                    } elseif ($format === 'al') {
+                        $rawSku = $this->stringAt($data, $map[self::COL_SKU] ?? -1);
+                        $sku = $this->normalizeAlSku($rawSku);
+                        if ($sku === '') {
+                            throw new PurchaseOrderImportException('Missing SKU value.', [
+                                ['row' => $rowNumber, 'kind' => 'missing_sku'],
+                            ]);
+                        }
+
+                        $qtyOrdered = $this->nullableIntAt($data, $map[self::COL_AL_QTY] ?? -1);
+                        if (($qtyOrdered ?? 0) <= 0) {
+                            continue;
+                        }
+
+                        $rows[] = [
+                            'row' => $rowNumber,
+                            'sku' => $sku,
+                            'unit_cost' => $this->nullableDecimalAt($data, $map[self::COL_AL_QUOTE] ?? -1),
+                            'qty_ordered' => $qtyOrdered,
+                            'qty_shipped' => null,
+                            'qty_received' => null,
+                            'product_name' => $this->nullableStringAt($data, $map[self::COL_AL_TITLE] ?? -1),
+                            'barcode' => null,
+                            'vendor_line_total' => $this->nullableDecimalAt($data, $map[self::COL_AL_TOTAL] ?? -1),
                         ];
                     } else {
                         // Plamod "Order details" export includes trailing SUMMARY/TOTALS sections that are not line items.
@@ -707,12 +742,17 @@ final class PurchaseOrderImportService
         $aliases = [
             'sku' => self::COL_SKU,
             'qty' => self::COL_STEDI_QTY,
+            'qty*' => self::COL_AL_QTY,
             'order qty' => self::COL_STEDI_ORDER_QTY,
             'wholesale price hkd' => self::COL_STEDI_WHOLESALE_PRICE_HKD,
+            'quote' => self::COL_AL_QUOTE,
+            'title' => self::COL_AL_TITLE,
+            'option1 value' => self::COL_AL_OPTION1_VALUE,
             'unit price(hk$)' => self::COL_STEDI_UNIT_PRICE_HKD,
             'amount(hk$)' => self::COL_STEDI_AMOUNT_HKD,
             'unit price(hkd)' => self::COL_UNIT_PRICE_HKD,
             'amount(hkd)' => self::COL_AMOUNT_HKD,
+            'total' => self::COL_AL_TOTAL,
         ];
 
         $aliasKey = $aliases[$compactParens] ?? null;
@@ -816,6 +856,25 @@ final class PurchaseOrderImportService
             return 'simple_hkd';
         }
 
+        $alCols = [
+            self::COL_AL_TITLE,
+            self::COL_AL_OPTION1_VALUE,
+            self::COL_SKU,
+            self::COL_AL_QUOTE,
+            self::COL_AL_QTY,
+            self::COL_AL_TOTAL,
+        ];
+        $isAl = true;
+        foreach ($alCols as $col) {
+            if (! array_key_exists($col, $map)) {
+                $isAl = false;
+                break;
+            }
+        }
+        if ($isAl) {
+            return 'al';
+        }
+
         $plamodCols = [
             self::COL_PLAMOD_ORDER_ID,
             self::COL_SKU,
@@ -883,6 +942,7 @@ final class PurchaseOrderImportService
                     || array_key_exists(self::COL_STEDI_WHOLESALE_PRICE_HKD, $maybeHeader)
                     || array_key_exists(self::COL_STEDI_UNIT_PRICE_HKD, $maybeHeader)
                     || array_key_exists(self::COL_UNIT_PRICE_HKD, $maybeHeader)
+                    || array_key_exists(self::COL_AL_QUOTE, $maybeHeader)
                     || array_key_exists(self::COL_PLAMOD_UNIT_PRICE, $maybeHeader)
                 );
 
@@ -1477,5 +1537,24 @@ final class PurchaseOrderImportService
         $digits = preg_replace('/\D+/', '', $v) ?? '';
 
         return $digits === '' ? null : $digits;
+    }
+
+    private function normalizeAlSku(string $sku): string
+    {
+        $normalized = strtoupper(trim($sku));
+        if ($normalized === '') {
+            return '';
+        }
+
+        if (str_starts_with($normalized, 'BAN')) {
+            $normalized = substr($normalized, 3);
+        }
+        $normalized = trim($normalized);
+
+        if (preg_match('/^\d+\.00$/', $normalized) === 1) {
+            $normalized = substr($normalized, 0, -3);
+        }
+
+        return trim($normalized);
     }
 }

@@ -333,9 +333,19 @@ final class EmployeeInventoryCountService
      * @param  array<int, int>|null  $lineIds
      * @return array{applied:int,skipped:int,session:array<string,mixed>}
      */
-    public function applySessionQuantities(string $sessionUuid, ?array $lineIds = null, bool $applyQuantity = true, bool $applyName = true): array
-    {
-        return DB::transaction(function () use ($sessionUuid, $lineIds, $applyQuantity, $applyName): array {
+    public function applySessionQuantities(
+        string $sessionUuid,
+        ?array $lineIds = null,
+        bool $applyQuantity = true,
+        bool $applyName = true,
+        string $applyQuantityMode = 'overwrite',
+    ): array {
+        $applyQuantityMode = strtolower(trim($applyQuantityMode));
+        if (! in_array($applyQuantityMode, ['overwrite', 'increment'], true)) {
+            $applyQuantityMode = 'overwrite';
+        }
+
+        return DB::transaction(function () use ($sessionUuid, $lineIds, $applyQuantity, $applyName, $applyQuantityMode): array {
             $session = $this->inventoryChecks->findByUuidOrFail($sessionUuid);
             $session->load(['items', 'items.product']);
 
@@ -373,7 +383,11 @@ final class EmployeeInventoryCountService
                 }
 
                 if ($canApplyQuantity) {
-                    $product->available_qty = (int) $item->quantity_in_store;
+                    if ($applyQuantityMode === 'increment') {
+                        $product->available_qty = (int) ($product->available_qty ?? 0) + (int) $item->quantity_in_store;
+                    } else {
+                        $product->available_qty = (int) $item->quantity_in_store;
+                    }
                 }
                 if ($canApplyName) {
                     $product->description = $lineName;

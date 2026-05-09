@@ -5,6 +5,9 @@ declare(strict_types=1);
 use App\Models\Product;
 use App\Models\ProductExternalContent;
 use App\Models\ProductSellingPrice;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
+use Illuminate\Support\Facades\Http;
 
 it('exports selected products as barcoded CSV', function (): void {
     $p1 = Product::query()->create([
@@ -242,6 +245,110 @@ it('validates export_type for selected exports', function (): void {
         'export_type' => 'nope',
         'ids' => ['00000000-0000-0000-0000-000000090001'],
     ])->assertStatus(422);
+});
+
+it('exports selected products as restock PO CSV in CAD', function (): void {
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000090030',
+        'sku' => 'EXP-RESTOCK-CAD-1',
+        'barcode' => '6977000000030',
+        'description' => 'Restock CAD Product',
+        'vendor' => 'Dspiae',
+        'latest_unit_cost' => '12.34',
+        'available_qty' => 1,
+        'maintain_qty' => 5,
+    ]);
+    $po = PurchaseOrder::query()->create([
+        'vendor' => 'Dspiae',
+        'ordered_date' => '2026-04-20',
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $p->id,
+        'sku' => $p->sku,
+        'vendor' => 'Dspiae',
+        'qty_ordered' => 1,
+    ]);
+
+    $res = $this->postJson('/api/v1/products/export/selected', [
+        'export_type' => 'restock_po_cad',
+        'ids' => [$p->uuid],
+    ]);
+    $res->assertOk();
+
+    $csv = $res->streamedContent();
+    $lines = preg_split("/\r\n|\n|\r/", trim($csv)) ?: [];
+    expect(count($lines))->toBe(2);
+    $header = str_getcsv($lines[0]);
+    $row = str_getcsv($lines[1]);
+    expect($header)->toBe([
+        'Product SKU',
+        'Product Name',
+        'Barcode',
+        'Vendor',
+        'Reorder Qty',
+        'Unit Cost (CAD)',
+        'Total Cost (CAD)',
+    ]);
+    expect($row[0] ?? null)->toBe('EXP-RESTOCK-CAD-1');
+    expect($row[4] ?? null)->toBe('4');
+    expect($row[5] ?? null)->toBe('12.34');
+    expect($row[6] ?? null)->toBe('49.36');
+});
+
+it('exports selected products as restock PO CSV in HKD with FX conversion', function (): void {
+    Http::fake([
+        'https://api.frankfurter.app/latest*' => Http::response([
+            'rates' => ['HKD' => 8.0],
+        ], 200),
+    ]);
+
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000090031',
+        'sku' => 'EXP-RESTOCK-HKD-1',
+        'barcode' => '6977000000031',
+        'description' => 'Restock HKD Product',
+        'vendor' => 'Dspiae',
+        'latest_unit_cost' => '10.00',
+        'available_qty' => 1,
+        'maintain_qty' => 4,
+    ]);
+    $po = PurchaseOrder::query()->create([
+        'vendor' => 'Dspiae',
+        'ordered_date' => '2026-04-20',
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $p->id,
+        'sku' => $p->sku,
+        'vendor' => 'Dspiae',
+        'qty_ordered' => 1,
+    ]);
+
+    $res = $this->postJson('/api/v1/products/export/selected', [
+        'export_type' => 'restock_po_hkd',
+        'ids' => [$p->uuid],
+    ]);
+    $res->assertOk();
+
+    $csv = $res->streamedContent();
+    $lines = preg_split("/\r\n|\n|\r/", trim($csv)) ?: [];
+    expect(count($lines))->toBe(2);
+    $header = str_getcsv($lines[0]);
+    $row = str_getcsv($lines[1]);
+    expect($header)->toBe([
+        'Product SKU',
+        'Product Name',
+        'Barcode',
+        'Vendor',
+        'Reorder Qty',
+        'Unit Cost (HKD)',
+        'Total Cost (HKD)',
+    ]);
+    expect($row[0] ?? null)->toBe('EXP-RESTOCK-HKD-1');
+    expect($row[4] ?? null)->toBe('3');
+    expect($row[5] ?? null)->toBe('80.00');
+    expect($row[6] ?? null)->toBe('240.00');
 });
 
 it('allows exporting more than 500 selected ids', function (): void {

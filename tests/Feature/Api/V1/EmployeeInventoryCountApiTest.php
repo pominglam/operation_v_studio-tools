@@ -69,6 +69,50 @@ it('supports employee scan sessions and admin apply flow', function (): void {
     expect((string) Product::query()->where('id', $p->id)->value('description'))->toBe('Updated From Inventory Count');
 });
 
+it('supports increment mode when applying inventory check quantities', function (): void {
+    $p = Product::query()->create([
+        'sku' => 'EMP-INC-1',
+        'barcode' => '3333333333333',
+        'description' => 'Employee Increment Product',
+        'vendor' => 'Plamod',
+        'available_qty' => 3,
+        'latest_landed_unit_cost' => '4.50',
+    ]);
+
+    $create = $this->postJson('/api/v1/inventory-check/employee/sessions', [
+        'name' => 'Increment Session',
+    ])->assertStatus(201);
+    $sessionId = (string) ($create->json('data.session.id') ?? '');
+    expect($sessionId)->not->toBe('');
+
+    $this->postJson("/api/v1/inventory-check/employee/sessions/{$sessionId}/scan", [
+        'barcode' => '3333333333333',
+    ])->assertOk();
+    $this->postJson("/api/v1/inventory-check/employee/sessions/{$sessionId}/scan", [
+        'barcode' => '3333333333333',
+    ])->assertOk();
+
+    $this->postJson("/api/v1/inventory-check/{$sessionId}/apply", [
+        'apply_quantity' => true,
+        'apply_name' => false,
+        'apply_quantity_mode' => 'increment',
+    ])->assertOk();
+
+    expect((int) Product::query()->where('id', $p->id)->value('available_qty'))->toBe(5);
+});
+
+it('validates inventory check apply quantity mode', function (): void {
+    $create = $this->postJson('/api/v1/inventory-check/employee/sessions', [
+        'name' => 'Invalid Mode Session',
+    ])->assertStatus(201);
+    $sessionId = (string) ($create->json('data.session.id') ?? '');
+    expect($sessionId)->not->toBe('');
+
+    $this->postJson("/api/v1/inventory-check/{$sessionId}/apply", [
+        'apply_quantity_mode' => 'sum',
+    ])->assertStatus(422)->assertJsonValidationErrors(['apply_quantity_mode']);
+});
+
 it('employee role is restricted to employee APIs for external access', function (): void {
     config()->set('app.external_access_password', 'admin-pass-1');
     config()->set('app.external_access_employee_password', 'emp147');

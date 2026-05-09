@@ -57,6 +57,7 @@ const check = ref<InventoryCheck | null>(null);
 const applying = ref(false);
 const applyQuantity = ref(true);
 const applyName = ref(true);
+const applyQuantityMode = ref<'overwrite' | 'increment'>('overwrite');
 const savingLine = ref<Record<number, true>>({});
 const quantityDrafts = ref<Record<number, string>>({});
 const nameDrafts = ref<Record<number, string>>({});
@@ -122,6 +123,7 @@ async function applySession(): Promise<void> {
         await api.post(`/api/v1/inventory-check/${id.value}/apply`, {
             apply_quantity: applyQuantity.value,
             apply_name: applyName.value,
+            apply_quantity_mode: applyQuantityMode.value,
         });
         await load();
     } catch {
@@ -325,6 +327,17 @@ onMounted(() => {
                         class="h-4 w-4 rounded border-slate-300"
                     />
                     Apply name
+                </label>
+                <label class="inline-flex items-center gap-2 text-xs text-slate-700">
+                    Qty apply mode
+                    <select
+                        v-model="applyQuantityMode"
+                        class="rounded border border-slate-200 bg-white px-2 py-1 text-xs"
+                        :disabled="!applyQuantity"
+                    >
+                        <option value="overwrite">Overwrite</option>
+                        <option value="increment">Increment</option>
+                    </select>
                 </label>
                 <button
                     type="button"

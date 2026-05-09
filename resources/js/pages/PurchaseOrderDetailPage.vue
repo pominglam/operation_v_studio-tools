@@ -120,6 +120,10 @@ const savingBarcodeProductId = ref<string | null>(null);
 const editingBarcodeItemId = ref<number | null>(null);
 const barcodeDrafts = reactive<Record<number, string>>({});
 
+const savingUnitCost = ref<number | null>(null);
+const editingUnitCostId = ref<number | null>(null);
+const unitCostDrafts = reactive<Record<number, string>>({});
+
 const itemQtyError = ref<string | null>(null);
 
 const selectedItemIds = ref<Set<number>>(new Set());
@@ -1197,6 +1201,75 @@ async function saveBarcode(itemId: number, value: string | null): Promise<void> 
     }
 }
 
+function parseUnitCostOrNull(value: string): number | null {
+    const v = value.trim();
+    if (v === '') return null;
+    const n = parseMoney(v);
+    if (n === null || n < 0) return null;
+    return n;
+}
+
+function startUnitCostEdit(itemId: number, current: string | null): void {
+    editingUnitCostId.value = itemId;
+    if (unitCostDrafts[itemId] === undefined) {
+        unitCostDrafts[itemId] = current ?? '';
+    }
+}
+
+function updateUnitCostDraft(itemId: number, value: string): void {
+    unitCostDrafts[itemId] = value;
+}
+
+function commitUnitCostEdit(itemId: number): void {
+    if (editingUnitCostId.value !== itemId) return;
+    editingUnitCostId.value = null;
+    const value = unitCostDrafts[itemId] ?? '';
+    delete unitCostDrafts[itemId];
+    void saveUnitCost(itemId, value);
+}
+
+async function saveUnitCost(itemId: number, value: string): Promise<void> {
+    if (!po.value) return;
+    itemQtyError.value = null;
+    savingUnitCost.value = itemId;
+
+    const row = po.value.items.find((it) => it.id === itemId);
+    const previous = row?.unit_cost ?? null;
+    const next = parseUnitCostOrNull(value);
+
+    if (value.trim() !== '' && next === null) {
+        itemQtyError.value = 'Unit cost must be a non-negative number.';
+        savingUnitCost.value = null;
+        return;
+    }
+
+    try {
+        if (row) row.unit_cost = next === null ? null : next.toFixed(2);
+
+        const res = await api.patch(
+            `/api/v1/purchase-order-items/${itemId}`,
+            { unit_cost: next },
+            { validateStatus: () => true },
+        );
+
+        if (res.status < 200 || res.status >= 300) {
+            if (row) row.unit_cost = previous;
+            itemQtyError.value = (res.data as any)?.message ?? 'Failed to save unit cost.';
+            return;
+        }
+
+        const saved = (res.data as any)?.data as PurchaseOrderItem | undefined;
+        if (saved && row) {
+            row.unit_cost = saved.unit_cost ?? null;
+        }
+    } catch {
+        if (row) row.unit_cost = previous;
+        itemQtyError.value = 'Failed to save unit cost.';
+    } finally {
+        savingUnitCost.value = null;
+    }
+}
+
 function parseQtyOrNull(value: string): number | null {
     const v = value.trim();
     if (v === '') return null;
@@ -2255,7 +2328,26 @@ onMounted(() => {
                                 </td>
                                 <td class="px-2 py-1">{{ it.vendor }}</td>
                                 <td class="px-2 py-1 text-right">
-                                    {{ formatMoney2OrEmpty(it.unit_cost) }}
+                                    <input
+                                        class="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-xs tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                                        type="text"
+                                        inputmode="decimal"
+                                        :value="
+                                            unitCostDrafts[it.id] ??
+                                            formatMoney2OrEmpty(it.unit_cost)
+                                        "
+                                        :disabled="savingUnitCost === it.id"
+                                        :data-testid="`unit-cost-input-${it.id}`"
+                                        @focus="startUnitCostEdit(it.id, it.unit_cost)"
+                                        @input="
+                                            updateUnitCostDraft(
+                                                it.id,
+                                                ($event.target as HTMLInputElement).value,
+                                            )
+                                        "
+                                        @keydown.enter.prevent="commitUnitCostEdit(it.id)"
+                                        @blur="commitUnitCostEdit(it.id)"
+                                    />
                                 </td>
                                 <td class="px-2 py-1 text-right">
                                     {{

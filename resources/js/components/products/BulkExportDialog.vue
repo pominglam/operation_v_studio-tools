@@ -8,7 +8,9 @@ export type ProductsBulkExportType =
   | 'shopify_content_no_inventory'
   | 'shopify_content_rename_export'
   | 'missing_barcode'
-  | 'barcoded';
+  | 'barcoded'
+  | 'restock_po_cad'
+  | 'restock_po_hkd';
 
 const props = defineProps<{
   open: boolean;
@@ -82,6 +84,8 @@ function onConfirm(): void {
             <option value="shopify_content_rename_export">Rename to SEO-friendly images + export images + description</option>
             <option value="missing_barcode">Missing barcode (CSV)</option>
             <option value="barcoded">Barcoded inventory (CSV)</option>
+            <option value="restock_po_cad">Restock PO (in CAD)</option>
+            <option value="restock_po_hkd">Restock PO (in HKD)</option>
           </select>
           <div class="mt-1 text-xs text-slate-500">
             Note: each export keeps its existing rules (some selected products may be excluded).

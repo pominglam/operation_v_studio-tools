@@ -66,6 +66,94 @@ it('updates qty_ordered for a purchase order item', function (): void {
     $this->assertDatabaseHas('purchase_order_items', ['id' => $item->id, 'qty_ordered' => 7]);
 });
 
+it('updates unit_cost for a purchase order item', function (): void {
+    $product = Product::query()->create([
+        'sku' => 'COST-1',
+        'description' => 'Cost 1',
+        'vendor' => 'Dspiae',
+    ]);
+
+    $po = PurchaseOrder::query()->create([
+        'vendor' => 'Dspiae',
+    ]);
+
+    $item = PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => $product->sku,
+        'vendor' => 'Dspiae',
+        'unit_cost' => '1.0000',
+        'qty_ordered' => 1,
+    ]);
+
+    $res = $this->patchJson("/api/v1/purchase-order-items/{$item->id}", [
+        'unit_cost' => 2.34,
+    ]);
+
+    $res->assertOk()->assertJsonPath('data.unit_cost', '2.34');
+    $this->assertDatabaseHas('purchase_order_items', ['id' => $item->id, 'unit_cost' => '2.3400']);
+});
+
+it('updates vendor_unit_cost when editing unit_cost on foreign-currency PO item', function (): void {
+    $product = Product::query()->create([
+        'sku' => 'COST-FX-1',
+        'description' => 'Cost FX 1',
+        'vendor' => 'Stedi',
+    ]);
+
+    $po = PurchaseOrder::query()->create([
+        'vendor' => 'Stedi',
+        'vendor_currency_code' => 'HKD',
+        'fx_rate_to_cad' => '0.200000',
+    ]);
+
+    $item = PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => $product->sku,
+        'vendor' => 'Stedi',
+        'unit_cost' => '2.0000',
+        'vendor_unit_cost' => '10.0000',
+        'qty_ordered' => 1,
+    ]);
+
+    $res = $this->patchJson("/api/v1/purchase-order-items/{$item->id}", [
+        'unit_cost' => 3.00,
+    ]);
+
+    $res->assertOk()->assertJsonPath('data.unit_cost', '3.00');
+    $this->assertDatabaseHas('purchase_order_items', [
+        'id' => $item->id,
+        'unit_cost' => '3.0000',
+        'vendor_unit_cost' => '15.0000',
+    ]);
+});
+
+it('rejects negative unit_cost for a purchase order item', function (): void {
+    $product = Product::query()->create([
+        'sku' => 'COST-NEG-1',
+        'description' => 'Cost negative',
+        'vendor' => 'Dspiae',
+    ]);
+
+    $po = PurchaseOrder::query()->create([
+        'vendor' => 'Dspiae',
+    ]);
+
+    $item = PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => $product->sku,
+        'vendor' => 'Dspiae',
+        'unit_cost' => '1.0000',
+        'qty_ordered' => 1,
+    ]);
+
+    $this->patchJson("/api/v1/purchase-order-items/{$item->id}", [
+        'unit_cost' => -0.01,
+    ])->assertStatus(422)->assertJsonValidationErrors(['unit_cost']);
+});
+
 it('blocks qty_ordered lower than qty_shipped/qty_received', function (): void {
     $product = Product::query()->create([
         'sku' => 'ORD-2',

@@ -25,7 +25,14 @@ final class ProductsExportSelectedRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'export_type' => ['required', 'string', Rule::in(['shopify', 'shopify_no_inventory', 'missing_barcode', 'barcoded'])],
+            'export_type' => ['required', 'string', Rule::in([
+                'shopify',
+                'shopify_no_inventory',
+                'missing_barcode',
+                'barcoded',
+                'restock_po_cad',
+                'restock_po_hkd',
+            ])],
             'ids' => ['required', 'array', 'min:1', 'max:5000'],
             'ids.*' => ['string', 'uuid'],
             // Shopify export normally skips products without selling price. Set this flag to include them anyway.

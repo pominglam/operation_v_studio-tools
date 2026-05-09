@@ -172,4 +172,112 @@ describe('InventoryCheckDetailPage export', () => {
         );
         expect(wrapper.text()).toContain('Export failed (HTTP 200).');
     });
+
+    it('sends increment quantity mode when applying inventory check', async () => {
+        const checkId = '5b2c8bc1-dab8-4747-bbbb-3bf2ce1dc08e';
+        const getMock = api.get as unknown as ReturnType<typeof vi.fn>;
+        const postMock = api.post as unknown as ReturnType<typeof vi.fn>;
+
+        getMock.mockImplementation(async (url: string) => {
+            if (url === `/api/v1/inventory-check/${checkId}`) {
+                return {
+                    status: 200,
+                    data: {
+                        data: {
+                            id: checkId,
+                            name: null,
+                            source: 'upload',
+                            uploaded_file_path: null,
+                            workflow_state: 'ready_for_review',
+                            created_by_role: 'employee',
+                            applied_at: null,
+                            counts: {
+                                items: 1,
+                                matched: 1,
+                                unmatched: 0,
+                                ambiguous: 0,
+                                applied: 0,
+                            },
+                            items: [
+                                {
+                                    id: 1,
+                                    product_id: 'p-1',
+                                    handle: null,
+                                    vendor: 'Dspiae',
+                                    sku: 'SKU-1',
+                                    type: 'PAINT',
+                                    product_name: 'Product 1',
+                                    english_name: null,
+                                    available_amount: 1,
+                                    selling_price: '9.99',
+                                    quantity_in_store: 2,
+                                    difference: 1,
+                                    notes: null,
+                                    match_status: 'matched',
+                                    match_error: null,
+                                    applied: false,
+                                    applied_at: null,
+                                },
+                            ],
+                            created_at: null,
+                            updated_at: null,
+                        },
+                    },
+                };
+            }
+            throw new Error(`unexpected GET ${url}`);
+        });
+
+        postMock.mockImplementation(async (url: string) => {
+            if (url === `/api/v1/inventory-check/${checkId}/apply`) {
+                return { status: 200, data: { data: { applied: 1, skipped: 0, session: {} } } };
+            }
+            throw new Error(`unexpected POST ${url}`);
+        });
+
+        const router = createRouter({
+            history: createMemoryHistory(),
+            routes: [
+                {
+                    path: '/inventory-check/:id',
+                    name: 'inventory-check-detail',
+                    component: InventoryCheckDetailPage,
+                },
+            ],
+        });
+        await router.push({ name: 'inventory-check-detail', params: { id: checkId } });
+        await router.isReady();
+
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+        const wrapper = mount(InventoryCheckDetailPage, {
+            global: {
+                plugins: [router],
+                stubs: {
+                    BulkExportDialog: true,
+                },
+            },
+        });
+
+        await nextTick();
+        await flush();
+        await nextTick();
+
+        const modeSelect = wrapper
+            .findAll('select')
+            .find((s) => s.find('option[value="increment"]').exists());
+        expect(modeSelect).toBeTruthy();
+        await modeSelect!.setValue('increment');
+
+        const applyBtn = wrapper.findAll('button').find((b) => b.text().includes('Apply quantities'));
+        expect(applyBtn).toBeTruthy();
+        await applyBtn!.trigger('click');
+        await flush();
+
+        expect(confirmSpy).toHaveBeenCalled();
+        expect(postMock).toHaveBeenCalledWith(`/api/v1/inventory-check/${checkId}/apply`, {
+            apply_quantity: true,
+            apply_name: true,
+            apply_quantity_mode: 'increment',
+        });
+    });
 });

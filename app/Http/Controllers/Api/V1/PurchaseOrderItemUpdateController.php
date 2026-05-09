@@ -19,12 +19,14 @@ final class PurchaseOrderItemUpdateController extends Controller
 
     public function __invoke(PurchaseOrderItemUpdateRequest $request, int $id): JsonResponse|PurchaseOrderItemResource
     {
-        /** @var array{qty_ordered?:int|null, qty_shipped?:int|null, qty_received?:int|null} $v */
+        /** @var array{unit_cost?:int|float|string|null, qty_ordered?:int|null, qty_shipped?:int|null, qty_received?:int|null} $v */
         $v = $request->validated();
 
         try {
             $item = $this->items->updateItem(
                 purchaseOrderItemId: $id,
+                hasUnitCost: array_key_exists('unit_cost', $v),
+                unitCost: array_key_exists('unit_cost', $v) ? ($v['unit_cost'] !== null ? (string) $v['unit_cost'] : null) : null,
                 hasQtyOrdered: array_key_exists('qty_ordered', $v),
                 qtyOrdered: array_key_exists('qty_ordered', $v) ? $v['qty_ordered'] : null,
                 hasQtyShipped: array_key_exists('qty_shipped', $v),

@@ -4,6 +4,29 @@ import { mount } from '@vue/test-utils';
 import BulkRecrawlDialog from '../BulkRecrawlDialog.vue';
 
 describe('BulkRecrawlDialog', () => {
+    it('shows Argama option unchecked by default', async () => {
+        const wrapper = mount(BulkRecrawlDialog, {
+            props: {
+                open: true,
+                selectedCount: 1,
+                busy: false,
+            },
+            global: {
+                stubs: {
+                    Teleport: true,
+                },
+            },
+        });
+
+        expect(wrapper.text()).toContain('Argama PDP');
+        const labels = wrapper.findAll('label');
+        const argamaLabel = labels.find((label) => label.text().includes('Argama PDP'));
+        expect(argamaLabel).toBeTruthy();
+        expect(
+            (argamaLabel!.find('input[type="checkbox"]').element as HTMLInputElement).checked,
+        ).toBe(false);
+    });
+
     it('shows Newtype option and includes it in confirm payload', async () => {
         const wrapper = mount(BulkRecrawlDialog, {
             props: {
@@ -40,4 +63,3 @@ describe('BulkRecrawlDialog', () => {
         expect(emitted![0][0]).toEqual({ sources: ['newtype'] });
     });
 });
-

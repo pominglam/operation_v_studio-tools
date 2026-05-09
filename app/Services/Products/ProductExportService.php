@@ -7,6 +7,7 @@ namespace App\Services\Products;
 use App\DAL\Products\ProductRepository;
 use App\Models\Product;
 use App\Models\ProductExternalContent;
+use App\Services\PriceResearch\FxRateService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
@@ -14,6 +15,7 @@ final class ProductExportService
 {
     public function __construct(
         private readonly ProductRepository $products,
+        private readonly FxRateService $fxRates,
     ) {}
 
     /**
@@ -74,6 +76,72 @@ final class ProductExportService
     public function listSelectedBarcodedForExportSorted(array $uuids): Collection
     {
         return $this->products->listBarcodedByUuidsForExportSorted($uuids);
+    }
+
+    /**
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, Product>
+     */
+    public function listSelectedRestockForExport(array $uuids): Collection
+    {
+        return $this->products->listRestockByUuidsForExport($uuids);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function restockPoHeader(string $currencyCode): array
+    {
+        $currency = strtoupper(trim($currencyCode));
+        if ($currency === '') {
+            $currency = 'CAD';
+        }
+
+        return [
+            'Product SKU',
+            'Product Name',
+            'Barcode',
+            'Vendor',
+            'Reorder Qty',
+            "Unit Cost ({$currency})",
+            "Total Cost ({$currency})",
+        ];
+    }
+
+    public function cadToHkdRate(): float
+    {
+        return $this->fxRates->rate('CAD', 'HKD');
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function restockPoRow(Product $product, string $currencyCode, ?float $cadToHkdRate = null): array
+    {
+        $currency = strtoupper(trim($currencyCode));
+        if ($currency === '') {
+            $currency = 'CAD';
+        }
+
+        $reorderQty = max(0, (int) ($product->getAttribute('reorder_qty') ?? 0));
+        $unitCostCad = $this->toFloatOrNull($product->latest_unit_cost);
+        $unitCost = $unitCostCad;
+        if ($unitCostCad !== null && $currency === 'HKD') {
+            $rate = $cadToHkdRate ?? $this->cadToHkdRate();
+            $unitCost = $unitCostCad * $rate;
+        }
+
+        $totalCost = $unitCost !== null ? $unitCost * $reorderQty : null;
+
+        return [
+            (string) $product->sku,
+            (string) $product->description,
+            (string) ($product->barcode ?? ''),
+            (string) ($product->vendor ?? ''),
+            (string) $reorderQty,
+            $unitCost !== null ? number_format($unitCost, 2, '.', '') : '',
+            $totalCost !== null ? number_format($totalCost, 2, '.', '') : '',
+        ];
     }
 
     /**
@@ -393,5 +461,19 @@ final class ProductExportService
         $html = preg_replace('/[ \t\r\n]+/', ' ', $html) ?? $html;
 
         return trim($html);
+    }
+
+    private function toFloatOrNull(string|int|float|null $value): ?float
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $trimmed = trim((string) $value);
+        if ($trimmed === '' || ! is_numeric($trimmed)) {
+            return null;
+        }
+
+        return (float) $trimmed;
     }
 }

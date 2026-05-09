@@ -20,7 +20,7 @@ final class ProductsRecrawlSelectedRequest extends FormRequest
             'sources' => ['required', 'array', 'min:1'],
             'sources.*' => [
                 'string',
-                Rule::in(['bandai', 'hlj', 'gundamplanet', 'newtype', 'gundamhangar', 'plamod', 'competitor_price_research']),
+                Rule::in(['bandai', 'hlj', 'gundamplanet', 'newtype', 'gundamhangar', 'argama', 'plamod', 'competitor_price_research']),
             ],
         ];
     }

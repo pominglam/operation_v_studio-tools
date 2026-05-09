@@ -784,6 +784,27 @@ final class EloquentProductRepository implements ProductRepository
             ->get();
     }
 
+    public function listRestockByUuidsForExport(array $uuids): Collection
+    {
+        $uuids = array_values(array_unique(array_filter(array_map('trim', $uuids), static fn (string $v): bool => $v !== '')));
+        if ($uuids === []) {
+            return collect();
+        }
+
+        $inboundOpenPoQtyExpr = $this->inboundOpenPoQtyExpression();
+        $reorderQtyExpr = $this->reorderQtyExpression($inboundOpenPoQtyExpr);
+
+        return Product::query()
+            ->whereIn('uuid', $uuids)
+            ->select('products.*')
+            ->addSelect([
+                DB::raw("{$inboundOpenPoQtyExpr} as inbound_open_po_qty"),
+                DB::raw("{$reorderQtyExpr} as reorder_qty"),
+            ])
+            ->orderBy('sku', 'asc')
+            ->get();
+    }
+
     public function listBarcodedForExportSorted(): Collection
     {
         return Product::query()

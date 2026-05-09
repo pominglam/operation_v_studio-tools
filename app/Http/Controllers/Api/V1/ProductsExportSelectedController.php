@@ -103,6 +103,15 @@ final class ProductsExportSelectedController extends Controller
                     ]);
                     $exportedCount++;
                 }
+            } elseif ($exportType === 'restock_po_cad' || $exportType === 'restock_po_hkd') {
+                $currency = $exportType === 'restock_po_hkd' ? 'HKD' : 'CAD';
+                $cadToHkdRate = $currency === 'HKD' ? $this->exports->cadToHkdRate() : null;
+                $products = $this->exports->listSelectedRestockForExport($uuids);
+                fputcsv($tmp, $this->exports->restockPoHeader($currency));
+                foreach ($products as $p) {
+                    fputcsv($tmp, $this->exports->restockPoRow($p, $currency, $cadToHkdRate));
+                    $exportedCount++;
+                }
             }
 
             rewind($tmp);

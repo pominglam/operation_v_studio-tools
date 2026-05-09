@@ -7,6 +7,7 @@ namespace App\Jobs;
 use App\DAL\Products\ProductRepository;
 use App\Services\Jobs\JobBatchItemService;
 use App\Services\PriceResearch\PriceResearchService;
+use App\Services\Products\Argama\ArgamaContentSyncService;
 use App\Services\Products\Bandai\BandaiContentSyncService;
 use App\Services\Products\GundamHangar\GundamHangarContentSyncService;
 use App\Services\Products\GundamPlanet\GundamPlanetContentSyncService;
@@ -149,9 +150,10 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         $wantGundamHangar = in_array('gundamhangar', $sources, true);
         $wantBandai = in_array('bandai', $sources, true);
         $wantPrices = in_array('competitor_price_research', $sources, true);
+        $wantArgama = in_array('argama', $sources, true);
 
         $product = null;
-        if ($wantHlj || $wantGundamPlanet || $wantNewtype || $wantGundamHangar) {
+        if ($wantHlj || $wantGundamPlanet || $wantNewtype || $wantGundamHangar || $wantArgama) {
             $product = $products->findByUuidOrFail($this->productUuid);
         }
 
@@ -207,6 +209,16 @@ final class RecrawlSelectedProductJob implements ShouldQueue
                 $ok = $bandai->syncByProductUuid($this->productUuid);
 
                 return ['result' => $ok ? 'ok' : 'skipped'];
+            });
+        }
+
+        if ($wantArgama && $product !== null) {
+            $runSource('argama', function () use ($product, $trace): array {
+                /** @var ArgamaContentSyncService $argama */
+                $argama = app(ArgamaContentSyncService::class);
+                $argama->syncForProduct($product, $this->syncUuid, $trace);
+
+                return ['result' => 'ok'];
             });
         }
 

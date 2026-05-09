@@ -83,6 +83,14 @@ interface ProductRepository
     public function listBarcodedByUuidsForExportSorted(array $uuids): Collection;
 
     /**
+     * Selected products with computed reorder quantities for restock PO exports.
+     *
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, Product>
+     */
+    public function listRestockByUuidsForExport(array $uuids): Collection;
+
+    /**
      * Products for Shopify content export (requires selling price and eager-loaded PDP content/assets).
      *
      * @return Collection<int, Product>

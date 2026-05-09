@@ -760,3 +760,87 @@ it('accepts gundamhangar image urls when content-type is generic', function (): 
 
     expect(ProductExternalAsset::query()->where('product_id', $p->id)->where('source', 'gundamhangar')->count())->toBe(2);
 });
+
+it('runs argama sync when selected as a recrawl source', function (): void {
+    Storage::fake('local');
+
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000070400',
+        'sku' => '5063510',
+        'description' => 'Master Grade (MG) 1/100 MSN-04 Sazabi Ver.Ka',
+        'vendor' => 'AL',
+    ]);
+
+    $searchHtml = <<<'HTML'
+    <html><body>
+      <a href="/products/bandai-master-grade-1-100-msn-04-sazabi-ver-ka">Master Grade (MG) 1/100 MSN-04 Sazabi Ver.Ka</a>
+    </body></html>
+    HTML;
+
+    $pdpHtml = <<<'HTML'
+    <html><body>
+      <img src="//argamahobby.com/cdn/shop/products/MG_Sazabi_Ver_Ka_Box.jpg?v=1574753836&width=180" />
+    </body></html>
+    HTML;
+
+    Http::fake(function (\Illuminate\Http\Client\Request $req) use ($searchHtml, $pdpHtml) {
+        $url = $req->url();
+        if (str_contains($url, 'argamahobby.com/search?')) {
+            return Http::response($searchHtml, 200, ['Content-Type' => 'text/html; charset=utf-8']);
+        }
+        if (str_contains($url, 'argamahobby.com/products/bandai-master-grade-1-100-msn-04-sazabi-ver-ka')) {
+            return Http::response($pdpHtml, 200, ['Content-Type' => 'text/html; charset=utf-8']);
+        }
+        if (str_contains($url, 'MG_Sazabi_Ver_Ka_Box.jpg') && str_contains($url, 'width=1000')) {
+            return Http::response('img1', 200, ['Content-Type' => 'image/jpeg']);
+        }
+
+        return Http::response('not found', 404);
+    });
+
+    $batchId = 'd0ae0689-dd2d-4812-aa44-73b294d283cb';
+    DB::table('job_batches')->updateOrInsert(
+        ['id' => $batchId],
+        [
+            'name' => 'recrawl_selected_products',
+            'total_jobs' => 1,
+            'pending_jobs' => 0,
+            'failed_jobs' => 0,
+            'failed_job_ids' => '[]',
+            'options' => '[]',
+            'created_at' => now()->timestamp,
+            'cancelled_at' => null,
+            'finished_at' => null,
+        ],
+    );
+
+    $job = new RecrawlSelectedProductJob('sync-uuid', '00000000-0000-0000-0000-000000070400', ['argama']);
+    $ref = new ReflectionClass($job);
+    if ($ref->hasProperty('batchId')) {
+        $prop = $ref->getProperty('batchId');
+        $prop->setAccessible(true);
+        $prop->setValue($job, $batchId);
+    }
+
+    $job->handle(
+        app(\App\DAL\Products\ProductRepository::class),
+        app(\App\Services\Products\PlamodAssetSyncService::class),
+        app(\App\Services\Products\Hlj\HljContentSync::class),
+        app(\App\Services\Products\GundamPlanet\GundamPlanetContentSyncService::class),
+        app(\App\Services\Products\Newtype\NewtypeContentSyncService::class),
+        app(\App\Services\Products\GundamHangar\GundamHangarContentSyncService::class),
+        app(\App\Services\Products\Bandai\BandaiContentSyncService::class),
+        app(\App\Services\PriceResearch\PriceResearchService::class),
+        app(\App\Services\Jobs\JobBatchItemService::class),
+    );
+
+    expect(ProductExternalAsset::query()->where('product_id', $p->id)->where('source', 'argama')->count())->toBe(1);
+    Storage::disk('local')->assertExists('argama/images/5063510/argama-5063510-1.jpg');
+
+    $debug = (string) \Illuminate\Support\Facades\DB::table('job_batch_items')
+        ->where('batch_id', '=', $batchId)
+        ->where('product_uuid', '=', $p->uuid)
+        ->value('debug_log');
+    expect($debug)->toContain('[job] sources=argama');
+    expect($debug)->toContain('[argama][start]');
+});
