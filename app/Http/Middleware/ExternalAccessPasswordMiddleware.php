@@ -22,8 +22,8 @@ final class ExternalAccessPasswordMiddleware
             return $next($request);
         }
 
-        if (! $this->isExternalRequest($request)) {
-            // Local access: no login prompt.
+        if ($this->isLoopbackBypassHostRequest($request)) {
+            // Direct local access only (localhost / loopback): no login prompt.
             $request->attributes->set('external_access_role', ExternalAccessAuthService::ROLE_ADMIN);
 
             return $next($request);
@@ -125,20 +125,61 @@ final class ExternalAccessPasswordMiddleware
         return false;
     }
 
-    private function isExternalRequest(Request $request): bool
+    /**
+     * True when the inbound host is localhost or IPv4 loopback (127/8) or IPv6 loopback (::1).
+     * Any real hostname or non-loopback IP (including custom DNS to the machine) requires the external password gate.
+     */
+    private function isLoopbackBypassHostRequest(Request $request): bool
     {
-        // Prefer forwarded host headers (cloudflared / reverse proxies).
-        $forwarded = $request->headers->get('X-Forwarded-Host');
-        $host = is_string($forwarded) && trim($forwarded) !== ''
-            ? $forwarded
-            : (string) $request->getHost();
+        $host = $this->resolvePreferForwardedHostHeader($request);
 
+        return self::hostIsLoopbackBypass($host);
+    }
+
+    private function resolvePreferForwardedHostHeader(Request $request): string
+    {
+        $forwarded = $request->headers->get('X-Forwarded-Host');
+        if (is_string($forwarded) && trim($forwarded) !== '') {
+            $forwarded = trim(explode(',', $forwarded, 2)[0] ?? '');
+        } else {
+            $forwarded = '';
+        }
+
+        $host = $forwarded !== '' ? $forwarded : (string) $request->getHost();
+
+        return strtolower(trim($host));
+    }
+
+    public static function hostIsLoopbackBypass(string $host): bool
+    {
         $host = strtolower(trim($host));
         if ($host === '') {
             return false;
         }
 
-        return str_ends_with($host, '.trycloudflare.com');
+        // Bracketed IPv6 loopback, optional explicit port ([::1]:8020).
+        if (preg_match('/^\[::1\](?::(\d+))?$/', $host) === 1) {
+            return true;
+        }
+
+        // localhost, optional explicit port (localhost:8020).
+        if (preg_match('/^localhost(?::(\d+))?$/', $host) === 1) {
+            return true;
+        }
+
+        // IPv4 loopback (/8), optional explicit port (127.0.0.1:8020).
+        if (preg_match('/^(127(?:\.\d{1,3}){3})(?::(\d+))?$/', $host, $m) === 1) {
+            foreach (explode('.', $m[1]) as $octet) {
+                if ((int) $octet > 255) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        // Unbracketed IPv6 loopback only (no ambiguous host:port form).
+        return $host === '::1';
     }
 
     private function cookieFromHeader(?string $rawCookieHeader, string $name): ?string

@@ -57,7 +57,7 @@ final class ExternalLoginController
             abort(500);
         }
 
-        // Session cookie: no expiry. HttpOnly + Secure since trycloudflare is HTTPS.
+        // Session cookie: no expiry. HttpOnly + Secure for HTTPS tunnel / public hostnames.
         return redirect($next)->withCookie(cookie(
             name: ExternalAccessAuthService::COOKIE_NAME,
             value: $cookieVal,

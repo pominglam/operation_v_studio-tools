@@ -70,7 +70,7 @@ return [
     // When enabled, this instance will only serve /shopify-images/* and 404 everything else.
     'shopify_images_only' => (bool) env('SHOPIFY_IMAGES_ONLY', false),
 
-    // Simple external-access password (used only for trycloudflare quick tunnel access).
+    // Simple external-access password for any non-loopback inbound host (tunnels, custom DNS, LAN IPs, etc.).
     'external_access_password' => env('EXTERNAL_ACCESS_PASSWORD'),
     'external_access_employee_password' => env('EXTERNAL_ACCESS_EMPLOYEE_PASSWORD', 'emp147'),
 
