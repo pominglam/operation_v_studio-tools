@@ -1,0 +1,10 @@
+---
+description: Require explicit user confirmation before destructive delete actions
+alwaysApply: true
+---
+
+# Confirm Delete Actions
+
+- Any UI action that deletes data, files, records, assets, or user-entered content must ask for explicit confirmation before sending the delete request.
+- Confirmation must happen immediately before the destructive call, not only through button wording or color.
+- Backend/API delete endpoints should still enforce authorization and ownership; frontend confirmation is an additional safety step, not the only guard.

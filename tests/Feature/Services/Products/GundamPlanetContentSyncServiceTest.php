@@ -91,6 +91,8 @@ it('syncs gundamplanet images strictly from <product-gallery> and replaces asset
 
         public function setShopifyEnabled(int $id, bool $enabled): void {}
 
+        public function deleteById(int $id): void {}
+
         public function createForProduct(int $productId, string $source, array $assets): array
         {
             return [];

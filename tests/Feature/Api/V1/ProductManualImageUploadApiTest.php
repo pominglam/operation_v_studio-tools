@@ -79,3 +79,69 @@ it('rejects non-image uploads for manual images', function (): void {
         'files' => [$bad],
     ])->assertStatus(422);
 });
+
+it('deletes a manually uploaded product image and its stored file', function (): void {
+    Storage::fake('local');
+
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000077779',
+        'sku' => 'MANUAL-UPLOAD-DELETE',
+        'description' => 'Manual upload delete product',
+        'vendor' => 'Plamod',
+    ]);
+
+    Storage::disk('local')->put('manual_upload/images/delete-me.png', 'fake image bytes');
+
+    $asset = ProductExternalAsset::query()->create([
+        'product_id' => $p->id,
+        'source' => 'manual_upload',
+        'kind' => 'image',
+        'storage_path' => 'manual_upload/images/delete-me.png',
+        'filename' => 'delete-me.png',
+        'mime_type' => 'image/png',
+        'size_bytes' => 16,
+        'checksum_sha256' => null,
+        'sort_order' => 1,
+        'shopify_enabled' => true,
+    ]);
+
+    $this->deleteJson("/api/v1/product-assets/{$asset->id}")
+        ->assertOk()
+        ->assertJsonPath('ok', true);
+
+    expect(ProductExternalAsset::query()->whereKey($asset->id)->exists())->toBeFalse();
+    Storage::disk('local')->assertMissing('manual_upload/images/delete-me.png');
+});
+
+it('does not delete non-manual product images through the manual delete endpoint', function (): void {
+    Storage::fake('local');
+
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000077780',
+        'sku' => 'MANUAL-UPLOAD-DENIED',
+        'description' => 'Manual upload denied product',
+        'vendor' => 'Plamod',
+    ]);
+
+    Storage::disk('local')->put('bandai/images/keep-me.png', 'fake image bytes');
+
+    $asset = ProductExternalAsset::query()->create([
+        'product_id' => $p->id,
+        'source' => 'bandai',
+        'kind' => 'image',
+        'storage_path' => 'bandai/images/keep-me.png',
+        'filename' => 'keep-me.png',
+        'mime_type' => 'image/png',
+        'size_bytes' => 16,
+        'checksum_sha256' => null,
+        'sort_order' => 1,
+        'shopify_enabled' => true,
+    ]);
+
+    $this->deleteJson("/api/v1/product-assets/{$asset->id}")
+        ->assertStatus(403)
+        ->assertJsonPath('error', 'manual_upload_only');
+
+    expect(ProductExternalAsset::query()->whereKey($asset->id)->exists())->toBeTrue();
+    Storage::disk('local')->assertExists('bandai/images/keep-me.png');
+});

@@ -79,6 +79,8 @@ it('prepares shopify content export and returns download_url + skipped lists', f
     Storage::disk('local')->put('plamod/extracted/x/1.png', 'img1');
     Storage::disk('local')->put('hlj/images/x/2.png', 'img2');
     Storage::disk('local')->put('gundamplanet/images/x/3.png', 'img3');
+    Storage::disk('local')->put('manual_upload/images/x/4.png', 'img4');
+    Storage::disk('local')->put('manual_upload/images/x/manual-disabled.png', 'img5');
 
     ProductExternalAsset::query()->create([
         'product_id' => $p1->id,
@@ -114,6 +116,30 @@ it('prepares shopify content export and returns download_url + skipped lists', f
         'size_bytes' => 5,
         'checksum_sha256' => null,
         'sort_order' => 3,
+        'shopify_enabled' => false,
+    ]);
+    ProductExternalAsset::query()->create([
+        'product_id' => $p1->id,
+        'source' => 'manual_upload',
+        'kind' => 'image',
+        'storage_path' => 'manual_upload/images/x/4.png',
+        'filename' => '4.png',
+        'mime_type' => 'image/png',
+        'size_bytes' => 4,
+        'checksum_sha256' => null,
+        'sort_order' => 4,
+        'shopify_enabled' => true,
+    ]);
+    ProductExternalAsset::query()->create([
+        'product_id' => $p1->id,
+        'source' => 'manual_upload',
+        'kind' => 'image',
+        'storage_path' => 'manual_upload/images/x/manual-disabled.png',
+        'filename' => 'manual-disabled.png',
+        'mime_type' => 'image/png',
+        'size_bytes' => 5,
+        'checksum_sha256' => null,
+        'sort_order' => 5,
         'shopify_enabled' => false,
     ]);
 
@@ -174,13 +200,19 @@ it('prepares shopify content export and returns download_url + skipped lists', f
     expect($csv)->not->toContain('Â');
     expect($csv)->not->toContain('HLJ desc');
 
-    // Respects chosen image ordering (sort_order) and skips disabled images.
-    // sort_order: HLJ (1) then Plamod (2); GundamPlanet is disabled.
+    // Respects chosen image ordering (sort_order) and skips disabled images from any source,
+    // including manually uploaded images.
+    // sort_order: HLJ (1), Plamod (2), Manual upload (4); GundamPlanet and one manual image are disabled.
     $pos2 = strpos($csv, '/2.png,1,');
     $pos1 = strpos($csv, '/1.png,2,');
+    $pos4 = strpos($csv, '/4.png,3,');
     expect($pos2)->not->toBeFalse();
     expect($pos1)->not->toBeFalse();
+    expect($pos4)->not->toBeFalse();
     expect((int) $pos2)->toBeLessThan((int) $pos1);
+    expect((int) $pos1)->toBeLessThan((int) $pos4);
+    expect($csv)->not->toContain('/3.png,');
+    expect($csv)->not->toContain('/manual-disabled.png,');
 
     // Uses available_qty as Variant Inventory Qty (Shopify CSV).
     $lines = preg_split("/\r\n|\n|\r/", trim($csv)) ?: [];

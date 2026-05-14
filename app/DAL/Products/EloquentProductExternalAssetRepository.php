@@ -114,6 +114,13 @@ final class EloquentProductExternalAssetRepository implements ProductExternalAss
             ->update(['shopify_enabled' => $enabled]);
     }
 
+    public function deleteById(int $id): void
+    {
+        ProductExternalAsset::query()
+            ->where('id', '=', $id)
+            ->delete();
+    }
+
     public function createForProduct(int $productId, string $source, array $assets): array
     {
         $source = trim($source);

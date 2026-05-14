@@ -43,6 +43,8 @@ interface ProductExternalAssetRepository
 
     public function setShopifyEnabled(int $id, bool $enabled): void;
 
+    public function deleteById(int $id): void;
+
     /**
      * Create additional assets for a product (append; does not delete existing rows).
      *

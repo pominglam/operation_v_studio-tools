@@ -36,7 +36,15 @@ type ProductInfoPayload = {
     assets: ProductInfoAsset[];
 };
 
-type SourceKey = 'bandai' | 'hlj' | 'gundamplanet' | 'newtype' | 'gundamhangar' | 'plamod' | 'manual_upload' | 'other';
+type SourceKey =
+    | 'bandai'
+    | 'hlj'
+    | 'gundamplanet'
+    | 'newtype'
+    | 'gundamhangar'
+    | 'plamod'
+    | 'manual_upload'
+    | 'other';
 
 type DescriptionSelectionMode = 'source' | 'manual';
 
@@ -123,18 +131,22 @@ function manualDraftToHtml(text: string): string | null {
     return `<p>${body}</p>`;
 }
 
-function contentForSource(contents: ProductInfoContent[], source: SourceKey): ProductInfoContent | null {
+function contentForSource(
+    contents: ProductInfoContent[],
+    source: SourceKey,
+): ProductInfoContent | null {
     const src = source === 'other' ? null : source;
-    const candidates = src ? contents.filter((c) => normalizeSourceKey(c.source) === source) : contents.filter((c) => normalizeSourceKey(c.source) === 'other');
+    const candidates = src
+        ? contents.filter((c) => normalizeSourceKey(c.source) === source)
+        : contents.filter((c) => normalizeSourceKey(c.source) === 'other');
     if (candidates.length === 0) return null;
 
     // Prefer one with description, then most recently updated.
     const withDesc = candidates.filter((c) => !isBlank(c.description_html));
     const list = withDesc.length > 0 ? withDesc : candidates;
     return (
-        list
-            .slice()
-            .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))[0] ?? null
+        list.slice().sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))[0] ??
+        null
     );
 }
 
@@ -185,9 +197,13 @@ watch(
     () => availableSources.value,
     (avail) => {
         const preferredRaw = data.value?.preferred_description_source ?? null;
-        const preferred = typeof preferredRaw === 'string' && preferredRaw.trim() !== '' ? normalizeSourceKey(preferredRaw) : null;
+        const preferred =
+            typeof preferredRaw === 'string' && preferredRaw.trim() !== ''
+                ? normalizeSourceKey(preferredRaw)
+                : null;
         selectedSource.value = {
-            contentSource: preferred && avail.has(preferred) ? preferred : preferredContentSource(avail),
+            contentSource:
+                preferred && avail.has(preferred) ? preferred : preferredContentSource(avail),
             descriptionMode: 'source',
         };
     },
@@ -198,7 +214,9 @@ const selectedContent = computed<ProductInfoContent | null>(() => {
     return contentForSource(data.value?.contents ?? [], selectedSource.value.contentSource);
 });
 
-const title = computed<string>(() => selectedContent.value?.title || props.productSku || 'Product info');
+const title = computed<string>(
+    () => selectedContent.value?.title || props.productSku || 'Product info',
+);
 const gridName = computed<string>(() => (props.productName ?? '').trim());
 
 type DescriptionCard = {
@@ -208,7 +226,15 @@ type DescriptionCard = {
 
 const descriptionCards = computed<DescriptionCard[]>(() => {
     const contents = data.value?.contents ?? [];
-    const order: SourceKey[] = ['hlj', 'newtype', 'gundamhangar', 'gundamplanet', 'plamod', 'bandai', 'other'];
+    const order: SourceKey[] = [
+        'hlj',
+        'newtype',
+        'gundamhangar',
+        'gundamplanet',
+        'plamod',
+        'bandai',
+        'other',
+    ];
     const out: DescriptionCard[] = [];
     for (const key of order) {
         const c = contentForSource(contents, key);
@@ -286,18 +312,32 @@ watch(
 );
 
 function useDescriptionSource(key: SourceKey): void {
-    selectedSource.value = { ...selectedSource.value, contentSource: key, descriptionMode: 'source' };
+    selectedSource.value = {
+        ...selectedSource.value,
+        contentSource: key,
+        descriptionMode: 'source',
+    };
     void persistPreferredDescriptionSource(key);
 }
 
 function useManualDescription(): void {
-    selectedSource.value = { ...selectedSource.value, contentSource: 'other', descriptionMode: 'manual' };
-    void persistPreferredDescriptionSource('other', manualDraftToHtml(manualDescriptionDraft.value));
+    selectedSource.value = {
+        ...selectedSource.value,
+        contentSource: 'other',
+        descriptionMode: 'manual',
+    };
+    void persistPreferredDescriptionSource(
+        'other',
+        manualDraftToHtml(manualDescriptionDraft.value),
+    );
 }
 
 const savingPreferredDescription = ref(false);
 
-async function persistPreferredDescriptionSource(key: SourceKey, manualDescriptionHtml: string | null = null): Promise<void> {
+async function persistPreferredDescriptionSource(
+    key: SourceKey,
+    manualDescriptionHtml: string | null = null,
+): Promise<void> {
     if (!props.productId) return;
     savingPreferredDescription.value = true;
     error.value = null;
@@ -309,7 +349,10 @@ async function persistPreferredDescriptionSource(key: SourceKey, manualDescripti
             payload.manual_description_html = manualDescriptionHtml;
         }
 
-        await api.patch(`/api/v1/products/${props.productId}/preferred-description-source`, payload);
+        await api.patch(
+            `/api/v1/products/${props.productId}/preferred-description-source`,
+            payload,
+        );
         if (data.value) {
             data.value = { ...data.value, preferred_description_source: key };
         }
@@ -346,12 +389,31 @@ function descriptionHtmlFor(content: ProductInfoContent): string | null {
 }
 
 function assetSortKey(a: ProductInfoAsset): [number, number] {
-    const order = typeof a.sort_order === 'number' && Number.isFinite(a.sort_order) ? a.sort_order : 1_000_000_000;
+    const order =
+        typeof a.sort_order === 'number' && Number.isFinite(a.sort_order)
+            ? a.sort_order
+            : 1_000_000_000;
     return [order, a.id];
 }
 
 function isExporting(a: ProductInfoAsset): boolean {
     return (a.shopify_enabled ?? true) === true;
+}
+
+function isManualUploadAsset(a: ProductInfoAsset | null): boolean {
+    return a !== null && normalizeSourceKey(a.source) === 'manual_upload';
+}
+
+function shopifyToggleLabel(a: ProductInfoAsset): string {
+    const exporting = a.shopify_enabled ?? true;
+
+    return isManualUploadAsset(a)
+        ? exporting
+            ? 'On'
+            : 'Off'
+        : exporting
+          ? 'Exporting'
+          : 'Not exporting';
 }
 
 const imageAssets = computed<ProductInfoAsset[]>(() => {
@@ -417,7 +479,16 @@ const imageSourceStats = computed<ImageSourceStat[]>(() => {
         const k = normalizeSourceKey(a.source);
         counts.set(k, (counts.get(k) ?? 0) + 1);
     }
-    const order: SourceKey[] = ['hlj', 'newtype', 'gundamhangar', 'gundamplanet', 'plamod', 'manual_upload', 'bandai', 'other'];
+    const order: SourceKey[] = [
+        'hlj',
+        'newtype',
+        'gundamhangar',
+        'gundamplanet',
+        'plamod',
+        'manual_upload',
+        'bandai',
+        'other',
+    ];
     const keys = Array.from(counts.keys()).sort((a, b) => {
         const ai = order.indexOf(a);
         const bi = order.indexOf(b);
@@ -469,13 +540,19 @@ async function disableImagesForSource(key: SourceKey): Promise<void> {
         const set = new Set(idsToDisable);
         data.value = {
             ...data.value,
-            assets: (data.value.assets ?? []).map((x) => (set.has(x.id) ? { ...x, shopify_enabled: false } : x)),
+            assets: (data.value.assets ?? []).map((x) =>
+                set.has(x.id) ? { ...x, shopify_enabled: false } : x,
+            ),
         };
     }
 
     try {
         await Promise.allSettled(
-            idsToDisable.map((id) => api.patch(`/api/v1/product-assets/${id}/shopify-enabled`, { shopify_enabled: false })),
+            idsToDisable.map((id) =>
+                api.patch(`/api/v1/product-assets/${id}/shopify-enabled`, {
+                    shopify_enabled: false,
+                }),
+            ),
         );
 
         // Reorder: keep enabled first, disabled last.
@@ -514,13 +591,19 @@ async function disableImagesForHiddenSources(): Promise<void> {
         const set = new Set(idsToDisable);
         data.value = {
             ...data.value,
-            assets: (data.value.assets ?? []).map((x) => (set.has(x.id) ? { ...x, shopify_enabled: false } : x)),
+            assets: (data.value.assets ?? []).map((x) =>
+                set.has(x.id) ? { ...x, shopify_enabled: false } : x,
+            ),
         };
     }
 
     try {
         await Promise.allSettled(
-            idsToDisable.map((id) => api.patch(`/api/v1/product-assets/${id}/shopify-enabled`, { shopify_enabled: false })),
+            idsToDisable.map((id) =>
+                api.patch(`/api/v1/product-assets/${id}/shopify-enabled`, {
+                    shopify_enabled: false,
+                }),
+            ),
         );
 
         // Reorder: keep enabled first, disabled last.
@@ -589,13 +672,16 @@ const activeImageIndex = computed<number>(() => {
     const idx = visibleImageAssets.value.findIndex((a) => a.id === id);
     return idx >= 0 ? idx : 0;
 });
-const activeImage = computed<ProductInfoAsset | null>(() => visibleImageAssets.value[activeImageIndex.value] ?? null);
+const activeImage = computed<ProductInfoAsset | null>(
+    () => visibleImageAssets.value[activeImageIndex.value] ?? null,
+);
 const activeImageDebug = computed<string | null>(() => {
     const img = activeImage.value;
     if (!img) return null;
 
     const parts: string[] = [];
-    if (img.origin_width && img.origin_height) parts.push(`${img.origin_width}×${img.origin_height}`);
+    if (img.origin_width && img.origin_height)
+        parts.push(`${img.origin_width}×${img.origin_height}`);
     if (img.checksum_sha256) parts.push(img.checksum_sha256.slice(0, 12));
     return parts.length > 0 ? parts.join(' · ') : null;
 });
@@ -603,6 +689,7 @@ const savingOrder = ref(false);
 const dragAssetId = ref<number | null>(null);
 const thumbnailDragInProgress = ref(false);
 const togglingShopify = ref<Record<number, true>>({});
+const deletingManualAssetId = ref<number | null>(null);
 const dedupingExact = ref(false);
 const disablingHiddenSources = ref(false);
 const manualUploadBusy = ref(false);
@@ -894,7 +981,9 @@ async function toggleShopifyEnabled(a: ProductInfoAsset): Promise<void> {
     if (data.value) {
         data.value = {
             ...data.value,
-            assets: (data.value.assets ?? []).map((x) => (x.id === id ? { ...x, shopify_enabled: next } : x)),
+            assets: (data.value.assets ?? []).map((x) =>
+                x.id === id ? { ...x, shopify_enabled: next } : x,
+            ),
         };
     }
 
@@ -925,13 +1014,43 @@ async function toggleShopifyEnabled(a: ProductInfoAsset): Promise<void> {
         if (data.value) {
             data.value = {
                 ...data.value,
-                assets: (data.value.assets ?? []).map((x) => (x.id === id ? { ...x, shopify_enabled: current } : x)),
+                assets: (data.value.assets ?? []).map((x) =>
+                    x.id === id ? { ...x, shopify_enabled: current } : x,
+                ),
             };
         }
         error.value = 'Failed to update Shopify export setting.';
     } finally {
         const { [id]: _omit, ...rest } = togglingShopify.value;
         togglingShopify.value = rest;
+    }
+}
+
+function isDeletingManualAsset(id: number): boolean {
+    return deletingManualAssetId.value === id;
+}
+
+async function deleteManualImage(a: ProductInfoAsset): Promise<void> {
+    if (!isManualUploadAsset(a)) return;
+    if (isDeletingManualAsset(a.id)) return;
+
+    const confirmed = window.confirm(
+        `Delete the manually uploaded photo "${a.filename}"? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    deletingManualAssetId.value = a.id;
+    error.value = null;
+    message.value = null;
+
+    try {
+        await api.delete(`/api/v1/product-assets/${a.id}`);
+        message.value = 'Deleted manual upload image.';
+        await load();
+    } catch {
+        error.value = 'Failed to delete manual upload image.';
+    } finally {
+        deletingManualAssetId.value = null;
     }
 }
 
@@ -982,7 +1101,11 @@ async function disableExactDuplicateImages(): Promise<void> {
 
     try {
         await Promise.allSettled(
-            toDisable.map((a) => api.patch(`/api/v1/product-assets/${a.id}/shopify-enabled`, { shopify_enabled: false })),
+            toDisable.map((a) =>
+                api.patch(`/api/v1/product-assets/${a.id}/shopify-enabled`, {
+                    shopify_enabled: false,
+                }),
+            ),
         );
 
         // Reorder: enabled first (keep relative order), then disabled.
@@ -1008,7 +1131,9 @@ async function load(): Promise<void> {
     loading.value = true;
     error.value = null;
     try {
-        const res = await api.get<{ data: ProductInfoPayload }>(`/api/v1/products/${props.productId}/product-info`);
+        const res = await api.get<{ data: ProductInfoPayload }>(
+            `/api/v1/products/${props.productId}/product-info`,
+        );
         data.value = res.data.data;
         // Enforce: hidden sources should not be exported.
         void disableImagesForHiddenSources();
@@ -1038,14 +1163,21 @@ watch(
             <aside
                 class="absolute right-0 top-0 flex h-full w-full max-w-5xl flex-col border-l border-slate-200 bg-white shadow-xl"
             >
-                <div class="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                <div
+                    class="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3"
+                >
                     <div>
                         <h2 class="text-base font-semibold text-slate-900">{{ title }}</h2>
-                        <div v-if="gridName && gridName !== title" class="mt-0.5 text-sm font-semibold text-slate-900">
+                        <div
+                            v-if="gridName && gridName !== title"
+                            class="mt-0.5 text-sm font-semibold text-slate-900"
+                        >
                             {{ gridName }}
                         </div>
                         <p class="mt-0.5 text-xs text-slate-600">
-                            PDP content & assets (Plamod/HLJ/Bandai/GundamPlanet/Newtype/GundamHangar) with source attribution
+                            PDP content & assets
+                            (Plamod/HLJ/Bandai/GundamPlanet/Newtype/GundamHangar) with source
+                            attribution
                         </p>
                     </div>
 
@@ -1059,19 +1191,34 @@ watch(
                 </div>
 
                 <div class="flex-1 space-y-3 overflow-auto p-4">
-                    <div v-if="error" class="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                    <div
+                        v-if="error"
+                        class="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+                    >
                         {{ error }}
                     </div>
-                    <div v-if="message" class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                    <div
+                        v-if="message"
+                        class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+                    >
                         {{ message }}
                     </div>
 
                     <div v-if="loading" class="text-sm text-slate-600">Loading…</div>
 
-                    <div v-if="!loading && attributes.length > 0" class="rounded-md border border-slate-200 bg-white p-3">
-                        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Attributes</div>
+                    <div
+                        v-if="!loading && attributes.length > 0"
+                        class="rounded-md border border-slate-200 bg-white p-3"
+                    >
+                        <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Attributes
+                        </div>
                         <dl class="mt-2 divide-y divide-slate-100">
-                            <div v-for="[k, v] in attributes" :key="k" class="grid grid-cols-3 gap-3 py-2 text-sm">
+                            <div
+                                v-for="[k, v] in attributes"
+                                :key="k"
+                                class="grid grid-cols-3 gap-3 py-2 text-sm"
+                            >
                                 <dt class="col-span-1 font-medium text-slate-700">{{ k }}</dt>
                                 <dd class="col-span-2 text-slate-900">{{ v }}</dd>
                             </div>
@@ -1080,13 +1227,22 @@ watch(
 
                     <div v-if="!loading" class="rounded-md border border-slate-200 bg-white p-3">
                         <div class="flex items-center justify-between gap-3">
-                            <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Descriptions</div>
+                            <div
+                                class="text-xs font-semibold uppercase tracking-wide text-slate-500"
+                            >
+                                Descriptions
+                            </div>
                             <div class="text-xs text-slate-500">
                                 {{ descriptionCards.length }} source(s)
                             </div>
                         </div>
 
-                        <div v-if="descriptionCards.length === 0" class="mt-2 text-sm text-slate-600">No descriptions found yet.</div>
+                        <div
+                            v-if="descriptionCards.length === 0"
+                            class="mt-2 text-sm text-slate-600"
+                        >
+                            No descriptions found yet.
+                        </div>
 
                         <div class="mt-2 grid gap-3 lg:grid-cols-2">
                             <div
@@ -1094,7 +1250,8 @@ watch(
                                 :key="card.key"
                                 class="rounded-md border p-3"
                                 :class="
-                                    selectedSource.descriptionMode === 'source' && card.key === selectedSource.contentSource
+                                    selectedSource.descriptionMode === 'source' &&
+                                    card.key === selectedSource.contentSource
                                         ? 'border-slate-900 bg-slate-50'
                                         : 'border-slate-200 bg-white hover:border-slate-300'
                                 "
@@ -1102,14 +1259,21 @@ watch(
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
                                         <div class="flex flex-wrap items-center gap-2">
-                                            <div class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800">
+                                            <div
+                                                class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800"
+                                            >
                                                 {{ SOURCE_LABELS[card.key] ?? card.key }}
                                             </div>
-                                            <div v-if="card.content.updated_at" class="text-xs text-slate-500">
+                                            <div
+                                                v-if="card.content.updated_at"
+                                                class="text-xs text-slate-500"
+                                            >
                                                 updated {{ card.content.updated_at.slice(0, 10) }}
                                             </div>
                                         </div>
-                                        <div class="mt-1 truncate text-sm font-semibold text-slate-900">
+                                        <div
+                                            class="mt-1 truncate text-sm font-semibold text-slate-900"
+                                        >
                                             {{ card.content.title ?? '—' }}
                                         </div>
                                         <div class="mt-1 text-xs text-slate-600">
@@ -1129,7 +1293,8 @@ watch(
                                         type="button"
                                         class="shrink-0 rounded-md border px-3 py-1.5 text-xs font-semibold transition"
                                         :class="
-                                            selectedSource.descriptionMode === 'source' && card.key === selectedSource.contentSource
+                                            selectedSource.descriptionMode === 'source' &&
+                                            card.key === selectedSource.contentSource
                                                 ? 'border-slate-900 bg-slate-900 text-white hover:bg-slate-800'
                                                 : 'border-slate-200 bg-white text-slate-900 hover:bg-slate-50'
                                         "
@@ -1137,20 +1302,25 @@ watch(
                                         @click="useDescriptionSource(card.key)"
                                     >
                                         {{
-                                            selectedSource.descriptionMode === 'source' && card.key === selectedSource.contentSource
+                                            selectedSource.descriptionMode === 'source' &&
+                                            card.key === selectedSource.contentSource
                                                 ? 'Using'
                                                 : 'Use this'
                                         }}
                                     </button>
                                 </div>
 
-                                <div class="mt-2 max-h-40 overflow-auto rounded-md border border-slate-100 bg-white p-2">
+                                <div
+                                    class="mt-2 max-h-40 overflow-auto rounded-md border border-slate-100 bg-white p-2"
+                                >
                                     <div
                                         v-if="descriptionHtmlFor(card.content)"
                                         class="prose prose-slate max-w-none text-sm"
                                         v-html="descriptionHtmlFor(card.content)"
                                     />
-                                    <div v-else class="text-sm text-slate-600">No description text.</div>
+                                    <div v-else class="text-sm text-slate-600">
+                                        No description text.
+                                    </div>
                                 </div>
                             </div>
 
@@ -1165,12 +1335,18 @@ watch(
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
                                         <div class="flex flex-wrap items-center gap-2">
-                                            <div class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800">
+                                            <div
+                                                class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-800"
+                                            >
                                                 Manual
                                             </div>
                                             <div class="text-xs text-slate-500">local</div>
                                         </div>
-                                        <div class="mt-1 truncate text-sm font-semibold text-slate-900">Editable draft</div>
+                                        <div
+                                            class="mt-1 truncate text-sm font-semibold text-slate-900"
+                                        >
+                                            Editable draft
+                                        </div>
                                         <div class="mt-1 text-xs text-slate-600">—</div>
                                     </div>
                                     <button
@@ -1184,16 +1360,24 @@ watch(
                                         :disabled="savingPreferredDescription"
                                         @click="useManualDescription"
                                     >
-                                        {{ selectedSource.descriptionMode === 'manual' ? 'Using' : 'Use this' }}
+                                        {{
+                                            selectedSource.descriptionMode === 'manual'
+                                                ? 'Using'
+                                                : 'Use this'
+                                        }}
                                     </button>
                                 </div>
 
-                                <div class="mt-2 max-h-40 overflow-auto rounded-md border border-slate-100 bg-white p-2">
+                                <div
+                                    class="mt-2 max-h-40 overflow-auto rounded-md border border-slate-100 bg-white p-2"
+                                >
                                     <textarea
                                         data-testid="description-editor-manual"
                                         v-model="manualDescriptionDraft"
                                         class="h-32 w-full resize-none border-0 bg-transparent p-0 text-sm leading-5 text-slate-900 outline-none"
-                                        :placeholder="otherDefaultDescriptionHtml ? '' : 'Type a description…'"
+                                        :placeholder="
+                                            otherDefaultDescriptionHtml ? '' : 'Type a description…'
+                                        "
                                     />
                                 </div>
                             </div>
@@ -1210,13 +1394,19 @@ watch(
                         @drop="onManualUploadDrop"
                     >
                         <div class="flex items-center justify-between gap-3">
-                            <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Photos</div>
+                            <div
+                                class="text-xs font-semibold uppercase tracking-wide text-slate-500"
+                            >
+                                Photos
+                            </div>
                             <div class="text-xs text-slate-500">
-                                {{ visibleImageAssets.length }} shown · {{ imageAssets.length }} total
+                                {{ visibleImageAssets.length }} shown ·
+                                {{ imageAssets.length }} total
                             </div>
                         </div>
                         <div class="mt-1 text-xs text-slate-600">
-                            Drag to reorder (Shopify export follows this order). Toggle export per photo (color vs grayed out).
+                            Drag to reorder (Shopify export follows this order). Toggle export per
+                            photo (color vs grayed out).
                         </div>
 
                         <div class="mt-2 flex flex-wrap items-center gap-2">
@@ -1296,10 +1486,16 @@ watch(
                             :disabled="manualUploadBusy"
                             @click="openManualUploadPicker"
                         >
-                            {{ manualUploadBusy ? 'Uploading…' : 'Drop images here, or click to upload' }}
+                            {{
+                                manualUploadBusy
+                                    ? 'Uploading…'
+                                    : 'Drop images here, or click to upload'
+                            }}
                         </button>
 
-                        <div v-if="imageAssets.length === 0" class="mt-2 text-sm text-slate-600">No images found yet.</div>
+                        <div v-if="imageAssets.length === 0" class="mt-2 text-sm text-slate-600">
+                            No images found yet.
+                        </div>
 
                         <div v-else class="mt-2 rounded-md border border-slate-200 bg-slate-50">
                             <div class="relative">
@@ -1308,20 +1504,32 @@ watch(
                                     :src="activeImage.view_url"
                                     :alt="activeImage.filename"
                                     class="h-72 w-full rounded-md object-contain"
-                                    :class="(activeImage.shopify_enabled ?? true) ? '' : 'opacity-60 grayscale'"
+                                    :class="
+                                        (activeImage.shopify_enabled ?? true)
+                                            ? ''
+                                            : 'opacity-60 grayscale'
+                                    "
                                 />
 
-                                <div class="absolute left-2 top-2 flex flex-wrap items-center gap-2">
+                                <div
+                                    class="absolute left-2 top-2 flex flex-wrap items-center gap-2"
+                                >
                                     <div
                                         v-if="activeImage"
                                         class="rounded-full border px-2 py-0.5 text-xs font-semibold"
-                                        :class="sourceBadgeClass(normalizeSourceKey(activeImage.source))"
+                                        :class="
+                                            sourceBadgeClass(normalizeSourceKey(activeImage.source))
+                                        "
                                     >
-                                        {{ SOURCE_LABELS[normalizeSourceKey(activeImage.source)] ?? activeImage.source }}
+                                        {{
+                                            SOURCE_LABELS[normalizeSourceKey(activeImage.source)] ??
+                                            activeImage.source
+                                        }}
                                     </div>
                                     <button
                                         v-if="activeImage"
                                         type="button"
+                                        data-testid="active-shopify-export-toggle"
                                         class="rounded-full px-2 py-0.5 text-xs font-semibold transition disabled:opacity-50"
                                         :class="
                                             (activeImage.shopify_enabled ?? true)
@@ -1331,9 +1539,27 @@ watch(
                                         :disabled="isTogglingShopify(activeImage.id)"
                                         @click="toggleShopifyEnabled(activeImage)"
                                     >
-                                        {{ (activeImage.shopify_enabled ?? true) ? 'Exporting' : 'Not exporting' }}
+                                        {{ shopifyToggleLabel(activeImage) }}
                                     </button>
                                 </div>
+
+                                <button
+                                    v-if="activeImage && isManualUploadAsset(activeImage)"
+                                    type="button"
+                                    data-testid="delete-manual-photo"
+                                    class="absolute right-2 top-2 rounded-full bg-rose-600 px-2 py-0.5 text-xs font-semibold text-white shadow-sm transition hover:bg-rose-700 disabled:opacity-50"
+                                    :disabled="
+                                        isDeletingManualAsset(activeImage.id) ||
+                                        isTogglingShopify(activeImage.id)
+                                    "
+                                    @click="deleteManualImage(activeImage)"
+                                >
+                                    {{
+                                        isDeletingManualAsset(activeImage.id)
+                                            ? 'Deleting…'
+                                            : 'Delete'
+                                    }}
+                                </button>
 
                                 <div
                                     v-if="activeImageDebug"
@@ -1360,14 +1586,21 @@ watch(
                                 </button>
                             </div>
 
-                            <div v-if="visibleImageAssets.length > 1" class="border-t border-slate-200 bg-white p-2">
+                            <div
+                                v-if="visibleImageAssets.length > 1"
+                                class="border-t border-slate-200 bg-white p-2"
+                            >
                                 <div class="grid grid-cols-3 gap-3 sm:grid-cols-4">
                                     <button
                                         v-for="(img, idx) in visibleImageAssets"
                                         :key="img.id"
                                         type="button"
                                         class="group relative aspect-square overflow-hidden rounded border p-0.5 disabled:cursor-not-allowed disabled:opacity-50"
-                                        :class="img.id === activeImage?.id ? 'border-slate-900' : 'border-slate-200 hover:border-slate-400'"
+                                        :class="
+                                            img.id === activeImage?.id
+                                                ? 'border-slate-900'
+                                                : 'border-slate-200 hover:border-slate-400'
+                                        "
                                         :disabled="savingOrder"
                                         draggable="true"
                                         @dragstart="
@@ -1386,7 +1619,11 @@ watch(
                                             :src="img.view_url"
                                             :alt="img.filename"
                                             class="h-full w-full rounded object-cover"
-                                            :class="(img.shopify_enabled ?? true) ? '' : 'opacity-40 grayscale'"
+                                            :class="
+                                                (img.shopify_enabled ?? true)
+                                                    ? ''
+                                                    : 'opacity-40 grayscale'
+                                            "
                                         />
                                         <div
                                             class="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-black/60 px-1 py-0.5"
@@ -1394,9 +1631,17 @@ watch(
                                             <div class="truncate">
                                                 <span
                                                     class="rounded-full border px-1.5 py-0.5 text-[11px] font-semibold"
-                                                    :class="sourceBadgeClass(normalizeSourceKey(img.source))"
+                                                    :class="
+                                                        sourceBadgeClass(
+                                                            normalizeSourceKey(img.source),
+                                                        )
+                                                    "
                                                 >
-                                                    {{ SOURCE_LABELS[normalizeSourceKey(img.source)] ?? img.source }}
+                                                    {{
+                                                        SOURCE_LABELS[
+                                                            normalizeSourceKey(img.source)
+                                                        ] ?? img.source
+                                                    }}
                                                 </span>
                                             </div>
                                             <button
@@ -1415,7 +1660,9 @@ watch(
                                         </div>
                                     </button>
                                 </div>
-                                <div v-if="savingOrder" class="mt-2 text-xs text-slate-500">Saving order…</div>
+                                <div v-if="savingOrder" class="mt-2 text-xs text-slate-500">
+                                    Saving order…
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1424,5 +1671,3 @@ watch(
         </div>
     </Teleport>
 </template>
-
-

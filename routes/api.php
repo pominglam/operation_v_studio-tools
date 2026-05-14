@@ -41,6 +41,7 @@ use App\Http\Controllers\Api\V1\ProductBulkArchiveController;
 use App\Http\Controllers\Api\V1\ProductBulkDeleteController;
 use App\Http\Controllers\Api\V1\ProductBulkPlamodAssetRenameController;
 use App\Http\Controllers\Api\V1\ProductBulkUpdateController;
+use App\Http\Controllers\Api\V1\ProductExternalAssetDestroyController;
 use App\Http\Controllers\Api\V1\ProductExternalAssetDownloadController;
 use App\Http\Controllers\Api\V1\ProductExternalAssetShopifyEnabledController;
 use App\Http\Controllers\Api\V1\ProductExternalAssetViewController;
@@ -138,6 +139,7 @@ Route::prefix('v1')
         Route::post('/products/{id}/assets/manual-upload', ProductManualImageUploadController::class)->whereUuid('id');
         Route::get('/product-assets/{id}/download', ProductExternalAssetDownloadController::class)->whereNumber('id');
         Route::get('/product-assets/{id}/view', ProductExternalAssetViewController::class)->whereNumber('id');
+        Route::delete('/product-assets/{id}', ProductExternalAssetDestroyController::class)->whereNumber('id');
         Route::patch('/product-assets/{id}/shopify-enabled', ProductExternalAssetShopifyEnabledController::class)->whereNumber('id');
         Route::post('/products/import', ProductImportController::class);
         Route::post('/products/import-inventory', ProductInventoryImportController::class);
