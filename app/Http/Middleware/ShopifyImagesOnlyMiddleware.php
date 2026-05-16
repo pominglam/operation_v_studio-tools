@@ -29,6 +29,11 @@ final class ShopifyImagesOnlyMiddleware
             return $next($request);
         }
 
+        // ERP webhook ingress must work on the same routed host/process as the main app worker.
+        if ($path === '/api/webhooks/shopify') {
+            return $next($request);
+        }
+
         abort(404);
     }
 }

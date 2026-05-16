@@ -43,6 +43,8 @@ This folder defines layered rule configurations used by Cursor to guide edits an
 
 14. **features-documentation-catalog.mdc** — Keep `docs/features/` (and aligned backend catalog) updated when UI/API/auth/job behavior changes; same granularity as existing screen docs. (`always`)
 
+15. **shopify-erp-integration.mdc** — Operation V Studio Shopify ERP integration (Phase 1 read-only foundations, GraphQL Admin, webhook security). (`always`)
+
 ## Application Strategies
 
 Rules are classified by when they should be applied:

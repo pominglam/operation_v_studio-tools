@@ -99,7 +99,10 @@ use App\Http\Controllers\Api\V1\ShopifyImageTunnelStatusController;
 use App\Http\Controllers\Api\V1\ShopifyImageTunnelStopController;
 use App\Http\Controllers\Api\V1\TcgEventsIndexController;
 use App\Http\Controllers\Api\V1\TcgEventsRefreshController;
+use App\Http\Controllers\Api\Webhooks\ShopifyWebhookController;
 use Illuminate\Support\Facades\Route;
+
+Route::post('webhooks/shopify', ShopifyWebhookController::class);
 
 Route::prefix('v1')
     ->group(function (): void {

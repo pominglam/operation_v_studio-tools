@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Http\Middleware\ExternalAccessPasswordMiddleware;
 use App\Services\Maintenance\ExternalAccessAuthService;
 use App\Services\Maintenance\ExternalAccessSettingsService;
 use Illuminate\Http\RedirectResponse;
@@ -57,7 +58,10 @@ final class ExternalLoginController
             abort(500);
         }
 
-        // Session cookie: no expiry. HttpOnly + Secure for HTTPS tunnel / public hostnames.
+        // Session cookie: no expiry. HTTPS tunnels need SameSite=None so Shopify's embedded iframe
+        // can retain auth; loopback remains Lax for plain local HTTP ergonomics.
+        $sameSite = ExternalAccessPasswordMiddleware::externalAuthCookieSameSite($request);
+
         return redirect($next)->withCookie(cookie(
             name: ExternalAccessAuthService::COOKIE_NAME,
             value: $cookieVal,
@@ -67,7 +71,7 @@ final class ExternalLoginController
             secure: true,
             httpOnly: true,
             raw: false,
-            sameSite: 'Lax',
+            sameSite: $sameSite,
         ));
     }
 

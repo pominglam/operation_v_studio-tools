@@ -1,0 +1,91 @@
+---
+description: Operation V Studio Shopify ERP integration — Admin GraphQL, read-only Phase 1, security, sync discipline
+alwaysApply: true
+---
+
+# Shopify ERP integration rules
+
+Phase **1**: **READ-ONLY** sync + webhook ingestion + theme **draft** scaffolding. **Forbidden** unless explicitly directed: Shopify Admin write mutations (`productUpdate`, inventory adjustments, draft order edits, theme publish/upload), except saving **local mirrored files** during development.
+
+Phase **2** scaffolding (allowed now): configs, enums, guarded placeholder listeners/jobs—not production write paths.
+
+---
+
+## Communication & API surface
+
+| Rule | Enforcement |
+| --- | --- |
+| **Backend-only** Shopify Admin calls | Tokens never shipped to SPA; never `env()` in frontend bundles |
+| **GraphQL Admin API default** | Use `POST …/admin/api/{VERSION}/graphql.json`; avoid REST unless justified inline in PR |
+| **`SHOPIFY_API_VERSION`** from env default (stable pinned) | Update deliberately; document changelog |
+| **Timeouts + retries + jitter** | Wrap HTTP with `retry()` + sane connect timeout |
+
+---
+
+## Secrets & webhook security
+
+Env: `SHOPIFY_STORE_DOMAIN`, `SHOPIFY_CLIENT_ID`, `SHOPIFY_CLIENT_SECRET`, `SHOPIFY_API_VERSION`, `SHOPIFY_WEBHOOK_SECRET`, optional `SHOPIFY_OAUTH_REDIRECT_URI` / `SHOPIFY_OAUTH_SCOPES`. Persisted OAuth Admin token rows live in `shopify_oauth_installations` (never expose to SPA). Install via `GET /shopify/oauth/install` then callback `GET /shopify/oauth/callback` (see `docs/shopify-integration/oauth.md`).
+
+Webhook rules:
+
+1. **`X-Shopify-Hmac-Sha256` validation** mandatory using **raw POST body**.
+2. Reject (**401**) invalid signatures immediately.
+3. **Log failures** (`shopify` channel + **`shopify_webhook_logs.verification_error`** text — e.g. `invalid_hmac`, `missing_webhook_secret`).
+4. Never expose token in payloads/logs.
+
+Ingress route lives at **`POST /api/webhooks/shopify`** and **must bypass** `ExternalAccessPasswordMiddleware` / `ShopifyImagesOnlyMiddleware` (already aligned in codebase—preserve when editing middleware).
+
+---
+
+## Architecture placement
+
+Place code under **`App\Services\Shopify\Admin\`** orchestrating sync pulls; **`App\Contracts\Shopify\`** interfaces for HTTP client; webhook controller under **`App\Http\Controllers\Api\`** or `\Shopify\` namespace—**thin** (<40 LOC methods) delegating to services.
+
+Separate from legacy helpers (`CloudflaredTunnel`, image signing) treating them as orthogonal concerns unless PR explicitly merges.
+
+---
+
+## Sync discipline
+
+Requirements for every runnable sync pathway:
+
+| Must | Detail |
+| --- | --- |
+| **Idempotent** | Upsert keyed by Shopify **GID** unique indexes |
+| **Pagination** | Follow GraphQL `pageInfo.endCursor` until `hasNextPage` false |
+| **Retries** | HTTP retries for transport; job-level retries optional |
+| **Resume-friendly** | Store `checkpoint_json`/`cursor_hint` columns on sync logs when iterative |
+| **Observability** | Persist **`shopify_sync_logs`** counters + status + durations + condensed error blobs |
+
+Prefer **distinct sync services/methods** per entity staying under **`services.mdc`** sizing guidance; Coordinator sequences them.
+
+Mirror tables **`shopify_*`** remain normalized; **`payload_json`** optional raw GraphQL fragments for auditing (truncate huge responses if needed Phase 2).
+
+---
+
+## Themes / Liquid workflow
+
+Liquid/source of truth mirrors live under **`themes/shopify-draft/`** in git (**draft only**).
+
+| Allowed Phase 1 | Forbidden Phase 1 |
+| --- | --- |
+| Local folder scaffolding, lint hooks later, README workflows | Automated theme publish, `themeFilesUpsert`, production push scripts |
+
+Humans approve deploys externally (Shopify admin / CI) Phase 2+.
+
+---
+
+## Phase control & approvals
+
+| Status | Behaviour |
+| --- | --- |
+| Phase **1** | Only read queries + ingest webhooks logging + enqueue events |
+| Phase **2** | Introduce mutations only behind explicit specs + approvals + guarded jobs |
+
+Dangerous mutations require human approval workflows—document placeholders with `PHASE 2:` comments.
+
+---
+
+## Documentation obligation
+
+Updating Shopify integration semantics requires touching **`docs/shopify-integration/**`** sections + syncing **`features-documentation-catalog`** expectations (mention new routes/env keys in `docs/features` when observable to operators).

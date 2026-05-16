@@ -21,7 +21,7 @@ This document is an **inventory of current behavior** in the pricing-tool codeba
 ### SPA + JSON API
 
 - **Browser UI**: Laravel serves `resources/views/app.blade.php` for `/` and all non-API paths (`web.php` catch-all `{any}`), load controlled by **`resources/js/router.ts`** (Vue Router, HTML5 history).
-- **REST API**: All business routes are under **`/api/v1/...`** (`routes/api.php` group prefix `v1`; Laravel mounts `api.php` under `/api` by default).
+- **REST API**: Most JSON business routes are under **`/api/v1/...`** (`routes/api.php` group prefix `v1`; Laravel mounts `api.php` under `/api` by default). Selected **ingress endpoints** omit `v1` (for example Shopify webhooks—see webhook row below).
 
 ### Middleware stack (`bootstrap/app.php`)
 
@@ -30,8 +30,8 @@ Global middleware appended for every request:
 | Middleware | Behavior |
 | --- | --- |
 | `trustProxies(at: '*')` | Proxies/tunnels report HTTPS so **signed URLs** validate behind reverse proxies and Cloudflare tunnel. |
-| `ShopifyImagesOnlyMiddleware` | If `config('app.shopify_images_only')` is **true**, every path except `/shopify-images/...` (with optional `/index.php/` prefix normalization) returns **404**. Intended for an **images-only** PHP worker/process. |
-| `ExternalAccessPasswordMiddleware` | When external access mode is configured, applies **loopback bypass**, **employee path allow-lists**, or **password gate**. See § External access gate. |
+| `ShopifyImagesOnlyMiddleware` | If `config('app.shopify_images_only')` is **true**, every path except `/shopify-images/...` and **`POST /api/webhooks/shopify`** (optional `/index.php/` prefix normalization) returns **404**. Intended for an **images-only** PHP worker/process that shares routing with ERP ingress. |
+| `ExternalAccessPasswordMiddleware` | When external access mode is configured, applies **loopback bypass**, **employee path allow-lists**, or **password gate**. **`POST /api/webhooks/shopify`** bypasses the cookie/password gate (**HMAC** verification in **`ShopifyWebhookIngressService`**). See § External access gate. |
 | `NoCacheHtmlMiddleware` | Prevents stale caching of SPA HTML shell (fresh Vite manifest / bundle). |
 
 **Cookie note:** `ExternalAccessAuthService::COOKIE_NAME` is **excluded from encryption** so validation works without Laravel session on lightweight routes.
@@ -79,9 +79,10 @@ Employees also pass through API allow-lists enforced in `ExternalAccessPasswordM
  Preconditions (conceptual):
 
 1. Not in **Shopify-images-only** mode → gate skipped entirely for that deployment.
-2. Else if **hostname is pure loopback** (`localhost`, `127.x.x.x`, `[::1]`, `::1`, with optional port) → **`external_access_role` = admin**, no cookie required.
-3. Else **external access must be enabled** in settings; if disabled → **404** (app hidden).
-4. External **password must be configured** or → **404**.
+2. Else if request is **`POST /api/webhooks/shopify`** (normalized `/index.php/` prefix stripped) → **bypass** cookie/password (**HMAC** verification only; see **`ShopifyWebhookIngressService`**).
+3. Else if **hostname is pure loopback** (`localhost`, `127.x.x.x`, `[::1]`, `::1`, with optional port) → **`external_access_role` = admin**, no cookie required.
+4. Else **external access must be enabled** in settings; if disabled → **404** (app hidden).
+5. External **password must be configured** or → **404**.
 
 Then:
 
@@ -90,7 +91,8 @@ Then:
 | Valid signing cookie resolves to a role | Request proceeds; **`external_access_role`** attribute set on request. Employee role denied non-allowed paths (**404** for web, **`{"ok":false,"error":"not_found"}` 404 JSON** for disallowed APIs). |
 | Employee + API | Allowed only **`/api/v1/inventory-check/employee/**`** and **`GET /api/v1/product-assets/{id}/view`** (images for scan cards). |
 | Employee + SPA | Allowed `/build/*`, `/external-login`, `/favicon.ico`, `/up`, `/`, `/employee`, `/employee/inventory-count`. |
-| Unauthenticated `/api/**` | **401** JSON `external_auth_required`. |
+| **`POST /api/webhooks/shopify` without cookie** | Handled upstream of password requirement; validates **Shopify HMAC** and returns **`200`** or **`401`**. Logs rows in **`shopify_webhook_logs`**. **`503`** if `SHOPIFY_WEBHOOK_SECRET` is missing. |
+| Unauthenticated `/api/**` (excluding Shopify webhook ingress) | **401** JSON `external_auth_required`. |
 | Unauthenticated browser | Redirect **`/external-login?next=`** preserved request URI. |
 | `/external-login` | Explicitly excluded from gate loop (`web.php`). |
 
@@ -109,6 +111,14 @@ Effective host prefers **`X-Forwarded-Host`** first comma-separated segment, els
 | `GET /shopify-images/{id}/{expires}/{signature}` | Path-signed variant (**Shopify CSV may strip queries**). |
 | `GET /shopify-images/{id}/{expires}/{signature}/{filename}` | Same + human-readable trailing filename segment. Cookie/session/CSRF disabled for stability/caching. |
 | `GET /`, `/{any}` | SPA blade shell. |
+
+---
+
+## Shopify ERP webhook ingress (`POST /api/webhooks/shopify`)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| POST | **`/api/webhooks/shopify`** | Declared **before** `Route::prefix('v1')` in `routes/api.php`. Validates **Shopify webhook HMAC** (`SHOPIFY_WEBHOOK_SECRET`), persists **`shopify_webhook_logs`**, fires **`ShopifyWebhookReceived`** (Phase 2 domain hooks). Bypasses **`ExternalAccessPasswordMiddleware`** cookie requirement and survives **`ShopifyImagesOnlyMiddleware`**. **Production target URL:** `https://ovs.centredentairevsl.com/api/webhooks/shopify`. |
 
 ---
 

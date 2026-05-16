@@ -22,7 +22,15 @@ final class ExternalAccessPasswordMiddleware
             return $next($request);
         }
 
-        if ($this->isLoopbackBypassHostRequest($request)) {
+        if ($this->isShopifyWebhookIngressPath($request)) {
+            return $next($request);
+        }
+
+        if ($this->isShopifyOAuthCallbackPath($request)) {
+            return $next($request);
+        }
+
+        if (self::isLoopbackBypassHostRequest($request)) {
             // Direct local access only (localhost / loopback): no login prompt.
             $request->attributes->set('external_access_role', ExternalAccessAuthService::ROLE_ADMIN);
 
@@ -126,17 +134,47 @@ final class ExternalAccessPasswordMiddleware
     }
 
     /**
-     * True when the inbound host is localhost or IPv4 loopback (127/8) or IPv6 loopback (::1).
-     * Any real hostname or non-loopback IP (including custom DNS to the machine) requires the external password gate.
+     * Allow Shopify webhook POST ingress without cookie auth (validated via SHOPIFY_WEBHOOK_SECRET + HMAC).
      */
-    private function isLoopbackBypassHostRequest(Request $request): bool
+    private function isShopifyWebhookIngressPath(Request $request): bool
     {
-        $host = $this->resolvePreferForwardedHostHeader($request);
+        if (! $request->isMethod('POST')) {
+            return false;
+        }
+        $path = '/'.ltrim($request->path(), '/');
+        if (str_starts_with($path, '/index.php/')) {
+            $path = '/'.ltrim(substr($path, strlen('/index.php/')), '/');
+        }
 
-        return self::hostIsLoopbackBypass($host);
+        return $path === '/api/webhooks/shopify';
     }
 
-    private function resolvePreferForwardedHostHeader(Request $request): string
+    /**
+     * Merchant browser hits this after Shopify authorization; must bypass tunnel password gate or OAuth never completes.
+     */
+    private function isShopifyOAuthCallbackPath(Request $request): bool
+    {
+        if (! $request->isMethod('GET')) {
+            return false;
+        }
+
+        $path = '/'.ltrim($request->path(), '/');
+        if (str_starts_with($path, '/index.php/')) {
+            $path = '/'.ltrim(substr($path, strlen('/index.php/')), '/');
+        }
+
+        return $path === '/shopify/oauth/callback';
+    }
+
+    public static function isLoopbackBypassHostRequest(Request $request): bool
+    {
+        return self::hostIsLoopbackBypass(self::resolveInboundHost($request));
+    }
+
+    /**
+     * Public host as seen outside Docker (Forwarded-Host first), lowercased.
+     */
+    public static function resolveInboundHost(Request $request): string
     {
         $forwarded = $request->headers->get('X-Forwarded-Host');
         if (is_string($forwarded) && trim($forwarded) !== '') {
@@ -150,6 +188,22 @@ final class ExternalAccessPasswordMiddleware
         return strtolower(trim($host));
     }
 
+    /**
+     * Embedded apps (e.g. Shopify admin iframe) need SameSite "none" on HTTPS for this cookie to stick.
+     * Lax is kept for loopback / non-HTTPS fallbacks.
+     */
+    public static function externalAuthCookieSameSite(Request $request): string
+    {
+        if (self::hostIsLoopbackBypass(self::resolveInboundHost($request))) {
+            return 'lax';
+        }
+
+        return $request->secure() ? 'none' : 'lax';
+    }
+
+    /**
+     * True when the inbound host is localhost or IPv4 loopback (127/8) or IPv6 loopback (::1).
+     */
     public static function hostIsLoopbackBypass(string $host): bool
     {
         $host = strtolower(trim($host));

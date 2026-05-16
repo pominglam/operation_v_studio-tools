@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Shopify\ShopifyOAuthCallbackController;
+use App\Http\Controllers\Shopify\ShopifyOAuthInstallController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/external-login', [\App\Http\Controllers\ExternalLoginController::class, 'show']);
@@ -47,6 +49,11 @@ Route::get('/shopify-images/{id}/{expires}/{signature}/{filename}', \App\Http\Co
         \Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
     ])
     ->name('shopify-images-path-filename');
+
+Route::get('/shopify/oauth/install', ShopifyOAuthInstallController::class)
+    ->name('shopify.oauth.install');
+Route::get('/shopify/oauth/callback', ShopifyOAuthCallbackController::class)
+    ->name('shopify.oauth.callback');
 
 Route::get('/', function () {
     return view('app');

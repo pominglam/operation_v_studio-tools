@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\Product;
 use App\Models\ProductExternalAsset;
 use App\Services\Shopify\ShopifyImageUrlSigner;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 
@@ -13,6 +14,24 @@ it('blocks non shopify-images paths when SHOPIFY_IMAGES_ONLY is true', function 
 
     $this->get('/')->assertNotFound();
     $this->get('/products')->assertNotFound();
+
+    Config::set('shopify.webhook_secret', 'img-only-secret');
+    $body = '{}';
+    $hmac = base64_encode(hash_hmac('sha256', $body, 'img-only-secret', true));
+    $this->call(
+        'POST',
+        '/api/webhooks/shopify',
+        [],
+        [],
+        [],
+        [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_SHOPIFY_TOPIC' => 'app/uninstalled',
+            'HTTP_X_SHOPIFY_SHOP_DOMAIN' => 'unit.myshopify.com',
+            'HTTP_X_SHOPIFY_HMAC_SHA256' => $hmac,
+        ],
+        $body,
+    )->assertOk();
 });
 
 it('serves signed shopify image URLs (and 404s without signature)', function (): void {

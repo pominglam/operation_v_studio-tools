@@ -83,6 +83,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'shopify' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/shopify.log'),
+            'level' => env('SHOPIFY_LOG_LEVEL', 'info'),
+            'days' => env('SHOPIFY_LOG_DAYS', 30),
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

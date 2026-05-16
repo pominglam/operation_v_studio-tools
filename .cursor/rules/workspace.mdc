@@ -12,7 +12,7 @@ This workspace uses layered rule files located in `.cursor/rules/`. All rules in
 ## Automatic Application
 
 Rules are automatically applied based on their configuration:
-- **Always Apply**: `project.mdc`, `formatting.mdc`, `typesafety.mdc`, `versioning.mdc`, `infra.mdc`, `architecture.mdc`, `workspace.mdc`, `features-documentation-catalog.mdc`
+- **Always Apply**: `project.mdc`, `formatting.mdc`, `typesafety.mdc`, `versioning.mdc`, `infra.mdc`, `architecture.mdc`, `workspace.mdc`, `features-documentation-catalog.mdc`, `shopify-erp-integration.mdc`
 - **Targeted**: Rules matching specific file patterns (controllers, services, DAL, frontend, tests)
 
 ## Key Rules Summary
