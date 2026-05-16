@@ -39,6 +39,10 @@ This folder defines layered rule configurations used by Cursor to guide edits an
 12. **infra.mdc** ΓÇö DevOps, Docker/Sail, CI/CD, GitHub Actions. (`always`)
 13. **project.mdc** ΓÇö global governance; SDK preference; env/DB consistency; docs/ADRs. (`always`)
 
+### Documentation catalogue
+
+14. **features-documentation-catalog.mdc** — Keep `docs/features/` (and aligned backend catalog) updated when UI/API/auth/job behavior changes; same granularity as existing screen docs. (`always`)
+
 ## Application Strategies
 
 Rules are classified by when they should be applied:

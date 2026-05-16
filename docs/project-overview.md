@@ -11,6 +11,7 @@ This application manages a catalog of products and supports:
 ## Where requirements live
 - High-level feature requirements are documented in `docs/requirements/`.
 - Crawler/provider behavior is documented in `docs/requirements/price-research-crawlers.md`.
+- **Web UI feature walkthroughs** (screens, flows, endpoints used) live in **`docs/features/README.md`**.
 
 ## Key domains (high level)
 

@@ -1,0 +1,54 @@
+---
+description: Keep docs/features/ application catalog updated whenever user-visible or API-facing behavior changes
+alwaysApply: true
+---
+
+# Feature catalog documentation (`docs/features/`)
+
+## When updating is mandatory
+
+Before finishing any task that changes **behavior users see**, **routing**, **auth/access**, **API contracts consumed by the SPA**, or **background jobs surfaced in Sync Progress / maintenance tooling**, update the feature docs in the **same PR / change set** unless the scope is purely internal refactors with zero observable difference.
+
+Treat **omitted doc updates** as incomplete work when behavior changed.
+
+## Standard of detail (match existing catalogs)
+
+Mirror the tone and granularity already used under `docs/features/`:
+
+| Include | Examples |
+| --- | --- |
+| **Route ↔ page ↔ key components** | `resources/js/router.ts`, `pages/*.vue`, drawers/dialogs involved |
+| **User actions** | Buttons, tabs/hash, filters, persisted `pageState` keys |
+| **API surface** | Verbs + paths (`/api/v1/...`), notable query/body fields, HTTP status quirks |
+| **Confirm / destructive flows** | Dialog copy intent, doubles with backend enforcement |
+| **Cross-links** | `docs/requirements/*.md`, `docs/features/backend/system-catalog-services-and-http.md`, tests when specs are ambiguous |
+
+Prefer **bullet tables** and short sections such as existing `screens/products.md`; avoid vague one-liners (“updated API”).
+
+## Where to edit (routing guide)
+
+| Area | Primary docs |
+| --- | --- |
+| Global shell / nav / layout / redirects | `docs/features/shared/shell-and-navigation.md` |
+| Roles, external cookie gate, employee allow-list | `docs/features/shared/roles-and-access.md` |
+| Products / exports / PDP / bulk / sync shortcut | `docs/features/screens/products.md` |
+| PO list CSV import + PO detail | `docs/features/screens/purchase-orders.md` |
+| Inventory check CSV, session detail apply, employee scan | `docs/features/screens/inventory-and-counting.md` |
+| Pricing table, runs, reports, logs | `docs/features/screens/price-research.md` |
+| Job batches / auto-export | `docs/features/screens/sync-progress.md` |
+| TCG Events | `docs/features/screens/tcg-events.md` |
+| Maintenance cards | `docs/features/screens/maintenance.md` |
+
+### Index and backend tombstone
+
+- Add or adjust **`docs/features/README.md`** sections (cheat sheet, feature finder links) when you add/remove **routes**, **nav links**, or **major feature areas**.
+- Keep **`docs/features/backend/system-catalog-services-and-http.md`** aligned whenever you change **`routes/api.php`**, **`routes/web.php`**, materially change **middleware semantics**, **job batch naming**, or **high-level domain rules** already documented there.
+
+`docs/requirements/` remains the authoritative **spec**; `docs/features/` is the operational **catalog** of actual UI/API wiring.
+
+## Completion checklist
+
+- [ ] Updated every applicable file under **`docs/features/**`** for the behavior you changed.
+- [ ] Updated **`docs/features/README.md`** only if navigation/routes/feature-finder reflects new topology.
+- [ ] Updated **`docs/features/backend/system-catalog-services-and-http.md`** if HTTP/middleware/job catalog sections are now wrong.
+- [ ] Final reply to the user **names which doc paths** were revised (paths only; no pasted walls of text unless asked).
