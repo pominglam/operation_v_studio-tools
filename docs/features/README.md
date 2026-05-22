@@ -16,6 +16,8 @@ This folder is the **navigation hub** for **what each screen does**, how users m
 
 Formal requirements/specs remain in **`docs/requirements/`** and **`docs/project-overview.md`**.
 
+Shopify **Online Store theme** workflows (draft theme, static About page handoff—not this Laravel bundle) live in **`docs/shopify-theme/`**.
+
 ## Feature finder (alphabetical)
 
 | Topic | Doc |
@@ -29,7 +31,8 @@ Formal requirements/specs remain in **`docs/requirements/`** and **`docs/project
 | Price research & reports | [screens/price-research.md](screens/price-research.md) |
 | Products catalog (table, bulk, tabs) | [screens/products.md](screens/products.md) |
 | Purchase orders | [screens/purchase-orders.md](screens/purchase-orders.md) |
-| Shopify / exports / tunnel (UI) | [screens/products.md](screens/products.md), [screens/sync-progress.md](screens/sync-progress.md) |
+| Shopify / exports / tunnel (UI, internal catalog) | [screens/products.md](screens/products.md), [screens/sync-progress.md](screens/sync-progress.md) |
+| Shopify storefront static pages / theme duplication | [`../shopify-theme/static-content-pages-workflow-and-about-us.md`](../shopify-theme/static-content-pages-workflow-and-about-us.md) |
 | Stuck price run reset | [screens/maintenance.md](screens/maintenance.md) |
 | TCG+ events | [screens/tcg-events.md](screens/tcg-events.md) |
 

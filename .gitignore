@@ -45,3 +45,6 @@ Thumbs.db
 **/Code Cache/
 **/Cache/
 **/*.tmp
+
+# Cursor — local AI handoff (never commit)
+.cursor/tmp/
