@@ -7,6 +7,20 @@ import { formatMoney2, formatMoney2OrEmpty, parseMoney } from '../lib/money';
 import BulkUpdatePoItemsDialog, {
     type PoItemsBulkChanges,
 } from '../components/purchaseOrders/BulkUpdatePoItemsDialog.vue';
+import PoWorkflowSetPricesDialog, {
+    type PoSetPricePreview,
+} from '../components/purchaseOrders/PoWorkflowSetPricesDialog.vue';
+import PoWorkflowExportShopifyDialog, {
+    type PoExportShopifyPreview,
+    type PoExportShopifyPushSummary,
+} from '../components/purchaseOrders/PoWorkflowExportShopifyDialog.vue';
+import PoWorkflowPullHandlesDialog, {
+    type PoPullHandlesPreview,
+    type PoPullHandlesSummary,
+} from '../components/purchaseOrders/PoWorkflowPullHandlesDialog.vue';
+import PoImportPreviewDialog, {
+    type PoImportPreview,
+} from '../components/purchaseOrders/PoImportPreviewDialog.vue';
 import BulkExportDialog, {
     type ProductsBulkExportType,
 } from '../components/products/BulkExportDialog.vue';
@@ -101,8 +115,22 @@ const reimporting = ref(false);
 const importMoreing = ref(false);
 const reimportFile = ref<File | null>(null);
 const reimportError = ref<string | null>(null);
+const importPreviewOpen = ref(false);
+const importPreviewLoading = ref(false);
+const importPreviewError = ref<string | null>(null);
+const importPreview = ref<PoImportPreview | null>(null);
+const pendingImportMode = ref<'replace' | 'append'>('append');
+const importProductTotal = ref('');
+const importShippingTotal = ref('');
+const importProductTotalIncludesFees = ref(false);
 /** When true, replace re-import deletes PO-linked lots/movements and clears qty received before replacing lines. */
 const reimportResetReceipt = ref(false);
+
+const isPmBrokerVendor = computed(() => {
+    const vendor = po.value?.vendor ?? '';
+    const normalized = vendor.trim().toLowerCase();
+    return normalized === 'dspiae' || normalized === 'stedi';
+});
 
 const savingQtyOrdered = ref<number | null>(null);
 const editingQtyOrderedId = ref<number | null>(null);
@@ -170,6 +198,29 @@ const applyInventoryCheckWarnings = ref<ApplyInventoryCheckWarning[]>([]);
 
 const checklistBusy = ref(false);
 const checklistError = ref<string | null>(null);
+const workflowVerifyBusy = ref(false);
+const workflowActionBusy = ref<Partial<Record<WorkflowChecklistKey, boolean>>>({});
+const workflowActionError = ref<string | null>(null);
+const inventoryPrepareReady = ref(false);
+const inventoryPrepareSummary = ref<string | null>(null);
+
+const setPricesDialogOpen = ref(false);
+const setPricesPreview = ref<PoSetPricePreview | null>(null);
+const setPricesPreviewLoading = ref(false);
+const setPricesApplyBusy = ref(false);
+const setPricesPreviewError = ref<string | null>(null);
+const exportShopifyDialogOpen = ref(false);
+const exportShopifyPreview = ref<PoExportShopifyPreview | null>(null);
+const exportShopifyPreviewLoading = ref(false);
+const exportShopifyPrepareBusy = ref(false);
+const exportShopifyPreviewError = ref<string | null>(null);
+const exportShopifyPushSummary = ref<PoExportShopifyPushSummary | null>(null);
+const pullHandlesDialogOpen = ref(false);
+const pullHandlesPreview = ref<PoPullHandlesPreview | null>(null);
+const pullHandlesPreviewLoading = ref(false);
+const pullHandlesApplyBusy = ref(false);
+const pullHandlesPreviewError = ref<string | null>(null);
+const pullHandlesSummary = ref<PoPullHandlesSummary | null>(null);
 const draftAddSkus = ref('');
 const addingDraftProducts = ref(false);
 const addDraftProductsError = ref<string | null>(null);
@@ -182,6 +233,7 @@ const poLinesProductName = ref<string | null>(null);
 type WorkflowChecklistKey =
     | 'import_po'
     | 'crawl_desc_image_price'
+    | 'select_and_arrange_product_images'
     | 'set_selling_price'
     | 'ensure_all_products_have_barcode'
     | 'export_to_shopify_get_handles'
@@ -193,6 +245,10 @@ type WorkflowChecklistKey =
 const checklistLabels: Array<{ key: WorkflowChecklistKey; label: string }> = [
     { key: 'import_po', label: 'Import PO' },
     { key: 'crawl_desc_image_price', label: 'Crawl desc, image, price (new products only)' },
+    {
+        key: 'select_and_arrange_product_images',
+        label: 'Select and rearrange product images (manual — open each product)',
+    },
     { key: 'set_selling_price', label: 'Set selling price (new/existing products)' },
     { key: 'ensure_all_products_have_barcode', label: 'Ensure all products have barcode' },
     {
@@ -214,11 +270,413 @@ const checklistLabels: Array<{ key: WorkflowChecklistKey; label: string }> = [
     { key: 'import_product_available_quantity', label: 'Import product available quantity' },
 ];
 
+type WorkflowStepStatus = {
+    done: boolean;
+    checked: boolean;
+    newly_checked?: boolean;
+    detail?: string;
+};
+
+function applyWorkflowPoResponse(data: {
+    purchase_order?: PurchaseOrder;
+    steps?: Record<string, WorkflowStepStatus>;
+}): void {
+    if (data.purchase_order && po.value) {
+        po.value = { ...po.value, ...data.purchase_order };
+    }
+}
+
+async function runWorkflowVerify(): Promise<void> {
+    if (!po.value) return;
+    workflowVerifyBusy.value = true;
+    workflowActionError.value = null;
+    try {
+        const res = await api.post<{ ok: boolean; data: { purchase_order: PurchaseOrder } }>(
+            `/api/v1/purchase-orders/${po.value.id}/workflow-verify`,
+            {},
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as any)?.message as string | undefined;
+            throw new Error(msg ?? `Verify failed (HTTP ${res.status}).`);
+        }
+        applyWorkflowPoResponse(res.data.data ?? {});
+    } catch (e: unknown) {
+        workflowActionError.value = e instanceof Error ? e.message : 'Workflow verify failed.';
+    } finally {
+        workflowVerifyBusy.value = false;
+    }
+}
+
+async function runWorkflowAction(
+    key: WorkflowChecklistKey,
+    path: string,
+    options?: { expect202?: boolean },
+): Promise<void> {
+    if (!po.value) return;
+    workflowActionBusy.value = { ...workflowActionBusy.value, [key]: true };
+    workflowActionError.value = null;
+    try {
+        const res = await api.post<{
+            ok: boolean;
+            data: { purchase_order?: PurchaseOrder; summary?: Record<string, unknown> };
+            message?: string;
+            issues?: Array<{ sku: string; reason: string }>;
+        }>(path, {}, { validateStatus: () => true });
+        const expected = options?.expect202 ? 202 : 200;
+        if (res.status !== expected) {
+            const issues = (res.data as any)?.issues as
+                | Array<{ sku: string; reason: string }>
+                | undefined;
+            let msg = (res.data as any)?.message as string | undefined;
+            if (issues?.length) {
+                const lines = issues
+                    .slice(0, 8)
+                    .map((i) => `${i.sku}: ${i.reason}`)
+                    .join('; ');
+                msg = `${msg ?? 'Action failed.'} ${lines}`;
+            }
+            throw new Error(msg ?? `Action failed (HTTP ${res.status}).`);
+        }
+        applyWorkflowPoResponse(res.data.data ?? {});
+        const batchId = (res.data.data as { recrawl_batch_id?: string } | undefined)
+            ?.recrawl_batch_id;
+        if (key === 'crawl_desc_image_price' && batchId) {
+            await router.push({
+                name: 'sync-progress',
+                query: { batch_id: batchId },
+            });
+        }
+    } catch (e: unknown) {
+        workflowActionError.value = e instanceof Error ? e.message : 'Workflow action failed.';
+    } finally {
+        workflowActionBusy.value = { ...workflowActionBusy.value, [key]: false };
+    }
+}
+
+async function prepareInventoryForPo(): Promise<void> {
+    if (!po.value) return;
+    workflowActionBusy.value = {
+        ...workflowActionBusy.value,
+        update_product_available_with_shopify_current_inventory_quantity: true,
+    };
+    workflowActionError.value = null;
+    inventoryPrepareReady.value = false;
+    inventoryPrepareSummary.value = null;
+    try {
+        const res = await api.post<{
+            ok: boolean;
+            data: { lines_validated: number; shopify_quantities: Array<{ sku: string }> };
+            message?: string;
+            issues?: Array<{ sku: string; reason: string }>;
+        }>(
+            `/api/v1/purchase-orders/${po.value.id}/workflow-actions/prepare-inventory`,
+            {},
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const issues = res.data?.issues ?? [];
+            const lines = issues
+                .slice(0, 8)
+                .map((i) => `${i.sku}: ${i.reason}`)
+                .join('; ');
+            throw new Error(
+                `${res.data?.message ?? 'Prepare inventory failed.'}${lines ? ` ${lines}` : ''}`,
+            );
+        }
+        inventoryPrepareReady.value = true;
+        const n = res.data.data?.lines_validated ?? 0;
+        inventoryPrepareSummary.value = `Shopify quantities pulled. ${n} PO line(s) validated with received qty.`;
+    } catch (e: unknown) {
+        workflowActionError.value =
+            e instanceof Error ? e.message : 'Prepare inventory failed.';
+    } finally {
+        workflowActionBusy.value = {
+            ...workflowActionBusy.value,
+            update_product_available_with_shopify_current_inventory_quantity: false,
+        };
+    }
+}
+
+function workflowRowButtonLabel(key: WorkflowChecklistKey): string | null {
+    switch (key) {
+        case 'crawl_desc_image_price':
+            return 'Crawl new';
+        case 'select_and_arrange_product_images':
+            return 'Review images';
+        case 'set_selling_price':
+            return 'Set prices';
+        case 'import_handle_only':
+            return 'Pull handles';
+        case 'update_product_available_with_shopify_current_inventory_quantity':
+            return 'Prepare';
+        case 'mark_latest_arrival_and_published_on_shopify':
+            return 'Mark flags';
+        case 'export_to_shopify_get_handles':
+            return 'Export';
+        case 'import_product_available_quantity':
+            return 'Import qty';
+        default:
+            return null;
+    }
+}
+
+async function onWorkflowRowAction(key: WorkflowChecklistKey): Promise<void> {
+    if (!po.value) return;
+    switch (key) {
+        case 'crawl_desc_image_price':
+            await runWorkflowAction(
+                key,
+                `/api/v1/purchase-orders/${po.value.id}/workflow-actions/crawl-new-products`,
+                { expect202: true },
+            );
+            return;
+        case 'select_and_arrange_product_images': {
+            const productsRoute = router.resolve({
+                name: 'products',
+                query: {
+                    purchase_order_uuid: po.value.id,
+                    po_product_novelty: 'all',
+                },
+            });
+            window.open(productsRoute.href, '_blank', 'noopener,noreferrer');
+            return;
+        }
+        case 'set_selling_price':
+            await openSetPricesPreview();
+            return;
+        case 'import_handle_only':
+            await openPullHandlesPreview();
+            return;
+        case 'update_product_available_with_shopify_current_inventory_quantity':
+            await prepareInventoryForPo();
+            return;
+        case 'mark_latest_arrival_and_published_on_shopify':
+            await runWorkflowAction(
+                key,
+                `/api/v1/purchase-orders/${po.value.id}/workflow-actions/mark-latest-arrival-published`,
+            );
+            return;
+        case 'export_to_shopify_get_handles':
+            await openExportShopifyPreview();
+            return;
+        case 'import_product_available_quantity':
+            importQtyOpen.value = true;
+            return;
+        default:
+            return;
+    }
+}
+
+async function openSetPricesPreview(): Promise<void> {
+    if (!po.value) return;
+    setPricesDialogOpen.value = true;
+    setPricesPreview.value = null;
+    setPricesPreviewError.value = null;
+    setPricesPreviewLoading.value = true;
+    try {
+        const res = await api.get<{ ok: boolean; data: PoSetPricePreview }>(
+            `/api/v1/purchase-orders/${po.value.id}/workflow-actions/set-prices/preview`,
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as { message?: string })?.message;
+            throw new Error(msg ?? `Preview failed (HTTP ${res.status}).`);
+        }
+        setPricesPreview.value = res.data.data;
+    } catch (e: unknown) {
+        setPricesPreviewError.value =
+            e instanceof Error ? e.message : 'Failed to load price preview.';
+    } finally {
+        setPricesPreviewLoading.value = false;
+    }
+}
+
+function closeSetPricesDialog(): void {
+    if (setPricesApplyBusy.value) return;
+    setPricesDialogOpen.value = false;
+    setPricesPreview.value = null;
+    setPricesPreviewError.value = null;
+}
+
+async function openExportShopifyPreview(): Promise<void> {
+    if (!po.value) return;
+    exportShopifyDialogOpen.value = true;
+    exportShopifyPreview.value = null;
+    exportShopifyPushSummary.value = null;
+    exportShopifyPreviewError.value = null;
+    exportShopifyPreviewLoading.value = true;
+    try {
+        const res = await api.get<{ ok: boolean; data: PoExportShopifyPreview }>(
+            `/api/v1/purchase-orders/${po.value.id}/workflow-actions/export-shopify-content/preview`,
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as { message?: string })?.message;
+            throw new Error(msg ?? `Preview failed (HTTP ${res.status}).`);
+        }
+        exportShopifyPreview.value = res.data.data;
+    } catch (e: unknown) {
+        exportShopifyPreviewError.value =
+            e instanceof Error ? e.message : 'Failed to load export preview.';
+    } finally {
+        exportShopifyPreviewLoading.value = false;
+    }
+}
+
+function closeExportShopifyDialog(): void {
+    if (exportShopifyPrepareBusy.value) return;
+    exportShopifyDialogOpen.value = false;
+    exportShopifyPreview.value = null;
+    exportShopifyPushSummary.value = null;
+    exportShopifyPreviewError.value = null;
+}
+
+async function openPullHandlesPreview(): Promise<void> {
+    if (!po.value) return;
+    pullHandlesDialogOpen.value = true;
+    pullHandlesPreview.value = null;
+    pullHandlesSummary.value = null;
+    pullHandlesPreviewError.value = null;
+    pullHandlesPreviewLoading.value = true;
+    try {
+        const res = await api.get<{ ok: boolean; data: PoPullHandlesPreview }>(
+            `/api/v1/purchase-orders/${po.value.id}/workflow-actions/pull-handles/preview`,
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as { message?: string })?.message;
+            throw new Error(msg ?? `Preview failed (HTTP ${res.status}).`);
+        }
+        pullHandlesPreview.value = res.data.data;
+    } catch (e: unknown) {
+        pullHandlesPreviewError.value =
+            e instanceof Error ? e.message : 'Failed to load pull-handles preview.';
+    } finally {
+        pullHandlesPreviewLoading.value = false;
+    }
+}
+
+function closePullHandlesDialog(): void {
+    if (pullHandlesApplyBusy.value) return;
+    pullHandlesDialogOpen.value = false;
+    pullHandlesPreview.value = null;
+    pullHandlesSummary.value = null;
+    pullHandlesPreviewError.value = null;
+}
+
+async function confirmPullHandles(): Promise<void> {
+    if (!po.value || !pullHandlesPreview.value || pullHandlesPreview.value.pull_count === 0) {
+        return;
+    }
+    pullHandlesApplyBusy.value = true;
+    pullHandlesPreviewError.value = null;
+    try {
+        const res = await api.post<{
+            ok: boolean;
+            data: {
+                summary: PoPullHandlesSummary;
+                purchase_order?: PurchaseOrder;
+            };
+        }>(
+            `/api/v1/purchase-orders/${po.value.id}/workflow-actions/pull-handles`,
+            {},
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as { message?: string })?.message;
+            throw new Error(msg ?? `Pull handles failed (HTTP ${res.status}).`);
+        }
+        pullHandlesSummary.value = res.data.data.summary ?? null;
+        applyWorkflowPoResponse(res.data.data ?? {});
+        await load();
+    } catch (e: unknown) {
+        pullHandlesPreviewError.value =
+            e instanceof Error ? e.message : 'Failed to pull handles from Shopify.';
+    } finally {
+        pullHandlesApplyBusy.value = false;
+    }
+}
+
+async function confirmExportShopifyPush(): Promise<void> {
+    if (!po.value || !exportShopifyPreview.value || exportShopifyPreview.value.export_count === 0) {
+        return;
+    }
+    exportShopifyPrepareBusy.value = true;
+    exportShopifyPreviewError.value = null;
+    try {
+        const res = await api.post<{
+            ok: boolean;
+            data: {
+                summary: PoExportShopifyPushSummary;
+                purchase_order?: PurchaseOrder;
+            };
+        }>(
+            `/api/v1/purchase-orders/${po.value.id}/workflow-actions/export-shopify-content/push`,
+            {},
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as { message?: string })?.message;
+            throw new Error(msg ?? `Push failed (HTTP ${res.status}).`);
+        }
+        exportShopifyPushSummary.value = res.data.data.summary ?? res.data.data;
+        if ((exportShopifyPushSummary.value?.failed ?? 0) === 0) {
+            applyWorkflowPoResponse(res.data.data ?? {});
+            await load();
+        }
+    } catch (e: unknown) {
+        exportShopifyPreviewError.value =
+            e instanceof Error ? e.message : 'Failed to push products to Shopify.';
+    } finally {
+        exportShopifyPrepareBusy.value = false;
+    }
+}
+
+async function confirmSetPricesApply(): Promise<void> {
+    if (!po.value || !setPricesPreview.value || setPricesPreview.value.apply_count === 0) return;
+    setPricesApplyBusy.value = true;
+    setPricesPreviewError.value = null;
+    try {
+        const res = await api.post<{
+            ok: boolean;
+            data: { purchase_order?: PurchaseOrder };
+        }>(
+            `/api/v1/purchase-orders/${po.value.id}/workflow-actions/set-prices`,
+            {},
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as { message?: string })?.message;
+            throw new Error(msg ?? `Apply failed (HTTP ${res.status}).`);
+        }
+        applyWorkflowPoResponse(res.data.data ?? {});
+        setPricesDialogOpen.value = false;
+        setPricesPreview.value = null;
+        await load();
+    } catch (e: unknown) {
+        setPricesPreviewError.value =
+            e instanceof Error ? e.message : 'Failed to apply selling prices.';
+    } finally {
+        setPricesApplyBusy.value = false;
+    }
+}
+
+async function applyReceivedFromChecklist(): Promise<void> {
+    if (!inventoryPrepareReady.value) {
+        workflowActionError.value = 'Run Prepare first (pull Shopify qty and validate received qty).';
+        return;
+    }
+    await applyReceivedQtyToAvailable();
+    await runWorkflowVerify();
+}
+
 const checklist = computed<Record<WorkflowChecklistKey, boolean>>(() => {
     const raw = po.value?.workflow_checklist ?? {};
     return {
         import_po: Boolean((raw as any)?.import_po),
         crawl_desc_image_price: Boolean((raw as any)?.crawl_desc_image_price),
+        select_and_arrange_product_images: Boolean((raw as any)?.select_and_arrange_product_images),
         set_selling_price: Boolean((raw as any)?.set_selling_price),
         ensure_all_products_have_barcode: Boolean((raw as any)?.ensure_all_products_have_barcode),
         export_to_shopify_get_handles: Boolean((raw as any)?.export_to_shopify_get_handles),
@@ -304,6 +762,39 @@ async function bulkExportSelected(
             download_url: string;
         }>(
             '/api/v1/products/exports/shopify-content/prepare',
+            { ids },
+            { validateStatus: () => true },
+        );
+
+        if (res.status !== 200) {
+            const anyData = res.data as any;
+            const msgRaw: unknown = anyData?.message ?? anyData?.error ?? anyData?.errors;
+            let details = '';
+            if (typeof msgRaw === 'string') details = msgRaw.trim();
+            else if (msgRaw !== null && msgRaw !== undefined) {
+                try {
+                    details = JSON.stringify(msgRaw);
+                } catch {
+                    details = String(msgRaw);
+                }
+            }
+            throw new Error(`Export failed (HTTP ${res.status}).${details ? ` ${details}` : ''}`);
+        }
+
+        const downloadUrl = res.data.download_url;
+        if (!downloadUrl) {
+            throw new Error('export_failed');
+        }
+
+        window.location.assign(downloadUrl);
+        return;
+    }
+
+    if (exportType === 'shopify_content_no_inventory') {
+        const res = await api.post<{
+            download_url: string;
+        }>(
+            '/api/v1/products/exports/shopify-content-no-inventory/prepare',
             { ids },
             { validateStatus: () => true },
         );
@@ -537,19 +1028,18 @@ async function addProductsToDraftBySku(): Promise<void> {
     }
 }
 
-async function toggleChecklist(key: WorkflowChecklistKey, next: boolean): Promise<void> {
+async function patchChecklist(changes: Record<string, boolean>): Promise<void> {
     if (!po.value) return;
     checklistError.value = null;
     checklistBusy.value = true;
 
-    // Optimistic update
     const prev = po.value.workflow_checklist ?? {};
-    po.value.workflow_checklist = { ...prev, [key]: next };
+    po.value.workflow_checklist = { ...prev, ...changes };
 
     try {
         const res = await api.patch<{ data: PurchaseOrder }>(
             `/api/v1/purchase-orders/${po.value.id}/workflow-checklist`,
-            { [key]: next },
+            changes,
             { validateStatus: () => true },
         );
         if (res.status !== 200) {
@@ -568,6 +1058,28 @@ async function toggleChecklist(key: WorkflowChecklistKey, next: boolean): Promis
     } finally {
         checklistBusy.value = false;
     }
+}
+
+async function toggleChecklist(key: WorkflowChecklistKey, next: boolean): Promise<void> {
+    const changes: Record<string, boolean> = { [key]: next };
+    if (key === 'select_and_arrange_product_images' && !next) {
+        changes.select_and_arrange_product_images_deferred = false;
+    }
+    await patchChecklist(changes);
+}
+
+async function deferImageCuration(): Promise<void> {
+    if (!po.value || checklist.value.select_and_arrange_product_images) return;
+
+    const ok = window.confirm(
+        'Defer image curation for this PO? You can add and arrange product photos later. This checks off the step so the rest of the workflow can continue.',
+    );
+    if (!ok) return;
+
+    await patchChecklist({
+        select_and_arrange_product_images: true,
+        select_and_arrange_product_images_deferred: true,
+    });
 }
 
 function inventoryCheckLabel(c: InventoryCheckPickRow): string {
@@ -694,13 +1206,16 @@ async function applyReceivedQtyToAvailable(): Promise<void> {
             throw new Error(msg ?? `Failed to apply received qty (HTTP ${res.status}).`);
         }
         const data = (res.data as any)?.data ?? {};
-        const productsUpdated = Number(data.products_updated ?? 0);
-        const totalAdded = Number(data.total_added ?? 0);
-        const skippedNonPositive = Number(data.skipped_non_positive_qty ?? 0);
-        const skippedMissingProductId = Number(data.skipped_missing_product_id ?? 0);
+        const apply = data.apply ?? data;
+        const productsUpdated = Number(apply.products_updated ?? 0);
+        const totalAdded = Number(apply.total_added ?? 0);
+        const skippedNonPositive = Number(apply.skipped_non_positive_qty ?? 0);
+        const skippedMissingProductId = Number(apply.skipped_missing_product_id ?? 0);
         applyReceivedSummary.value =
             `Added ${totalAdded} to available qty across ${productsUpdated} product(s). ` +
             `Skipped ${skippedNonPositive} line(s) with qty_received <= 0 and ${skippedMissingProductId} line(s) missing linked product.`;
+        applyWorkflowPoResponse(data);
+        await load();
     } catch (e: unknown) {
         applyReceivedError.value = e instanceof Error ? e.message : 'Failed to apply received qty.';
     } finally {
@@ -985,6 +1500,9 @@ async function load(): Promise<void> {
         error.value = 'Failed to load purchase order.';
     } finally {
         loading.value = false;
+        if (po.value) {
+            await runWorkflowVerify();
+        }
     }
 }
 
@@ -1464,11 +1982,140 @@ function onReimportFileChange(e: Event): void {
 }
 
 async function reimportCsvIntoPo(): Promise<void> {
-    await importCsvIntoPo('replace');
+    await startPoImport('replace');
 }
 
 async function importMoreCsvIntoPo(): Promise<void> {
-    await importCsvIntoPo('append');
+    await startPoImport('append');
+}
+
+function buildPoImportFormData(mode: 'replace' | 'append'): FormData {
+    if (!po.value || !reimportFile.value) {
+        throw new Error('Missing PO or file');
+    }
+
+    const fd = new FormData();
+    fd.append('file', reimportFile.value);
+    fd.append('vendor', po.value.vendor);
+    fd.append('purchase_order_uuid', po.value.id);
+    fd.append('import_mode', mode);
+    if (mode === 'replace' && reimportResetReceipt.value) {
+        fd.append('reset_receipt_before_reimport', '1');
+    }
+    if (importProductTotal.value.trim() !== '') {
+        fd.append('product_total', importProductTotal.value.trim());
+    }
+    if (importProductTotalIncludesFees.value) {
+        fd.append('product_total_includes_fees', '1');
+    }
+    if (importShippingTotal.value.trim() !== '' && !importProductTotalIncludesFees.value) {
+        fd.append('shipping_total', importShippingTotal.value.trim());
+    }
+
+    return fd;
+}
+
+function closePoImportPreview(): void {
+    importPreviewOpen.value = false;
+    importPreviewLoading.value = false;
+    importPreviewError.value = null;
+    importPreview.value = null;
+}
+
+async function loadPoImportPreview(mode: 'replace' | 'append'): Promise<void> {
+    importPreviewError.value = null;
+    importPreview.value = null;
+    importPreviewLoading.value = true;
+    importPreviewOpen.value = true;
+    pendingImportMode.value = mode;
+
+    try {
+        const fd = buildPoImportFormData(mode);
+        const res = await api.post<PoImportPreview>('/api/v1/purchase-orders/import/preview', fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        importPreview.value = res.data;
+    } catch (e: unknown) {
+        const anyErr = e as any;
+        importPreviewError.value =
+            anyErr?.response?.data?.message ?? 'Preview failed. Check the file format and try again.';
+    } finally {
+        importPreviewLoading.value = false;
+    }
+}
+
+async function startPoImport(mode: 'replace' | 'append'): Promise<void> {
+    if (!po.value) return;
+    reimportError.value = null;
+
+    if (!reimportFile.value) {
+        reimportError.value = 'Please choose a CSV or XLSX file.';
+        return;
+    }
+
+    if (isPmBrokerVendor.value) {
+        await loadPoImportPreview(mode);
+        return;
+    }
+
+    await executePoImport(mode);
+}
+
+async function confirmPoImportPreview(): Promise<void> {
+    await executePoImport(pendingImportMode.value);
+}
+
+async function executePoImport(mode: 'replace' | 'append'): Promise<void> {
+    if (!po.value) return;
+    reimportError.value = null;
+
+    const resetNote =
+        mode === 'replace' && reimportResetReceipt.value
+            ? '\n\nYou asked to clear PO receipt data first: PO-linked inventory lots and movement rows will be removed and qty received cleared on all lines before lines are replaced. Product available qty is not adjusted.'
+            : '';
+
+    const msg =
+        mode === 'replace'
+            ? po.value.counts.items > 0
+                ? `Re-import this file into the current PO? This will REPLACE ${po.value.counts.items} existing line item(s) and update product barcodes/names.${resetNote}`
+                : `Re-import this file into the current PO? This will update product barcodes/names.${resetNote}`
+            : `Import additional products into this PO? This will ADD line items and keep the existing ${po.value.counts.items} line item(s). PO header totals from this import will be combined with the current PO totals.`;
+
+    if (!window.confirm(msg)) return;
+
+    if (mode === 'replace') reimporting.value = true;
+    else importMoreing.value = true;
+
+    try {
+        const fd = buildPoImportFormData(mode);
+
+        const res = await api.post('/api/v1/purchase-orders/import', fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            validateStatus: () => true,
+        });
+
+        if (res.status !== 200) {
+            const message = (res.data as any)?.message as string | undefined;
+            const issues = (res.data as any)?.issues as any;
+            reimportError.value = formatPoImportError(message ?? 'Import failed.', issues);
+            importPreviewError.value = reimportError.value;
+            return;
+        }
+
+        reimportFile.value = null;
+        reimportResetReceipt.value = false;
+        importProductTotal.value = '';
+        importShippingTotal.value = '';
+        importProductTotalIncludesFees.value = false;
+        closePoImportPreview();
+        await load();
+    } catch {
+        reimportError.value = mode === 'replace' ? 'Re-import failed.' : 'Import more failed.';
+        importPreviewError.value = reimportError.value;
+    } finally {
+        if (mode === 'replace') reimporting.value = false;
+        else importMoreing.value = false;
+    }
 }
 
 function formatPoImportError(message: string, issues: unknown): string {
@@ -1480,65 +2127,6 @@ function formatPoImportError(message: string, issues: unknown): string {
         return message;
     }
     return `${message} (${JSON.stringify(first)})`;
-}
-
-async function importCsvIntoPo(mode: 'replace' | 'append'): Promise<void> {
-    if (!po.value) return;
-    reimportError.value = null;
-
-    if (!reimportFile.value) {
-        reimportError.value = 'Please choose a CSV file.';
-        return;
-    }
-
-    const resetNote =
-        mode === 'replace' && reimportResetReceipt.value
-            ? '\n\nYou asked to clear PO receipt data first: PO-linked inventory lots and movement rows will be removed and qty received cleared on all lines before lines are replaced. Product available qty is not adjusted.'
-            : '';
-
-    const msg =
-        mode === 'replace'
-            ? po.value.counts.items > 0
-                ? `Re-import this CSV into the current PO? This will REPLACE ${po.value.counts.items} existing line item(s) and update product barcodes/names.${resetNote}`
-                : `Re-import this CSV into the current PO? This will update product barcodes/names.${resetNote}`
-            : `Import additional products into this PO? This will ADD line items and keep the existing ${po.value.counts.items} line item(s).`;
-
-    if (!window.confirm(msg)) return;
-
-    if (mode === 'replace') reimporting.value = true;
-    else importMoreing.value = true;
-
-    try {
-        const fd = new FormData();
-        fd.append('file', reimportFile.value);
-        fd.append('vendor', po.value.vendor);
-        fd.append('purchase_order_uuid', po.value.id);
-        fd.append('import_mode', mode);
-        if (mode === 'replace' && reimportResetReceipt.value) {
-            fd.append('reset_receipt_before_reimport', '1');
-        }
-
-        const res = await api.post('/api/v1/purchase-orders/import', fd, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-            validateStatus: () => true,
-        });
-
-        if (res.status !== 200) {
-            const message = (res.data as any)?.message as string | undefined;
-            const issues = (res.data as any)?.issues as any;
-            reimportError.value = formatPoImportError(message ?? 'Re-import failed.', issues);
-            return;
-        }
-
-        reimportFile.value = null;
-        reimportResetReceipt.value = false;
-        await load();
-    } catch {
-        reimportError.value = mode === 'replace' ? 'Re-import failed.' : 'Import more failed.';
-    } finally {
-        if (mode === 'replace') reimporting.value = false;
-        else importMoreing.value = false;
-    }
 }
 
 watch(id, () => {
@@ -1619,18 +2207,66 @@ onMounted(() => {
 
                 <div class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
                     <div class="text-xs font-semibold text-slate-800">
-                        Re-import CSV into this PO
+                        Re-import file into this PO
                     </div>
-                    <div
-                        class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6 lg:items-end"
-                    >
-                        <div class="lg:col-span-5">
-                            <label class="text-xs font-medium text-slate-700">CSV file</label>
+                    <div class="mt-2 grid grid-cols-1 gap-3 lg:grid-cols-6 lg:items-end">
+                        <div class="lg:col-span-2">
+                            <label class="text-xs font-medium text-slate-700">
+                                {{
+                                    importProductTotalIncludesFees
+                                        ? 'Total paid (CAD)'
+                                        : 'Product total (CAD)'
+                                }}
+                            </label>
+                            <input
+                                v-model="importProductTotal"
+                                type="text"
+                                inputmode="decimal"
+                                class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                :placeholder="
+                                    importProductTotalIncludesFees ? 'Product + shipping' : 'Optional'
+                                "
+                                :disabled="reimporting || importMoreing || importPreviewLoading"
+                            />
+                            <label
+                                v-if="isPmBrokerVendor"
+                                class="mt-2 flex items-start gap-2 text-[11px] text-slate-600"
+                            >
+                                <input
+                                    v-model="importProductTotalIncludesFees"
+                                    type="checkbox"
+                                    class="mt-0.5 rounded border-slate-300"
+                                    :disabled="reimporting || importMoreing || importPreviewLoading"
+                                />
+                                <span
+                                    >Total includes product and shipping (split using invoice
+                                    HKD)</span
+                                >
+                            </label>
+                        </div>
+                        <div class="lg:col-span-1">
+                            <label class="text-xs font-medium text-slate-700">Shipping total</label>
+                            <input
+                                v-model="importShippingTotal"
+                                type="text"
+                                inputmode="decimal"
+                                class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500"
+                                placeholder="Optional"
+                                :disabled="
+                                    importProductTotalIncludesFees ||
+                                    reimporting ||
+                                    importMoreing ||
+                                    importPreviewLoading
+                                "
+                            />
+                        </div>
+                        <div class="lg:col-span-3">
+                            <label class="text-xs font-medium text-slate-700">CSV / XLSX file</label>
                             <input
                                 type="file"
-                                accept=".csv,text/csv"
+                                accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                                 class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                                :disabled="reimporting || importMoreing"
+                                :disabled="reimporting || importMoreing || importPreviewLoading"
                                 @change="onReimportFileChange"
                             />
                             <label
@@ -1640,7 +2276,7 @@ onMounted(() => {
                                     v-model="reimportResetReceipt"
                                     type="checkbox"
                                     class="mt-0.5 h-4 w-4 rounded border-slate-300 text-slate-900"
-                                    :disabled="reimporting || importMoreing"
+                                    :disabled="reimporting || importMoreing || importPreviewLoading"
                                 />
                                 <span>
                                     <span class="font-medium text-slate-800"
@@ -1655,25 +2291,41 @@ onMounted(() => {
                             <div class="mt-1 text-[11px] text-slate-500">
                                 Re-import replaces existing lines unless you use the option above
                                 when receipt data exists. Import more appends new lines and keeps
-                                the existing lines.
+                                existing lines. For Dspiae/Stedi PM invoices, use Preview import
+                                first. Import more combines product, shipping, and vendor
+                                totals from each import into the PO header.
                             </div>
                         </div>
                         <div class="lg:col-span-1 space-y-2">
                             <button
                                 type="button"
                                 class="inline-flex w-full items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                                :disabled="reimporting || importMoreing"
+                                :disabled="reimporting || importMoreing || importPreviewLoading"
                                 @click="reimportCsvIntoPo"
                             >
-                                {{ reimporting ? 'Re-importing…' : 'Re-import' }}
+                                {{
+                                    reimporting
+                                        ? 'Re-importing…'
+                                        : isPmBrokerVendor
+                                          ? 'Preview re-import'
+                                          : 'Re-import'
+                                }}
                             </button>
                             <button
                                 type="button"
                                 class="inline-flex w-full items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                :disabled="reimporting || importMoreing"
+                                :disabled="reimporting || importMoreing || importPreviewLoading"
                                 @click="importMoreCsvIntoPo"
                             >
-                                {{ importMoreing ? 'Importing…' : 'Import more' }}
+                                {{
+                                    importMoreing
+                                        ? 'Importing…'
+                                        : importPreviewLoading
+                                          ? 'Previewing…'
+                                          : isPmBrokerVendor
+                                            ? 'Preview import more'
+                                            : 'Import more'
+                                }}
                             </button>
                         </div>
                     </div>
@@ -1733,18 +2385,6 @@ onMounted(() => {
                                 @click="importQtyOpen = !importQtyOpen"
                             >
                                 Import product quantity
-                            </button>
-                            <button
-                                type="button"
-                                class="rounded-md border border-emerald-200 bg-white px-3 py-1.5 text-sm text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                                :disabled="!poHasProducts || applyingReceivedToAvailable"
-                                @click="applyReceivedQtyToAvailable"
-                            >
-                                {{
-                                    applyingReceivedToAvailable
-                                        ? 'Applying received qty…'
-                                        : 'Add qty received to available'
-                                }}
                             </button>
                         </div>
                     </div>
@@ -1888,34 +2528,114 @@ onMounted(() => {
                                 Workflow checklist
                             </div>
                             <div class="mt-1 text-xs text-slate-600">
-                                This checklist is saved on this PO.
+                                This checklist is saved on this PO. Checked steps stay checked;
+                                use Re-verify to auto-check completed steps.
                             </div>
                         </div>
-                        <div v-if="checklistBusy" class="text-xs text-slate-600">Saving…</div>
+                        <div class="flex shrink-0 items-center gap-2">
+                            <button
+                                type="button"
+                                class="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                                :disabled="checklistBusy || workflowVerifyBusy || !po"
+                                @click="runWorkflowVerify"
+                            >
+                                {{ workflowVerifyBusy ? 'Verifying…' : 'Re-verify' }}
+                            </button>
+                            <div v-if="checklistBusy" class="text-xs text-slate-600">Saving…</div>
+                        </div>
                     </div>
 
                     <div class="mt-3 space-y-2">
-                        <label
+                        <div
                             v-for="row in checklistLabels"
                             :key="row.key"
-                            class="flex items-center gap-2 text-sm text-slate-800"
+                            class="flex items-center gap-2"
                         >
-                            <input
-                                type="checkbox"
-                                class="h-4 w-4 rounded border-slate-300"
-                                :disabled="checklistBusy"
-                                :checked="checklist[row.key]"
-                                @change="
-                                    toggleChecklist(
-                                        row.key,
-                                        ($event.target as HTMLInputElement).checked,
-                                    )
+                            <label class="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-800">
+                                <input
+                                    type="checkbox"
+                                    class="h-4 w-4 shrink-0 rounded border-slate-300"
+                                    :disabled="checklistBusy"
+                                    :checked="checklist[row.key]"
+                                    @change="
+                                        toggleChecklist(
+                                            row.key,
+                                            ($event.target as HTMLInputElement).checked,
+                                        )
+                                    "
+                                />
+                                <span class="min-w-0">{{ row.label }}</span>
+                            </label>
+                            <button
+                                v-if="workflowRowButtonLabel(row.key)"
+                                type="button"
+                                class="shrink-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="
+                                    checklistBusy ||
+                                    Boolean(workflowActionBusy[row.key]) ||
+                                    (row.key === 'export_to_shopify_get_handles' && !poHasProducts) ||
+                                    (row.key === 'crawl_desc_image_price' && !poHasProducts)
                                 "
-                            />
-                            {{ row.label }}
-                        </label>
+                                @click="onWorkflowRowAction(row.key)"
+                            >
+                                <template
+                                    v-if="
+                                        row.key ===
+                                        'update_product_available_with_shopify_current_inventory_quantity'
+                                    "
+                                >
+                                    {{
+                                        workflowActionBusy[row.key] ? 'Preparing…' : 'Prepare'
+                                    }}
+                                </template>
+                                <template v-else>
+                                    {{
+                                        workflowActionBusy[row.key]
+                                            ? 'Working…'
+                                            : workflowRowButtonLabel(row.key)
+                                    }}
+                                </template>
+                            </button>
+                            <button
+                                v-if="
+                                    row.key ===
+                                    'update_product_available_with_shopify_current_inventory_quantity'
+                                "
+                                type="button"
+                                class="shrink-0 rounded-md border border-emerald-200 bg-white px-2 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="
+                                    !inventoryPrepareReady ||
+                                    applyingReceivedToAvailable ||
+                                    !poHasProducts
+                                "
+                                @click="applyReceivedFromChecklist"
+                            >
+                                {{
+                                    applyingReceivedToAvailable ? 'Applying…' : 'Apply received'
+                                }}
+                            </button>
+                            <button
+                                v-if="
+                                    row.key === 'select_and_arrange_product_images' &&
+                                    !checklist.select_and_arrange_product_images
+                                "
+                                type="button"
+                                class="shrink-0 rounded-md border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="checklistBusy"
+                                data-testid="workflow-defer-image-curation"
+                                @click="deferImageCuration"
+                            >
+                                Defer
+                            </button>
+                        </div>
                     </div>
 
+                    <p v-if="inventoryPrepareSummary" class="mt-2 text-xs text-emerald-800">
+                        {{ inventoryPrepareSummary }}
+                    </p>
+                    <p v-if="workflowActionError" class="mt-3 text-sm text-rose-700">
+                        {{ workflowActionError }}
+                    </p>
                     <p v-if="checklistError" class="mt-3 text-sm text-rose-700">
                         {{ checklistError }}
                     </p>
@@ -2549,6 +3269,40 @@ onMounted(() => {
         :busy="recrawlBusy"
         @cancel="recrawlDialogOpen = false"
         @confirm="onConfirmRecrawl"
+    />
+    <PoWorkflowSetPricesDialog
+        :open="setPricesDialogOpen"
+        :busy="setPricesApplyBusy || setPricesPreviewLoading"
+        :preview="setPricesPreview"
+        :error="setPricesPreviewError"
+        @cancel="closeSetPricesDialog"
+        @confirm="confirmSetPricesApply"
+    />
+    <PoWorkflowExportShopifyDialog
+        :open="exportShopifyDialogOpen"
+        :busy="exportShopifyPrepareBusy || exportShopifyPreviewLoading"
+        :preview="exportShopifyPreview"
+        :push-summary="exportShopifyPushSummary"
+        :error="exportShopifyPreviewError"
+        @cancel="closeExportShopifyDialog"
+        @confirm="confirmExportShopifyPush"
+    />
+    <PoWorkflowPullHandlesDialog
+        :open="pullHandlesDialogOpen"
+        :busy="pullHandlesApplyBusy || pullHandlesPreviewLoading"
+        :preview="pullHandlesPreview"
+        :pull-summary="pullHandlesSummary"
+        :error="pullHandlesPreviewError"
+        @cancel="closePullHandlesDialog"
+        @confirm="confirmPullHandles"
+    />
+    <PoImportPreviewDialog
+        :open="importPreviewOpen"
+        :busy="reimporting || importMoreing || importPreviewLoading"
+        :preview="importPreview"
+        :error="importPreviewError"
+        @cancel="closePoImportPreview"
+        @confirm="confirmPoImportPreview"
     />
     <ProductPoLinesDrawer
         :open="poLinesOpen"

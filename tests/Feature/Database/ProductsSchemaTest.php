@@ -16,6 +16,14 @@ it('has latest_arrival column on products table', function (): void {
     expect(Schema::hasColumn('products', 'latest_arrival'))->toBeTrue();
 });
 
+it('has is_critical column on products table', function (): void {
+    expect(Schema::hasColumn('products', 'is_critical'))->toBeTrue();
+});
+
+it('has is_discontinued column on products table', function (): void {
+    expect(Schema::hasColumn('products', 'is_discontinued'))->toBeTrue();
+});
+
 it('has maintain_qty column on products table', function (): void {
     expect(Schema::hasColumn('products', 'maintain_qty'))->toBeTrue();
 });

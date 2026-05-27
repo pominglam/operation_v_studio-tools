@@ -41,6 +41,9 @@ use App\Http\Controllers\Api\V1\ProductBulkArchiveController;
 use App\Http\Controllers\Api\V1\ProductBulkDeleteController;
 use App\Http\Controllers\Api\V1\ProductBulkPlamodAssetRenameController;
 use App\Http\Controllers\Api\V1\ProductBulkUpdateController;
+use App\Http\Controllers\Api\V1\ProductCriticalController;
+use App\Http\Controllers\Api\V1\ProductDemandShowController;
+use App\Http\Controllers\Api\V1\ProductDiscontinueController;
 use App\Http\Controllers\Api\V1\ProductExternalAssetDestroyController;
 use App\Http\Controllers\Api\V1\ProductExternalAssetDownloadController;
 use App\Http\Controllers\Api\V1\ProductExternalAssetShopifyEnabledController;
@@ -77,6 +80,7 @@ use App\Http\Controllers\Api\V1\ProductsExportSelectedController;
 use App\Http\Controllers\Api\V1\ProductsRecrawlSelectedController;
 use App\Http\Controllers\Api\V1\ProductTypeBackfillController;
 use App\Http\Controllers\Api\V1\ProductTypeRecomputeController;
+use App\Http\Controllers\Api\V1\PullShopifyInventoryToProductsController;
 use App\Http\Controllers\Api\V1\PurchaseOrderApplyInventoryCheckController;
 use App\Http\Controllers\Api\V1\PurchaseOrderApplyReceivedToAvailableController;
 use App\Http\Controllers\Api\V1\PurchaseOrderDeleteController;
@@ -85,18 +89,27 @@ use App\Http\Controllers\Api\V1\PurchaseOrderDraftCreateFromProductsController;
 use App\Http\Controllers\Api\V1\PurchaseOrderDraftLinesExportController;
 use App\Http\Controllers\Api\V1\PurchaseOrderFilterOptionsController;
 use App\Http\Controllers\Api\V1\PurchaseOrderImportController;
+use App\Http\Controllers\Api\V1\PurchaseOrderImportPreviewController;
 use App\Http\Controllers\Api\V1\PurchaseOrderIndexController;
 use App\Http\Controllers\Api\V1\PurchaseOrderItemsBulkUpdateController;
 use App\Http\Controllers\Api\V1\PurchaseOrderItemUpdateController;
 use App\Http\Controllers\Api\V1\PurchaseOrderShowController;
 use App\Http\Controllers\Api\V1\PurchaseOrderUpdateController;
+use App\Http\Controllers\Api\V1\PurchaseOrderWorkflowActionController;
 use App\Http\Controllers\Api\V1\PurchaseOrderWorkflowChecklistUpdateController;
+use App\Http\Controllers\Api\V1\PurchaseOrderWorkflowVerifyController;
+use App\Http\Controllers\Api\V1\RebuildProductDemandRollupsController;
 use App\Http\Controllers\Api\V1\ShopifyContentExportDownloadController;
 use App\Http\Controllers\Api\V1\ShopifyContentExportPrepareController;
 use App\Http\Controllers\Api\V1\ShopifyContentNoInventoryExportPrepareController;
 use App\Http\Controllers\Api\V1\ShopifyImageTunnelStartController;
 use App\Http\Controllers\Api\V1\ShopifyImageTunnelStatusController;
 use App\Http\Controllers\Api\V1\ShopifyImageTunnelStopController;
+use App\Http\Controllers\Api\V1\ShopifyOrderHistoricalBackfillController;
+use App\Http\Controllers\Api\V1\ShopifySettingsShowController;
+use App\Http\Controllers\Api\V1\ShopifySettingsUpdateController;
+use App\Http\Controllers\Api\V1\ShopifyWebhookLogIndexController;
+use App\Http\Controllers\Api\V1\ShopifyWebhookLogShowController;
 use App\Http\Controllers\Api\V1\TcgEventsIndexController;
 use App\Http\Controllers\Api\V1\TcgEventsRefreshController;
 use App\Http\Controllers\Api\Webhooks\ShopifyWebhookController;
@@ -124,6 +137,8 @@ Route::prefix('v1')
         Route::patch('/products/{id}/maintain', ProductMaintainController::class)->whereUuid('id');
         Route::patch('/products/{id}/ready', ProductReadyController::class)->whereUuid('id');
         Route::patch('/products/{id}/latest-arrival', ProductLatestArrivalController::class)->whereUuid('id');
+        Route::patch('/products/{id}/critical', ProductCriticalController::class)->whereUuid('id');
+        Route::patch('/products/{id}/discontinue', ProductDiscontinueController::class)->whereUuid('id');
         Route::put('/products/{id}/selling-price', ProductSellingPriceController::class)->whereUuid('id');
         Route::get('/products/{id}/po-lines', ProductPoLinesController::class)->whereUuid('id');
         Route::post('/products/sync-missing-info', ProductMissingInfoSyncController::class);
@@ -149,6 +164,7 @@ Route::prefix('v1')
         Route::post('/products/import-inventory-qty-override', ProductInventoryQuantityOverrideImportController::class);
         Route::post('/products/import-handles', ProductHandleImportController::class);
         Route::post('/products/import-inventory-check', InventoryCheckImportController::class);
+        Route::post('/purchase-orders/import/preview', PurchaseOrderImportPreviewController::class);
         Route::post('/purchase-orders/import', PurchaseOrderImportController::class);
         Route::post('/purchase-orders/drafts/create-from-products', PurchaseOrderDraftCreateFromProductsController::class);
         Route::get('/purchase-orders/filter-options', PurchaseOrderFilterOptionsController::class);
@@ -159,6 +175,16 @@ Route::prefix('v1')
         Route::post('/purchase-orders/{id}/draft-products', PurchaseOrderDraftAddProductsController::class)->whereUuid('id');
         Route::patch('/purchase-orders/{id}/items', PurchaseOrderItemsBulkUpdateController::class)->whereUuid('id');
         Route::patch('/purchase-orders/{id}/workflow-checklist', PurchaseOrderWorkflowChecklistUpdateController::class)->whereUuid('id');
+        Route::post('/purchase-orders/{id}/workflow-verify', PurchaseOrderWorkflowVerifyController::class)->whereUuid('id');
+        Route::get('/purchase-orders/{id}/workflow-actions/export-shopify-content/preview', [PurchaseOrderWorkflowActionController::class, 'previewExportShopifyContent'])->whereUuid('id');
+        Route::post('/purchase-orders/{id}/workflow-actions/export-shopify-content/push', [PurchaseOrderWorkflowActionController::class, 'pushExportShopifyContent'])->whereUuid('id');
+        Route::get('/purchase-orders/{id}/workflow-actions/set-prices/preview', [PurchaseOrderWorkflowActionController::class, 'previewSetPrices'])->whereUuid('id');
+        Route::post('/purchase-orders/{id}/workflow-actions/set-prices', [PurchaseOrderWorkflowActionController::class, 'setPrices'])->whereUuid('id');
+        Route::get('/purchase-orders/{id}/workflow-actions/pull-handles/preview', [PurchaseOrderWorkflowActionController::class, 'previewPullHandles'])->whereUuid('id');
+        Route::post('/purchase-orders/{id}/workflow-actions/pull-handles', [PurchaseOrderWorkflowActionController::class, 'pullHandles'])->whereUuid('id');
+        Route::post('/purchase-orders/{id}/workflow-actions/prepare-inventory', [PurchaseOrderWorkflowActionController::class, 'prepareInventory'])->whereUuid('id');
+        Route::post('/purchase-orders/{id}/workflow-actions/mark-latest-arrival-published', [PurchaseOrderWorkflowActionController::class, 'markLatestArrivalPublished'])->whereUuid('id');
+        Route::post('/purchase-orders/{id}/workflow-actions/crawl-new-products', [PurchaseOrderWorkflowActionController::class, 'crawlNewProducts'])->whereUuid('id');
         Route::post('/purchase-orders/{id}/apply-received-to-available', PurchaseOrderApplyReceivedToAvailableController::class)->whereUuid('id');
         Route::post('/purchase-orders/{id}/apply-inventory-check', PurchaseOrderApplyInventoryCheckController::class)->whereUuid('id');
         Route::delete('/purchase-orders/{id}', PurchaseOrderDeleteController::class)->whereUuid('id');
@@ -181,6 +207,16 @@ Route::prefix('v1')
         Route::delete('/inventory-check/employee/sessions/{id}/lines/{lineId}', [EmployeeInventoryCountController::class, 'removeLine'])
             ->whereUuid('id')
             ->whereNumber('lineId');
+
+        Route::get('/products/{id}/demand', ProductDemandShowController::class)->whereUuid('id');
+
+        Route::get('/shopify/webhook-logs', ShopifyWebhookLogIndexController::class);
+        Route::get('/shopify/webhook-logs/{id}', ShopifyWebhookLogShowController::class)->whereNumber('id');
+        Route::get('/shopify/settings', ShopifySettingsShowController::class);
+        Route::put('/shopify/settings', ShopifySettingsUpdateController::class);
+        Route::post('/shopify/orders/historical-backfill', ShopifyOrderHistoricalBackfillController::class);
+        Route::post('/shopify/demand/rebuild-rollups', RebuildProductDemandRollupsController::class);
+        Route::post('/shopify/inventory/pull-to-products', PullShopifyInventoryToProductsController::class);
 
         Route::get('/shopify/image-tunnel', ShopifyImageTunnelStatusController::class);
         Route::post('/shopify/image-tunnel/start', ShopifyImageTunnelStartController::class);

@@ -85,6 +85,7 @@ Configure these Admin API scopes on the custom app (read-only ERP sync):
 - `read_inventory`
 - `read_locations`
 - `read_orders`
+- **`read_all_orders`** — required with `read_orders` or `write_orders` to backfill orders older than ~60 days (Shopify platform limit)
 - `read_customers`
 - `read_content`
 - `read_themes`

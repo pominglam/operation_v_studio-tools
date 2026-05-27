@@ -23,6 +23,7 @@ import ProductsTable, {
 import type { ProductsBulkExportType } from '../components/products/BulkExportDialog.vue';
 import type { ProductsRecrawlSource } from '../components/products/BulkRecrawlDialog.vue';
 import PlamodDrawer from '../components/products/PlamodDrawer.vue';
+import ProductDemandDetailDialog from '../components/products/ProductDemandDetailDialog.vue';
 import ProductPoLinesDrawer from '../components/products/ProductPoLinesDrawer.vue';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
 import ConfirmDialog from '../components/ui/ConfirmDialog.vue';
@@ -367,6 +368,13 @@ const purchaseOrderOptions = computed<MultiSelectOption[]>(() => {
     }));
 });
 
+const productFlagOptions: MultiSelectOption[] = [
+    { value: 'critical', label: 'Critical' },
+    { value: 'discontinued', label: 'Discontinued' },
+];
+
+const selectedProductFlags = ref<string[]>([]);
+
 const missingOptions = ref<MultiSelectOption[]>([
     { value: 'ok', label: 'OK (complete)' },
     { value: 'not_ready', label: 'Not ready' },
@@ -399,6 +407,8 @@ const plamodDrawerProductName = ref<string | null>(null);
 const plamodDrawerProductPrice = ref<string | null>(null);
 
 const poLinesOpen = ref(false);
+const demandDialogOpen = ref(false);
+const demandProductId = ref<string | null>(null);
 const poLinesProductId = ref<string | null>(null);
 const poLinesProductSku = ref<string | null>(null);
 const poLinesProductName = ref<string | null>(null);
@@ -414,6 +424,10 @@ function openPlamodDrawer(productId: string): void {
 
 function closePlamodDrawer(): void {
     plamodDrawerOpen.value = false;
+    plamodDrawerProductId.value = null;
+    plamodDrawerProductSku.value = null;
+    plamodDrawerProductName.value = null;
+    plamodDrawerProductPrice.value = null;
 }
 
 function openPoLinesDrawer(productId: string): void {
@@ -426,6 +440,16 @@ function openPoLinesDrawer(productId: string): void {
 
 function closePoLinesDrawer(): void {
     poLinesOpen.value = false;
+}
+
+function openDemandDialog(productId: string): void {
+    demandProductId.value = productId;
+    demandDialogOpen.value = true;
+}
+
+function closeDemandDialog(): void {
+    demandDialogOpen.value = false;
+    demandProductId.value = null;
 }
 
 const total = computed<number>(() => meta.value?.total ?? 0);
@@ -459,6 +483,10 @@ const selectionScopeKey = computed<string>(() => {
         .map((m) => m.trim())
         .filter(Boolean)
         .sort();
+    const productFlags = [...selectedProductFlags.value]
+        .map((f) => f.trim())
+        .filter(Boolean)
+        .sort();
     const pos = purchaseOrderUuids.value
         .map((v) => v.trim())
         .filter(Boolean)
@@ -473,6 +501,7 @@ const selectionScopeKey = computed<string>(() => {
         types,
         vendors,
         missing,
+        product_flags: productFlags,
         purchase_order_uuids: pos,
         po_product_novelty: poProductNovelty.value,
         ready: readyFilter.value,
@@ -497,6 +526,8 @@ function productsListParams(per_page: number, pageNum: number): Record<string, u
         types: selectedTypes.value.length > 0 ? selectedTypes.value : undefined,
         vendors: selectedVendors.value.length > 0 ? selectedVendors.value : undefined,
         missing: selectedMissing.value.length > 0 ? selectedMissing.value : undefined,
+        product_flags:
+            selectedProductFlags.value.length > 0 ? selectedProductFlags.value : undefined,
         ready: readyFilter.value !== 'all' ? readyFilter.value : undefined,
         available: parseNonNegativeIntegerFilter(availableFilter.value),
         not_arrived: parseNonNegativeIntegerFilter(notArrivedFilter.value),
@@ -558,6 +589,10 @@ function buildLoadKey(): string {
         .map((m) => m.trim())
         .filter(Boolean)
         .sort();
+    const productFlags = [...selectedProductFlags.value]
+        .map((f) => f.trim())
+        .filter(Boolean)
+        .sort();
     const pos = purchaseOrderUuids.value
         .map((v) => v.trim())
         .filter(Boolean)
@@ -574,6 +609,7 @@ function buildLoadKey(): string {
         types,
         vendors,
         missing,
+        product_flags: productFlags,
         purchase_order_uuids: pos,
         po_product_novelty: poProductNovelty.value,
         ready: readyFilter.value,
@@ -656,6 +692,11 @@ function sortProducts(list: ProductRow[], key: ProductSortKey, dir: 'asc' | 'des
                 Number(a.total_ordered ?? 0) - Number(a.available ?? 0),
                 Number(b.total_ordered ?? 0) - Number(b.available ?? 0),
             );
+        } else if (key === 'demand') {
+            cmp = compareNullableNumbers(
+                Number.isFinite(Number(a.sold_4w ?? 0)) ? Number(a.sold_4w ?? 0) : 0,
+                Number.isFinite(Number(b.sold_4w ?? 0)) ? Number(b.sold_4w ?? 0) : 0,
+            );
         } else if (key === 'latest_landed_unit_cost') {
             cmp = compareNullableNumbers(
                 parseNullableNumber(a.latest_landed_unit_cost),
@@ -714,6 +755,7 @@ const PRODUCT_SORT_KEYS: readonly ProductSortKey[] = [
     'total_ordered',
     'total_sold',
     'available',
+    'demand',
     'maintain',
     'not_arrived',
     'reorder',
@@ -1077,7 +1119,6 @@ async function toggleProductReady(id: string, isReady: boolean): Promise<void> {
 async function toggleProductLatestArrival(id: string, latestArrival: boolean): Promise<void> {
     const prev = products.value.find((p) => p.id === id)?.latest_arrival ?? false;
 
-    // Optimistic update (keeps UI snappy).
     products.value = products.value.map((p) =>
         p.id === id ? { ...p, latest_arrival: latestArrival } : p,
     );
@@ -1111,9 +1152,94 @@ async function toggleProductLatestArrival(id: string, latestArrival: boolean): P
             );
         }
     } catch (e: unknown) {
-        // Revert on failure.
         products.value = products.value.map((p) =>
             p.id === id ? { ...p, latest_arrival: prev } : p,
+        );
+        throw e;
+    }
+}
+
+async function toggleProductCritical(id: string, isCritical: boolean): Promise<void> {
+    const prev = products.value.find((p) => p.id === id)?.is_critical ?? false;
+
+    products.value = products.value.map((p) =>
+        p.id === id ? { ...p, is_critical: isCritical } : p,
+    );
+    try {
+        const res = await api.patch(
+            `/api/v1/products/${id}/critical`,
+            { is_critical: isCritical },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const anyData = res.data as any;
+            const msgRaw: unknown = anyData?.message ?? anyData?.error ?? anyData?.errors;
+            let details = '';
+            if (typeof msgRaw === 'string') details = msgRaw.trim();
+            else if (msgRaw !== null && msgRaw !== undefined) {
+                try {
+                    details = JSON.stringify(msgRaw);
+                } catch {
+                    details = String(msgRaw);
+                }
+            }
+            throw new Error(
+                `Failed to update critical product flag (HTTP ${res.status}).${details ? ` ${details}` : ''}`,
+            );
+        }
+
+        const next = (res.data as any)?.data?.is_critical;
+        if (typeof next === 'boolean') {
+            products.value = products.value.map((p) =>
+                p.id === id ? { ...p, is_critical: next } : p,
+            );
+        }
+    } catch (e: unknown) {
+        products.value = products.value.map((p) =>
+            p.id === id ? { ...p, is_critical: prev } : p,
+        );
+        throw e;
+    }
+}
+
+async function toggleProductDiscontinued(id: string, isDiscontinued: boolean): Promise<void> {
+    const prev = products.value.find((p) => p.id === id)?.is_discontinued ?? false;
+
+    products.value = products.value.map((p) =>
+        p.id === id ? { ...p, is_discontinued: isDiscontinued } : p,
+    );
+    try {
+        const res = await api.patch(
+            `/api/v1/products/${id}/discontinue`,
+            { is_discontinued: isDiscontinued },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const anyData = res.data as any;
+            const msgRaw: unknown = anyData?.message ?? anyData?.error ?? anyData?.errors;
+            let details = '';
+            if (typeof msgRaw === 'string') details = msgRaw.trim();
+            else if (msgRaw !== null && msgRaw !== undefined) {
+                try {
+                    details = JSON.stringify(msgRaw);
+                } catch {
+                    details = String(msgRaw);
+                }
+            }
+            throw new Error(
+                `Failed to update discontinue product flag (HTTP ${res.status}).${details ? ` ${details}` : ''}`,
+            );
+        }
+
+        const next = (res.data as any)?.data?.is_discontinued;
+        if (typeof next === 'boolean') {
+            products.value = products.value.map((p) =>
+                p.id === id ? { ...p, is_discontinued: next } : p,
+            );
+        }
+    } catch (e: unknown) {
+        products.value = products.value.map((p) =>
+            p.id === id ? { ...p, is_discontinued: prev } : p,
         );
         throw e;
     }
@@ -1270,6 +1396,7 @@ watch(
         selectedTypes,
         selectedVendors,
         selectedMissing,
+        selectedProductFlags,
         readyFilter,
         availableFilter,
         notArrivedFilter,
@@ -1321,6 +1448,7 @@ onMounted(() => {
         selectedTypes?: string[];
         selectedVendors?: string[];
         selectedMissing?: string[];
+        selectedProductFlags?: string[];
         readyFilter?: ReadyFilter;
         availableFilter?: string;
         notArrivedFilter?: string;
@@ -1346,6 +1474,11 @@ onMounted(() => {
         if (Array.isArray(saved.selectedTypes)) selectedTypes.value = saved.selectedTypes;
         if (Array.isArray(saved.selectedVendors)) selectedVendors.value = saved.selectedVendors;
         if (Array.isArray(saved.selectedMissing)) selectedMissing.value = saved.selectedMissing;
+        if (Array.isArray(saved.selectedProductFlags)) {
+            selectedProductFlags.value = saved.selectedProductFlags.filter((f) =>
+                productFlagOptions.some((o) => o.value === f),
+            );
+        }
         if (
             saved.readyFilter === 'all' ||
             saved.readyFilter === 'ready' ||
@@ -1373,6 +1506,15 @@ onMounted(() => {
         ) {
             poProductNovelty.value = saved.poProductNovelty;
         }
+    }
+
+    const qPo = route.query.purchase_order_uuid;
+    if (typeof qPo === 'string' && qPo.trim() !== '') {
+        purchaseOrderUuids.value = [qPo.trim()];
+    }
+    const qNovelty = route.query.po_product_novelty;
+    if (qNovelty === 'all' || qNovelty === 'new' || qNovelty === 'existing') {
+        poProductNovelty.value = qNovelty;
     }
 
     hydrating.value = false;
@@ -1426,6 +1568,7 @@ watch(
         selectedTypes,
         selectedVendors,
         selectedMissing,
+        selectedProductFlags,
         readyFilter,
         availableFilter,
         notArrivedFilter,
@@ -1451,6 +1594,7 @@ watch(
             selectedTypes: selectedTypes.value,
             selectedVendors: selectedVendors.value,
             selectedMissing: selectedMissing.value,
+            selectedProductFlags: selectedProductFlags.value,
             readyFilter: readyFilter.value,
             availableFilter: availableFilter.value,
             notArrivedFilter: notArrivedFilter.value,
@@ -1476,6 +1620,7 @@ function resetListState(): void {
     selectedTypes.value = [];
     selectedVendors.value = [];
     selectedMissing.value = [];
+    selectedProductFlags.value = [];
     readyFilter.value = 'all';
     availableFilter.value = '';
     notArrivedFilter.value = '';
@@ -1733,6 +1878,14 @@ function resetListState(): void {
                                 placeholder="Any"
                             />
 
+                            <MultiSelectFilter
+                                v-model="selectedProductFlags"
+                                label="Critical / discontinued"
+                                :options="productFlagOptions"
+                                placeholder="Any"
+                                test-id="products-filter-product-flags"
+                            />
+
                             <div>
                                 <label
                                     for="products-ready-filter"
@@ -1940,9 +2093,12 @@ function resetListState(): void {
                         :on-update-maintain="updateProductMaintain"
                         :on-toggle-ready="toggleProductReady"
                         :on-toggle-latest-arrival="toggleProductLatestArrival"
+                        :on-toggle-critical="toggleProductCritical"
+                        :on-toggle-discontinue="toggleProductDiscontinued"
                         :on-select-all-matching="selectAllMatchingIds"
                         :on-open-plamod="openPlamodDrawer"
                         :on-open-po-lines="openPoLinesDrawer"
+                        :on-open-demand="openDemandDialog"
                         :vendor-options="vendorOptions.map((v) => v.value)"
                         :main-type-options="mainTypeOptions.map((v) => v.value)"
                         :type-options="typeOptions.map((v) => v.value)"
@@ -2148,6 +2304,12 @@ function resetListState(): void {
             :product-sku="poLinesProductSku"
             :product-name="poLinesProductName"
             @close="closePoLinesDrawer"
+        />
+
+        <ProductDemandDetailDialog
+            :open="demandDialogOpen"
+            :product-id="demandProductId"
+            @close="closeDemandDialog"
         />
 
         <ConfirmDialog

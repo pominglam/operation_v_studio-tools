@@ -63,6 +63,9 @@ final class PurchaseOrderImportController extends Controller
             if (array_key_exists('product_total', $v)) {
                 $meta['product_total'] = $v['product_total'] !== null ? (string) $v['product_total'] : null;
             }
+            if (array_key_exists('product_total_includes_fees', $v)) {
+                $meta['product_total_includes_fees'] = (bool) $v['product_total_includes_fees'];
+            }
             if (array_key_exists('surcharge_total', $v)) {
                 $meta['surcharge_total'] = $v['surcharge_total'] !== null ? (string) $v['surcharge_total'] : null;
             }

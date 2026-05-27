@@ -52,6 +52,8 @@ describe('ProductsTable', () => {
                 onUpdateMaintain,
                 onToggleReady,
                 onToggleLatestArrival,
+                onToggleCritical: async () => undefined,
+                onToggleDiscontinue: async () => undefined,
                 onSelectAllMatching,
                 onOpenPlamod,
                 onOpenPoLines: () => undefined,
@@ -133,6 +135,8 @@ describe('ProductsTable', () => {
                 onOpenPlamod: () => undefined,
                 onToggleReady: async () => undefined,
                 onToggleLatestArrival,
+                onToggleCritical: async () => undefined,
+                onToggleDiscontinue: async () => undefined,
                 onSelectAllMatching,
                 onOpenPoLines: () => undefined,
             },
@@ -196,6 +200,8 @@ describe('ProductsTable', () => {
                 onUpdateMaintain,
                 onToggleReady,
                 onToggleLatestArrival,
+                onToggleCritical: async () => undefined,
+                onToggleDiscontinue: async () => undefined,
                 onSelectAllMatching,
                 onOpenPlamod: () => undefined,
                 onOpenPoLines: () => undefined,
@@ -256,6 +262,8 @@ describe('ProductsTable', () => {
                 onUpdateMaintain,
                 onToggleReady: async () => undefined,
                 onToggleLatestArrival,
+                onToggleCritical: async () => undefined,
+                onToggleDiscontinue: async () => undefined,
                 onSelectAllMatching: async () => ['p-1'],
                 onOpenPlamod: () => undefined,
                 onOpenPoLines: () => undefined,
@@ -274,6 +282,76 @@ describe('ProductsTable', () => {
         expect(cb.exists()).toBe(true);
         await cb.setValue(true);
         expect(onToggleLatestArrival).toHaveBeenCalledWith('p-1', true);
+    });
+
+    it('calls onToggleCritical and onToggleDiscontinue from product name area', async () => {
+        const onToggleCritical = vi.fn(async () => undefined);
+        const onToggleDiscontinue = vi.fn(async () => undefined);
+
+        const wrapper = mount(ProductsTable, {
+            props: {
+                loading: false,
+                products: [
+                    {
+                        id: 'p-1',
+                        sku: 'SKU-1',
+                        barcode: null,
+                        description: 'Test product',
+                        type: null,
+                        vendor: null,
+                        published_on_shopify: false,
+                        is_ready: false,
+                        is_critical: false,
+                        is_discontinued: false,
+                        available: null,
+                        maintain: null,
+                        pdp: { has_description: false, plamod_image_count: 0 },
+                    },
+                ],
+                totalMatching: 1,
+                selectionScopeKey: 'scope-1',
+                sortBy: 'sku',
+                sortDir: 'asc',
+                onSortChange: () => undefined,
+                onRefresh: async () => undefined,
+                onBulkDelete: async () => 0,
+                onBulkUpdate: async () => 0,
+                onBulkRenamePlamodAssets: async () => ({ queued: 0, batchId: '' }),
+                onBulkExportSelected: async () => undefined,
+                onBulkRecrawlSelected: async () => undefined,
+                onUpdate: async () => undefined,
+                onUpdateAvailable: async () => undefined,
+                onUpdateMaintain: async () => undefined,
+                onToggleReady: async () => undefined,
+                onToggleLatestArrival: async () => undefined,
+                onToggleCritical,
+                onToggleDiscontinue,
+                onSelectAllMatching: async () => ['p-1'],
+                onOpenPlamod: () => undefined,
+                onOpenPoLines: () => undefined,
+            },
+            global: {
+                stubs: {
+                    ConfirmDialog: true,
+                    BulkUpdateDialog: true,
+                    BulkExportDialog: true,
+                    BulkRecrawlDialog: true,
+                },
+            },
+        });
+
+        expect(wrapper.find('[data-testid="product-critical-toggle"]').exists()).toBe(true);
+        expect(wrapper.text()).toContain('Discontinue');
+
+        const critical = wrapper.find('[data-testid="product-critical-toggle"]');
+        expect(critical.exists()).toBe(true);
+        await critical.setValue(true);
+        expect(onToggleCritical).toHaveBeenCalledWith('p-1', true);
+
+        const discontinue = wrapper.find('[data-testid="product-discontinue-toggle"]');
+        expect(discontinue.exists()).toBe(true);
+        await discontinue.setValue(true);
+        expect(onToggleDiscontinue).toHaveBeenCalledWith('p-1', true);
     });
 
     it('renders inline available/maintain inputs and calls update callbacks', async () => {
@@ -315,6 +393,8 @@ describe('ProductsTable', () => {
                 onUpdateMaintain,
                 onToggleReady: async () => undefined,
                 onToggleLatestArrival: async () => undefined,
+                onToggleCritical: async () => undefined,
+                onToggleDiscontinue: async () => undefined,
                 onSelectAllMatching: async () => ['p-1'],
                 onOpenPlamod: () => undefined,
                 onOpenPoLines: () => undefined,
@@ -400,6 +480,8 @@ describe('ProductsTable', () => {
                 onUpdateMaintain,
                 onToggleReady: async () => undefined,
                 onToggleLatestArrival,
+                onToggleCritical: async () => undefined,
+                onToggleDiscontinue: async () => undefined,
                 onSelectAllMatching,
                 onOpenPlamod: () => undefined,
                 onOpenPoLines: () => undefined,

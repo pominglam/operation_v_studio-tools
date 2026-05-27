@@ -15,7 +15,7 @@ final class PurchaseOrderImportRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'file' => ['required', 'file', 'mimes:csv,txt', 'max:51200'],
+            'file' => ['required', 'file', 'mimes:csv,txt,xlsx', 'max:51200'],
             'vendor' => ['required', 'string', 'max:128'],
             'supplier_order_id' => ['sometimes', 'nullable', 'string', 'max:128'],
             'purchase_order_uuid' => ['sometimes', 'uuid'],
@@ -28,6 +28,7 @@ final class PurchaseOrderImportRequest extends FormRequest
             'shipping_total' => ['sometimes', 'nullable', 'numeric'],
             'shipping_currency_mode' => ['sometimes', 'string', Rule::in(['auto', 'cad', 'vendor'])],
             'product_total' => ['sometimes', 'nullable', 'numeric'],
+            'product_total_includes_fees' => ['sometimes', 'boolean'],
             'surcharge_total' => ['sometimes', 'nullable', 'numeric'],
             'notes' => ['sometimes', 'nullable', 'string'],
             'reset_receipt_before_reimport' => ['sometimes', 'boolean'],

@@ -142,6 +142,7 @@ final class EloquentProductRepository implements ProductRepository
             'filled' => 'filled_qty',
             'available' => 'available_qty',
             'maintain' => 'maintain_qty',
+            'demand' => 'sold_4w',
             'not_arrived' => 'inbound_open_po_qty',
             'reorder' => 'reorder_qty',
             'extended' => 'extended',
@@ -166,6 +167,7 @@ final class EloquentProductRepository implements ProductRepository
             'total_sold_qty',
             'inbound_open_po_qty',
             'reorder_qty',
+            'sold_4w',
         ], true)
             ? 'sku'
             : $sortColumn;
@@ -189,6 +191,18 @@ final class EloquentProductRepository implements ProductRepository
         $delta = "coalesce(products.maintain_qty, 0) - coalesce(products.available_qty, 0) - ({$inboundExpr})";
 
         return "case when ({$delta}) > 0 then ({$delta}) else 0 end";
+    }
+
+    private function soldLast4WeeksExpression(): string
+    {
+        $since = now()->subDays(28)->toDateString();
+
+        return "(
+            select coalesce(sum(pddr.shopify_sold + pddr.assumed_sold), 0)
+            from product_demand_daily_rollups pddr
+            where pddr.product_id = products.id
+              and pddr.sold_on >= '{$since}'
+        )";
     }
 
     private function totalOrderedReceivedQtyExpression(): string
@@ -412,8 +426,9 @@ final class EloquentProductRepository implements ProductRepository
      * @param  array<int, string>  $vendors
      * @param  array<int, string>  $missing
      * @param  array<int, string>  $searchTerms
+     * @param  array<int, string>  $productFlags
      */
-    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], bool $includeArchived = false, ?string $poProductNovelty = null, ?string $ready = null, ?int $available = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false): LengthAwarePaginator
+    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], bool $includeArchived = false, ?string $poProductNovelty = null, ?string $ready = null, ?int $available = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = []): LengthAwarePaginator
     {
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
 
@@ -422,6 +437,7 @@ final class EloquentProductRepository implements ProductRepository
             ->withCount(['imageAssets as plamod_image_assets_count']);
         $inboundOpenPoQtyExpr = $this->inboundOpenPoQtyExpression();
         $reorderQtyExpr = $this->reorderQtyExpression($inboundOpenPoQtyExpr);
+        $soldLast4WeeksExpr = $this->soldLast4WeeksExpression();
         $totalOrderedReceivedQtyExpr = $this->totalOrderedReceivedQtyExpression();
 
         if (! $includeArchived) {
@@ -452,6 +468,7 @@ final class EloquentProductRepository implements ProductRepository
             ) as po_total_cost'),
             DB::raw("{$inboundOpenPoQtyExpr} as inbound_open_po_qty"),
             DB::raw("{$reorderQtyExpr} as reorder_qty"),
+            DB::raw("{$soldLast4WeeksExpr} as sold_4w"),
             DB::raw("{$totalOrderedReceivedQtyExpr} as total_ordered_qty"),
             DB::raw("({$totalOrderedReceivedQtyExpr} - coalesce(products.available_qty, 0)) as total_sold_qty"),
             DB::raw($this->latestPoReceivedDateSubquery().' as latest_po_received_date'),
@@ -474,6 +491,7 @@ final class EloquentProductRepository implements ProductRepository
         $this->applyListQueryFilters($q, $search, $mainTypes, $types, $vendors, $searchTerms);
         $this->applyMissingFilters($q, $missing);
         $this->applyReadyFilter($q, $ready);
+        $this->applyProductFlagsFilter($q, $productFlags);
         if ($available !== null) {
             $q->whereRaw('coalesce(products.available_qty, 0) = ?', [$available]);
         }
@@ -505,6 +523,14 @@ final class EloquentProductRepository implements ProductRepository
             return $q->paginate(perPage: $perPage);
         }
 
+        if ($sortColumn === 'sold_4w') {
+            $expr = $this->soldLast4WeeksExpression();
+            $q->orderByRaw("{$expr} {$sortDir}");
+            $q->orderBy('sku', 'asc');
+
+            return $q->paginate(perPage: $perPage);
+        }
+
         return $q->orderBy($sortColumn, $sortDir)->paginate(perPage: $perPage);
     }
 
@@ -520,6 +546,36 @@ final class EloquentProductRepository implements ProductRepository
         if ($ready === 'not_ready') {
             $q->where('is_ready', '=', false);
         }
+    }
+
+    /**
+     * @param  array<int, string>  $productFlags
+     */
+    private function applyProductFlagsFilter($q, array $productFlags): void
+    {
+        $productFlags = array_values(array_unique(array_filter(array_map(
+            static fn (string $v): string => strtolower(trim($v)),
+            $productFlags,
+        ), static fn (string $v): bool => $v !== '')));
+
+        if ($productFlags === []) {
+            return;
+        }
+
+        $allowed = ['critical', 'discontinued'];
+        $productFlags = array_values(array_intersect($productFlags, $allowed));
+        if ($productFlags === []) {
+            return;
+        }
+
+        $q->where(function ($sub) use ($productFlags): void {
+            if (in_array('critical', $productFlags, true)) {
+                $sub->orWhere('is_critical', '=', true);
+            }
+            if (in_array('discontinued', $productFlags, true)) {
+                $sub->orWhere('is_discontinued', '=', true);
+            }
+        });
     }
 
     /**

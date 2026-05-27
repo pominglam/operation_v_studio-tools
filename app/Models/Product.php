@@ -31,6 +31,8 @@ use Illuminate\Support\Str;
  * @property \Illuminate\Support\Carbon|null $archived_at
  * @property bool $is_ready
  * @property bool $latest_arrival
+ * @property bool $is_critical
+ * @property bool $is_discontinued
  * @property int|null $order_qty
  * @property int|null $filled_qty
  * @property int|null $available_qty
@@ -63,6 +65,8 @@ final class Product extends Model
         'archived_at',
         'is_ready',
         'latest_arrival',
+        'is_critical',
+        'is_discontinued',
         'order_qty',
         'filled_qty',
         'available_qty',
@@ -84,6 +88,8 @@ final class Product extends Model
         'archived_at' => 'datetime',
         'is_ready' => 'boolean',
         'latest_arrival' => 'boolean',
+        'is_critical' => 'boolean',
+        'is_discontinued' => 'boolean',
         'extended' => 'decimal:2',
         'latest_unit_cost' => 'decimal:2',
         'latest_landed_unit_cost' => 'decimal:2',
@@ -96,6 +102,14 @@ final class Product extends Model
             if (($product->uuid ?? '') === '') {
                 $product->uuid = (string) Str::uuid();
             }
+        });
+
+        self::saving(function (self $product): void {
+            if (! $product->isDirty('available_qty') || $product->available_qty === null) {
+                return;
+            }
+
+            $product->available_qty = max(0, (int) $product->available_qty);
         });
     }
 

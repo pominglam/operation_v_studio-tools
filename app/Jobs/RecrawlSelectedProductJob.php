@@ -13,6 +13,7 @@ use App\Services\Products\GundamHangar\GundamHangarContentSyncService;
 use App\Services\Products\GundamPlanet\GundamPlanetContentSyncService;
 use App\Services\Products\Hlj\HljContentSync;
 use App\Services\Products\Newtype\NewtypeContentSyncService;
+use App\Services\Products\PlamodAssetFilenameService;
 use App\Services\Products\PlamodAssetSyncService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
@@ -60,6 +61,7 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         BandaiContentSyncService $bandai,
         PriceResearchService $prices,
         JobBatchItemService $batchItems,
+        PlamodAssetFilenameService $assetRenamer,
     ): void {
         $batchId = $this->batch()?->id;
         if ($this->batch()?->cancelled()) {
@@ -232,6 +234,15 @@ final class RecrawlSelectedProductJob implements ShouldQueue
                     'quotes_written' => (string) ($res['quotes_written'] ?? 0),
                 ];
             });
+        }
+
+        if ($didWork) {
+            try {
+                $assetRenamer->renameImageAssetsForProductUuid($this->productUuid);
+                $append('rename', 'done');
+            } catch (\Throwable $e) {
+                $append('rename', 'error', ['message' => $e->getMessage()]);
+            }
         }
 
         if (is_string($batchId) && $batchId !== '') {

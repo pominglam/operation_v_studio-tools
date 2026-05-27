@@ -79,6 +79,37 @@ final class FakeShopifyAdminGraphQlClient implements ShopifyAdminGraphQlClientIn
         ];
     }
 
+    /**
+     * @param  array<int, mixed>  $orders
+     * @return array<string, mixed>
+     */
+    public static function wrapOrders(array $orders, bool $hasNextPage, ?string $endCursor): array
+    {
+        return [
+            'data' => [
+                'orders' => [
+                    'pageInfo' => [
+                        'hasNextPage' => $hasNextPage,
+                        'endCursor' => $endCursor,
+                    ],
+                    'nodes' => $orders,
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function wrapOrderById(?array $order): array
+    {
+        return [
+            'data' => [
+                'order' => $order,
+            ],
+        ];
+    }
+
     public function query(string $graphql, array $variables = []): array
     {
         $next = array_shift($this->responses);
@@ -87,5 +118,23 @@ final class FakeShopifyAdminGraphQlClient implements ShopifyAdminGraphQlClientIn
         }
 
         return $next;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function wrapProductSet(string $gid, string $handle): array
+    {
+        return [
+            'data' => [
+                'productSet' => [
+                    'product' => [
+                        'id' => $gid,
+                        'handle' => $handle,
+                    ],
+                    'userErrors' => [],
+                ],
+            ],
+        ];
     }
 }

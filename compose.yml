@@ -133,8 +133,29 @@ services:
         "--queue=price_research,pdp_sync,default",
         "--sleep=1",
         "--tries=1",
-        "--timeout=600",
+        "--timeout=3600",
+        "--max-time=3600",
       ]
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: pricing-tool-scheduler
+    environment:
+      TZ: America/Toronto
+      QUEUE_CONNECTION: database
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - .:/var/www/html
+    working_dir: /var/www/html
+    user: "0:0"
+    networks:
+      - pricing_tool_net
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
 
   aliexpress_scraper:
     image: mcr.microsoft.com/playwright:v1.49.1-jammy

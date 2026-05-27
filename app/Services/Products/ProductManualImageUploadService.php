@@ -18,6 +18,7 @@ final class ProductManualImageUploadService
     public function __construct(
         private readonly ProductRepository $products,
         private readonly ProductExternalAssetRepository $assets,
+        private readonly PlamodAssetFilenameService $assetRenamer,
     ) {}
 
     /**
@@ -87,6 +88,10 @@ final class ProductManualImageUploadService
         }
 
         $created = $this->assets->createForProduct((int) $product->id, self::SOURCE, $rows);
+
+        if ($created !== []) {
+            $this->assetRenamer->renameImageAssetsForProductUuid((string) $product->uuid);
+        }
 
         return [
             'created' => count($created),

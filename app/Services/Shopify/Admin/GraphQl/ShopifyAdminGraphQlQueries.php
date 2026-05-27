@@ -115,8 +115,69 @@ query Orders($first: Int!, $after: String) {
       name
       displayFinancialStatus
       displayFulfillmentStatus
+      cancelledAt
       createdAt
       updatedAt
+      lineItems(first: 100) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          sku
+          quantity
+          variant { id sku }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+    public const ORDERS_INCREMENTAL_PAGE = <<<'GQL'
+query OrdersIncremental($first: Int!, $after: String, $query: String) {
+  orders(first: $first, after: $after, sortKey: UPDATED_AT, reverse: false, query: $query) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id
+      legacyResourceId
+      name
+      displayFinancialStatus
+      displayFulfillmentStatus
+      cancelledAt
+      createdAt
+      updatedAt
+      lineItems(first: 100) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          sku
+          quantity
+          variant { id sku }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+    public const ORDER_BY_ID = <<<'GQL'
+query OrderById($id: ID!) {
+  order(id: $id) {
+    id
+    legacyResourceId
+    name
+    displayFinancialStatus
+    displayFulfillmentStatus
+    cancelledAt
+    createdAt
+    updatedAt
+    lineItems(first: 100) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id
+        sku
+        quantity
+        variant { id sku }
+      }
     }
   }
 }

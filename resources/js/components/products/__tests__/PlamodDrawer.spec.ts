@@ -922,4 +922,65 @@ describe('PlamodDrawer', () => {
             },
         );
     });
+
+    it('clears loaded product photos when the drawer is closed', async () => {
+        const makeImage = (id: number) => ({
+            id,
+            source: 'hlj',
+            kind: 'image',
+            filename: `img-${id}.jpg`,
+            mime_type: 'image/jpeg',
+            size_bytes: 10,
+            shopify_enabled: true,
+            sort_order: id,
+            download_url: `https://example.com/dl/${id}.jpg`,
+            view_url: `https://example.com/view/${id}.jpg`,
+        });
+
+        (api.get as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+            data: {
+                data: {
+                    preferred_description_source: null,
+                    contents: [],
+                    assets: [makeImage(1), makeImage(2), makeImage(3)],
+                },
+            },
+        });
+
+        const wrapper = mount(PlamodDrawer, {
+            props: {
+                open: true,
+                productId: 'p-clear-a',
+                productSku: 'SKU-A',
+                productName: 'Product A',
+                productPrice: null,
+                onClose: () => undefined,
+            },
+            global: { stubs: { Teleport: true } },
+        });
+
+        await Promise.resolve();
+        await wrapper.vm.$nextTick();
+        expect(wrapper.text()).toContain('3 shown · 3 total');
+
+        await wrapper.setProps({ open: false });
+        await wrapper.vm.$nextTick();
+
+        (api.get as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+            data: {
+                data: {
+                    preferred_description_source: null,
+                    contents: [],
+                    assets: [makeImage(10)],
+                },
+            },
+        });
+
+        await wrapper.setProps({ open: true, productId: 'p-clear-b', productSku: 'SKU-B' });
+        await Promise.resolve();
+        await wrapper.vm.$nextTick();
+
+        expect(wrapper.text()).toContain('1 shown · 1 total');
+        expect(wrapper.text()).not.toContain('3 shown · 3 total');
+    });
 });

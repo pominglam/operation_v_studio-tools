@@ -65,6 +65,38 @@ final class ShopifyContentExportService
         );
     }
 
+    public function bodyHtmlForProduct(Product $product): string
+    {
+        return $this->normalizeBodyHtmlForShopify($this->resolveBodyHtml($product));
+    }
+
+    /**
+     * @return array<int, array{originalSource:string, alt:string, filename:string, contentType:string}>
+     */
+    public function productSetFilesForProduct(Product $product, ?string $tunnelBaseUrl): array
+    {
+        $tunnelBaseUrl = is_string($tunnelBaseUrl) ? trim($tunnelBaseUrl) : '';
+        if ($tunnelBaseUrl === '') {
+            return [];
+        }
+
+        $files = [];
+        foreach ($this->imagesForProduct($product) as $asset) {
+            $filename = is_string($asset->filename) && trim($asset->filename) !== ''
+                ? basename($asset->filename)
+                : 'image.png';
+
+            $files[] = [
+                'originalSource' => $this->signedImageUrl($asset, $tunnelBaseUrl),
+                'alt' => (string) $product->description,
+                'filename' => $filename,
+                'contentType' => 'IMAGE',
+            ];
+        }
+
+        return $files;
+    }
+
     /**
      * @return array{
      *   export_id: string,

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { RouterLink } from 'vue-router';
 import { api } from '../lib/api';
 import ConfirmDialog from '../components/ui/ConfirmDialog.vue';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
+import { formatLocalDateTime } from '../lib/datetime';
 
 type DbBackupRow = {
     uuid: string;
@@ -96,6 +98,94 @@ const restoringDb = ref(false);
 const dbRestoreMessage = ref<string | null>(null);
 const dbRestoreError = ref<string | null>(null);
 
+const shopifySettingsLoading = ref(false);
+const shopifySettingsSaving = ref(false);
+const shopifyIntervalHours = ref(12);
+type ShopifyTaskStatus = {
+    key: string;
+    label: string;
+    status: string;
+    queued: boolean;
+    last_started_at: string | null;
+    last_finished_at: string | null;
+    duration_ms: number | null;
+    records_fetched: number | null;
+    records_updated: number | null;
+    error_summary: string | null;
+    counts_json: Record<string, unknown> | null;
+};
+type ShopifyHealthSnapshot = {
+    order_reconcile_interval_hours?: number;
+    orders_last_success_at?: string | null;
+    orders_high_water_updated_at?: string | null;
+    orders_last_error?: string | null;
+    next_order_reconcile_due_at?: string | null;
+    last_webhook_received_at?: string | null;
+    tasks?: ShopifyTaskStatus[];
+};
+const shopifyHealth = ref<ShopifyHealthSnapshot>({});
+const shopifyMessage = ref<string | null>(null);
+const shopifyError = ref<string | null>(null);
+const shopifyActionBusy = ref(false);
+
+const shopifyTasks = computed(() => shopifyHealth.value.tasks ?? []);
+
+const shopifyHasActiveWork = computed(() =>
+    shopifyTasks.value.some((task) => task.status === 'queued' || task.status === 'running'),
+);
+
+function shopifyStatusLabel(status: string): string {
+    switch (status) {
+        case 'never':
+            return 'Never run';
+        case 'queued':
+            return 'Queued';
+        case 'running':
+            return 'Running';
+        case 'completed':
+            return 'Completed';
+        case 'failed':
+            return 'Failed';
+        default:
+            return status;
+    }
+}
+
+function shopifyStatusClass(status: string): string {
+    switch (status) {
+        case 'queued':
+            return 'bg-amber-100 text-amber-900';
+        case 'running':
+            return 'bg-sky-100 text-sky-900';
+        case 'completed':
+            return 'bg-emerald-100 text-emerald-900';
+        case 'failed':
+            return 'bg-rose-100 text-rose-900';
+        default:
+            return 'bg-slate-100 text-slate-700';
+    }
+}
+
+function shopifyTaskDetail(task: ShopifyTaskStatus): string | null {
+    const parts: string[] = [];
+    if (task.records_fetched != null && task.records_fetched > 0) {
+        parts.push(`fetched ${task.records_fetched}`);
+    }
+    if (task.records_updated != null && task.records_updated > 0) {
+        parts.push(`updated ${task.records_updated}`);
+    }
+    const counts = task.counts_json;
+    if (counts && typeof counts === 'object') {
+        if (typeof counts.shopify_day_rows === 'number') {
+            parts.push(`${counts.shopify_day_rows} day rows`);
+        }
+        if (typeof counts.matched === 'number') {
+            parts.push(`${counts.matched} SKUs matched`);
+        }
+    }
+    return parts.length > 0 ? parts.join(', ') : null;
+}
+
 const siteOptions = computed<MultiSelectOption[]>(() => {
     return availableSites.value.map((s) => ({ value: s.key, label: s.name }));
 });
@@ -153,6 +243,27 @@ type ConfirmState =
       }
     | {
           kind: 'restore_db';
+          title: string;
+          message: string;
+          confirmText: string;
+          variant: 'danger' | 'primary';
+      }
+    | {
+          kind: 'shopify_historical';
+          title: string;
+          message: string;
+          confirmText: string;
+          variant: 'danger' | 'primary';
+      }
+    | {
+          kind: 'shopify_rebuild_rollups';
+          title: string;
+          message: string;
+          confirmText: string;
+          variant: 'danger' | 'primary';
+      }
+    | {
+          kind: 'shopify_inventory_pull';
           title: string;
           message: string;
           confirmText: string;
@@ -269,6 +380,21 @@ async function confirmAction(): Promise<void> {
 
     if (current.kind === 'restore_db') {
         await restoreDb();
+        return;
+    }
+
+    if (current.kind === 'shopify_historical') {
+        await runShopifyHistoricalBackfill();
+        return;
+    }
+
+    if (current.kind === 'shopify_rebuild_rollups') {
+        await runShopifyRebuildRollups();
+        return;
+    }
+
+    if (current.kind === 'shopify_inventory_pull') {
+        await runShopifyInventoryPull();
         return;
     }
 
@@ -533,6 +659,120 @@ async function loadMaintenanceNotes(): Promise<void> {
     }
 }
 
+async function loadShopifySettings(): Promise<void> {
+    shopifySettingsLoading.value = true;
+    shopifyError.value = null;
+    try {
+        const res = await api.get<{ data: ShopifyHealthSnapshot }>('/api/v1/shopify/settings');
+        shopifyHealth.value = res.data.data;
+        const hours = Number(res.data.data.order_reconcile_interval_hours);
+        shopifyIntervalHours.value = Number.isFinite(hours) && hours > 0 ? hours : 12;
+    } catch {
+        shopifyError.value = 'Failed to load Shopify settings.';
+    } finally {
+        shopifySettingsLoading.value = false;
+    }
+}
+
+async function refreshShopifyStatus(): Promise<void> {
+    await loadShopifySettings();
+}
+
+async function saveShopifyInterval(): Promise<void> {
+    shopifySettingsSaving.value = true;
+    shopifyError.value = null;
+    shopifyMessage.value = null;
+    try {
+        const res = await api.put<{ data: ShopifyHealthSnapshot }>('/api/v1/shopify/settings', {
+            order_reconcile_interval_hours: shopifyIntervalHours.value,
+        });
+        shopifyHealth.value = res.data.data;
+        shopifyMessage.value = 'Shopify settings saved.';
+    } catch {
+        shopifyError.value = 'Failed to save Shopify settings.';
+    } finally {
+        shopifySettingsSaving.value = false;
+    }
+}
+
+function requestShopifyHistorical(): void {
+    confirm.value = {
+        kind: 'shopify_historical',
+        title: 'Repull all historical orders',
+        message: 'Queue a full Shopify order backfill? This may take a long time and consume API quota.',
+        confirmText: 'Queue backfill',
+        variant: 'danger',
+    };
+}
+
+function requestShopifyRebuildRollups(): void {
+    confirm.value = {
+        kind: 'shopify_rebuild_rollups',
+        title: 'Rebuild demand rollups',
+        message: 'Recompute all demand rollups from stored order lines and inventory movements?',
+        confirmText: 'Rebuild',
+        variant: 'primary',
+    };
+}
+
+function requestShopifyInventoryPull(): void {
+    confirm.value = {
+        kind: 'shopify_inventory_pull',
+        title: 'Pull Shopify inventory',
+        message: 'Sync inventory from Shopify and overwrite products.available_qty for matched SKUs?',
+        confirmText: 'Pull inventory',
+        variant: 'danger',
+    };
+}
+
+async function runShopifyHistoricalBackfill(): Promise<void> {
+    shopifyActionBusy.value = true;
+    shopifyMessage.value = null;
+    shopifyError.value = null;
+    try {
+        await api.post('/api/v1/shopify/orders/historical-backfill');
+        shopifyMessage.value = 'Historical order backfill queued.';
+        await loadShopifySettings();
+    } catch {
+        shopifyError.value = 'Failed to queue historical backfill.';
+    } finally {
+        shopifyActionBusy.value = false;
+        confirm.value = null;
+    }
+}
+
+async function runShopifyRebuildRollups(): Promise<void> {
+    shopifyActionBusy.value = true;
+    shopifyMessage.value = null;
+    shopifyError.value = null;
+    try {
+        await api.post('/api/v1/shopify/demand/rebuild-rollups');
+        shopifyMessage.value = 'Demand rollup rebuild queued.';
+        await loadShopifySettings();
+    } catch {
+        shopifyError.value = 'Failed to queue rollup rebuild.';
+    } finally {
+        shopifyActionBusy.value = false;
+        confirm.value = null;
+    }
+}
+
+async function runShopifyInventoryPull(): Promise<void> {
+    shopifyActionBusy.value = true;
+    shopifyMessage.value = null;
+    shopifyError.value = null;
+    try {
+        await api.post('/api/v1/shopify/inventory/pull-to-products');
+        shopifyMessage.value = 'Shopify inventory pull queued.';
+        await loadShopifySettings();
+    } catch {
+        shopifyError.value = 'Failed to queue inventory pull.';
+    } finally {
+        shopifyActionBusy.value = false;
+        confirm.value = null;
+    }
+}
+
 async function loadExternalRateLimit(): Promise<void> {
     externalHitsLoading.value = true;
     externalHitsError.value = null;
@@ -785,6 +1025,7 @@ onMounted(() => {
     void loadDbBackups();
     void loadExternalRateLimit();
     void loadExternalAccess();
+    void loadShopifySettings();
 });
 
 watch(
@@ -811,6 +1052,146 @@ watch(
             <p class="mt-1 text-sm text-slate-600">
                 Admin utilities for maintaining imported data.
             </p>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div class="flex-1">
+                    <div class="text-sm font-medium text-slate-900">Shopify sync & demand</div>
+                    <div class="mt-1 text-sm text-slate-600">
+                        Order webhooks + scheduled reconcile, demand rollups, and inventory pull.
+                        <RouterLink to="/shopify/webhooks" class="ml-1 underline">Webhook logs</RouterLink>
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button
+                        class="inline-flex items-center justify-center rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                        type="button"
+                        :disabled="shopifySettingsLoading"
+                        @click="refreshShopifyStatus"
+                    >
+                        {{ shopifySettingsLoading ? 'Refreshing…' : 'Refresh status' }}
+                    </button>
+                    <button
+                        class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
+                        type="button"
+                        :disabled="shopifySettingsSaving || shopifySettingsLoading"
+                        @click="saveShopifyInterval"
+                    >
+                        {{ shopifySettingsSaving ? 'Saving…' : 'Save interval' }}
+                    </button>
+                </div>
+            </div>
+
+            <div class="mt-3 flex flex-wrap items-end gap-4">
+                <label class="text-sm">
+                    <span class="text-slate-600">Order reconcile interval (hours)</span>
+                    <input
+                        v-model.number="shopifyIntervalHours"
+                        class="mt-1 block w-28 rounded-md border border-slate-200 px-2 py-1"
+                        type="number"
+                        min="1"
+                        max="168"
+                    />
+                </label>
+            </div>
+
+            <div class="mt-4 flex flex-wrap gap-2">
+                <button
+                    type="button"
+                    class="rounded-md border border-slate-200 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50"
+                    :disabled="shopifyActionBusy"
+                    @click="requestShopifyHistorical"
+                >
+                    Repull historical orders
+                </button>
+                <button
+                    type="button"
+                    class="rounded-md border border-slate-200 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50"
+                    :disabled="shopifyActionBusy"
+                    @click="requestShopifyRebuildRollups"
+                >
+                    Rebuild demand rollups
+                </button>
+                <button
+                    type="button"
+                    class="rounded-md border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-900 hover:bg-rose-100 disabled:opacity-50"
+                    :disabled="shopifyActionBusy"
+                    @click="requestShopifyInventoryPull"
+                >
+                    Pull Shopify inventory → available qty
+                </button>
+            </div>
+
+            <div v-if="shopifyError" class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                {{ shopifyError }}
+            </div>
+            <div
+                v-if="shopifyMessage"
+                class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+                {{ shopifyMessage }}
+            </div>
+
+            <div class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-600">Sync status</div>
+                    <div v-if="shopifyHasActiveWork" class="text-xs text-sky-700">Work in progress — refresh to update</div>
+                </div>
+
+                <dl class="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
+                    <div>
+                        <dt class="font-medium text-slate-700">Last order sync</dt>
+                        <dd class="font-mono">{{ formatLocalDateTime(shopifyHealth.orders_last_success_at) }}</dd>
+                    </div>
+                    <div>
+                        <dt class="font-medium text-slate-700">Next reconcile due</dt>
+                        <dd class="font-mono">{{ formatLocalDateTime(shopifyHealth.next_order_reconcile_due_at) }}</dd>
+                    </div>
+                    <div>
+                        <dt class="font-medium text-slate-700">Last webhook</dt>
+                        <dd class="font-mono">{{ formatLocalDateTime(shopifyHealth.last_webhook_received_at) }}</dd>
+                    </div>
+                    <div v-if="shopifyHealth.orders_last_error">
+                        <dt class="font-medium text-rose-700">Last order error</dt>
+                        <dd class="text-rose-800">{{ shopifyHealth.orders_last_error }}</dd>
+                    </div>
+                </dl>
+
+                <div class="mt-3 overflow-x-auto">
+                    <table class="min-w-full text-left text-xs">
+                        <thead>
+                            <tr class="border-b border-slate-200 text-slate-600">
+                                <th class="py-1 pr-3 font-medium">Task</th>
+                                <th class="py-1 pr-3 font-medium">Status</th>
+                                <th class="py-1 pr-3 font-medium">Last finished</th>
+                                <th class="py-1 font-medium">Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="task in shopifyTasks" :key="task.key" class="border-b border-slate-100">
+                                <td class="py-2 pr-3 text-slate-900">{{ task.label }}</td>
+                                <td class="py-2 pr-3">
+                                    <span
+                                        class="inline-flex rounded-full px-2 py-0.5 font-medium"
+                                        :class="shopifyStatusClass(task.status)"
+                                    >
+                                        {{ shopifyStatusLabel(task.status) }}
+                                    </span>
+                                </td>
+                                <td class="py-2 pr-3 font-mono text-slate-600">
+                                    {{ formatLocalDateTime(task.last_finished_at ?? task.last_started_at) }}
+                                </td>
+                                <td class="py-2 text-slate-600">
+                                    <span v-if="shopifyTaskDetail(task)">{{ shopifyTaskDetail(task) }}</span>
+                                    <span v-else-if="task.error_summary" class="text-rose-700">{{ task.error_summary }}</span>
+                                    <span v-else>—</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
 
         <div class="rounded-lg border border-slate-200 bg-white p-4">

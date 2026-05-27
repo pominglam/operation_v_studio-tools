@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\DB;
 
 final class PurchaseOrderWorkflowChecklistService
 {
+    public const string META_SELECT_AND_ARRANGE_PRODUCT_IMAGES_DEFERRED = 'select_and_arrange_product_images_deferred';
+
     public function __construct(
         private readonly PurchaseOrderRepository $purchaseOrders,
     ) {}
@@ -18,6 +20,8 @@ final class PurchaseOrderWorkflowChecklistService
      * @param  array{
      *   import_po?:bool,
      *   crawl_desc_image_price?:bool,
+     *   select_and_arrange_product_images?:bool,
+     *   select_and_arrange_product_images_deferred?:bool,
      *   set_selling_price?:bool,
      *   ensure_all_products_have_barcode?:bool,
      *   export_to_shopify_get_handles?:bool,
@@ -40,6 +44,17 @@ final class PurchaseOrderWorkflowChecklistService
                     continue;
                 }
                 $next[$key] = (bool) $changes[$key];
+            }
+
+            if (array_key_exists(self::META_SELECT_AND_ARRANGE_PRODUCT_IMAGES_DEFERRED, $changes)) {
+                $next[self::META_SELECT_AND_ARRANGE_PRODUCT_IMAGES_DEFERRED] = (bool) $changes[self::META_SELECT_AND_ARRANGE_PRODUCT_IMAGES_DEFERRED];
+            }
+
+            if (
+                array_key_exists('select_and_arrange_product_images', $changes)
+                && ! (bool) $changes['select_and_arrange_product_images']
+            ) {
+                $next[self::META_SELECT_AND_ARRANGE_PRODUCT_IMAGES_DEFERRED] = false;
             }
 
             $po->workflow_checklist_json = $next;
@@ -67,6 +82,7 @@ final class PurchaseOrderWorkflowChecklistService
         return [
             'import_po' => false,
             'crawl_desc_image_price' => false,
+            'select_and_arrange_product_images' => false,
             'set_selling_price' => false,
             'ensure_all_products_have_barcode' => false,
             'export_to_shopify_get_handles' => false,

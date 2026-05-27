@@ -145,6 +145,9 @@ Below, **verbs** reflect Laravel router methods. **`{id}` on products** uses **U
 | PATCH | `/products/{id}/maintain` | Maintenance flag semantics (see migration/model). |
 | PATCH | `/products/{id}/ready` | Readiness workflow flag. |
 | PATCH | `/products/{id}/latest-arrival` | Latest arrival bookkeeping for PO/receiving workflows. |
+| PATCH | `/products/{id}/critical` | Critical product flag (`is_critical`, default false). |
+| PATCH | `/products/{id}/discontinue` | Discontinue product flag (`is_discontinued`, default false). |
+| GET | `/products` | List supports `product_flags[]`: `critical`, `discontinued` (multi-select OR: match any selected flag). |
 | PUT | `/products/{id}/selling-price` | Upsert **`product_selling_prices`** row (Shopify variant price drives exports). |
 
 ### Products — Shopify / replenishment helpers
@@ -255,7 +258,8 @@ Two **different orchestrations** deliberately exist:
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/purchase-orders/import` | Parses vendor-specific PDF/HTML/CSV blobs into PO + lines (`PurchaseOrderImportService`—heavy edge-case coverage in `tests/Feature/Api/V1/PurchaseOrder*`). Supports append/re-import behaviors per tests. |
+| POST | `/purchase-orders/import/preview` | Parses upload without DB write; returns HKD/CAD line preview for Dspiae/Stedi PM broker invoices (`PurchaseOrderImportService::preview`). |
+| POST | `/purchase-orders/import` | Parses vendor-specific PDF/HTML/CSV/XLSX blobs into PO + lines (`PurchaseOrderImportService`—heavy edge-case coverage in `tests/Feature/Api/V1/PurchaseOrder*`). Supports append/re-import behaviors per tests. |
 | GET | `/purchase-orders` | Indexed list filters/sorts (**vendor**, arrival-derived fields tested). |
 | GET | `/purchase-orders/filter-options` | Dropdown facets. |
 | GET | `/purchase-orders/{id}` | Detailed PO projection including FX-derived CAD unit economics where imported (`PurchaseOrderResource`). |

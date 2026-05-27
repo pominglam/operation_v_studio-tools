@@ -19,6 +19,7 @@ final class ShopifyOrder extends Model
             'payload_json' => 'array',
             'graphql_updated_at' => 'datetime',
             'ordered_at_shop_tz' => 'datetime',
+            'cancelled_at' => 'datetime',
         ];
     }
 }

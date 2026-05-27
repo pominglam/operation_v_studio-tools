@@ -60,9 +60,7 @@ final class ShopifyWebhookIngressService
 
         event(new ShopifyWebhookReceived($log));
 
-        $log->forceFill([
-            'processing_status' => 'dispatched',
-        ])->save();
+        $log->refresh();
 
         return new ShopifyWebhookIngressResult(httpStatus: 200, verified: true, log: $log);
     }

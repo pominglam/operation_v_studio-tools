@@ -72,6 +72,9 @@ final class ProductsController extends Controller
         $reorderFilter = is_numeric($reorderFilter) ? (int) $reorderFilter : null;
         $reorderGtOne = (bool) ($request->validated('reorder_gt_one') ?? false);
 
+        /** @var array<int, string> $productFlags */
+        $productFlags = $request->validated('product_flags') ?? [];
+
         /** @var string|null $sortBy */
         $sortBy = $request->validated('sort_by');
 
@@ -99,6 +102,7 @@ final class ProductsController extends Controller
                 $notArrivedFilter,
                 $reorderFilter,
                 $reorderGtOne,
+                $productFlags,
             ),
         );
     }

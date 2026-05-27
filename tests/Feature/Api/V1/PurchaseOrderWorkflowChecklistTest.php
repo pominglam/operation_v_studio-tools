@@ -52,6 +52,7 @@ it('persists a workflow checklist on a purchase order', function (): void {
     $res->assertJsonPath('data.workflow_checklist.export_to_shopify_get_handles', true);
     $res->assertJsonPath('data.workflow_checklist.update_product_available_with_shopify_current_inventory_quantity', true);
     $res->assertJsonPath('data.workflow_checklist.set_selling_price', false);
+    $res->assertJsonPath('data.workflow_checklist.select_and_arrange_product_images', false);
     $res->assertJsonPath('data.workflow_checklist.ensure_all_products_have_barcode', false);
     $res->assertJsonPath('data.workflow_checklist.mark_latest_arrival_and_published_on_shopify', false);
 
@@ -62,4 +63,32 @@ it('persists a workflow checklist on a purchase order', function (): void {
     expect($po->workflow_checklist_json['update_product_available_with_shopify_current_inventory_quantity'] ?? null)->toBeTrue();
     expect($po->workflow_checklist_json['ensure_all_products_have_barcode'] ?? null)->toBeFalse();
     expect($po->workflow_checklist_json['mark_latest_arrival_and_published_on_shopify'] ?? null)->toBeFalse();
+});
+
+it('defers manual image curation on the workflow checklist', function (): void {
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000222222',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+        'notes' => null,
+    ]);
+
+    $this->patchJson("/api/v1/purchase-orders/{$po->uuid}/workflow-checklist", [
+        'select_and_arrange_product_images' => true,
+        'select_and_arrange_product_images_deferred' => true,
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.workflow_checklist.select_and_arrange_product_images', true)
+        ->assertJsonPath('data.workflow_checklist.select_and_arrange_product_images_deferred', true);
+
+    $po->refresh();
+    expect($po->workflow_checklist_json['select_and_arrange_product_images'] ?? null)->toBeTrue()
+        ->and($po->workflow_checklist_json['select_and_arrange_product_images_deferred'] ?? null)->toBeTrue();
+
+    $this->patchJson("/api/v1/purchase-orders/{$po->uuid}/workflow-checklist", [
+        'select_and_arrange_product_images' => false,
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.workflow_checklist.select_and_arrange_product_images', false)
+        ->assertJsonPath('data.workflow_checklist.select_and_arrange_product_images_deferred', false);
 });

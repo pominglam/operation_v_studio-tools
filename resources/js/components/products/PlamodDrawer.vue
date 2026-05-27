@@ -1144,10 +1144,46 @@ async function load(): Promise<void> {
     }
 }
 
+function resetDrawerState(): void {
+    loading.value = false;
+    error.value = null;
+    message.value = null;
+    data.value = null;
+    selectedSource.value = {
+        contentSource: 'plamod',
+        descriptionMode: 'source',
+    };
+    manualDescriptionDraft.value = '';
+    manualDraftProductId.value = null;
+    hiddenImageSources.value = new Set();
+    activeImageId.value = null;
+    savingOrder.value = false;
+    dragAssetId.value = null;
+    thumbnailDragInProgress.value = false;
+    togglingShopify.value = {};
+    deletingManualAssetId.value = null;
+    dedupingExact.value = false;
+    disablingHiddenSources.value = false;
+    manualUploadBusy.value = false;
+    manualUploadDragOver.value = false;
+    savingPreferredDescription.value = false;
+}
+
 watch(
-    () => [props.open, props.productId],
-    ([open]) => {
-        if (!open) return;
+    () => [props.open, props.productId] as const,
+    ([open, productId], previous) => {
+        if (!open) {
+            resetDrawerState();
+            return;
+        }
+        if (!productId) return;
+
+        const previousWasOpen = previous?.[0] === true;
+        const previousProductId = previous?.[1] ?? null;
+        if (previousWasOpen && previousProductId !== productId) {
+            resetDrawerState();
+        }
+
         loadHiddenSourcesFromStorage();
         void load();
     },

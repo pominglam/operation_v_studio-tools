@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import ProductsPage from './pages/ProductsPage.vue';
 import MaintenancePage from './pages/MaintenancePage.vue';
+import ShopifyWebhookLogsPage from './pages/ShopifyWebhookLogsPage.vue';
 import PriceResearchPage from './pages/PriceResearchPage.vue';
 import PriceResearchRunLogsPage from './pages/PriceResearchRunLogsPage.vue';
 import PriceResearchReportsPage from './pages/PriceResearchReportsPage.vue';
@@ -51,6 +52,7 @@ const routes: RouteRecordRaw[] = [
     { path: '/sync-progress', name: 'sync-progress', component: SyncProgressPage },
     { path: '/tcg-events', name: 'tcg-events', component: TcgEventsPage },
     { path: '/maintenance', name: 'maintenance', component: MaintenancePage },
+    { path: '/shopify/webhooks', name: 'shopify-webhooks', component: ShopifyWebhookLogsPage },
 ];
 
 export const router = createRouter({

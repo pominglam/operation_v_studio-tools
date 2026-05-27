@@ -44,6 +44,16 @@ docker compose run --rm php php artisan queue:work --queue=price_research
 
 > Note: In `APP_ENV=local`, the app also supports a local inline fallback when a run is stuck `queued`.
 
+## Run scheduler (in container)
+
+Shopify order reconcile and other scheduled tasks require the scheduler service:
+
+```powershell
+docker compose up -d scheduler
+```
+
+Or run the full stack (`docker compose up -d`) which includes `scheduler` alongside `queue`.
+
 ## Frontend dev (local Node)
 
 In a local terminal (NOT Docker):

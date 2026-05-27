@@ -17,6 +17,28 @@ Purpose: coarse throttle for scripted crawlers honoring ops safety (see **`Exter
 
 ---
 
+## Shopify sync & demand
+
+**Card on Maintenance** + **`/shopify/webhooks`** log browser (`ShopifyWebhookLogsPage.vue`).
+
+| Action | Endpoint |
+| --- | --- |
+| Read sync health + reconcile interval | **`GET /api/v1/shopify/settings`** |
+| Save reconcile interval (hours, default 12) | **`PUT /api/v1/shopify/settings`** `{ order_reconcile_interval_hours }` |
+| List webhook logs (paginated, filters) | **`GET /api/v1/shopify/webhook-logs`** |
+| Webhook log detail + payload | **`GET /api/v1/shopify/webhook-logs/{id}`** |
+| Repull all historical orders (queued) | **`POST /api/v1/shopify/orders/historical-backfill`** — requires Shopify **`read_all_orders`** scope (with `read_orders` or `write_orders`); without it Shopify only returns ~60 days. Re-OAuth at **`/shopify/oauth/install`** after adding the scope. Sync log **`counts_json.oldest_order_created_at`** confirms how far back the pull reached. |
+| Rebuild demand rollups (queued) | **`POST /api/v1/shopify/demand/rebuild-rollups`** |
+| Pull Shopify inventory → `products.available_qty` (queued) | **`POST /api/v1/shopify/inventory/pull-to-products`** |
+
+**Status panel (persistent):** **Refresh status** reloads **`GET /api/v1/shopify/settings`**. Response includes order sync timestamps, next reconcile due, last webhook, and a **`tasks[]`** table (reconcile, historical backfill, demand rebuild, inventory pull) with **`status`** (`never` / `queued` / `running` / `completed` / `failed`), last finished time, counts, and errors. Dispatching a maintenance action writes a **`shopify_sync_logs`** row with **`status=queued`** immediately (survives page refresh); the queue worker promotes it to **`running`** then **`completed`** / **`failed`**. A log row in **`running`** takes precedence over a reserved row still present in **`jobs`**. Inventory pull clamps negative Shopify available quantities to **`0`** before writing **`products.available_qty`** (unsigned column; also enforced on **`Product`** save). Only **`ACTIVE`** Shopify catalog variants contribute inventory (**`ARCHIVED`** / **`DRAFT`** mirror rows are ignored); order line history is unchanged. Demand rollups exclude **cancelled** Shopify orders (**`cancelled_at`** set or financial status **`VOIDED`**); run **Rebuild demand rollups** after deploying this logic so existing counts drop cancelled lines. **After pulling new PHP code locally, restart the `queue` compose service** so long-running `queue:work` reloads changes (otherwise maintenance jobs may run stale bytecode until `--max-time` restart).
+
+**Scheduler:** Docker service **`scheduler`** runs `schedule:work`; every minute checks whether order reconcile is due (interval from settings). **Queue** worker processes Shopify jobs on **`default`**.
+
+**Products demand UI:** **`4 wk sold`** column on Products; click opens **`ProductDemandDetailDialog`** → **`GET /api/v1/products/{uuid}/demand`**.
+
+---
+
 ## External access controls
 
 Panels:

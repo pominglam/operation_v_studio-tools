@@ -6,7 +6,10 @@ namespace App\Providers;
 
 use App\Contracts\Shopify\ShopifyAdminAccessTokenProviderInterface;
 use App\Contracts\Shopify\ShopifyAdminGraphQlClientInterface;
+use App\DAL\Shopify\EloquentShopifySyncStateRepository;
+use App\DAL\Shopify\ShopifySyncStateRepository;
 use App\Services\Shopify\Admin\Auth\PersistedShopifyAdminAccessTokenProvider;
+use App\Services\Shopify\Admin\Orders\ShopifyOrderReconcileService;
 use App\Services\Shopify\Admin\ShopifyAdminGraphQlClient;
 use App\Services\Shopify\Admin\Sync\ShopifyCollectionSyncRunner;
 use App\Services\Shopify\Admin\Sync\ShopifyCustomerSyncRunner;
@@ -25,23 +28,39 @@ final class ShopifyErpServiceProvider extends ServiceProvider
 
         $this->app->singleton(ShopifyAdminGraphQlClientInterface::class, ShopifyAdminGraphQlClient::class);
 
-        $this->app->singleton(ShopifyLocationSyncRunner::class, function (): ShopifyLocationSyncRunner {
-            return new ShopifyLocationSyncRunner(max(5, min(250, (int) config('shopify.graphql_page_size'))));
+        $this->app->singleton(ShopifySyncStateRepository::class, EloquentShopifySyncStateRepository::class);
+
+        $pageSize = max(5, min(250, (int) config('shopify.graphql_page_size')));
+
+        $this->app->singleton(ShopifyOrderReconcileService::class, function ($app) use ($pageSize): ShopifyOrderReconcileService {
+            return new ShopifyOrderReconcileService(
+                $app->make(ShopifyAdminGraphQlClientInterface::class),
+                $app->make(\App\Services\Shopify\Admin\Orders\ShopifyOrderUpsertService::class),
+                $app->make(ShopifySyncStateRepository::class),
+                $pageSize,
+            );
         });
-        $this->app->singleton(ShopifyProductCatalogSyncRunner::class, function (): ShopifyProductCatalogSyncRunner {
-            return new ShopifyProductCatalogSyncRunner(max(5, min(250, (int) config('shopify.graphql_page_size'))));
+
+        $this->app->singleton(ShopifyLocationSyncRunner::class, function () use ($pageSize): ShopifyLocationSyncRunner {
+            return new ShopifyLocationSyncRunner($pageSize);
         });
-        $this->app->singleton(ShopifyInventoryLevelSyncRunner::class, function (): ShopifyInventoryLevelSyncRunner {
-            return new ShopifyInventoryLevelSyncRunner(max(5, min(250, (int) config('shopify.graphql_page_size'))));
+        $this->app->singleton(ShopifyProductCatalogSyncRunner::class, function () use ($pageSize): ShopifyProductCatalogSyncRunner {
+            return new ShopifyProductCatalogSyncRunner($pageSize);
         });
-        $this->app->singleton(ShopifyOrderSyncRunner::class, function (): ShopifyOrderSyncRunner {
-            return new ShopifyOrderSyncRunner(max(5, min(250, (int) config('shopify.graphql_page_size'))));
+        $this->app->singleton(ShopifyInventoryLevelSyncRunner::class, function () use ($pageSize): ShopifyInventoryLevelSyncRunner {
+            return new ShopifyInventoryLevelSyncRunner($pageSize);
         });
-        $this->app->singleton(ShopifyCustomerSyncRunner::class, function (): ShopifyCustomerSyncRunner {
-            return new ShopifyCustomerSyncRunner(max(5, min(250, (int) config('shopify.graphql_page_size'))));
+        $this->app->singleton(ShopifyOrderSyncRunner::class, function ($app) use ($pageSize): ShopifyOrderSyncRunner {
+            return new ShopifyOrderSyncRunner(
+                $pageSize,
+                $app->make(\App\Services\Shopify\Admin\Orders\ShopifyOrderUpsertService::class),
+            );
         });
-        $this->app->singleton(ShopifyCollectionSyncRunner::class, function (): ShopifyCollectionSyncRunner {
-            return new ShopifyCollectionSyncRunner(max(5, min(250, (int) config('shopify.graphql_page_size'))));
+        $this->app->singleton(ShopifyCustomerSyncRunner::class, function () use ($pageSize): ShopifyCustomerSyncRunner {
+            return new ShopifyCustomerSyncRunner($pageSize);
+        });
+        $this->app->singleton(ShopifyCollectionSyncRunner::class, function () use ($pageSize): ShopifyCollectionSyncRunner {
+            return new ShopifyCollectionSyncRunner($pageSize);
         });
 
         $this->app->bind(ShopifyErpSyncCoordinator::class, function ($app): ShopifyErpSyncCoordinator {

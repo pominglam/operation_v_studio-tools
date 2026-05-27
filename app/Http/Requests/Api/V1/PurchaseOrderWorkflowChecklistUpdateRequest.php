@@ -16,6 +16,8 @@ final class PurchaseOrderWorkflowChecklistUpdateRequest extends FormRequest
         return [
             'import_po' => ['sometimes', 'boolean'],
             'crawl_desc_image_price' => ['sometimes', 'boolean'],
+            'select_and_arrange_product_images' => ['sometimes', 'boolean'],
+            'select_and_arrange_product_images_deferred' => ['sometimes', 'boolean'],
             'set_selling_price' => ['sometimes', 'boolean'],
             'ensure_all_products_have_barcode' => ['sometimes', 'boolean'],
             'export_to_shopify_get_handles' => ['sometimes', 'boolean'],

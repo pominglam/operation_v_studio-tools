@@ -43,6 +43,7 @@ Tabs update the Vue Router **`hash`** so URLs are shareable and survive refresh:
 
 - **Missing info** — drives “PDP completeness” style gaps (`barcode`, `selling_price`, `pdp_description`, `pdp_images`, `ok`, etc.—exact vocabulary from API/filter options wiring).
 - **Ready** dropdown: **All**, **Ready only**, **Not ready only** (`products-filter-ready`).
+- **Critical / discontinued** — multi-select (`products-filter-product-flags`): **Critical**, **Discontinued**; sent as `product_flags[]` on **`GET /api/v1/products`**. Multiple selections use **OR** (e.g. Critical + Discontinued shows products that are critical **or** discontinued).
 - **Include archived** checkbox — sends include-archived semantics to backend (`notArchived()` default excludes archived SKUs unless opted in).
 - **Available**, **Not arrived**, **Reorder** — free-text numeric filters (parses non-negative ints client-side helper).
 - **Reorder > 1** checkbox — tightening filter on reorder column logic.
@@ -50,11 +51,13 @@ Tabs update the Vue Router **`hash`** so URLs are shareable and survive refresh:
 
 ### Sorting
 
-`ProductsTable` exposes sortable columns matching `ProductSortKey` (**SKU, barcode, description, taxonomies, landed cost, received date, selling price, totals, available, maintain, not_arrived, reorder**, …); toggling re-hits **`GET /api/v1/products`** with sort params.
+`ProductsTable` exposes sortable columns matching `ProductSortKey` (**SKU, barcode, description, taxonomies, landed cost, received date, selling price, totals, available, demand, maintain, not_arrived, reorder**, …); toggling re-hits **`GET /api/v1/products`** with sort params.
 
 ### Row model (fields users see / edit)
 
-Key row fields (`ProductRow` type): SKU, barcode, description, handle, **main_type** / **type** / **grade** / **series** / **scale**, vendor, **archived**, **published_on_shopify**, **is_ready**, **latest_arrival**, **`latest_*_cost`**, **received_date**, selling price snapshot, PDP flags (**has_description**, **plamod_image_count**), **total_ordered**, **available**, **maintain**, **not_arrived**, **reorder**.
+Key row fields (`ProductRow` type): SKU, barcode, description, handle, **main_type** / **type** / **grade** / **series** / **scale**, vendor, **archived**, **published_on_shopify**, **is_ready**, **latest_arrival**, **is_critical**, **is_discontinued**, **`latest_*_cost`**, **received_date**, selling price snapshot, PDP flags (**has_description**, **plamod_image_count**), **total_ordered**, **available**, **`sold_4w`**, **maintain**, **not_arrived**, **reorder**.
+
+- **Sold 4 wk** — read-only rollup (units sold in rolling **28 days**: shopify + assumed); column header label **4 wk sold**; sort key **`demand`**; click opens **`ProductDemandDetailDialog`** → **`GET /api/v1/products/{id}/demand`** (`lines_page`, `lines_per_page` for recent lines; weekly rollups show **all weeks** in the 365-day window including zeros). Shopify order lines from **cancelled** orders (**`cancelled_at`** or **`VOIDED`** financial status) are excluded from rollups and the recent-lines list.
 
 ### Inline edits (single row)
 
@@ -65,6 +68,7 @@ The table wires many cells to PATCH endpoints (IDs are product UUID):
 - **Maintain** qty → **`PATCH .../maintain`** (paired domain column).
 - **Ready** checkbox → **`PATCH .../ready`**.
 - **Latest arrival** checkbox → **`PATCH .../latest-arrival`**.
+- **Critical / Discontinue** — checkboxes under the product name (SKU/barcode/handle block); not separate columns. **`PATCH .../critical`** (`is_critical`) and **`PATCH .../discontinue`** (`is_discontinued`, default false).
 
 ### Drawer: “Info” (PDP bundle)
 

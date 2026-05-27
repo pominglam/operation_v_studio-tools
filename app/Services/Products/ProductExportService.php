@@ -256,6 +256,40 @@ final class ProductExportService
     /**
      * @return array<int, string>
      */
+    public function shopifyTagsListForProduct(Product $product): array
+    {
+        $type = $product->type !== null ? trim((string) $product->type) : '';
+        $tagsCsv = $this->shopifyTagsForProduct($product, $type);
+        if ($tagsCsv === '') {
+            return [];
+        }
+
+        $out = [];
+        foreach (explode(',', $tagsCsv) as $tag) {
+            $tag = trim($tag);
+            if ($tag !== '') {
+                $out[] = $tag;
+            }
+        }
+
+        return $out;
+    }
+
+    public function shopifyStatusEnumForProduct(Product $product): string
+    {
+        $isArchived = $product->archived_at !== null;
+        $shouldPublish = ! $isArchived && (bool) $product->published_on_shopify;
+
+        if ($isArchived) {
+            return 'ARCHIVED';
+        }
+
+        return $shouldPublish ? 'ACTIVE' : 'DRAFT';
+    }
+
+    /**
+     * @return array<int, string>
+     */
     public function shopifyRow(Product $product, string $handle): array
     {
         $availableQty = $product->available_qty ?? 0;

@@ -57,7 +57,7 @@ it('accepts valid Shopify webhook HMAC and dispatches ingest flow', function ():
         [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_FORWARDED_HOST' => 'ovs.example.test',
-            'HTTP_X_SHOPIFY_TOPIC' => 'orders/create',
+            'HTTP_X_SHOPIFY_TOPIC' => 'customers/create',
             'HTTP_X_SHOPIFY_SHOP_DOMAIN' => 'unit.myshopify.com',
             'HTTP_X_SHOPIFY_HMAC_SHA256' => $hmac,
         ],
@@ -70,7 +70,7 @@ it('accepts valid Shopify webhook HMAC and dispatches ingest flow', function ():
     $log = ShopifyWebhookLog::query()->first();
     expect($log)->not->toBeNull();
     expect($log->verification_ok)->toBeTrue();
-    expect($log->processing_status)->toBe('dispatched');
+    expect($log->processing_status)->toBe('verified');
 });
 
 it('responds 503 when webhook secret is missing and records verification_error', function (): void {

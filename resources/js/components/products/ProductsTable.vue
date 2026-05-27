@@ -29,6 +29,8 @@ export type ProductRow = {
     published_on_shopify?: boolean;
     is_ready?: boolean;
     latest_arrival?: boolean;
+    is_critical?: boolean;
+    is_discontinued?: boolean;
     latest_unit_cost?: string | null;
     latest_landed_unit_cost?: string | null;
     /** Latest PO `received_date` (Y-m-d) from any received PO line; null if none. */
@@ -40,6 +42,7 @@ export type ProductRow = {
     };
     total_ordered?: number | null;
     available: number | null;
+    sold_4w?: number | null;
     maintain: number | null;
     not_arrived?: number | null;
     reorder?: number | null;
@@ -89,6 +92,8 @@ export type BulkUpdateProductChanges = {
     vendor?: string | null;
     published_on_shopify?: boolean;
     latest_arrival?: boolean;
+    is_critical?: boolean;
+    is_discontinued?: boolean;
     available?: number | null;
     maintain?: number | null;
     archived?: boolean;
@@ -110,6 +115,7 @@ export type ProductSortKey =
     | 'total_ordered'
     | 'total_sold'
     | 'available'
+    | 'demand'
     | 'maintain'
     | 'not_arrived'
     | 'reorder';
@@ -140,9 +146,12 @@ const props = defineProps<{
     onUpdateMaintain: (id: string, maintain: number | null) => Promise<void>;
     onToggleReady: (id: string, isReady: boolean) => Promise<void>;
     onToggleLatestArrival: (id: string, latestArrival: boolean) => Promise<void>;
+    onToggleCritical: (id: string, isCritical: boolean) => Promise<void>;
+    onToggleDiscontinue: (id: string, isDiscontinued: boolean) => Promise<void>;
     onSelectAllMatching: () => Promise<string[]>;
     onOpenPlamod: (id: string) => void;
     onOpenPoLines: (id: string) => void;
+    onOpenDemand?: (id: string) => void;
     vendorOptions?: string[];
     mainTypeOptions?: string[];
     typeOptions?: string[];
@@ -233,6 +242,8 @@ const saving = ref(false);
 const rowError = ref<string | null>(null);
 const togglingReady = ref<Record<string, true>>({});
 const togglingLatestArrival = ref<Record<string, true>>({});
+const togglingCritical = ref<Record<string, true>>({});
+const togglingDiscontinue = ref<Record<string, true>>({});
 
 const savingAvailableId = ref<string | null>(null);
 const savingMaintainId = ref<string | null>(null);
@@ -329,6 +340,14 @@ function isTogglingLatestArrival(id: string): boolean {
     return togglingLatestArrival.value[id] === true;
 }
 
+function isTogglingCritical(id: string): boolean {
+    return togglingCritical.value[id] === true;
+}
+
+function isTogglingDiscontinue(id: string): boolean {
+    return togglingDiscontinue.value[id] === true;
+}
+
 async function toggleReady(id: string, isReady: boolean): Promise<void> {
     if (isTogglingReady(id)) return;
     togglingReady.value = { ...togglingReady.value, [id]: true };
@@ -352,6 +371,32 @@ async function toggleLatestArrival(id: string, latestArrival: boolean): Promise<
     } finally {
         const { [id]: _omit, ...rest } = togglingLatestArrival.value;
         togglingLatestArrival.value = rest;
+    }
+}
+
+async function toggleCritical(id: string, isCritical: boolean): Promise<void> {
+    if (isTogglingCritical(id)) return;
+    togglingCritical.value = { ...togglingCritical.value, [id]: true };
+    try {
+        await props.onToggleCritical(id, isCritical);
+    } catch (e: unknown) {
+        rowError.value = formatBulkError(e, 'Failed to update critical product flag.');
+    } finally {
+        const { [id]: _omit, ...rest } = togglingCritical.value;
+        togglingCritical.value = rest;
+    }
+}
+
+async function toggleDiscontinue(id: string, isDiscontinued: boolean): Promise<void> {
+    if (isTogglingDiscontinue(id)) return;
+    togglingDiscontinue.value = { ...togglingDiscontinue.value, [id]: true };
+    try {
+        await props.onToggleDiscontinue(id, isDiscontinued);
+    } catch (e: unknown) {
+        rowError.value = formatBulkError(e, 'Failed to update discontinue product flag.');
+    } finally {
+        const { [id]: _omit, ...rest } = togglingDiscontinue.value;
+        togglingDiscontinue.value = rest;
     }
 }
 
@@ -386,7 +431,7 @@ const allOnPageSelected = computed(
 );
 
 const emptyRowColspan = computed(() => {
-    const total = showCost.value ? 22 : 21;
+    const total = showCost.value ? 23 : 22;
     return showClassificationColumns.value ? total : total - 6;
 });
 
@@ -427,6 +472,7 @@ function sortLabel(key: ProductSortKey): string {
         total_ordered: 'Total ordered',
         total_sold: 'Total sold',
         available: 'Available',
+        demand: '4 wk sold',
         maintain: 'Maintain',
         not_arrived: 'Not arrived',
         reorder: 'Reorder',
@@ -1150,6 +1196,17 @@ onUnmounted(() => {
                                 {{ sortLabel('available') }}{{ sortIndicator('available') }}
                             </button>
                         </th>
+                        <th class="min-w-[5.5rem] px-4 py-3 text-right">
+                            <button
+                                type="button"
+                                class="whitespace-nowrap hover:underline"
+                                :class="sortHeaderClass('demand')"
+                                data-testid="products-sort-demand"
+                                @click="onSortChange('demand')"
+                            >
+                                {{ sortLabel('demand') }}{{ sortIndicator('demand') }}
+                            </button>
+                        </th>
                         <th class="px-4 py-3 text-right">
                             <button
                                 type="button"
@@ -1286,6 +1343,48 @@ onUnmounted(() => {
                                             }}
                                         </span>
                                     </div>
+                                </div>
+                                <div class="mt-1.5 flex flex-wrap gap-x-4 gap-y-1" @click.stop>
+                                    <label
+                                        class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
+                                    >
+                                        <input
+                                            class="h-3.5 w-3.5 rounded border-slate-300"
+                                            type="checkbox"
+                                            :checked="p.is_critical ?? false"
+                                            :disabled="
+                                                editingId === p.id || isTogglingCritical(p.id)
+                                            "
+                                            @change="
+                                                toggleCritical(
+                                                    p.id,
+                                                    ($event.target as HTMLInputElement).checked,
+                                                )
+                                            "
+                                            data-testid="product-critical-toggle"
+                                        />
+                                        <span class="select-none">Critical</span>
+                                    </label>
+                                    <label
+                                        class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
+                                    >
+                                        <input
+                                            class="h-3.5 w-3.5 rounded border-slate-300"
+                                            type="checkbox"
+                                            :checked="p.is_discontinued ?? false"
+                                            :disabled="
+                                                editingId === p.id || isTogglingDiscontinue(p.id)
+                                            "
+                                            @change="
+                                                toggleDiscontinue(
+                                                    p.id,
+                                                    ($event.target as HTMLInputElement).checked,
+                                                )
+                                            "
+                                            data-testid="product-discontinue-toggle"
+                                        />
+                                        <span class="select-none">Discontinue</span>
+                                    </label>
                                 </div>
                             </template>
                         </td>
@@ -1522,6 +1621,19 @@ onUnmounted(() => {
                                     @blur="commitAvailableInlineEdit(p.id)"
                                 />
                             </template>
+                        </td>
+
+                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                            <button
+                                v-if="props.onOpenDemand"
+                                type="button"
+                                class="rounded-md px-1 py-0.5 text-sky-800 underline decoration-sky-300 hover:bg-sky-50"
+                                :data-testid="`product-demand-value:${p.id}`"
+                                @click="props.onOpenDemand?.(p.id)"
+                            >
+                                {{ Number(p.sold_4w ?? 0) }}
+                            </button>
+                            <span v-else>{{ Number(p.sold_4w ?? 0) }}</span>
                         </td>
 
                         <td class="px-4 py-3 text-right tabular-nums text-slate-700">

@@ -248,6 +248,65 @@ it('validates ready filter values', function (): void {
     $this->getJson('/api/v1/products?ready=invalid')->assertStatus(422);
 });
 
+it('filters products by critical and discontinued product flags', function (): void {
+    \App\Models\Product::query()->create([
+        'sku' => 'FLAG-CRIT',
+        'description' => 'Critical only',
+        'vendor' => 'Plamod',
+        'is_critical' => true,
+        'is_discontinued' => false,
+    ]);
+    \App\Models\Product::query()->create([
+        'sku' => 'FLAG-DISC',
+        'description' => 'Discontinued only',
+        'vendor' => 'Plamod',
+        'is_critical' => false,
+        'is_discontinued' => true,
+    ]);
+    \App\Models\Product::query()->create([
+        'sku' => 'FLAG-BOTH',
+        'description' => 'Critical and discontinued',
+        'vendor' => 'Plamod',
+        'is_critical' => true,
+        'is_discontinued' => true,
+    ]);
+    \App\Models\Product::query()->create([
+        'sku' => 'FLAG-NONE',
+        'description' => 'Neither flag',
+        'vendor' => 'Plamod',
+        'is_critical' => false,
+        'is_discontinued' => false,
+    ]);
+
+    $criticalSkus = collect(
+        $this->getJson('/api/v1/products?per_page=100&product_flags[]=critical')
+            ->assertOk()
+            ->json('data'),
+    )->pluck('sku')->all();
+    expect($criticalSkus)->toContain('FLAG-CRIT', 'FLAG-BOTH')
+        ->not->toContain('FLAG-DISC', 'FLAG-NONE');
+
+    $discontinuedSkus = collect(
+        $this->getJson('/api/v1/products?per_page=100&product_flags[]=discontinued')
+            ->assertOk()
+            ->json('data'),
+    )->pluck('sku')->all();
+    expect($discontinuedSkus)->toContain('FLAG-DISC', 'FLAG-BOTH')
+        ->not->toContain('FLAG-CRIT', 'FLAG-NONE');
+
+    $eitherSkus = collect(
+        $this->getJson('/api/v1/products?per_page=100&product_flags[]=critical&product_flags[]=discontinued')
+            ->assertOk()
+            ->json('data'),
+    )->pluck('sku')->all();
+    expect($eitherSkus)->toContain('FLAG-CRIT', 'FLAG-DISC', 'FLAG-BOTH')
+        ->not->toContain('FLAG-NONE');
+});
+
+it('validates product_flags filter values', function (): void {
+    $this->getJson('/api/v1/products?product_flags[]=invalid')->assertStatus(422);
+});
+
 it('filters products by available qty = 0', function (): void {
     \App\Models\Product::query()->create([
         'sku' => 'AVAIL-0',
@@ -504,4 +563,42 @@ it('sorts products by not-arrived and reorder', function (): void {
     $reorderAsc->assertOk()
         ->assertJsonPath('data.0.sku', 'SORT-REORDER-LOW')
         ->assertJsonPath('data.1.sku', 'SORT-REORDER-HIGH');
+});
+
+it('sorts products by demand (sold last 4 weeks)', function (): void {
+    $low = \App\Models\Product::query()->create([
+        'sku' => 'SORT-DEMAND-LOW',
+        'description' => 'Lower 4-week sales',
+        'vendor' => 'Plamod',
+    ]);
+    $high = \App\Models\Product::query()->create([
+        'sku' => 'SORT-DEMAND-HIGH',
+        'description' => 'Higher 4-week sales',
+        'vendor' => 'Plamod',
+    ]);
+
+    \App\Models\ProductDemandDailyRollup::query()->create([
+        'product_id' => $low->id,
+        'sold_on' => now()->subDays(3)->toDateString(),
+        'shopify_sold' => 2,
+        'assumed_sold' => 0,
+    ]);
+    \App\Models\ProductDemandDailyRollup::query()->create([
+        'product_id' => $high->id,
+        'sold_on' => now()->subDays(2)->toDateString(),
+        'shopify_sold' => 9,
+        'assumed_sold' => 1,
+    ]);
+
+    $demandAsc = $this->getJson('/api/v1/products?per_page=100&sort_by=demand&sort_dir=asc&search=SORT-DEMAND');
+    $demandAsc->assertOk()
+        ->assertJsonPath('data.0.sku', 'SORT-DEMAND-LOW')
+        ->assertJsonPath('data.0.sold_4w', 2)
+        ->assertJsonPath('data.1.sku', 'SORT-DEMAND-HIGH')
+        ->assertJsonPath('data.1.sold_4w', 10);
+
+    $demandDesc = $this->getJson('/api/v1/products?per_page=100&sort_by=demand&sort_dir=desc&search=SORT-DEMAND');
+    $demandDesc->assertOk()
+        ->assertJsonPath('data.0.sku', 'SORT-DEMAND-HIGH')
+        ->assertJsonPath('data.1.sku', 'SORT-DEMAND-LOW');
 });

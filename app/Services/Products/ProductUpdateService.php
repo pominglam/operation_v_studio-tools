@@ -157,4 +157,24 @@ final class ProductUpdateService
 
         return $this->products->save($product);
     }
+
+    public function updateCritical(string $uuid, bool $isCritical): Product
+    {
+        $product = $this->products->findByUuidOrFail($uuid);
+        $product->fill([
+            'is_critical' => $isCritical,
+        ]);
+
+        return $this->products->save($product);
+    }
+
+    public function updateDiscontinued(string $uuid, bool $isDiscontinued): Product
+    {
+        $product = $this->products->findByUuidOrFail($uuid);
+        $product->fill([
+            'is_discontinued' => $isDiscontinued,
+        ]);
+
+        return $this->products->save($product);
+    }
 }

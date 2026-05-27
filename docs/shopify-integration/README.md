@@ -31,7 +31,7 @@ Optional: `SHOPIFY_THEME_MIRROR_PATH` — defaults to `themes/shopify-draft` (dr
 
 **Phase 1 (read)**
 
-- `read_products`, `read_inventory`, `read_locations`, `read_orders`, `read_customers`, `read_content`, `read_themes`
+- `read_products`, `read_inventory`, `read_locations`, `read_orders`, **`read_all_orders`** (required for historical order backfill beyond ~60 days), `read_customers`, `read_content`, `read_themes`
 
 **Phase 2 (prepare but do not use yet)**
 

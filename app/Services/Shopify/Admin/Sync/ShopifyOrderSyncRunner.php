@@ -6,14 +6,14 @@ namespace App\Services\Shopify\Admin\Sync;
 
 use App\Contracts\Shopify\ShopifyAdminGraphQlClientInterface;
 use App\Exceptions\Shopify\ShopifyGraphQlException;
-use App\Models\Shopify\ShopifyOrder;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlQueries;
-use App\Services\Shopify\Admin\Support\ShopifyGraphQlNodeParser;
+use App\Services\Shopify\Admin\Orders\ShopifyOrderUpsertService;
 
 final class ShopifyOrderSyncRunner implements ShopifySyncRunnerInterface
 {
     public function __construct(
         private readonly int $pageSize,
+        private readonly ShopifyOrderUpsertService $upsert,
     ) {}
 
     public function key(): string
@@ -43,7 +43,9 @@ final class ShopifyOrderSyncRunner implements ShopifySyncRunnerInterface
 
                     continue;
                 }
-                $this->upsertOrder($node, $metrics);
+                $metrics->recordFetch();
+                $order = $this->upsert->upsertFromGraphQlNode($node);
+                $metrics->recordUpsert($order->wasRecentlyCreated);
             }
             if (! ($page['pageInfo']['hasNextPage'] ?? false)) {
                 break;
@@ -53,39 +55,5 @@ final class ShopifyOrderSyncRunner implements ShopifySyncRunnerInterface
                 break;
             }
         }
-    }
-
-    /**
-     * @param  array<string, mixed>  $node
-     */
-    private function upsertOrder(array $node, ShopifySyncMetrics $metrics): void
-    {
-        $gid = isset($node['id']) && is_string($node['id']) ? $node['id'] : null;
-        if ($gid === null || $gid === '') {
-            $metrics->recordFailure();
-
-            return;
-        }
-        $metrics->recordFetch();
-        $financial = isset($node['displayFinancialStatus']) && is_string($node['displayFinancialStatus'])
-            ? $node['displayFinancialStatus'] : null;
-        $fulfillment = isset($node['displayFulfillmentStatus']) && is_string($node['displayFulfillmentStatus'])
-            ? $node['displayFulfillmentStatus'] : null;
-        $orderedAtStr = isset($node['createdAt']) && is_string($node['createdAt']) ? $node['createdAt'] : null;
-        $model = ShopifyOrder::query()->updateOrCreate(
-            ['gid' => $gid],
-            [
-                'legacy_numeric_id' => ShopifyGraphQlNodeParser::legacyString($node['legacyResourceId'] ?? null),
-                'name' => isset($node['name']) && is_string($node['name']) ? $node['name'] : null,
-                'display_financial_status' => $financial,
-                'display_fulfillment_status' => $fulfillment,
-                'ordered_at_shop_tz' => ShopifyGraphQlNodeParser::timestamp($orderedAtStr),
-                'graphql_updated_at' => ShopifyGraphQlNodeParser::timestamp(
-                    isset($node['updatedAt']) && is_string($node['updatedAt']) ? $node['updatedAt'] : null,
-                ),
-                'payload_json' => $node,
-            ],
-        );
-        $metrics->recordUpsert($model->wasRecentlyCreated);
     }
 }

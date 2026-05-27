@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
+import PoImportPreviewDialog, {
+    type PoImportPreview,
+} from '../components/purchaseOrders/PoImportPreviewDialog.vue';
 import { api } from '../lib/api';
 import { formatTorontoDate } from '../lib/datetime';
 import { formatMoney2OrEmpty, parseMoney } from '../lib/money';
@@ -87,6 +90,10 @@ const selectedStatuses = ref<PurchaseOrderListRow['status'][]>([]);
 
 const file = ref<File | null>(null);
 const importing = ref(false);
+const previewOpen = ref(false);
+const previewLoading = ref(false);
+const previewError = ref<string | null>(null);
+const importPreview = ref<PoImportPreview | null>(null);
 const importError = ref<string | null>(null);
 const importIssues = ref<Array<Record<string, unknown>> | null>(null);
 const importResult = ref<ImportResult | null>(null);
@@ -100,6 +107,7 @@ const estimatedArrivalDate = ref<string>('');
 const receivedDate = ref<string>('');
 const fullyOnShelvesDate = ref<string>('');
 const productTotal = ref<string>('');
+const productTotalIncludesFees = ref(false);
 const shippingTotal = ref<string>('');
 const surchargeTotal = ref<string>('');
 const notes = ref<string>('');
@@ -190,10 +198,44 @@ async function sniffVendorFromCsv(f: File): Promise<string | null> {
     try {
         const head = (await f.slice(0, 4096).text()).toUpperCase();
         if (head.includes('DSPIAE')) return 'Dspiae';
+        if (head.includes('STEDI') || /\bMS-[A-Z0-9]+\b/.test(head)) return 'Stedi';
         return null;
     } catch {
         return null;
     }
+}
+
+function isPmBrokerVendor(value: string): boolean {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'dspiae' || normalized === 'stedi';
+}
+
+function buildImportFormData(): FormData {
+    const fd = new FormData();
+    if (!file.value) {
+        throw new Error('Missing file');
+    }
+    fd.append('file', file.value);
+    fd.append('vendor', vendor.value);
+    if (supplierOrderId.value.trim() !== '') {
+        fd.append('supplier_order_id', supplierOrderId.value.trim());
+    }
+    if (orderedDate.value) fd.append('ordered_date', orderedDate.value);
+    if (shippedDate.value) fd.append('shipped_date', shippedDate.value);
+    if (estimatedArrivalDate.value) fd.append('estimated_arrival_date', estimatedArrivalDate.value);
+    if (receivedDate.value) fd.append('received_date', receivedDate.value);
+    if (fullyOnShelvesDate.value) fd.append('fully_on_shelves_date', fullyOnShelvesDate.value);
+    if (productTotal.value) fd.append('product_total', productTotal.value);
+    if (productTotalIncludesFees.value) {
+        fd.append('product_total_includes_fees', '1');
+    }
+    if (shippingTotal.value && !productTotalIncludesFees.value) {
+        fd.append('shipping_total', shippingTotal.value);
+    }
+    if (surchargeTotal.value) fd.append('surcharge_total', surchargeTotal.value);
+    if (notes.value) fd.append('notes', notes.value);
+
+    return fd;
 }
 
 async function loadHistory(): Promise<void> {
@@ -294,52 +336,88 @@ function onFileChange(e: Event): void {
     }
 }
 
+function closeImportPreview(): void {
+    previewOpen.value = false;
+    previewLoading.value = false;
+    previewError.value = null;
+    importPreview.value = null;
+}
+
+async function loadImportPreview(): Promise<void> {
+    previewError.value = null;
+    importPreview.value = null;
+    previewLoading.value = true;
+    previewOpen.value = true;
+
+    try {
+        const fd = buildImportFormData();
+        const res = await api.post<PoImportPreview>('/api/v1/purchase-orders/import/preview', fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        importPreview.value = res.data;
+    } catch (e: unknown) {
+        const anyErr = e as any;
+        previewError.value =
+            anyErr?.response?.data?.message ?? 'Preview failed. Check the file format and try again.';
+    } finally {
+        previewLoading.value = false;
+    }
+}
+
+async function executeImport(): Promise<void> {
+    importing.value = true;
+    importError.value = null;
+    importIssues.value = null;
+    importResult.value = null;
+
+    try {
+        const fd = buildImportFormData();
+        const res = await api.post<ImportResult>('/api/v1/purchase-orders/import', fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+
+        importResult.value = res.data;
+        closeImportPreview();
+        await loadHistory();
+    } catch (e: unknown) {
+        const anyErr = e as any;
+        const apiMessage: string | undefined = anyErr?.response?.data?.message;
+        const apiIssues: unknown = anyErr?.response?.data?.issues;
+        importError.value = apiMessage ?? 'Import failed. Check the file format and try again.';
+        importIssues.value = Array.isArray(apiIssues)
+            ? (apiIssues as Array<Record<string, unknown>>)
+            : null;
+        previewError.value = importError.value;
+    } finally {
+        importing.value = false;
+    }
+}
+
 async function runImport(): Promise<void> {
     importError.value = null;
     importIssues.value = null;
     importResult.value = null;
 
     if (!file.value) {
-        importError.value = 'Please choose a CSV file.';
+        importError.value = 'Please choose a CSV or XLSX file.';
+        return;
+    }
+
+    if (isPmBrokerVendor(vendor.value)) {
+        await loadImportPreview();
         return;
     }
 
     importing.value = true;
     try {
-        const fd = new FormData();
-        fd.append('file', file.value);
-        fd.append('vendor', vendor.value);
-        if (supplierOrderId.value.trim() !== '') {
-            fd.append('supplier_order_id', supplierOrderId.value.trim());
-        }
-        if (orderedDate.value) fd.append('ordered_date', orderedDate.value);
-        if (shippedDate.value) fd.append('shipped_date', shippedDate.value);
-        if (estimatedArrivalDate.value)
-            fd.append('estimated_arrival_date', estimatedArrivalDate.value);
-        if (receivedDate.value) fd.append('received_date', receivedDate.value);
-        if (fullyOnShelvesDate.value) fd.append('fully_on_shelves_date', fullyOnShelvesDate.value);
-        if (productTotal.value) fd.append('product_total', productTotal.value);
-        if (shippingTotal.value) fd.append('shipping_total', shippingTotal.value);
-        if (surchargeTotal.value) fd.append('surcharge_total', surchargeTotal.value);
-        if (notes.value) fd.append('notes', notes.value);
-
-        const res = await api.post<ImportResult>('/api/v1/purchase-orders/import', fd, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-        });
-
-        importResult.value = res.data;
-        await loadHistory();
-    } catch (e: unknown) {
-        const anyErr = e as any;
-        const apiMessage: string | undefined = anyErr?.response?.data?.message;
-        const apiIssues: unknown = anyErr?.response?.data?.issues;
-        importError.value = apiMessage ?? 'Import failed. Check the CSV format and try again.';
-        importIssues.value = Array.isArray(apiIssues)
-            ? (apiIssues as Array<Record<string, unknown>>)
-            : null;
+        await executeImport();
     } finally {
         importing.value = false;
     }
+}
+
+async function confirmImportPreview(): Promise<void> {
+    await executeImport();
 }
 
 function resetHistoryFilters(): void {
@@ -371,8 +449,8 @@ onMounted(() => {
         <div class="mb-6">
             <h1 class="text-xl font-semibold text-slate-900">Purchase Orders</h1>
             <p class="mt-1 text-sm text-slate-600">
-                Import a vendor PO CSV, enter shipping total, and track FIFO lots for landed
-                costing.
+                Import a vendor PO CSV or PM broker XLSX, enter shipping total, and track FIFO lots
+                for landed costing.
             </p>
         </div>
 
@@ -446,14 +524,31 @@ onMounted(() => {
 
             <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-6 lg:items-end">
                 <div>
-                    <label class="text-xs font-medium text-slate-700">Product total (CAD)</label>
+                    <label class="text-xs font-medium text-slate-700">
+                        {{
+                            productTotalIncludesFees
+                                ? 'Total paid (CAD)'
+                                : 'Product total (CAD)'
+                        }}
+                    </label>
                     <input
                         v-model="productTotal"
                         type="text"
                         inputmode="decimal"
                         class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                        placeholder="0.00"
+                        :placeholder="productTotalIncludesFees ? 'Product + shipping' : '0.00'"
                     />
+                    <label
+                        v-if="isPmBrokerVendor(vendor)"
+                        class="mt-2 flex items-start gap-2 text-xs text-slate-600"
+                    >
+                        <input
+                            v-model="productTotalIncludesFees"
+                            type="checkbox"
+                            class="mt-0.5 rounded border-slate-300"
+                        />
+                        <span>Total includes product and shipping (split using invoice HKD)</span>
+                    </label>
                 </div>
                 <div>
                     <label class="text-xs font-medium text-slate-700">Shipping total</label>
@@ -461,8 +556,9 @@ onMounted(() => {
                         v-model="shippingTotal"
                         type="text"
                         inputmode="decimal"
-                        class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                        class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500"
                         placeholder="0.00"
+                        :disabled="productTotalIncludesFees"
                     />
                 </div>
                 <div>
@@ -488,10 +584,10 @@ onMounted(() => {
 
             <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-6 lg:items-end">
                 <div class="lg:col-span-5">
-                    <label class="text-xs font-medium text-slate-700">CSV file</label>
+                    <label class="text-xs font-medium text-slate-700">CSV / XLSX file</label>
                     <input
                         type="file"
-                        accept=".csv,text/csv"
+                        accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                         class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                         @change="onFileChange"
                     />
@@ -500,10 +596,18 @@ onMounted(() => {
                     <button
                         type="button"
                         class="inline-flex w-full items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                        :disabled="importing"
+                        :disabled="importing || previewLoading"
                         @click="runImport"
                     >
-                        {{ importing ? 'Importing…' : 'Import CSV' }}
+                        {{
+                            importing
+                                ? 'Importing…'
+                                : previewLoading
+                                  ? 'Previewing…'
+                                  : isPmBrokerVendor(vendor)
+                                    ? 'Preview import'
+                                    : 'Import CSV'
+                        }}
                     </button>
                 </div>
             </div>
@@ -684,5 +788,14 @@ onMounted(() => {
                 </p>
             </div>
         </section>
+
+        <PoImportPreviewDialog
+            :open="previewOpen"
+            :busy="importing || previewLoading"
+            :preview="importPreview"
+            :error="previewError"
+            @cancel="closeImportPreview"
+            @confirm="confirmImportPreview"
+        />
     </main>
 </template>

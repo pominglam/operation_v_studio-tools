@@ -31,7 +31,7 @@ return [
 
     'oauth_scopes' => env(
         'SHOPIFY_OAUTH_SCOPES',
-        'read_locations,read_products,read_inventory,read_orders,read_customers,read_collections',
+        'read_locations,read_products,read_inventory,read_orders,read_all_orders,read_customers,read_collections',
     ),
 
     /*

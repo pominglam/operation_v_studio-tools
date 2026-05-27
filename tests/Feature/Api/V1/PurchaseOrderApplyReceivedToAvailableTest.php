@@ -71,11 +71,11 @@ it('adds qty received from PO lines to product available qty by exact linked pro
     $res = $this->postJson("/api/v1/purchase-orders/{$po->uuid}/apply-received-to-available");
     $res->assertOk();
     $res->assertJsonPath('ok', true);
-    $res->assertJsonPath('data.products_updated', 2);
-    $res->assertJsonPath('data.total_added', 6);
-    $res->assertJsonPath('data.lines_considered', 4);
-    $res->assertJsonPath('data.skipped_non_positive_qty', 1);
-    $res->assertJsonPath('data.skipped_missing_product_id', 0);
+    $res->assertJsonPath('data.apply.products_updated', 2);
+    $res->assertJsonPath('data.apply.total_added', 6);
+    $res->assertJsonPath('data.apply.lines_considered', 4);
+    $res->assertJsonPath('data.apply.skipped_non_positive_qty', 1);
+    $res->assertJsonPath('data.apply.skipped_missing_product_id', 0);
 
     $a->refresh();
     $b->refresh();

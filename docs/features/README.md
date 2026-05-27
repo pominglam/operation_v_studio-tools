@@ -52,6 +52,7 @@ Shopify **Online Store theme** workflows (draft theme, static About page handoff
 | `/sync-progress` | `SyncProgressPage.vue` |
 | `/tcg-events` | `TcgEventsPage.vue` |
 | `/maintenance` | `MaintenancePage.vue` |
+| `/shopify/webhooks` | `ShopifyWebhookLogsPage.vue` |
 
 ## Source files worth knowing
 
