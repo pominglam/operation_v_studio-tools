@@ -7,6 +7,7 @@ namespace App\Services\Shopify\Admin\Inventory;
 use App\Models\Product;
 use App\Models\Shopify\ShopifyInventoryLevel;
 use App\Services\Shopify\Admin\Sync\ShopifyErpSyncCoordinator;
+use App\Support\Products\ProductHoldQty;
 use Illuminate\Support\Facades\DB;
 
 final class ShopifyInventoryToProductsService
@@ -40,7 +41,11 @@ final class ShopifyInventoryToProductsService
                     continue;
                 }
                 $matched++;
-                $normalizedQty = max(0, (int) $qty);
+                $shopifyQty = max(0, (int) $qty);
+                $normalizedQty = ProductHoldQty::erpAvailableFromShopifyQty(
+                    $shopifyQty,
+                    $product->hold_qty,
+                );
                 if ((int) ($product->available_qty ?? 0) !== $normalizedQty) {
                     $product->available_qty = $normalizedQty;
                     $product->save();

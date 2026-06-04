@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources\Api\V1;
 
 use App\Models\PurchaseOrder;
+use App\Services\PurchaseOrders\PurchaseOrderShipmentMethodService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -113,8 +114,10 @@ final class PurchaseOrderResource extends JsonResource
             'fx_rate_cad_to_vendor' => $this->invertDecimal6($this->decimal6($po->fx_rate_to_cad)),
             'notes' => $po->notes,
             'is_done' => (bool) $po->is_done,
-            'workflow_checklist' => is_array($po->workflow_checklist_json) ? $po->workflow_checklist_json : null,
+            'workflow_checklist' => app(\App\Services\PurchaseOrders\PurchaseOrderWorkflowChecklistNormalizer::class)
+                ->normalize(is_array($po->workflow_checklist_json) ? $po->workflow_checklist_json : null),
             'status' => $this->statusFor($po),
+            'shipment_method' => app(PurchaseOrderShipmentMethodService::class)->normalize($po->shipment_method),
             'counts' => [
                 'items' => $po->relationLoaded('items') ? (int) $po->items->count() : (int) ($po->items_count ?? 0),
             ],

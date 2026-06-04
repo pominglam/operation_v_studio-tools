@@ -123,6 +123,49 @@ final class FakeShopifyAdminGraphQlClient implements ShopifyAdminGraphQlClientIn
     /**
      * @return array<string, mixed>
      */
+    /**
+     * @param  array<int, string>  $publicationIds
+     * @return array<string, mixed>
+     */
+    public static function wrapPublications(array $publicationIds): array
+    {
+        $nodes = [];
+        foreach ($publicationIds as $id) {
+            $nodes[] = ['id' => $id, 'name' => 'Channel'];
+        }
+
+        return [
+            'data' => [
+                'publications' => [
+                    'pageInfo' => [
+                        'hasNextPage' => false,
+                        'endCursor' => null,
+                    ],
+                    'nodes' => $nodes,
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function wrapPublishablePublish(): array
+    {
+        return [
+            'data' => [
+                'publishablePublish' => [
+                    'publishable' => [
+                        'resourcePublicationsCount' => [
+                            'count' => 3,
+                        ],
+                    ],
+                    'userErrors' => [],
+                ],
+            ],
+        ];
+    }
+
     public static function wrapProductSet(string $gid, string $handle): array
     {
         return [
@@ -131,6 +174,40 @@ final class FakeShopifyAdminGraphQlClient implements ShopifyAdminGraphQlClientIn
                     'product' => [
                         'id' => $gid,
                         'handle' => $handle,
+                    ],
+                    'userErrors' => [],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function wrapTagsRemove(string $nodeId): array
+    {
+        return [
+            'data' => [
+                'tagsRemove' => [
+                    'node' => [
+                        'id' => $nodeId,
+                    ],
+                    'userErrors' => [],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function wrapInventorySetQuantities(): array
+    {
+        return [
+            'data' => [
+                'inventorySetQuantities' => [
+                    'inventoryAdjustmentGroup' => [
+                        'reason' => 'correction',
                     ],
                     'userErrors' => [],
                 ],

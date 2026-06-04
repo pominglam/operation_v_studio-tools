@@ -6,21 +6,23 @@ namespace App\Services\PurchaseOrders;
 
 use App\DAL\Products\ProductRepository;
 use App\Models\Product;
+use App\Services\Shopify\Admin\Write\ShopifyInventoryLocationResolver;
 use App\Services\Shopify\Admin\Write\ShopifyProductCreateFromErpService;
 use App\Services\Shopify\Admin\Write\ShopifyWriteScopeGuard;
 use App\Services\Shopify\CloudflaredTunnel;
 
 final class PurchaseOrderWorkflowExportShopifyContentService
 {
-    public const string EXPORT_TYPE = 'shopify_content_no_inventory';
+    public const string EXPORT_TYPE = 'shopify_content';
 
-    public const string EXPORT_TYPE_LABEL = 'Shopify content (images + description, no inventory)';
+    public const string EXPORT_TYPE_LABEL = 'Shopify content (images + description)';
 
     public function __construct(
         private readonly PurchaseOrderProductScopeService $scope,
         private readonly ProductRepository $products,
         private readonly ShopifyProductCreateFromErpService $shopifyCreate,
         private readonly ShopifyWriteScopeGuard $scopeGuard,
+        private readonly ShopifyInventoryLocationResolver $locationResolver,
         private readonly CloudflaredTunnel $tunnel,
     ) {}
 
@@ -76,7 +78,8 @@ final class PurchaseOrderWorkflowExportShopifyContentService
         return [
             'export_type' => self::EXPORT_TYPE,
             'export_type_label' => self::EXPORT_TYPE_LABEL,
-            'write_scope_ok' => $this->scopeGuard->hasWriteProductsScope(),
+            'write_scope_ok' => $this->scopeGuard->hasWriteProductsScope()
+                && $this->scopeGuard->hasWriteInventoryScope(),
             'images_enabled' => $imagesEnabled,
             'tunnel_url' => $imagesEnabled ? $tunnelUrl : null,
             'products' => $rows,
@@ -111,6 +114,8 @@ final class PurchaseOrderWorkflowExportShopifyContentService
         }
 
         $this->scopeGuard->assertWriteProductsScope();
+        $this->scopeGuard->assertWriteInventoryScope();
+        $locationGid = $this->locationResolver->resolveLocationGid();
 
         /** @var \Illuminate\Support\Collection<int, Product> $products */
         $products = $this->products->listForShopifyContentExportByUuids($uuids);
@@ -128,7 +133,8 @@ final class PurchaseOrderWorkflowExportShopifyContentService
                     $product,
                     $tunnelUrl,
                     $usedHandles,
-                    includeInventory: false,
+                    includeInventory: true,
+                    locationGid: $locationGid,
                 );
                 $created++;
             } catch (\Throwable $e) {

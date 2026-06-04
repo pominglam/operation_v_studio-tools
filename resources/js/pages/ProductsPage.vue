@@ -347,6 +347,7 @@ type ReadyFilter = 'all' | 'ready' | 'not_ready';
 const readyFilter = ref<ReadyFilter>('all');
 const availableFilter = ref('');
 const notArrivedFilter = ref('');
+const notArrivedIncludeDraftOrders = ref(true);
 const reorderFilter = ref('');
 const reorderGtOne = ref(false);
 
@@ -371,9 +372,17 @@ const purchaseOrderOptions = computed<MultiSelectOption[]>(() => {
 const productFlagOptions: MultiSelectOption[] = [
     { value: 'critical', label: 'Critical' },
     { value: 'discontinued', label: 'Discontinued' },
+    { value: 'hazardous_shipment', label: 'Hazardous shipment' },
 ];
 
 const selectedProductFlags = ref<string[]>([]);
+
+const shipmentMethodOptions: MultiSelectOption[] = [
+    { value: 'air', label: 'Air' },
+    { value: 'sea', label: 'Sea' },
+];
+
+const selectedShipmentMethods = ref<string[]>([]);
 
 const missingOptions = ref<MultiSelectOption[]>([
     { value: 'ok', label: 'OK (complete)' },
@@ -487,6 +496,10 @@ const selectionScopeKey = computed<string>(() => {
         .map((f) => f.trim())
         .filter(Boolean)
         .sort();
+    const shipmentMethods = [...selectedShipmentMethods.value]
+        .map((m) => m.trim())
+        .filter(Boolean)
+        .sort();
     const pos = purchaseOrderUuids.value
         .map((v) => v.trim())
         .filter(Boolean)
@@ -502,11 +515,13 @@ const selectionScopeKey = computed<string>(() => {
         vendors,
         missing,
         product_flags: productFlags,
+        shipment_methods: shipmentMethods,
         purchase_order_uuids: pos,
         po_product_novelty: poProductNovelty.value,
         ready: readyFilter.value,
         available: parseNonNegativeIntegerFilter(availableFilter.value) ?? null,
         not_arrived: parseNonNegativeIntegerFilter(notArrivedFilter.value) ?? null,
+        not_arrived_include_draft_orders: notArrivedIncludeDraftOrders.value,
         reorder: parseNonNegativeIntegerFilter(reorderFilter.value) ?? null,
         reorder_gt_one: reorderGtOne.value,
         include_archived: includeArchived.value,
@@ -528,9 +543,14 @@ function productsListParams(per_page: number, pageNum: number): Record<string, u
         missing: selectedMissing.value.length > 0 ? selectedMissing.value : undefined,
         product_flags:
             selectedProductFlags.value.length > 0 ? selectedProductFlags.value : undefined,
+        shipment_methods:
+            selectedShipmentMethods.value.length > 0
+                ? selectedShipmentMethods.value
+                : undefined,
         ready: readyFilter.value !== 'all' ? readyFilter.value : undefined,
         available: parseNonNegativeIntegerFilter(availableFilter.value),
         not_arrived: parseNonNegativeIntegerFilter(notArrivedFilter.value),
+        not_arrived_include_draft_orders: notArrivedIncludeDraftOrders.value ? 1 : 0,
         reorder: parseNonNegativeIntegerFilter(reorderFilter.value),
         reorder_gt_one: reorderGtOne.value ? 1 : undefined,
         include_archived: includeArchived.value ? 1 : undefined,
@@ -593,6 +613,10 @@ function buildLoadKey(): string {
         .map((f) => f.trim())
         .filter(Boolean)
         .sort();
+    const shipmentMethods = [...selectedShipmentMethods.value]
+        .map((m) => m.trim())
+        .filter(Boolean)
+        .sort();
     const pos = purchaseOrderUuids.value
         .map((v) => v.trim())
         .filter(Boolean)
@@ -610,6 +634,7 @@ function buildLoadKey(): string {
         vendors,
         missing,
         product_flags: productFlags,
+        shipment_methods: shipmentMethods,
         purchase_order_uuids: pos,
         po_product_novelty: poProductNovelty.value,
         ready: readyFilter.value,
@@ -766,7 +791,13 @@ function isProductSortKey(value: unknown): value is ProductSortKey {
     return typeof value === 'string' && (PRODUCT_SORT_KEYS as readonly string[]).includes(value);
 }
 
-async function load(): Promise<void> {
+type LoadOptions = {
+    /** Refresh list data without hiding the table (background / post-save refresh). */
+    silent?: boolean;
+};
+
+async function load(options: LoadOptions = {}): Promise<void> {
+    const silent = options.silent === true;
     const key = buildLoadKey();
     // Prevent duplicate concurrent loads (common during initial hydration + batch polling).
     if (inFlightLoadKey === key) return;
@@ -775,7 +806,9 @@ async function load(): Promise<void> {
     if (lastLoadedKey === key && now - lastLoadedAt < 1500) return;
     inFlightLoadKey = key;
 
-    loading.value = true;
+    if (!silent) {
+        loading.value = true;
+    }
     error.value = null;
 
     try {
@@ -841,11 +874,31 @@ async function load(): Promise<void> {
             ? `Failed to load products (HTTP ${status}).${details ? ` ${details}` : ''}`
             : `Failed to load products.${details ? ` ${details}` : ''}`;
     } finally {
-        loading.value = false;
+        if (!silent) {
+            loading.value = false;
+        }
         if (inFlightLoadKey === key) inFlightLoadKey = null;
         lastLoadedKey = key;
         lastLoadedAt = Date.now();
     }
+}
+
+function mergeProductRowFromApi(existing: ProductRow, api: ProductRow): ProductRow {
+    return {
+        ...existing,
+        sku: api.sku,
+        barcode: api.barcode,
+        description: api.description,
+        handle: api.handle,
+        main_type: api.main_type,
+        type: api.type,
+        grade: api.grade ?? null,
+        scale: api.scale ?? null,
+        series: api.series ?? null,
+        vendor: api.vendor,
+        available: api.available,
+        maintain: api.maintain,
+    };
 }
 
 async function loadFilterOptions(): Promise<void> {
@@ -985,8 +1038,12 @@ async function bulkRenamePlamodAssets(ids: string[]): Promise<{ queued: number; 
 }
 
 async function updateProduct(id: string, payload: UpdateProductPayload): Promise<void> {
-    await api.patch(`/api/v1/products/${id}`, payload);
-    await loadFilterOptions();
+    const res = await api.patch<{ data: ProductRow }>(`/api/v1/products/${id}`, payload);
+    const apiRow = res.data.data;
+    products.value = products.value.map((p) =>
+        p.id === id ? mergeProductRowFromApi(p, apiRow) : p,
+    );
+    void loadFilterOptions();
 }
 
 async function updateProductAvailable(id: string, available: number | null): Promise<void> {
@@ -1028,6 +1085,45 @@ async function updateProductAvailable(id: string, available: number | null): Pro
     } catch (e: unknown) {
         // Revert on failure.
         products.value = products.value.map((p) => (p.id === id ? { ...p, available: prev } : p));
+        throw e;
+    }
+}
+
+async function updateProductHold(id: string, hold: number | null): Promise<void> {
+    const prev = products.value.find((p) => p.id === id)?.hold ?? null;
+
+    products.value = products.value.map((p) => (p.id === id ? { ...p, hold } : p));
+
+    try {
+        const res = await api.patch(
+            `/api/v1/products/${id}/hold`,
+            { hold },
+            { validateStatus: () => true },
+        );
+
+        if (res.status !== 200) {
+            const anyData = res.data as any;
+            const msgRaw: unknown = anyData?.message ?? anyData?.error ?? anyData?.errors;
+            let details = '';
+            if (typeof msgRaw === 'string') details = msgRaw.trim();
+            else if (msgRaw !== null && msgRaw !== undefined) {
+                try {
+                    details = JSON.stringify(msgRaw);
+                } catch {
+                    details = String(msgRaw);
+                }
+            }
+            throw new Error(
+                `Failed to update hold quantity (HTTP ${res.status}).${details ? ` ${details}` : ''}`,
+            );
+        }
+
+        const next = (res.data as any)?.data?.hold;
+        if (typeof next === 'number' || next === null) {
+            products.value = products.value.map((p) => (p.id === id ? { ...p, hold: next } : p));
+        }
+    } catch (e: unknown) {
+        products.value = products.value.map((p) => (p.id === id ? { ...p, hold: prev } : p));
         throw e;
     }
 }
@@ -1202,6 +1298,98 @@ async function toggleProductCritical(id: string, isCritical: boolean): Promise<v
     }
 }
 
+async function toggleProductHazardousShipment(
+    id: string,
+    isHazardousShipment: boolean,
+): Promise<void> {
+    const prev = products.value.find((p) => p.id === id)?.is_hazardous_shipment ?? false;
+
+    products.value = products.value.map((p) =>
+        p.id === id ? { ...p, is_hazardous_shipment: isHazardousShipment } : p,
+    );
+    try {
+        const res = await api.patch(
+            `/api/v1/products/${id}/hazardous-shipment`,
+            { is_hazardous_shipment: isHazardousShipment },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const anyData = res.data as any;
+            const msgRaw: unknown = anyData?.message ?? anyData?.error ?? anyData?.errors;
+            let details = '';
+            if (typeof msgRaw === 'string') details = msgRaw.trim();
+            else if (msgRaw !== null && msgRaw !== undefined) {
+                try {
+                    details = JSON.stringify(msgRaw);
+                } catch {
+                    details = String(msgRaw);
+                }
+            }
+            throw new Error(
+                `Failed to update hazardous shipment flag (HTTP ${res.status}).${details ? ` ${details}` : ''}`,
+            );
+        }
+
+        const next = (res.data as any)?.data?.is_hazardous_shipment;
+        if (typeof next === 'boolean') {
+            products.value = products.value.map((p) =>
+                p.id === id ? { ...p, is_hazardous_shipment: next } : p,
+            );
+        }
+    } catch (e: unknown) {
+        products.value = products.value.map((p) =>
+            p.id === id ? { ...p, is_hazardous_shipment: prev } : p,
+        );
+        throw e;
+    }
+}
+
+async function updateProductShipmentMethod(
+    id: string,
+    shipmentMethod: 'air' | 'sea' | null,
+): Promise<void> {
+    const prev = products.value.find((p) => p.id === id)?.shipment_method ?? null;
+
+    products.value = products.value.map((p) =>
+        p.id === id ? { ...p, shipment_method: shipmentMethod } : p,
+    );
+    try {
+        const res = await api.patch(
+            `/api/v1/products/${id}/shipment-method`,
+            { shipment_method: shipmentMethod },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const anyData = res.data as any;
+            const msgRaw: unknown = anyData?.message ?? anyData?.error ?? anyData?.errors;
+            let details = '';
+            if (typeof msgRaw === 'string') details = msgRaw.trim();
+            else if (msgRaw !== null && msgRaw !== undefined) {
+                try {
+                    details = JSON.stringify(msgRaw);
+                } catch {
+                    details = String(msgRaw);
+                }
+            }
+            throw new Error(
+                `Failed to update shipment method (HTTP ${res.status}).${details ? ` ${details}` : ''}`,
+            );
+        }
+
+        const next = (res.data as any)?.data?.shipment_method;
+        if (next === 'air' || next === 'sea' || next === null) {
+            products.value = products.value.map((p) =>
+                p.id === id ? { ...p, shipment_method: next } : p,
+            );
+        }
+    } catch (e: unknown) {
+        products.value = products.value.map((p) =>
+            p.id === id ? { ...p, shipment_method: prev } : p,
+        );
+        throw e;
+    }
+}
+
 async function toggleProductDiscontinued(id: string, isDiscontinued: boolean): Promise<void> {
     const prev = products.value.find((p) => p.id === id)?.is_discontinued ?? false;
 
@@ -1281,7 +1469,7 @@ async function pollSyncBatchOnce(): Promise<void> {
         if (res.data.data.finished_at || res.data.data.cancelled_at) {
             stopSyncBatchPoll();
             // Refresh products so missing-info badges/filters reflect the latest ingested content.
-            void load();
+            void load({ silent: true });
         }
     } catch {
         // ignore transient polling failures
@@ -1397,9 +1585,11 @@ watch(
         selectedVendors,
         selectedMissing,
         selectedProductFlags,
+        selectedShipmentMethods,
         readyFilter,
         availableFilter,
         notArrivedFilter,
+        notArrivedIncludeDraftOrders,
         reorderFilter,
         reorderGtOne,
         sortBy,
@@ -1449,9 +1639,11 @@ onMounted(() => {
         selectedVendors?: string[];
         selectedMissing?: string[];
         selectedProductFlags?: string[];
+        selectedShipmentMethods?: string[];
         readyFilter?: ReadyFilter;
         availableFilter?: string;
         notArrivedFilter?: string;
+        notArrivedIncludeDraftOrders?: boolean;
         reorderFilter?: string;
         reorderGtOne?: boolean;
         purchaseOrderUuid?: string; // legacy
@@ -1479,6 +1671,11 @@ onMounted(() => {
                 productFlagOptions.some((o) => o.value === f),
             );
         }
+        if (Array.isArray(saved.selectedShipmentMethods)) {
+            selectedShipmentMethods.value = saved.selectedShipmentMethods.filter((m) =>
+                shipmentMethodOptions.some((o) => o.value === m),
+            );
+        }
         if (
             saved.readyFilter === 'all' ||
             saved.readyFilter === 'ready' ||
@@ -1490,6 +1687,9 @@ onMounted(() => {
             availableFilter.value = saved.availableFilter;
         if (typeof saved.notArrivedFilter === 'string')
             notArrivedFilter.value = saved.notArrivedFilter;
+        if (typeof saved.notArrivedIncludeDraftOrders === 'boolean') {
+            notArrivedIncludeDraftOrders.value = saved.notArrivedIncludeDraftOrders;
+        }
         if (typeof saved.reorderFilter === 'string') reorderFilter.value = saved.reorderFilter;
         if (typeof saved.reorderGtOne === 'boolean') reorderGtOne.value = saved.reorderGtOne;
         if (Array.isArray(saved.purchaseOrderUuids))
@@ -1569,9 +1769,11 @@ watch(
         selectedVendors,
         selectedMissing,
         selectedProductFlags,
+        selectedShipmentMethods,
         readyFilter,
         availableFilter,
         notArrivedFilter,
+        notArrivedIncludeDraftOrders,
         reorderFilter,
         reorderGtOne,
         sortBy,
@@ -1595,9 +1797,11 @@ watch(
             selectedVendors: selectedVendors.value,
             selectedMissing: selectedMissing.value,
             selectedProductFlags: selectedProductFlags.value,
+            selectedShipmentMethods: selectedShipmentMethods.value,
             readyFilter: readyFilter.value,
             availableFilter: availableFilter.value,
             notArrivedFilter: notArrivedFilter.value,
+            notArrivedIncludeDraftOrders: notArrivedIncludeDraftOrders.value,
             reorderFilter: reorderFilter.value,
             reorderGtOne: reorderGtOne.value,
             purchaseOrderUuids: purchaseOrderUuids.value,
@@ -1621,9 +1825,11 @@ function resetListState(): void {
     selectedVendors.value = [];
     selectedMissing.value = [];
     selectedProductFlags.value = [];
+    selectedShipmentMethods.value = [];
     readyFilter.value = 'all';
     availableFilter.value = '';
     notArrivedFilter.value = '';
+    notArrivedIncludeDraftOrders.value = true;
     reorderFilter.value = '';
     reorderGtOne.value = false;
     purchaseOrderUuids.value = [];
@@ -1880,10 +2086,18 @@ function resetListState(): void {
 
                             <MultiSelectFilter
                                 v-model="selectedProductFlags"
-                                label="Critical / discontinued"
+                                label="Product flags"
                                 :options="productFlagOptions"
                                 placeholder="Any"
                                 test-id="products-filter-product-flags"
+                            />
+
+                            <MultiSelectFilter
+                                v-model="selectedShipmentMethods"
+                                label="Shipment"
+                                :options="shipmentMethodOptions"
+                                placeholder="Any"
+                                test-id="products-filter-shipment-methods"
                             />
 
                             <div>
@@ -1955,6 +2169,17 @@ function resetListState(): void {
                                     placeholder="Any"
                                     data-testid="products-filter-not-arrived"
                                 />
+                                <label
+                                    class="mt-2 inline-flex items-center gap-2 text-xs text-slate-700"
+                                >
+                                    <input
+                                        v-model="notArrivedIncludeDraftOrders"
+                                        type="checkbox"
+                                        class="h-4 w-4 rounded border-slate-300"
+                                        data-testid="products-filter-not-arrived-include-draft"
+                                    />
+                                    Include draft POs
+                                </label>
                             </div>
 
                             <div>
@@ -2090,11 +2315,14 @@ function resetListState(): void {
                         :on-create-draft-purchase-order="createDraftPurchaseOrderFromSelectedProducts"
                         :on-update="updateProduct"
                         :on-update-available="updateProductAvailable"
+                        :on-update-hold="updateProductHold"
                         :on-update-maintain="updateProductMaintain"
                         :on-toggle-ready="toggleProductReady"
                         :on-toggle-latest-arrival="toggleProductLatestArrival"
                         :on-toggle-critical="toggleProductCritical"
                         :on-toggle-discontinue="toggleProductDiscontinued"
+                        :on-toggle-hazardous-shipment="toggleProductHazardousShipment"
+                        :on-update-shipment-method="updateProductShipmentMethod"
                         :on-select-all-matching="selectAllMatchingIds"
                         :on-open-plamod="openPlamodDrawer"
                         :on-open-po-lines="openPoLinesDrawer"

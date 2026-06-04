@@ -33,9 +33,12 @@ use Illuminate\Support\Str;
  * @property bool $latest_arrival
  * @property bool $is_critical
  * @property bool $is_discontinued
+ * @property bool $is_hazardous_shipment
+ * @property string|null $shipment_method
  * @property int|null $order_qty
  * @property int|null $filled_qty
  * @property int|null $available_qty
+ * @property int|null $hold_qty
  * @property int|null $maintain_qty
  * @property string|null $extended
  * @property string|null $latest_unit_cost
@@ -67,9 +70,12 @@ final class Product extends Model
         'latest_arrival',
         'is_critical',
         'is_discontinued',
+        'is_hazardous_shipment',
+        'shipment_method',
         'order_qty',
         'filled_qty',
         'available_qty',
+        'hold_qty',
         'maintain_qty',
         'extended',
         'latest_unit_cost',
@@ -81,6 +87,7 @@ final class Product extends Model
         'order_qty' => 'integer',
         'filled_qty' => 'integer',
         'available_qty' => 'integer',
+        'hold_qty' => 'integer',
         'maintain_qty' => 'integer',
         'yen_price' => 'integer',
         'bandai_launch_date' => 'date',
@@ -90,6 +97,7 @@ final class Product extends Model
         'latest_arrival' => 'boolean',
         'is_critical' => 'boolean',
         'is_discontinued' => 'boolean',
+        'is_hazardous_shipment' => 'boolean',
         'extended' => 'decimal:2',
         'latest_unit_cost' => 'decimal:2',
         'latest_landed_unit_cost' => 'decimal:2',
@@ -105,11 +113,12 @@ final class Product extends Model
         });
 
         self::saving(function (self $product): void {
-            if (! $product->isDirty('available_qty') || $product->available_qty === null) {
-                return;
+            if ($product->isDirty('available_qty') && $product->available_qty !== null) {
+                $product->available_qty = max(0, (int) $product->available_qty);
             }
-
-            $product->available_qty = max(0, (int) $product->available_qty);
+            if ($product->isDirty('hold_qty') && $product->hold_qty !== null) {
+                $product->hold_qty = max(0, (int) $product->hold_qty);
+            }
         });
     }
 

@@ -6,6 +6,18 @@ namespace App\Services\Shopify\Admin\GraphQl;
 
 final class ShopifyAdminGraphQlQueries
 {
+    public const PUBLICATIONS_PAGE = <<<'GQL'
+query Publications($first: Int!, $after: String) {
+  publications(first: $first, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id
+      name
+    }
+  }
+}
+GQL;
+
     public const LOCATIONS_PAGE = <<<'GQL'
 query Locations($first: Int!, $after: String) {
   locations(first: $first, after: $after) {

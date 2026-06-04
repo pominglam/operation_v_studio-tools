@@ -13,6 +13,8 @@ use Illuminate\Support\Str;
 
 final class ProductExportService
 {
+    public const string LATEST_ARRIVAL_TAG = 'latest arrival';
+
     public function __construct(
         private readonly ProductRepository $products,
         private readonly FxRateService $fxRates,
@@ -382,7 +384,7 @@ final class ProductExportService
             $tags[] = $type;
         }
         if ($product->latest_arrival) {
-            $tags[] = 'latest arrival';
+            $tags[] = self::LATEST_ARRIVAL_TAG;
         }
 
         $out = [];

@@ -64,6 +64,22 @@ return [
 
     'graphql_page_size' => max(5, min(250, (int) env('SHOPIFY_GRAPHQL_PAGE_SIZE', 50))),
 
+    /*
+    | PO Prepare skips full-store Shopify sync when both products and inventory_levels
+    | mirror segments completed within this window (seconds). Default: 1 hour.
+    */
+
+    'po_prepare_mirror_freshness_seconds' => max(60, (int) env('SHOPIFY_PO_PREPARE_MIRROR_FRESHNESS_SECONDS', 3600)),
+
+    /*
+    | Optional: pin inventory pushes to a specific Shopify location GID. When unset, the first
+    | active location with fulfills_online_orders is used (see ShopifyInventoryLocationResolver).
+    */
+
+    'inventory_location_gid' => env('SHOPIFY_INVENTORY_LOCATION_GID'),
+
+    'inventory_set_batch_size' => max(1, min(250, (int) env('SHOPIFY_INVENTORY_SET_BATCH_SIZE', 100))),
+
     'graphql_retry_attempts' => max(1, min(8, (int) env('SHOPIFY_GRAPHQL_RETRY_ATTEMPTS', 3))),
 
     'graphql_retry_sleep_ms' => max(50, min(5000, (int) env('SHOPIFY_GRAPHQL_RETRY_SLEEP_MS', 250))),

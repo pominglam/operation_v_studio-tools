@@ -52,6 +52,10 @@ const archiveStatus = ref<BulkFieldState<'archive' | 'unarchive'>>({
 const availableQty = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const maintainQty = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const extended = ref<BulkFieldState<string>>({ apply: false, value: '' });
+const isCritical = ref<BulkFieldState<'true' | 'false'>>({ apply: false, value: 'false' });
+const isDiscontinued = ref<BulkFieldState<'true' | 'false'>>({ apply: false, value: 'false' });
+const isHazardousShipment = ref<BulkFieldState<'true' | 'false'>>({ apply: false, value: 'false' });
+const shipmentMethod = ref<BulkFieldState<'' | 'air' | 'sea'>>({ apply: false, value: '' });
 const renamePlamodAssets = ref(false);
 
 function normalizeOptions(list: string[] | undefined, current: string): string[] {
@@ -98,6 +102,10 @@ const hasAnyApply = computed<boolean>(() => {
         availableQty.value.apply ||
         maintainQty.value.apply ||
         extended.value.apply ||
+        isCritical.value.apply ||
+        isDiscontinued.value.apply ||
+        isHazardousShipment.value.apply ||
+        shipmentMethod.value.apply ||
         renamePlamodAssets.value
     );
 });
@@ -120,6 +128,10 @@ function reset(): void {
     availableQty.value = { apply: false, value: '' };
     maintainQty.value = { apply: false, value: '' };
     extended.value = { apply: false, value: '' };
+    isCritical.value = { apply: false, value: 'false' };
+    isDiscontinued.value = { apply: false, value: 'false' };
+    isHazardousShipment.value = { apply: false, value: 'false' };
+    shipmentMethod.value = { apply: false, value: '' };
     renamePlamodAssets.value = false;
 }
 
@@ -148,6 +160,10 @@ watch(
         availableQty,
         maintainQty,
         extended,
+        isCritical,
+        isDiscontinued,
+        isHazardousShipment,
+        shipmentMethod,
     ],
     () => {
         // Clear stale validation messages as the user edits fields
@@ -283,6 +299,23 @@ function onConfirm(): void {
             localError.value = 'Total cost must be a number.';
             return;
         }
+    }
+
+    if (isCritical.value.apply) {
+        changes.is_critical = isCritical.value.value === 'true';
+    }
+
+    if (isDiscontinued.value.apply) {
+        changes.is_discontinued = isDiscontinued.value.value === 'true';
+    }
+
+    if (isHazardousShipment.value.apply) {
+        changes.is_hazardous_shipment = isHazardousShipment.value.value === 'true';
+    }
+
+    if (shipmentMethod.value.apply) {
+        const raw = shipmentMethod.value.value;
+        changes.shipment_method = raw === 'air' || raw === 'sea' ? raw : null;
     }
 
     emit('confirm', { changes, renamePlamodAssets: renamePlamodAssets.value });
@@ -637,6 +670,91 @@ function onConfirm(): void {
                             inputmode="decimal"
                             :disabled="!extended.apply || busy"
                         />
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="isCritical.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                                data-testid="bulk-critical-apply"
+                            />
+                            Critical
+                        </label>
+                        <select
+                            v-model="isCritical.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            :disabled="!isCritical.apply || busy"
+                            data-testid="bulk-critical-value"
+                        >
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="isDiscontinued.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                                data-testid="bulk-discontinued-apply"
+                            />
+                            Discontinued
+                        </label>
+                        <select
+                            v-model="isDiscontinued.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            :disabled="!isDiscontinued.apply || busy"
+                            data-testid="bulk-discontinued-value"
+                        >
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="isHazardousShipment.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                                data-testid="bulk-hazardous-apply"
+                            />
+                            Hazardous shipment
+                        </label>
+                        <select
+                            v-model="isHazardousShipment.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            :disabled="!isHazardousShipment.apply || busy"
+                            data-testid="bulk-hazardous-value"
+                        >
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="shipmentMethod.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                                data-testid="bulk-shipment-apply"
+                            />
+                            Shipment
+                        </label>
+                        <select
+                            v-model="shipmentMethod.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            :disabled="!shipmentMethod.apply || busy"
+                            data-testid="bulk-shipment-value"
+                        >
+                            <option value="">(clear)</option>
+                            <option value="air">Air</option>
+                            <option value="sea">Sea</option>
+                        </select>
                     </div>
                 </div>
 

@@ -139,6 +139,14 @@ final class SyncProductInfoJob implements ShouldQueue
                 }
             }
 
+            if ($didWork) {
+                try {
+                    $assetRenamer->renameImageAssetsForProductUuid($this->productUuid);
+                } catch (\Throwable) {
+                    // Best-effort; export/push still use stored filenames.
+                }
+            }
+
             if (is_string($batchId) && $batchId !== '') {
                 if ($didWork) {
                     $batchItems->markSucceeded($batchId, $this->productUuid);

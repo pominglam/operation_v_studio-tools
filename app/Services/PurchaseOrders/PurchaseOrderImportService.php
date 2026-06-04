@@ -90,6 +90,7 @@ final class PurchaseOrderImportService
         private readonly ProductTypeDerivationService $types,
         private readonly ProductLatestCostCacheService $latestCosts,
         private readonly PurchaseOrderXlsxReader $xlsxReader,
+        private readonly PurchaseOrderShipmentMethodService $shipmentMethods,
     ) {}
 
     /**
@@ -230,6 +231,7 @@ final class PurchaseOrderImportService
             }
 
             $this->latestCosts->recomputeForSkus(array_values(array_unique(array_map(static fn (array $r): string => (string) $r['sku'], $rows))));
+            $this->shipmentMethods->applyInferredFromLineItemsIfUnset($po);
 
             return [
                 'purchase_order_uuid' => (string) $po->uuid,
@@ -617,6 +619,11 @@ final class PurchaseOrderImportService
             if (array_key_exists('notes', $meta)) {
                 $po->notes = $meta['notes'];
             }
+            if (array_key_exists('shipment_method', $meta)) {
+                $po->shipment_method = $this->shipmentMethods->normalize(
+                    $meta['shipment_method'] !== null ? (string) $meta['shipment_method'] : null,
+                );
+            }
 
             return $po;
         }
@@ -638,6 +645,11 @@ final class PurchaseOrderImportService
         $po->product_total = array_key_exists('product_total', $meta) ? $meta['product_total'] : null;
         $po->surcharge_total = array_key_exists('surcharge_total', $meta) ? $meta['surcharge_total'] : null;
         $po->notes = array_key_exists('notes', $meta) ? $meta['notes'] : null;
+        if (array_key_exists('shipment_method', $meta)) {
+            $po->shipment_method = $this->shipmentMethods->normalize(
+                $meta['shipment_method'] !== null ? (string) $meta['shipment_method'] : null,
+            );
+        }
         $this->purchaseOrders->create($po);
 
         return $po;

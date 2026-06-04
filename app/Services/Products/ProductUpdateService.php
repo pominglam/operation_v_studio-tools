@@ -7,6 +7,7 @@ namespace App\Services\Products;
 use App\DAL\Products\ProductRepository;
 use App\Models\Product;
 use App\Services\Products\Exceptions\DuplicateSkuException;
+use App\Support\Products\ProductHoldQty;
 use Illuminate\Database\QueryException;
 
 final class ProductUpdateService
@@ -121,8 +122,11 @@ final class ProductUpdateService
     public function updateAvailable(string $uuid, ?int $available): Product
     {
         $product = $this->products->findByUuidOrFail($uuid);
+        $nextAvailable = $available === null ? null : max(0, $available);
+        ProductHoldQty::assertHoldWithinAvailable($product->hold_qty, $nextAvailable);
+
         $product->fill([
-            'available_qty' => $available,
+            'available_qty' => $nextAvailable,
         ]);
 
         return $this->products->save($product);
@@ -133,6 +137,19 @@ final class ProductUpdateService
         $product = $this->products->findByUuidOrFail($uuid);
         $product->fill([
             'maintain_qty' => $maintain,
+        ]);
+
+        return $this->products->save($product);
+    }
+
+    public function updateHold(string $uuid, ?int $hold): Product
+    {
+        $product = $this->products->findByUuidOrFail($uuid);
+        $nextHold = $hold === null ? 0 : max(0, $hold);
+        ProductHoldQty::assertHoldWithinAvailable($nextHold, $product->available_qty);
+
+        $product->fill([
+            'hold_qty' => $nextHold,
         ]);
 
         return $this->products->save($product);
@@ -173,6 +190,26 @@ final class ProductUpdateService
         $product = $this->products->findByUuidOrFail($uuid);
         $product->fill([
             'is_discontinued' => $isDiscontinued,
+        ]);
+
+        return $this->products->save($product);
+    }
+
+    public function updateHazardousShipment(string $uuid, bool $isHazardousShipment): Product
+    {
+        $product = $this->products->findByUuidOrFail($uuid);
+        $product->fill([
+            'is_hazardous_shipment' => $isHazardousShipment,
+        ]);
+
+        return $this->products->save($product);
+    }
+
+    public function updateShipmentMethod(string $uuid, ?string $shipmentMethod): Product
+    {
+        $product = $this->products->findByUuidOrFail($uuid);
+        $product->fill([
+            'shipment_method' => $shipmentMethod,
         ]);
 
         return $this->products->save($product);

@@ -54,7 +54,8 @@ it('persists a workflow checklist on a purchase order', function (): void {
     $res->assertJsonPath('data.workflow_checklist.set_selling_price', false);
     $res->assertJsonPath('data.workflow_checklist.select_and_arrange_product_images', false);
     $res->assertJsonPath('data.workflow_checklist.ensure_all_products_have_barcode', false);
-    $res->assertJsonPath('data.workflow_checklist.mark_latest_arrival_and_published_on_shopify', false);
+    $res->assertJsonPath('data.workflow_checklist.mark_published_on_shopify', false);
+    $res->assertJsonPath('data.workflow_checklist.mark_latest_arrival', false);
 
     $po->refresh();
     expect($po->workflow_checklist_json)->toBeArray();
@@ -91,4 +92,30 @@ it('defers manual image curation on the workflow checklist', function (): void {
         ->assertOk()
         ->assertJsonPath('data.workflow_checklist.select_and_arrange_product_images', false)
         ->assertJsonPath('data.workflow_checklist.select_and_arrange_product_images_deferred', false);
+});
+
+it('persists crawl skip metadata and clears it when crawl step is unchecked', function (): void {
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000222223',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+    ]);
+
+    $this->patchJson("/api/v1/purchase-orders/{$po->uuid}/workflow-checklist", [
+        'crawl_desc_image_price' => true,
+        'crawl_desc_image_price_skipped' => true,
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.workflow_checklist.crawl_desc_image_price', true)
+        ->assertJsonPath('data.workflow_checklist.crawl_desc_image_price_skipped', true);
+
+    $po->refresh();
+    expect($po->workflow_checklist_json['crawl_desc_image_price_skipped'] ?? null)->toBeTrue();
+
+    $this->patchJson("/api/v1/purchase-orders/{$po->uuid}/workflow-checklist", [
+        'crawl_desc_image_price' => false,
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.workflow_checklist.crawl_desc_image_price', false)
+        ->assertJsonPath('data.workflow_checklist.crawl_desc_image_price_skipped', false);
 });

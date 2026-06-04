@@ -35,6 +35,11 @@
             "last_completed": null,
             "interval_days": 14,
             "description": "Sync database schema documentation with migrations"
+        },
+        "product_hold_export_scope": {
+            "last_completed": null,
+            "interval_days": null,
+            "description": "After product hold_qty ships: revisit non-Shopify exports (barcoded CSV, products export, etc.) — see docs/requirements/product-hold-qty.md § Deferred"
         }
     }
 }

@@ -18,6 +18,7 @@ final class PurchaseOrderUpdateService
         private readonly PurchaseOrderRepository $purchaseOrders,
         private readonly InventoryRepository $inventory,
         private readonly ProductLatestCostCacheService $latestCosts,
+        private readonly PurchaseOrderShipmentMethodService $shipmentMethods,
     ) {}
 
     /**
@@ -35,7 +36,8 @@ final class PurchaseOrderUpdateService
      *   vendor_currency_code?:string,
      *   vendor_product_total?:string|null,
      *   notes?:string|null,
-     *   is_done?:bool
+     *   is_done?:bool,
+     *   shipment_method?:string|null
      * } $changes
      */
     public function update(string $uuid, array $changes): PurchaseOrder
@@ -90,6 +92,11 @@ final class PurchaseOrderUpdateService
             }
             if (array_key_exists('is_done', $changes)) {
                 $po->is_done = (bool) $changes['is_done'];
+            }
+            if (array_key_exists('shipment_method', $changes)) {
+                $po->shipment_method = $this->shipmentMethods->normalize(
+                    $changes['shipment_method'] !== null ? (string) $changes['shipment_method'] : null,
+                );
             }
 
             $po->fx_rate_to_cad = $this->deriveFxRateToCad(

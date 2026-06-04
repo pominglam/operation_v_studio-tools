@@ -24,6 +24,9 @@ const forceRefreshingAll = ref(false);
 const backfillingTypes = ref(false);
 const recomputingTypes = ref(false);
 const refreshingLatestCosts = ref(false);
+const clearingStaleLatestArrival = ref(false);
+const clearStaleLatestArrivalMessage = ref<string | null>(null);
+const clearStaleLatestArrivalError = ref<string | null>(null);
 const notesLoading = ref(false);
 const notesSaving = ref(false);
 const flushMessage = ref<string | null>(null);
@@ -268,6 +271,13 @@ type ConfirmState =
           message: string;
           confirmText: string;
           variant: 'danger' | 'primary';
+      }
+    | {
+          kind: 'clear_stale_latest_arrival';
+          title: string;
+          message: string;
+          confirmText: string;
+          variant: 'danger' | 'primary';
       };
 
 const confirm = ref<ConfirmState | null>(null);
@@ -336,6 +346,17 @@ function requestRefreshLatestCosts(): void {
     };
 }
 
+function requestClearStaleLatestArrival(): void {
+    confirm.value = {
+        kind: 'clear_stale_latest_arrival',
+        title: 'Clear stale latest arrival flags',
+        message:
+            'Remove the latest arrival flag locally and remove only the "latest arrival" tag on Shopify for products on POs older than 4 weeks, except products that also appear on a PO within the last 4 weeks (those keep the flag). Published on Shopify and other tags are not changed. Continue?',
+        confirmText: 'Clear flags',
+        variant: 'primary',
+    };
+}
+
 function requestRestoreDb(): void {
     if (!selectedRestoreUuid.value) return;
     const b = dbBackups.value.find((x) => x.uuid === selectedRestoreUuid.value) ?? null;
@@ -378,6 +399,11 @@ async function confirmAction(): Promise<void> {
         return;
     }
 
+    if (current.kind === 'clear_stale_latest_arrival') {
+        await clearStaleLatestArrival();
+        return;
+    }
+
     if (current.kind === 'restore_db') {
         await restoreDb();
         return;
@@ -399,6 +425,42 @@ async function confirmAction(): Promise<void> {
     }
 
     await forceRefreshAll();
+}
+
+async function clearStaleLatestArrival(): Promise<void> {
+    clearingStaleLatestArrival.value = true;
+    clearStaleLatestArrivalMessage.value = null;
+    clearStaleLatestArrivalError.value = null;
+    try {
+        const res = await api.post<{
+            ok: boolean;
+            data: {
+                purchase_orders_matched: number;
+                products_cleared: number;
+                cutoff_date: string;
+                shopify_tags_removed: number;
+                shopify_skipped_no_gid: number;
+                shopify_tag_removals_failed: number;
+            };
+        }>('/api/v1/maintenance/clear-stale-latest-arrival');
+        const d = res.data.data;
+        let msg = `Cleared latest arrival on ${d.products_cleared} product(s) from ${d.purchase_orders_matched} PO(s) older than ${d.cutoff_date}.`;
+        if (d.shopify_tags_removed > 0) {
+            msg += ` Removed the latest arrival tag on ${d.shopify_tags_removed} Shopify product(s).`;
+        }
+        if (d.shopify_skipped_no_gid > 0) {
+            msg += ` ${d.shopify_skipped_no_gid} had no Shopify mirror (tag not pushed).`;
+        }
+        if (d.shopify_tag_removals_failed > 0) {
+            msg += ` ${d.shopify_tag_removals_failed} Shopify tag removal(s) failed.`;
+        }
+        clearStaleLatestArrivalMessage.value = msg;
+    } catch {
+        clearStaleLatestArrivalError.value = 'Failed to clear stale latest arrival flags.';
+    } finally {
+        clearingStaleLatestArrival.value = false;
+        confirm.value = null;
+    }
 }
 
 async function refreshLatestCosts(): Promise<void> {
@@ -1531,6 +1593,49 @@ watch(
         <div class="rounded-lg border border-slate-200 bg-white p-4">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
+                    <div class="text-sm font-medium text-slate-900">
+                        Clear stale latest arrival flags
+                    </div>
+                    <div class="mt-1 text-sm text-slate-600">
+                        Step 1 before marking a new PO: remove latest arrival from products on
+                        POs older than 4 weeks (by received date, or created date if not set).
+                        Does not change published on Shopify.
+                    </div>
+                </div>
+
+                <button
+                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    data-testid="maintenance-clear-stale-latest-arrival"
+                    :disabled="clearingStaleLatestArrival"
+                    @click="requestClearStaleLatestArrival"
+                >
+                    {{
+                        clearingStaleLatestArrival
+                            ? 'Clearing…'
+                            : 'Clear stale latest arrival'
+                    }}
+                </button>
+            </div>
+
+            <div
+                v-if="clearStaleLatestArrivalError"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
+                {{ clearStaleLatestArrivalError }}
+            </div>
+
+            <div
+                v-if="clearStaleLatestArrivalMessage"
+                class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+                {{ clearStaleLatestArrivalMessage }}
+            </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
                     <div class="text-sm font-medium text-slate-900">Backfill product types</div>
                     <div class="mt-1 text-sm text-slate-600">
                         Fill missing product types based on the product description (does not
@@ -1801,7 +1906,14 @@ watch(
             :message="confirm?.message ?? ''"
             :confirm-text="confirm?.confirmText ?? 'Confirm'"
             :variant="confirm?.variant ?? 'primary'"
-            :busy="flushing || resettingRun || backfillingTypes || recomputingTypes || refreshingLatestCosts"
+            :busy="
+                flushing ||
+                resettingRun ||
+                backfillingTypes ||
+                recomputingTypes ||
+                refreshingLatestCosts ||
+                clearingStaleLatestArrival
+            "
             @cancel="cancelConfirm"
             @confirm="confirmAction"
         />

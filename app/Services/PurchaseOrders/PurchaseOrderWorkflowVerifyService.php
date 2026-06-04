@@ -34,7 +34,7 @@ final class PurchaseOrderWorkflowVerifyService
             $done = (bool) ($result['done'] ?? false);
             $newlyChecked = false;
 
-            if ($done && ! $alreadyChecked && $this->isAutoCheckable($key)) {
+            if ($done && ! $alreadyChecked && $this->isAutoCheckable($key, $po)) {
                 $changes[$key] = true;
                 $newlyChecked = true;
                 $alreadyChecked = true;
@@ -61,12 +61,31 @@ final class PurchaseOrderWorkflowVerifyService
         ];
     }
 
-    private function isAutoCheckable(string $key): bool
+    private function isAutoCheckable(string $key, PurchaseOrder $po): bool
     {
-        return ! in_array($key, [
+        if (in_array($key, [
             'select_and_arrange_product_images',
+            'set_selling_price',
             'import_product_available_quantity',
             'update_product_available_with_shopify_current_inventory_quantity',
-        ], true);
+        ], true)) {
+            return false;
+        }
+
+        if ($key === 'crawl_desc_image_price') {
+            $existing = is_array($po->workflow_checklist_json) ? $po->workflow_checklist_json : [];
+            if ((bool) ($existing['crawl_desc_image_price_skipped'] ?? false)) {
+                return false;
+            }
+
+            return $this->isPlamodVendor($po->vendor);
+        }
+
+        return true;
+    }
+
+    private function isPlamodVendor(string $vendor): bool
+    {
+        return strcasecmp(trim($vendor), 'Plamod') === 0;
     }
 }

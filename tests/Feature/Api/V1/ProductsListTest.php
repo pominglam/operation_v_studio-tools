@@ -303,8 +303,70 @@ it('filters products by critical and discontinued product flags', function (): v
         ->not->toContain('FLAG-NONE');
 });
 
+it('filters products by hazardous shipment product flag', function (): void {
+    \App\Models\Product::query()->create([
+        'sku' => 'FLAG-HAZ',
+        'description' => 'Hazardous only',
+        'vendor' => 'Plamod',
+        'is_hazardous_shipment' => true,
+    ]);
+    \App\Models\Product::query()->create([
+        'sku' => 'FLAG-NO-HAZ',
+        'description' => 'Not hazardous',
+        'vendor' => 'Plamod',
+        'is_hazardous_shipment' => false,
+    ]);
+
+    $skus = collect(
+        $this->getJson('/api/v1/products?per_page=100&product_flags[]=hazardous_shipment')
+            ->assertOk()
+            ->json('data'),
+    )->pluck('sku')->all();
+
+    expect($skus)->toContain('FLAG-HAZ')->not->toContain('FLAG-NO-HAZ');
+});
+
+it('filters products by shipment method', function (): void {
+    \App\Models\Product::query()->create([
+        'sku' => 'SHIP-AIR',
+        'description' => 'Air shipment',
+        'vendor' => 'Plamod',
+        'shipment_method' => 'air',
+    ]);
+    \App\Models\Product::query()->create([
+        'sku' => 'SHIP-SEA',
+        'description' => 'Sea shipment',
+        'vendor' => 'Plamod',
+        'shipment_method' => 'sea',
+    ]);
+    \App\Models\Product::query()->create([
+        'sku' => 'SHIP-NONE',
+        'description' => 'No shipment',
+        'vendor' => 'Plamod',
+        'shipment_method' => null,
+    ]);
+
+    $airSkus = collect(
+        $this->getJson('/api/v1/products?per_page=100&shipment_methods[]=air')
+            ->assertOk()
+            ->json('data'),
+    )->pluck('sku')->all();
+    expect($airSkus)->toContain('SHIP-AIR')->not->toContain('SHIP-SEA', 'SHIP-NONE');
+
+    $eitherSkus = collect(
+        $this->getJson('/api/v1/products?per_page=100&shipment_methods[]=air&shipment_methods[]=sea')
+            ->assertOk()
+            ->json('data'),
+    )->pluck('sku')->all();
+    expect($eitherSkus)->toContain('SHIP-AIR', 'SHIP-SEA')->not->toContain('SHIP-NONE');
+});
+
 it('validates product_flags filter values', function (): void {
     $this->getJson('/api/v1/products?product_flags[]=invalid')->assertStatus(422);
+});
+
+it('validates shipment_methods filter values', function (): void {
+    $this->getJson('/api/v1/products?shipment_methods[]=invalid')->assertStatus(422);
 });
 
 it('filters products by available qty = 0', function (): void {

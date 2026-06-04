@@ -12,6 +12,7 @@ import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
 type PurchaseOrderListRow = {
     id: string;
     status: 'draft' | 'ordered' | 'shipped' | 'received' | 'on_shelves';
+    shipment_method: 'air' | 'sea' | null;
     vendor: string;
     supplier_order_id: string | null;
     ordered_date: string | null;
@@ -39,6 +40,17 @@ function poStatusLabel(status: PurchaseOrderListRow['status']): string {
             return 'Ordered';
         default:
             return 'Draft';
+    }
+}
+
+function poShipmentMethodLabel(method: PurchaseOrderListRow['shipment_method']): string {
+    switch (method) {
+        case 'air':
+            return 'Air';
+        case 'sea':
+            return 'Sea';
+        default:
+            return '—';
     }
 }
 
@@ -111,6 +123,7 @@ const productTotalIncludesFees = ref(false);
 const shippingTotal = ref<string>('');
 const surchargeTotal = ref<string>('');
 const notes = ref<string>('');
+const shipmentMethod = ref<'' | 'air' | 'sea'>('');
 
 const hasImportResult = computed(() => importResult.value !== null);
 
@@ -234,6 +247,7 @@ function buildImportFormData(): FormData {
     }
     if (surchargeTotal.value) fd.append('surcharge_total', surchargeTotal.value);
     if (notes.value) fd.append('notes', notes.value);
+    if (shipmentMethod.value) fd.append('shipment_method', shipmentMethod.value);
 
     return fd;
 }
@@ -481,6 +495,17 @@ onMounted(() => {
                     />
                 </div>
                 <div>
+                    <label class="text-xs font-medium text-slate-700">Shipment</label>
+                    <select
+                        v-model="shipmentMethod"
+                        class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                    >
+                        <option value="">—</option>
+                        <option value="air">Air</option>
+                        <option value="sea">Sea</option>
+                    </select>
+                </div>
+                <div>
                     <label class="text-xs font-medium text-slate-700">Ordered</label>
                     <input
                         v-model="orderedDate"
@@ -701,6 +726,7 @@ onMounted(() => {
                         <tr>
                             <th class="px-2 py-2">ID</th>
                             <th class="px-2 py-2">Status</th>
+                            <th class="px-2 py-2">Shipment</th>
                             <th class="px-2 py-2">
                                 <button
                                     type="button"
@@ -758,6 +784,7 @@ onMounted(() => {
                                 </div>
                             </td>
                             <td class="px-2 py-2">{{ poStatusLabel(po.status) }}</td>
+                            <td class="px-2 py-2">{{ poShipmentMethodLabel(po.shipment_method) }}</td>
                             <td class="px-2 py-2 text-slate-600">
                                 {{ formatTorontoDate(po.created_at) }}
                             </td>

@@ -10,6 +10,7 @@ use App\Exceptions\Shopify\ShopifyGraphQlException;
 use App\Models\Product;
 use App\Services\Products\ProductExportService;
 use App\Services\Products\ShopifyContentExportService;
+use App\Support\Products\ProductHoldQty;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlMutations;
 use Illuminate\Support\Facades\Log;
 
@@ -21,6 +22,7 @@ final class ShopifyProductCreateFromErpService
         private readonly ProductExportService $exports,
         private readonly ShopifyContentExportService $contentExport,
         private readonly ProductRepository $products,
+        private readonly ShopifyPublishProductToAllChannelsService $publishAllChannels,
     ) {}
 
     /**
@@ -37,8 +39,12 @@ final class ShopifyProductCreateFromErpService
         ?string $tunnelBaseUrl,
         array &$usedHandles,
         bool $includeInventory = false,
+        string $locationGid = '',
     ): array {
         $this->scopeGuard->assertWriteProductsScope();
+        if ($includeInventory && $locationGid !== '') {
+            $this->scopeGuard->assertWriteInventoryScope();
+        }
 
         $storedHandle = is_string($product->handle) ? trim($product->handle) : '';
         if ($storedHandle !== '') {
@@ -71,7 +77,16 @@ final class ShopifyProductCreateFromErpService
             $variant['barcode'] = $barcode;
         }
 
-        if (! $includeInventory) {
+        if ($includeInventory && $locationGid !== '') {
+            $variant['inventoryItem'] = ['tracked' => true];
+            $variant['inventoryQuantities'] = [
+                [
+                    'locationId' => $locationGid,
+                    'name' => 'available',
+                    'quantity' => ProductHoldQty::sellableForProduct($product),
+                ],
+            ];
+        } else {
             $variant['inventoryItem'] = ['tracked' => false];
         }
 
@@ -148,6 +163,8 @@ final class ShopifyProductCreateFromErpService
 
         $product->handle = $createdHandle;
         $this->products->save($product);
+
+        $this->publishAllChannels->publishWhenEligible($product, $shopifyGid);
 
         return [
             'product_uuid' => (string) $product->uuid,

@@ -141,13 +141,17 @@ Below, **verbs** reflect Laravel router methods. **`{id}` on products** uses **U
 | --- | --- | --- |
 | PATCH | `/products/{id}/barcode` | Update barcode. |
 | PATCH | `/products/{id}/filled` | “Filled” workflow flag on product record. |
-| PATCH | `/products/{id}/available` | **`available_qty`** (non-negative enforced at validation/UI expectations). |
+| PATCH | `/products/{id}/available` | **`available_qty`** (non-negative; must be ≥ current **`hold_qty`**). |
+| PATCH | `/products/{id}/hold` | **`hold_qty`** (non-negative; must be ≤ **`available_qty`**). |
 | PATCH | `/products/{id}/maintain` | Maintenance flag semantics (see migration/model). |
 | PATCH | `/products/{id}/ready` | Readiness workflow flag. |
 | PATCH | `/products/{id}/latest-arrival` | Latest arrival bookkeeping for PO/receiving workflows. |
 | PATCH | `/products/{id}/critical` | Critical product flag (`is_critical`, default false). |
 | PATCH | `/products/{id}/discontinue` | Discontinue product flag (`is_discontinued`, default false). |
-| GET | `/products` | List supports `product_flags[]`: `critical`, `discontinued` (multi-select OR: match any selected flag). |
+| PATCH | `/products/{id}/hazardous-shipment` | Hazardous shipment flag (`is_hazardous_shipment`, default false). |
+| PATCH | `/products/{id}/shipment-method` | Shipment method (`shipment_method`: `air`, `sea`, or null). |
+| POST | `/purchase-orders/{id}/workflow-actions/prepare-inventory` | Validates PO **qty received**; skips Shopify if mirror fresh (default 1h); else PO-SKU inventory refresh only. |
+| GET | `/products` | List supports `product_flags[]`: `critical`, `discontinued`, `hazardous_shipment` (multi-select OR); `shipment_methods[]`: `air`, `sea` (multi-select OR). |
 | PUT | `/products/{id}/selling-price` | Upsert **`product_selling_prices`** row (Shopify variant price drives exports). |
 
 ### Products — Shopify / replenishment helpers
@@ -263,14 +267,14 @@ Two **different orchestrations** deliberately exist:
 | GET | `/purchase-orders` | Indexed list filters/sorts (**vendor**, arrival-derived fields tested). |
 | GET | `/purchase-orders/filter-options` | Dropdown facets. |
 | GET | `/purchase-orders/{id}` | Detailed PO projection including FX-derived CAD unit economics where imported (`PurchaseOrderResource`). |
-| PATCH | `/purchase-orders/{id}` | Header updates (dates, totals, checklist container, **`is_done`**, notes…). |
+| PATCH | `/purchase-orders/{id}` | Header updates (dates, totals, **`shipment_method`** (`air` \| `sea` \| null), checklist container, **`is_done`**, notes…). |
 | DELETE | `/purchase-orders/{id}` | Controlled delete with referential safeguards (`PurchaseOrderDeleteService`). |
 
 | Draft workflow | Purpose |
 | --- | --- |
 | POST | `/purchase-orders/drafts/create-from-products` | Convert selected products into PO draft lines (`PurchaseOrderDraftService`). |
 | POST | `/purchase-orders/{id}/draft-products` | Append SKU lines referencing catalog. |
-| GET | `/purchase-orders/{id}/draft-lines-export` | Operational CSV/export of staged lines before commit. |
+| GET | `/purchase-orders/{id}/draft-lines-export` | Vendor order CSV: SKU, name, qty, always CAD product cost columns; Stedi/Dspiae add HKD columns; FX fallback from latest PO with same vendor currency. |
 
 | Line updates | Purpose |
 | --- | --- |
@@ -331,6 +335,12 @@ Two **different orchestrations** deliberately exist:
 | Ops toggles | Purpose |
 | --- | --- |
 | POST | `/maintenance/refresh-latest-costs` | Recomputes **`latest_unit_cost`** + **`latest_landed_unit_cost`** for entire catalog via **`ProductLatestCostCacheService::recomputeAll`** (joins newest PO lines by SKU with shipping/surcharge proration logic). |
+| POST | `/maintenance/clear-stale-latest-arrival` | Clears **`latest_arrival`** on products linked to POs older than 4 weeks; Shopify **`tagsRemove`** for **`latest arrival`** tag only (`ShopifyLatestArrivalTagRemoverService`). |
+| POST | `/purchase-orders/{id}/workflow-actions/clear-stale-latest-arrival` | Same clear-stale action (PO workflow shortcut). |
+| GET | `/purchase-orders/{id}/workflow-actions/push-inventory/preview` | PO products eligible for Shopify inventory push (`PurchaseOrderWorkflowPushInventoryService`). |
+| POST | `/purchase-orders/{id}/workflow-actions/mark-published-on-shopify` | ERP `published_on_shopify` for all PO products. |
+| POST | `/purchase-orders/{id}/workflow-actions/mark-latest-arrival` | ERP `latest_arrival` for PO products (skips `main_type` tools). |
+| POST | `/purchase-orders/{id}/workflow-actions/push-inventory` | Full PO product push + optional Latest Arrivals `collectionReorderProducts` when `SHOPIFY_LATEST_ARRIVALS_COLLECTION_GID` set. |
 
 | Operational throttles/settings | Meaning |
 | --- | --- |

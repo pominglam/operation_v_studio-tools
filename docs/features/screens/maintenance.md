@@ -95,6 +95,20 @@ Confirmation copy clarifies breadth (recalculates cache columns for SKU universe
 
 ---
 
+## Clear stale latest arrival flags
+
+**Confirm dialog** → **`POST /api/v1/maintenance/clear-stale-latest-arrival`**.
+
+Removes **`products.latest_arrival`** (sets `false`) for products on purchase orders whose **`received_date`** is more than **4 weeks** ago (or **`created_at`** when **`received_date`** is null), **except** products that also appear on any PO **within** the last 4 weeks (same date rules)—those keep the flag. **`published_on_shopify`** is not changed.
+
+After the local clear, calls Shopify **`tagsRemove`** only for products whose **`latest_arrival`** actually changed from **true** to **false** (mirrored SKU → `shopify_product_variants.product_gid`), removing **only** the **`latest arrival`** tag (`ProductExportService::LATEST_ARRIVAL_TAG`). Does not change status, other tags, inventory, or prices. Requires **`write_products`** OAuth scope when at least one changed product has a mirror GID.
+
+Use before marking a new PO’s products as latest arrival (same action is available on the PO workflow row as **Clear old latest**).
+
+Response: **`purchase_orders_matched`**, **`products_cleared`**, **`cutoff_date`**, **`shopify_tags_removed`**, **`shopify_skipped_no_gid`**, **`shopify_tag_removals_failed`**.
+
+---
+
 ## Product type tooling
 
 Two distinct maintenance passes with explicit confirm copy differences:

@@ -13,8 +13,10 @@ it('creates a draft PO from selected products', function (): void {
         'sku' => 'DR-CREATE-1',
         'description' => 'Draft Create 1',
         'vendor' => 'Stedi',
+        'shipment_method' => 'air',
         'available_qty' => 3,
         'maintain_qty' => 10,
+        'latest_unit_cost' => '10.00',
         'latest_landed_unit_cost' => '12.34',
     ]);
     $p2 = Product::query()->create([
@@ -22,8 +24,10 @@ it('creates a draft PO from selected products', function (): void {
         'sku' => 'DR-CREATE-2',
         'description' => 'Draft Create 2',
         'vendor' => 'Stedi',
+        'shipment_method' => 'air',
         'available_qty' => 7,
         'maintain_qty' => 5,
+        'latest_unit_cost' => '4.56',
         'latest_landed_unit_cost' => '4.56',
     ]);
 
@@ -51,6 +55,9 @@ it('creates a draft PO from selected products', function (): void {
 
     $po = PurchaseOrder::query()->where('uuid', $poUuid)->firstOrFail();
     expect($po->vendor)->toBe('Stedi');
+    expect($po->shipment_method)->toBe('air');
+    expect($po->product_total)->toBe('30.00');
+    expect($po->shipping_total)->toBe('7.02');
 
     $items = PurchaseOrderItem::query()
         ->where('purchase_order_id', $po->id)
@@ -59,6 +66,7 @@ it('creates a draft PO from selected products', function (): void {
         ->keyBy('sku');
 
     expect((int) ($items['DR-CREATE-1']->qty_ordered ?? -1))->toBe(3);
+    expect((float) $items['DR-CREATE-1']->unit_cost)->toBe(10.0);
     expect((int) ($items['DR-CREATE-2']->qty_ordered ?? -1))->toBe(0);
 });
 
@@ -112,7 +120,7 @@ it('adds products by SKU to draft PO and skips existing, mismatch, and missing r
     ]);
 });
 
-it('exports draft PO lines as csv', function (): void {
+it('exports draft PO lines as csv with HKD product cost for Stedi', function (): void {
     $product = Product::query()->create([
         'sku' => 'DR-CSV-1',
         'barcode' => '999111',
@@ -122,21 +130,99 @@ it('exports draft PO lines as csv', function (): void {
     $po = PurchaseOrder::query()->create([
         'uuid' => '00000000-0000-0000-0000-000000220099',
         'vendor' => 'Stedi',
+        'vendor_currency_code' => 'CAD',
+        'fx_rate_to_cad' => '0.172881',
     ]);
     PurchaseOrderItem::query()->create([
         'purchase_order_id' => $po->id,
         'product_id' => $product->id,
         'sku' => $product->sku,
         'vendor' => 'Stedi',
+        'vendor_unit_cost' => '88.50',
+        'unit_cost' => '15.30',
         'qty_ordered' => 8,
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => 'DR-CSV-ZERO',
+        'vendor' => 'Stedi',
+        'vendor_unit_cost' => '10.00',
+        'qty_ordered' => 0,
     ]);
 
     $res = $this->get("/api/v1/purchase-orders/{$po->uuid}/draft-lines-export");
     $res->assertOk();
     $csv = (string) $res->streamedContent();
-    expect($csv)->toContain('SKU,"Product Name",Barcode,"Qty Ordered"');
-    expect($csv)->toContain('DR-CSV-1');
-    expect($csv)->toContain('Draft CSV Product');
+    expect($csv)->toContain(
+        'SKU,"Product Name",Qty,"Product cost unit (CAD)","Product cost line (CAD)","Product cost unit (HKD)","Product cost line (HKD)"',
+    );
+    expect($csv)->toContain('DR-CSV-1,"Draft CSV Product",8,15.30,122.40,88.50,708.00');
+    expect($csv)->not->toContain('DR-CSV-ZERO');
+    expect($csv)->not->toContain('Barcode');
+});
+
+it('derives CAD product cost from prior PO fx when current PO has no fx', function (): void {
+    $product = Product::query()->create([
+        'sku' => 'DR-CSV-FX',
+        'description' => 'FX fallback product',
+        'vendor' => 'Stedi',
+    ]);
+    PurchaseOrder::query()->create([
+        'vendor' => 'Stedi',
+        'vendor_currency_code' => 'HKD',
+        'product_total' => '100.00',
+        'vendor_product_total' => '500.00',
+        'fx_rate_to_cad' => '0.200000',
+        'created_at' => '2026-01-01 10:00:00',
+    ]);
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000220097',
+        'vendor' => 'Stedi',
+        'vendor_currency_code' => 'CAD',
+        'fx_rate_to_cad' => null,
+        'created_at' => '2026-05-01 10:00:00',
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => $product->sku,
+        'vendor' => 'Stedi',
+        'vendor_unit_cost' => '10.00',
+        'qty_ordered' => 3,
+    ]);
+
+    $res = $this->get("/api/v1/purchase-orders/{$po->uuid}/draft-lines-export");
+    $res->assertOk();
+    $csv = (string) $res->streamedContent();
+    expect($csv)->toContain('DR-CSV-FX,"FX fallback product",3,2.00,6.00,10.00,30.00');
+});
+
+it('exports draft PO lines with CAD product cost for other vendors', function (): void {
+    $product = Product::query()->create([
+        'sku' => 'DR-CSV-PL',
+        'description' => 'Plamod line',
+        'vendor' => 'Plamod',
+    ]);
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000220098',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => $product->sku,
+        'vendor' => 'Plamod',
+        'unit_cost' => '12.50',
+        'qty_ordered' => 4,
+    ]);
+
+    $res = $this->get("/api/v1/purchase-orders/{$po->uuid}/draft-lines-export");
+    $res->assertOk();
+    $csv = (string) $res->streamedContent();
+    expect($csv)->toContain('"Product cost unit (CAD)","Product cost line (CAD)"');
+    expect($csv)->toContain('DR-CSV-PL,"Plamod line",4,12.50,50.00');
 });
 
 it('returns status and draft metrics on purchase order detail items', function (): void {

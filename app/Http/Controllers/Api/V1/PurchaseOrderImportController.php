@@ -72,6 +72,9 @@ final class PurchaseOrderImportController extends Controller
             if (array_key_exists('notes', $v)) {
                 $meta['notes'] = $v['notes'] !== null ? (string) $v['notes'] : null;
             }
+            if (array_key_exists('shipment_method', $v)) {
+                $meta['shipment_method'] = $v['shipment_method'] !== null ? (string) $v['shipment_method'] : null;
+            }
             if (array_key_exists('reset_receipt_before_reimport', $v)) {
                 $meta['reset_receipt_before_reimport'] = (bool) $v['reset_receipt_before_reimport'];
             }

@@ -17,6 +17,12 @@ Persisted snapshot key: **`purchase-orders:history-filters:v1`** (`clearPageStat
 
 Derived **status labels** mapping internal enum → human copy (`poStatusLabel`).
 
+**History table columns** (after filters): ID (+ supplier order ID subline), **Status**, **Shipment**, **Created** / **Ordered** / **Estimated arrival** / **Received** / **On shelves**, **Vendor**, **Items**, **Product total**, **Shipping total**, **Surcharge total**, **Total**.
+
+| Column | API / logic |
+| --- | --- |
+| **Shipment** | `shipment_method` on **`purchase_orders`** (`air` \| `sea` \| null). Set on import/create form, PO header edit, or inferred once from line products when unset (unambiguous air-only or sea-only). |
+
 ### Pagination
 
 Loads **`GET /api/v1/purchase-orders`** with query params aligning to filters/sorts (see network layer in script).
@@ -33,6 +39,7 @@ Single multipart submission **`POST /api/v1/purchase-orders/import`** containing
 | **`product_total`**, **`shipping_total`**, **`surcharge_total`** | Decimal text inputs (**CAD** labeling for product total in UI copy) |
 | **`product_total_includes_fees`** | Checkbox (Dspiae/Stedi only): treat product total as **total paid CAD**; server splits product vs shipping using invoice HKD product/freight ratio |
 | **`notes`** | Optional free text |
+| **`shipment_method`** | Optional **`air`** or **`sea`** (stored on PO header) |
 
 Selecting a CSV may **auto-sniff vendor** (`sniffVendorFromCsv`) before upload to pre-fill **Vendor** (DSPIAE / Stedi heuristics in first 4KB).
 
@@ -116,23 +123,25 @@ Available when PO is drafting / mixed states per UI guards:
 
 | Feature | Endpoint |
 | --- | --- |
-| Export draft CSV | **`GET /api/v1/purchase-orders/{uuid}/draft-lines-export`** (blob handling with filename parse) |
+| Export order CSV | **`GET /api/v1/purchase-orders/{uuid}/draft-lines-export`** — **SKU**, **Product Name**, **Qty**, **CAD** unit/line first; **Stedi / Dspiae** add **HKD** columns after CAD. No barcode/shipping; **qty 0** omitted. FX: current PO or latest PO with **HKD** (broker vendors always use HKD for FX lookup even when PO header says CAD). HKD from `vendor_unit_cost` or CAD÷FX. |
 | Paste SKUs textarea → append lines | **`POST /api/v1/purchase-orders/{uuid}/draft-products`** validating multi-line SKU input |
+| Created from Products grid | **`POST /api/v1/purchase-orders/drafts/create-from-products`** — sets line **`unit_cost`** from **`latest_unit_cost`** and fills header **`product_total`** / **`shipping_total`** (CAD estimates from cached costs × reorder qty) |
 
 ### Workflow checklist ribbon
 
 Keyed checklist toggles mirrored from server field **`workflow_checklist`** persisted via **`PATCH /api/v1/purchase-orders/{uuid}/workflow-checklist`** storing JSON blob with keys exactly as labeled in script:
 
 1. **`import_po`**
-2. **`crawl_desc_image_price`**
+2. **`crawl_desc_image_price`** — **Plamod only** for crawl requirement; **Skip** (confirm on Plamod) or **Crawl new** (confirm when vendor is not Plamod). **`crawl_desc_image_price_skipped`** stored when skipped.
 3. **`select_and_arrange_product_images`** — manual: open each product on Products, toggle Shopify images and drag to reorder (Plamod drawer). Not auto-verified. **Defer** checks the step off for this PO when photos will be added later (`select_and_arrange_product_images_deferred` in checklist JSON); unchecking the step clears defer.
-4. **`set_selling_price`**
+4. **`set_selling_price`** — manual approval only (never auto-checked on load/Re-verify); check after reviewing **Set/review** preview
 5. **`ensure_all_products_have_barcode`**
 6. **`export_to_shopify_get_handles`**
 7. **`import_handle_only`**
 8. **`update_product_available_with_shopify_current_inventory_quantity`**
-9. **`mark_latest_arrival_and_published_on_shopify`**
-10. **`import_product_available_quantity`**
+9. **`mark_published_on_shopify`** — ERP **`published_on_shopify`** for all PO products (push sets Shopify ACTIVE + sales channels)
+10. **`mark_latest_arrival`** — ERP **`latest_arrival`** for PO products **except `main_type` tools** (push adds **`latest arrival`** tag; tools stay off homepage unless toggled on Products)
+11. **`import_product_available_quantity`** — **Push to Shopify — Latest Arrivals order** (full product state; not a CSV import)
 
 Each checkbox toggling hits API with optimistic UI rollback on HTTP errors (`checklistBusy`/`checklistError`).
 
@@ -142,21 +151,22 @@ Per-row action buttons (right side of each checklist line):
 
 | Step key | Button | Endpoint |
 | --- | --- | --- |
-| `crawl_desc_image_price` | Crawl new | `POST .../workflow-actions/crawl-new-products` |
+| `crawl_desc_image_price` | Crawl new / **Skip** | `POST .../workflow-actions/crawl-new-products`. **Skip** checks the step (Plamod: confirm). **Crawl new** on non-Plamod: confirm. Re-verify auto-checks crawl only for **Plamod** when PDP exists and step was not skipped. |
 | `select_and_arrange_product_images` | Review images / **Defer** | **Review images** opens **`/products?purchase_order_uuid=…`** in a **new browser tab** (manual image pick/order in Plamod drawer). **Defer** (confirm) checks the step and sets **`select_and_arrange_product_images_deferred`** so the PO workflow can continue without curating every product first. |
-| `set_selling_price` | Set prices | `GET .../workflow-actions/set-prices/preview` then confirm → `POST .../workflow-actions/set-prices` |
+| `set_selling_price` | Set/review | `GET .../workflow-actions/set-prices/preview` then confirm → `POST .../workflow-actions/set-prices`. Operator checks the step manually after approving the preview (not auto-verified). |
 
-**Set prices preview dialog** (`PoWorkflowSetPricesDialog`): **Set prices** loads preview first. Sections (in order): **New prices** (no current selling price), **Price updates** (raises only — formula higher than current), **No price change** (already matches formula, or **keeping current** when formula would be lower), **Missing landed cost** (skipped). Within each section, **new-on-PO products appear before existing** SKUs. **Apply prices** writes only new + raise rows; **Cancel** closes without changes.
+**Set/review preview dialog** (`PoWorkflowSetPricesDialog`): **Set/review** loads preview first. Sections (in order): **New prices** (no current selling price), **Price updates** (raises only — formula higher than current), **No price change** (already matches formula, or **keeping current** when formula would be lower), **Missing landed cost** (skipped). Within each section, **new-on-PO products appear before existing** SKUs. **Apply prices** writes only new + raise rows; **Cancel** closes without changes.
 
 | `export_to_shopify_get_handles` | Export | `GET .../workflow-actions/export-shopify-content/preview` then **Push to Shopify** → `POST .../workflow-actions/export-shopify-content/push` |
 
-**Export to Shopify preview dialog** (`PoWorkflowExportShopifyDialog`): **Export** loads preview for **products on this PO without a stored handle** (includes re-orders from earlier POs). Fixed export type **Shopify content (images + description, no inventory)**. **Push to Shopify** calls Shopify Admin **`productSet`** (requires **`write_products`** OAuth scope). Table columns: SKU, Product, Handle (blank), Status. Handles returned from Shopify are saved on **`products.handle`**. Image tunnel recommended for signed image URLs; without tunnel, products push without images. **Re-verify** auto-checks **`export_to_shopify_get_handles`** when **every product on the PO** has a non-empty **`products.handle`** (also runs after a successful push).
+**Export to Shopify preview dialog** (`PoWorkflowExportShopifyDialog`): **Export** loads preview for **products on this PO without a stored handle** (includes re-orders from earlier POs). Fixed export type **Shopify content (images + description)** — same field set as bulk **`shopify_content`** CSV (includes **`available_qty`** on create). **Push to Shopify** calls Shopify Admin **`productSet`** (requires **`write_products`** + **`write_inventory`** OAuth scopes and a resolvable inventory location). When **`published_on_shopify`** is true, also publishes to all sales channels via **`publishablePublish`** (**`read_publications`** + **`write_publications`**). Table columns: SKU, Product, Handle (blank), Status. Handles returned from Shopify are saved on **`products.handle`**. Image tunnel recommended for signed image URLs; without tunnel, products push without images. **Re-verify** auto-checks **`export_to_shopify_get_handles`** when **every product on the PO** has a non-empty **`products.handle`** (also runs after a successful push).
 | `import_handle_only` | Pull handles | `GET .../workflow-actions/pull-handles/preview` then **Pull handles** → `POST .../workflow-actions/pull-handles` |
 
 **Pull handles preview dialog** (`PoWorkflowPullHandlesDialog`): **Pull handles** loads preview for **products on this PO without a stored local handle** (includes re-orders). If **`pull_count`** is zero, shows a clear message that all products on the PO already have handles. Otherwise lists SKU, Product, local handle (blank), and **mirror handle** from the current Shopify mirror (best-effort before sync). **Pull handles** confirms a read-only Shopify product sync, then copies handles by SKU into **`products.handle`**. SKUs not found in Shopify are listed after the run.
-| `update_product_available_with_shopify_current_inventory_quantity` | Prepare + Apply received | `POST .../workflow-actions/prepare-inventory` then `POST .../apply-received-to-available` |
-| `mark_latest_arrival_and_published_on_shopify` | Mark flags | `POST .../workflow-actions/mark-latest-arrival-published` |
-| `import_product_available_quantity` | Import qty | Opens quantity override import card |
+| `update_product_available_with_shopify_current_inventory_quantity` | Prepare + Apply received | `POST .../workflow-actions/prepare-inventory` validates **qty received** on all lines. If **`products`** and **`inventory_levels`** mirror syncs both completed within **1 hour** (`SHOPIFY_PO_PREPARE_MIRROR_FRESHNESS_SECONDS`, default 3600), **skips** Shopify pull. If stale, refreshes **inventory levels for PO SKUs only** (not full store); SKUs missing from mirror → 422 with hint to run Maintenance / `shopify:sync products`. Then `POST .../apply-received-to-available`. SPA uses no client timeout on Prepare. |
+| `mark_published_on_shopify` | **Mark published** | `POST .../workflow-actions/mark-published-on-shopify` — sets **`published_on_shopify`** true for **all** PO products (ERP only until push). |
+| `mark_latest_arrival` | **Clear old latest** + **Mark latest** | **Clear old latest:** `POST .../workflow-actions/clear-stale-latest-arrival` (same as before). **Mark latest:** `POST .../workflow-actions/mark-latest-arrival` — sets **`latest_arrival`** true for PO products **except** `main_type` **tools** (response includes **`skipped_tools`**). Legacy combined endpoint **`mark-latest-arrival-published`** still exists. |
+| `import_product_available_quantity` | **Push to Shopify** | Preview + **`POST .../workflow-actions/push-inventory`** — full ERP → Shopify sync per PO product via **`productSet`**: title, description, images (when tunnel on), tags (incl. **`latest arrival`** when ERP flag set), price, publish status, and **sellable** inventory (`shopify_push_qty = max(0, erp_available - erp_hold)`). **Preview** table columns include **Available**, **Hold**, **Push qty**, and current **Shopify qty**. When **`published_on_shopify`** is true, **`publishablePublish`** to all publications. **Preview** sorts products on **this PO** (type order + newest within group). After a successful push (no failures), reorders the **Latest Arrivals** Shopify collection when **`SHOPIFY_LATEST_ARRIVALS_COLLECTION_GID`** is set: **POs by `received_date` desc** (fallback PO `created_at`), then **product sort within each PO** (`LatestArrivalCatalogOrderService` + **`collectionReorderProducts`**; collection must be **manual** sort). Config: **`config/latest_arrival.php`**. Barcode scan override import remains under the export card (**Import product quantity**). |
 
 ### Auxiliary modals reused from Products domain
 

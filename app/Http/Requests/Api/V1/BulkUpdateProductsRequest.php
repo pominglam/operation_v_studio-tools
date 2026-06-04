@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Api\V1;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 final class BulkUpdateProductsRequest extends FormRequest
 {
@@ -36,6 +37,10 @@ final class BulkUpdateProductsRequest extends FormRequest
             'changes.available' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'changes.maintain' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'changes.extended' => ['sometimes', 'nullable', 'numeric'],
+            'changes.is_critical' => ['sometimes', 'required', 'boolean'],
+            'changes.is_discontinued' => ['sometimes', 'required', 'boolean'],
+            'changes.is_hazardous_shipment' => ['sometimes', 'required', 'boolean'],
+            'changes.shipment_method' => ['sometimes', 'nullable', 'string', Rule::in(['air', 'sea'])],
         ];
     }
 }

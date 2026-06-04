@@ -6,6 +6,7 @@ namespace App\DAL\Products;
 
 use App\DTOs\Products\ProductImportRowDTO;
 use App\Models\Product;
+use App\Services\Products\ProductInboundOpenPoQtySql;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
@@ -173,17 +174,9 @@ final class EloquentProductRepository implements ProductRepository
             : $sortColumn;
     }
 
-    private function inboundOpenPoQtyExpression(): string
+    private function inboundOpenPoQtyExpression(bool $includeDraftPurchaseOrders = true): string
     {
-        return '(
-            select coalesce(sum(
-                case when coalesce(poi.qty_ordered, 0) > 0 then coalesce(poi.qty_ordered, 0) else 0 end
-            ), 0)
-            from purchase_order_items poi
-            inner join purchase_orders po on po.id = poi.purchase_order_id
-            where poi.product_id = products.id
-              and po.received_date is null
-        )';
+        return ProductInboundOpenPoQtySql::expression($includeDraftPurchaseOrders);
     }
 
     private function reorderQtyExpression(string $inboundExpr): string
@@ -427,15 +420,16 @@ final class EloquentProductRepository implements ProductRepository
      * @param  array<int, string>  $missing
      * @param  array<int, string>  $searchTerms
      * @param  array<int, string>  $productFlags
+     * @param  array<int, string>  $shipmentMethods
      */
-    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], bool $includeArchived = false, ?string $poProductNovelty = null, ?string $ready = null, ?int $available = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = []): LengthAwarePaginator
+    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], bool $includeArchived = false, ?string $poProductNovelty = null, ?string $ready = null, ?int $available = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true): LengthAwarePaginator
     {
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
 
         $q = Product::query()
             ->with(['sellingPrice', 'hljExternalContent', 'plamodExternalContent'])
             ->withCount(['imageAssets as plamod_image_assets_count']);
-        $inboundOpenPoQtyExpr = $this->inboundOpenPoQtyExpression();
+        $inboundOpenPoQtyExpr = $this->inboundOpenPoQtyExpression($notArrivedIncludeDraftOrders);
         $reorderQtyExpr = $this->reorderQtyExpression($inboundOpenPoQtyExpr);
         $soldLast4WeeksExpr = $this->soldLast4WeeksExpression();
         $totalOrderedReceivedQtyExpr = $this->totalOrderedReceivedQtyExpression();
@@ -492,6 +486,7 @@ final class EloquentProductRepository implements ProductRepository
         $this->applyMissingFilters($q, $missing);
         $this->applyReadyFilter($q, $ready);
         $this->applyProductFlagsFilter($q, $productFlags);
+        $this->applyShipmentMethodsFilter($q, $shipmentMethods);
         if ($available !== null) {
             $q->whereRaw('coalesce(products.available_qty, 0) = ?', [$available]);
         }
@@ -562,7 +557,7 @@ final class EloquentProductRepository implements ProductRepository
             return;
         }
 
-        $allowed = ['critical', 'discontinued'];
+        $allowed = ['critical', 'discontinued', 'hazardous_shipment'];
         $productFlags = array_values(array_intersect($productFlags, $allowed));
         if ($productFlags === []) {
             return;
@@ -575,7 +570,33 @@ final class EloquentProductRepository implements ProductRepository
             if (in_array('discontinued', $productFlags, true)) {
                 $sub->orWhere('is_discontinued', '=', true);
             }
+            if (in_array('hazardous_shipment', $productFlags, true)) {
+                $sub->orWhere('is_hazardous_shipment', '=', true);
+            }
         });
+    }
+
+    /**
+     * @param  array<int, string>  $shipmentMethods
+     */
+    private function applyShipmentMethodsFilter($q, array $shipmentMethods): void
+    {
+        $shipmentMethods = array_values(array_unique(array_filter(array_map(
+            static fn (string $v): string => strtolower(trim($v)),
+            $shipmentMethods,
+        ), static fn (string $v): bool => $v !== '')));
+
+        if ($shipmentMethods === []) {
+            return;
+        }
+
+        $allowed = ['air', 'sea'];
+        $shipmentMethods = array_values(array_intersect($shipmentMethods, $allowed));
+        if ($shipmentMethods === []) {
+            return;
+        }
+
+        $q->whereIn('shipment_method', $shipmentMethods);
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Services\PurchaseOrders\PurchaseOrderLinesExportService;
 use App\Services\PurchaseOrders\PurchaseOrderQueryService;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -12,6 +13,7 @@ final class PurchaseOrderDraftLinesExportController extends Controller
 {
     public function __construct(
         private readonly PurchaseOrderQueryService $purchaseOrders,
+        private readonly PurchaseOrderLinesExportService $export,
     ) {}
 
     public function __invoke(string $id): StreamedResponse
@@ -19,24 +21,26 @@ final class PurchaseOrderDraftLinesExportController extends Controller
         $po = $this->purchaseOrders->findByUuidOrFail($id);
         $po->loadMissing('items.product');
 
-        $filename = sprintf('purchase-order-%s-lines.csv', $po->uuid);
+        $filename = $this->export->suggestedFilename($po);
+        $headers = $this->export->csvHeaders($po);
 
-        return response()->streamDownload(function () use ($po): void {
+        $export = $this->export;
+
+        return response()->streamDownload(function () use ($po, $headers, $export): void {
             $out = fopen('php://output', 'wb');
             if ($out === false) {
                 return;
             }
 
             fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, ['SKU', 'Product Name', 'Barcode', 'Qty Ordered']);
+            fputcsv($out, $headers);
 
             foreach ($po->items as $item) {
-                fputcsv($out, [
-                    (string) $item->sku,
-                    (string) ($item->product?->description ?? ''),
-                    (string) ($item->product?->barcode ?? ''),
-                    (string) ($item->qty_ordered ?? 0),
-                ]);
+                $row = $export->csvRow($po, $item);
+                if ($row === null) {
+                    continue;
+                }
+                fputcsv($out, $row);
             }
 
             fclose($out);

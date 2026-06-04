@@ -56,12 +56,14 @@ it('auto-checks completed workflow steps on verify without unchecking manual fla
     $res->assertOk();
     $res->assertJsonPath('data.steps.import_po.done', true);
     $res->assertJsonPath('data.steps.import_po.newly_checked', true);
-    $res->assertJsonPath('data.steps.set_selling_price.done', true);
+    $res->assertJsonPath('data.steps.set_selling_price.done', false);
+    $res->assertJsonPath('data.steps.set_selling_price.newly_checked', false);
     $res->assertJsonPath('data.steps.ensure_all_products_have_barcode.done', true);
     $res->assertJsonPath('data.purchase_order.workflow_checklist.export_to_shopify_get_handles', true);
 
     $po->refresh();
     expect($po->workflow_checklist_json['import_po'] ?? null)->toBeTrue();
+    expect($po->workflow_checklist_json['set_selling_price'] ?? null)->toBeFalse();
 });
 
 it('previews PO set prices grouped by new, updates, unchanged, and skipped', function (): void {
@@ -285,7 +287,7 @@ it('raises existing price when formula is higher', function (): void {
 });
 
 it('previews PO export to Shopify for products on PO missing handle', function (): void {
-    config(['shopify.oauth_scopes' => 'read_products,write_products']);
+    config(['shopify.oauth_scopes' => 'read_products,write_products,write_inventory']);
     $po = PurchaseOrder::query()->create([
         'uuid' => '00000000-0000-0000-0000-000000111230',
         'vendor' => 'Plamod',
@@ -342,8 +344,8 @@ it('previews PO export to Shopify for products on PO missing handle', function (
     $res = $this->getJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/export-shopify-content/preview");
 
     $res->assertOk();
-    $res->assertJsonPath('data.export_type', 'shopify_content_no_inventory');
-    $res->assertJsonPath('data.export_type_label', 'Shopify content (images + description, no inventory)');
+    $res->assertJsonPath('data.export_type', 'shopify_content');
+    $res->assertJsonPath('data.export_type_label', 'Shopify content (images + description)');
     $res->assertJsonPath('data.write_scope_ok', true);
     $res->assertJsonPath('data.export_count', 1);
     $res->assertJsonPath('data.product_uuids.0', (string) $readyProduct->uuid);
@@ -414,7 +416,8 @@ it('previews PO export to Shopify for re-ordered products missing handle', funct
 });
 
 it('pushes new PO products to Shopify and stores returned handles', function (): void {
-    config(['shopify.oauth_scopes' => 'read_products,write_products']);
+    config(['shopify.oauth_scopes' => 'read_products,write_products,write_inventory']);
+    config(['shopify.inventory_location_gid' => 'gid://shopify/Location/1']);
 
     $fake = new \Tests\Fakes\FakeShopifyAdminGraphQlClient;
     $fake->queueResponse(\Tests\Fakes\FakeShopifyAdminGraphQlClient::wrapProductSet(
@@ -510,7 +513,7 @@ it('auto-checks export to shopify step when all PO products have handles', funct
     expect($po->workflow_checklist_json['export_to_shopify_get_handles'] ?? null)->toBeTrue();
 });
 
-it('marks all PO products as latest arrival and published locally', function (): void {
+it('marks all PO products as latest arrival and published locally via legacy endpoint', function (): void {
     $po = PurchaseOrder::query()->create([
         'uuid' => '00000000-0000-0000-0000-000000111231',
         'vendor' => 'Plamod',
@@ -522,6 +525,7 @@ it('marks all PO products as latest arrival and published locally', function ():
         'sku' => 'FLAG-SKU',
         'barcode' => '9990003',
         'description' => 'Flag product',
+        'main_type' => 'model kit',
         'type' => 'Others',
         'vendor' => 'Plamod',
         'published_on_shopify' => false,
@@ -542,6 +546,56 @@ it('marks all PO products as latest arrival and published locally', function ():
     $p->refresh();
     expect($p->published_on_shopify)->toBeTrue();
     expect($p->latest_arrival)->toBeTrue();
+});
+
+it('does not call shopify when marking latest arrival and published on PO', function (): void {
+    config(['shopify.oauth_scopes' => 'read_products,write_products']);
+
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111239',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+    ]);
+
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-00000011123a',
+        'sku' => 'MARK-NO-SHOPIFY',
+        'barcode' => '9990003b',
+        'description' => 'Mark flags no shopify',
+        'type' => 'Others',
+        'vendor' => 'Plamod',
+        'published_on_shopify' => false,
+        'latest_arrival' => false,
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $p->id,
+        'sku' => 'MARK-NO-SHOPIFY',
+        'vendor' => 'Plamod',
+        'qty_ordered' => 1,
+    ]);
+
+    ShopifyProduct::query()->create([
+        'gid' => 'gid://shopify/Product/99101',
+        'handle' => 'mark-no-shopify',
+        'title' => 'Mirrored',
+        'status' => 'ACTIVE',
+    ]);
+    ShopifyProductVariant::query()->create([
+        'gid' => 'gid://shopify/ProductVariant/99102',
+        'product_gid' => 'gid://shopify/Product/99101',
+        'sku' => 'MARK-NO-SHOPIFY',
+    ]);
+
+    $fake = new \Tests\Fakes\FakeShopifyAdminGraphQlClient;
+    $this->app->instance(\App\Contracts\Shopify\ShopifyAdminGraphQlClientInterface::class, $fake);
+
+    $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/mark-latest-arrival-published")
+        ->assertOk()
+        ->assertJsonPath('data.updated', 1);
+
+    expect($p->refresh()->latest_arrival)->toBeTrue();
 });
 
 it('pulls handles from shopify mirror for new PO products missing handle', function (): void {
@@ -758,6 +812,71 @@ it('auto-checks crawl step when new product has description and images', functio
 
     $res->assertOk();
     $res->assertJsonPath('data.steps.crawl_desc_image_price.done', true);
+    $res->assertJsonPath('data.steps.crawl_desc_image_price.newly_checked', true);
+});
+
+it('does not auto-check crawl for non-plamod vendor even when pdp exists', function (): void {
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111263',
+        'vendor' => 'Stedi',
+        'vendor_currency_code' => 'HKD',
+    ]);
+
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111264',
+        'sku' => 'CRAWL-STEDI',
+        'barcode' => '9990007',
+        'description' => 'Stedi product',
+        'type' => 'Others',
+        'vendor' => 'Stedi',
+    ]);
+
+    ProductExternalContent::query()->create([
+        'product_id' => $p->id,
+        'source' => 'hlj',
+        'description_html' => '<p>Description</p>',
+    ]);
+
+    ProductExternalAsset::query()->create([
+        'product_id' => $p->id,
+        'source' => 'hlj',
+        'kind' => 'image',
+        'storage_path' => 'hlj/images/stedi.jpg',
+        'filename' => 'stedi.jpg',
+        'shopify_enabled' => true,
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $p->id,
+        'sku' => 'CRAWL-STEDI',
+        'vendor' => 'Stedi',
+        'qty_ordered' => 1,
+    ]);
+
+    $res = $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-verify");
+
+    $res->assertOk();
+    $res->assertJsonPath('data.steps.crawl_desc_image_price.done', false);
+    $res->assertJsonPath('data.steps.crawl_desc_image_price.newly_checked', false);
+});
+
+it('does not auto-check crawl when plamod crawl was skipped', function (): void {
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111265',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+        'workflow_checklist_json' => [
+            'crawl_desc_image_price' => true,
+            'crawl_desc_image_price_skipped' => true,
+        ],
+    ]);
+
+    $res = $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-verify");
+
+    $res->assertOk();
+    $res->assertJsonPath('data.steps.crawl_desc_image_price.done', true);
+    $res->assertJsonPath('data.steps.crawl_desc_image_price.newly_checked', false);
 });
 
 it('does not auto-check manual image review step on verify', function (): void {

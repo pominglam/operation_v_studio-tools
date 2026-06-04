@@ -31,6 +31,7 @@ final class PurchaseOrderImportRequest extends FormRequest
             'product_total_includes_fees' => ['sometimes', 'boolean'],
             'surcharge_total' => ['sometimes', 'nullable', 'numeric'],
             'notes' => ['sometimes', 'nullable', 'string'],
+            'shipment_method' => ['sometimes', 'nullable', 'string', Rule::in(['air', 'sea'])],
             'reset_receipt_before_reimport' => ['sometimes', 'boolean'],
         ];
     }

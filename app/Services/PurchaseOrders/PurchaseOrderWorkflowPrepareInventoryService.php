@@ -7,7 +7,7 @@ namespace App\Services\PurchaseOrders;
 use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\Models\PurchaseOrderItem;
 use App\Services\PurchaseOrders\Exceptions\PurchaseOrderWorkflowPrepareInventoryException;
-use App\Services\Shopify\Admin\Sync\ShopifyErpSyncCoordinator;
+use App\Services\Shopify\Admin\Sync\ShopifyCatalogMirrorFreshnessService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -15,33 +15,54 @@ final class PurchaseOrderWorkflowPrepareInventoryService
 {
     public function __construct(
         private readonly PurchaseOrderRepository $purchaseOrders,
-        private readonly ShopifyErpSyncCoordinator $shopifySync,
+        private readonly ShopifyCatalogMirrorFreshnessService $mirrorFreshness,
+        private readonly PurchaseOrderPoInventoryRefreshService $poInventoryRefresh,
     ) {}
 
     /**
      * @return array{
      *   sync_status: string,
+     *   sync_mode: string,
+     *   mirror_fresh: bool,
+     *   max_age_seconds: int,
+     *   products_last_completed_at: string|null,
+     *   inventory_levels_last_completed_at: string|null,
+     *   skus_refreshed?: int,
+     *   inventory_items_refreshed?: int,
      *   lines_validated: int,
      *   shopify_quantities: array<int, array{sku:string, shopify_available:int|null}>
      * }
      */
     public function prepare(string $purchaseOrderUuid): array
     {
-        $productsSync = $this->shopifySync->sync('products');
-        if ($productsSync->status !== 'completed') {
-            throw new PurchaseOrderWorkflowPrepareInventoryException(
-                'Shopify product sync failed: '.(string) ($productsSync->error_summary ?? 'unknown error'),
-            );
+        $freshness = $this->mirrorFreshness->snapshot();
+
+        if ($freshness['mirror_fresh']) {
+            $summary = $this->validateAndSummarize($purchaseOrderUuid);
+
+            return [
+                ...$summary,
+                'sync_mode' => 'skipped_mirror_fresh',
+                'mirror_fresh' => true,
+                'max_age_seconds' => $freshness['max_age_seconds'],
+                'products_last_completed_at' => $freshness['products_last_completed_at'],
+                'inventory_levels_last_completed_at' => $freshness['inventory_levels_last_completed_at'],
+            ];
         }
 
-        $inventorySync = $this->shopifySync->sync('inventory_levels');
-        if ($inventorySync->status !== 'completed') {
-            throw new PurchaseOrderWorkflowPrepareInventoryException(
-                'Shopify inventory sync failed: '.(string) ($inventorySync->error_summary ?? 'unknown error'),
-            );
-        }
+        $refresh = $this->poInventoryRefresh->refreshForPurchaseOrder($purchaseOrderUuid);
+        $summary = $this->validateAndSummarize($purchaseOrderUuid);
 
-        return $this->validateAndSummarize($purchaseOrderUuid);
+        return [
+            ...$summary,
+            'sync_mode' => 'po_inventory_refresh',
+            'mirror_fresh' => false,
+            'max_age_seconds' => $freshness['max_age_seconds'],
+            'products_last_completed_at' => $freshness['products_last_completed_at'],
+            'inventory_levels_last_completed_at' => $freshness['inventory_levels_last_completed_at'],
+            'skus_refreshed' => $refresh['skus_refreshed'],
+            'inventory_items_refreshed' => $refresh['inventory_items_refreshed'],
+        ];
     }
 
     /**

@@ -12,6 +12,7 @@ use Illuminate\Support\Str;
  * @property int $id
  * @property string $uuid
  * @property string $vendor
+ * @property string|null $shipment_method
  * @property string|null $supplier_order_id
  * @property string $vendor_currency_code
  * @property string|null $ordered_date
@@ -33,6 +34,7 @@ final class PurchaseOrder extends Model
     protected $fillable = [
         'uuid',
         'vendor',
+        'shipment_method',
         'supplier_order_id',
         'vendor_currency_code',
         'ordered_date',

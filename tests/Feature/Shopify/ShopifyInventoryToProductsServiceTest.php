@@ -80,6 +80,33 @@ it('clamps negative shopify inventory to zero on products available_qty', functi
     expect($product->available_qty)->toBe(0);
 });
 
+it('adds hold_qty to shopify inventory when pulling to products available_qty', function (): void {
+    $product = Product::query()->create([
+        'uuid' => (string) Str::uuid(),
+        'sku' => 'SKU-INV-HOLD',
+        'description' => 'Hold pull product',
+        'type' => 'Others',
+        'vendor' => 'Test',
+        'available_qty' => 99,
+        'hold_qty' => 6,
+    ]);
+
+    $catalog = seedShopifyCatalogVariant('SKU-INV-HOLD', 'ACTIVE', 'hold-pull');
+    ShopifyInventoryLevel::query()->create([
+        'level_gid' => 'gid://shopify/InventoryLevel/hold-pull',
+        'inventory_item_gid' => $catalog['inventory_item_gid'],
+        'location_gid' => 'gid://shopify/Location/1',
+        'quantity_available' => 10,
+    ]);
+
+    $result = app(ShopifyInventoryToProductsService::class)->pullToAvailableQty(syncLevelsFirst: false);
+
+    expect($result)->toMatchArray(['matched' => 1, 'updated' => 1, 'skipped' => 0]);
+
+    $product->refresh();
+    expect($product->available_qty)->toBe(16);
+});
+
 it('sums multi-location inventory and updates matched products', function (): void {
     $product = Product::query()->create([
         'uuid' => (string) Str::uuid(),

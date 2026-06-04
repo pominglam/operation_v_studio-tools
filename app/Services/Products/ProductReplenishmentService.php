@@ -57,15 +57,7 @@ final class ProductReplenishmentService
 
     private function inboundOpenPoQtyExpression(): string
     {
-        return '(
-            select coalesce(sum(
-                case when coalesce(poi.qty_ordered, 0) > 0 then coalesce(poi.qty_ordered, 0) else 0 end
-            ), 0)
-            from purchase_order_items poi
-            inner join purchase_orders po on po.id = poi.purchase_order_id
-            where poi.product_id = products.id
-              and po.received_date is null
-        )';
+        return ProductInboundOpenPoQtySql::expression(true);
     }
 
     private function suggestedOrderQtyExpression(string $inboundExpr): string

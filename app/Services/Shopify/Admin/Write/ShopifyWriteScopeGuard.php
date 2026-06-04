@@ -19,6 +19,44 @@ final class ShopifyWriteScopeGuard
 
     public function hasWriteProductsScope(): bool
     {
+        return $this->hasScope('write_products');
+    }
+
+    public function assertWriteInventoryScope(): void
+    {
+        if (! $this->hasWriteInventoryScope()) {
+            throw new ShopifyAdminConfigurationException(
+                'Shopify OAuth token is missing write_inventory scope. Re-install the app with write_inventory in SHOPIFY_OAUTH_SCOPES, then complete OAuth again.',
+            );
+        }
+    }
+
+    public function hasWriteInventoryScope(): bool
+    {
+        return $this->hasScope('write_inventory');
+    }
+
+    public function assertWritePublicationsScope(): void
+    {
+        if (! $this->hasWritePublicationsScope()) {
+            throw new ShopifyAdminConfigurationException(
+                'Shopify OAuth token is missing write_publications scope. Re-install the app with write_publications in SHOPIFY_OAUTH_SCOPES, then complete OAuth again.',
+            );
+        }
+    }
+
+    public function hasWritePublicationsScope(): bool
+    {
+        return $this->hasScope('write_publications');
+    }
+
+    public function hasReadPublicationsScope(): bool
+    {
+        return $this->hasScope('read_publications');
+    }
+
+    private function hasScope(string $scope): bool
+    {
         /** @var string|null $scopesRaw */
         $scopesRaw = config('shopify.oauth_scopes');
         if (! is_string($scopesRaw) || trim($scopesRaw) === '') {
@@ -26,10 +64,10 @@ final class ShopifyWriteScopeGuard
         }
 
         $scopes = array_map(
-            static fn (string $scope): string => strtolower(trim($scope)),
+            static fn (string $scopeName): string => strtolower(trim($scopeName)),
             explode(',', $scopesRaw),
         );
 
-        return in_array('write_products', $scopes, true);
+        return in_array(strtolower($scope), $scopes, true);
     }
 }

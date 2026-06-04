@@ -7,12 +7,14 @@ namespace App\Services\PurchaseOrders;
 use App\Models\Product;
 use App\Models\ProductExternalContent;
 use App\Models\PurchaseOrder;
+use App\Services\Products\LatestArrivalAutoMarkPolicy;
 use Illuminate\Support\Facades\DB;
 
 final class PurchaseOrderWorkflowVerificationService
 {
     public function __construct(
         private readonly PurchaseOrderProductScopeService $scope,
+        private readonly LatestArrivalAutoMarkPolicy $latestArrivalAutoMark,
     ) {}
 
     /**
@@ -26,9 +28,9 @@ final class PurchaseOrderWorkflowVerificationService
 
         return [
             'import_po' => $this->stepImportPo($po),
-            'crawl_desc_image_price' => $this->stepCrawlNewProducts($newProducts),
+            'crawl_desc_image_price' => $this->stepCrawlDescImagePrice($po, $newProducts),
             'select_and_arrange_product_images' => $this->stepManualChecklist($po, 'select_and_arrange_product_images'),
-            'set_selling_price' => $this->stepSellingPrice($allProducts),
+            'set_selling_price' => $this->stepManualChecklist($po, 'set_selling_price'),
             'ensure_all_products_have_barcode' => $this->stepBarcode($allProducts),
             'export_to_shopify_get_handles' => $this->stepHandlesImported($allProducts),
             'import_handle_only' => $this->stepHandlesImported($newProducts),
@@ -36,7 +38,8 @@ final class PurchaseOrderWorkflowVerificationService
                 'done' => (bool) (($po->workflow_checklist_json['update_product_available_with_shopify_current_inventory_quantity'] ?? false)),
                 'detail' => 'checked_after_apply_received',
             ],
-            'mark_latest_arrival_and_published_on_shopify' => $this->stepLatestArrivalPublished($allProducts),
+            'mark_published_on_shopify' => $this->stepPublishedOnShopify($allProducts),
+            'mark_latest_arrival' => $this->stepLatestArrival($allProducts),
             'import_product_available_quantity' => ['done' => false, 'detail' => 'deferred'],
         ];
     }
@@ -66,6 +69,30 @@ final class PurchaseOrderWorkflowVerificationService
             ->count();
 
         return ['done' => $items > 0];
+    }
+
+    /**
+     * @param  iterable<int, Product>  $newProducts
+     * @return array{done:bool, detail?:string}
+     */
+    private function stepCrawlDescImagePrice(PurchaseOrder $po, iterable $newProducts): array
+    {
+        $existing = is_array($po->workflow_checklist_json) ? $po->workflow_checklist_json : [];
+        if ((bool) ($existing['crawl_desc_image_price_skipped'] ?? false)) {
+            return [
+                'done' => (bool) ($existing['crawl_desc_image_price'] ?? false),
+                'detail' => 'skipped',
+            ];
+        }
+
+        if (! $this->isPlamodVendor($po->vendor)) {
+            return [
+                'done' => (bool) ($existing['crawl_desc_image_price'] ?? false),
+                'detail' => 'not_plamod',
+            ];
+        }
+
+        return $this->stepCrawlNewProducts($newProducts);
     }
 
     /**
@@ -167,11 +194,11 @@ final class PurchaseOrderWorkflowVerificationService
      * @param  iterable<int, Product>  $products
      * @return array{done:bool, detail?:string}
      */
-    private function stepLatestArrivalPublished(iterable $products): array
+    private function stepPublishedOnShopify(iterable $products): array
     {
         $missing = [];
         foreach ($products as $product) {
-            if (! $product->latest_arrival || ! $product->published_on_shopify) {
+            if (! $product->published_on_shopify) {
                 $missing[] = (string) $product->sku;
             }
         }
@@ -182,7 +209,33 @@ final class PurchaseOrderWorkflowVerificationService
 
         return [
             'done' => false,
-            'detail' => 'missing_flags:'.implode(',', array_slice($missing, 0, 20)),
+            'detail' => 'missing_published:'.implode(',', array_slice($missing, 0, 20)),
+        ];
+    }
+
+    /**
+     * @param  iterable<int, Product>  $products
+     * @return array{done:bool, detail?:string}
+     */
+    private function stepLatestArrival(iterable $products): array
+    {
+        $missing = [];
+        foreach ($products as $product) {
+            if (! $this->latestArrivalAutoMark->shouldAutoMarkLatestArrival($product)) {
+                continue;
+            }
+            if (! $product->latest_arrival) {
+                $missing[] = (string) $product->sku;
+            }
+        }
+
+        if ($missing === []) {
+            return ['done' => true];
+        }
+
+        return [
+            'done' => false,
+            'detail' => 'missing_latest_arrival:'.implode(',', array_slice($missing, 0, 20)),
         ];
     }
 
@@ -218,5 +271,10 @@ final class PurchaseOrderWorkflowVerificationService
     private function productHasPdpImages(Product $product): bool
     {
         return ($product->imageAssets?->count() ?? 0) > 0;
+    }
+
+    private function isPlamodVendor(string $vendor): bool
+    {
+        return strcasecmp(trim($vendor), 'Plamod') === 0;
     }
 }

@@ -18,6 +18,10 @@ import PoWorkflowPullHandlesDialog, {
     type PoPullHandlesPreview,
     type PoPullHandlesSummary,
 } from '../components/purchaseOrders/PoWorkflowPullHandlesDialog.vue';
+import PoWorkflowPushInventoryDialog, {
+    type PoPushInventoryPreview,
+    type PoPushInventorySummary,
+} from '../components/purchaseOrders/PoWorkflowPushInventoryDialog.vue';
 import PoImportPreviewDialog, {
     type PoImportPreview,
 } from '../components/purchaseOrders/PoImportPreviewDialog.vue';
@@ -96,6 +100,7 @@ type PurchaseOrder = {
     notes: string | null;
     workflow_checklist: Record<string, boolean> | null;
     status: 'draft' | 'ordered' | 'shipped' | 'received' | 'on_shelves';
+    shipment_method: 'air' | 'sea' | null;
     counts: { items: number };
     items: PurchaseOrderItem[];
     created_at: string | null;
@@ -203,6 +208,8 @@ const workflowActionBusy = ref<Partial<Record<WorkflowChecklistKey, boolean>>>({
 const workflowActionError = ref<string | null>(null);
 const inventoryPrepareReady = ref(false);
 const inventoryPrepareSummary = ref<string | null>(null);
+const clearingStaleLatestArrival = ref(false);
+const clearStaleLatestArrivalSummary = ref<string | null>(null);
 
 const setPricesDialogOpen = ref(false);
 const setPricesPreview = ref<PoSetPricePreview | null>(null);
@@ -221,6 +228,12 @@ const pullHandlesPreviewLoading = ref(false);
 const pullHandlesApplyBusy = ref(false);
 const pullHandlesPreviewError = ref<string | null>(null);
 const pullHandlesSummary = ref<PoPullHandlesSummary | null>(null);
+const pushInventoryDialogOpen = ref(false);
+const pushInventoryPreview = ref<PoPushInventoryPreview | null>(null);
+const pushInventoryPreviewLoading = ref(false);
+const pushInventoryPushBusy = ref(false);
+const pushInventoryPreviewError = ref<string | null>(null);
+const pushInventoryPushSummary = ref<PoPushInventorySummary | null>(null);
 const draftAddSkus = ref('');
 const addingDraftProducts = ref(false);
 const addDraftProductsError = ref<string | null>(null);
@@ -239,17 +252,21 @@ type WorkflowChecklistKey =
     | 'export_to_shopify_get_handles'
     | 'import_handle_only'
     | 'update_product_available_with_shopify_current_inventory_quantity'
-    | 'mark_latest_arrival_and_published_on_shopify'
+    | 'mark_published_on_shopify'
+    | 'mark_latest_arrival'
     | 'import_product_available_quantity';
 
 const checklistLabels: Array<{ key: WorkflowChecklistKey; label: string }> = [
     { key: 'import_po', label: 'Import PO' },
-    { key: 'crawl_desc_image_price', label: 'Crawl desc, image, price (new products only)' },
+    {
+        key: 'crawl_desc_image_price',
+        label: 'Crawl desc, image, price (Plamod new products only)',
+    },
     {
         key: 'select_and_arrange_product_images',
         label: 'Select and rearrange product images (manual — open each product)',
     },
-    { key: 'set_selling_price', label: 'Set selling price (new/existing products)' },
+    { key: 'set_selling_price', label: 'Set/review selling price (new/existing products)' },
     { key: 'ensure_all_products_have_barcode', label: 'Ensure all products have barcode' },
     {
         key: 'export_to_shopify_get_handles',
@@ -264,10 +281,19 @@ const checklistLabels: Array<{ key: WorkflowChecklistKey; label: string }> = [
         label: 'Add qty received to qty available',
     },
     {
-        key: 'mark_latest_arrival_and_published_on_shopify',
-        label: 'Mark products as latest arrival and published',
+        key: 'mark_published_on_shopify',
+        label: 'Mark products published on Shopify (ERP flag — push sets ACTIVE + channels)',
     },
-    { key: 'import_product_available_quantity', label: 'Import product available quantity' },
+    {
+        key: 'mark_latest_arrival',
+        label:
+            'Mark latest arrival (ERP flag — push adds tag; skips tools; toggle on Products for exceptions)',
+    },
+    {
+        key: 'import_product_available_quantity',
+        label:
+            'Push to Shopify — Latest Arrivals order (content, tags, price, inventory; sorted by type, newest first)',
+    },
 ];
 
 type WorkflowStepStatus = {
@@ -366,13 +392,21 @@ async function prepareInventoryForPo(): Promise<void> {
     try {
         const res = await api.post<{
             ok: boolean;
-            data: { lines_validated: number; shopify_quantities: Array<{ sku: string }> };
+            data: {
+                lines_validated: number;
+                sync_mode?: 'skipped_mirror_fresh' | 'po_inventory_refresh';
+                mirror_fresh?: boolean;
+                skus_refreshed?: number;
+                inventory_items_refreshed?: number;
+                shopify_quantities: Array<{ sku: string }>;
+            };
             message?: string;
             issues?: Array<{ sku: string; reason: string }>;
         }>(
             `/api/v1/purchase-orders/${po.value.id}/workflow-actions/prepare-inventory`,
             {},
-            { validateStatus: () => true },
+            // Full Shopify product + inventory sync can exceed the default 60s API timeout.
+            { validateStatus: () => true, timeout: 0 },
         );
         if (res.status !== 200) {
             const issues = res.data?.issues ?? [];
@@ -386,10 +420,24 @@ async function prepareInventoryForPo(): Promise<void> {
         }
         inventoryPrepareReady.value = true;
         const n = res.data.data?.lines_validated ?? 0;
-        inventoryPrepareSummary.value = `Shopify quantities pulled. ${n} PO line(s) validated with received qty.`;
+        const mode = res.data.data?.sync_mode;
+        if (mode === 'skipped_mirror_fresh') {
+            inventoryPrepareSummary.value = `Catalog mirror is fresh (synced within the last hour). ${n} PO line(s) validated with received qty.`;
+        } else if (mode === 'po_inventory_refresh') {
+            const skuCount = res.data.data?.skus_refreshed ?? n;
+            inventoryPrepareSummary.value = `Refreshed Shopify inventory for ${skuCount} PO SKU(s). ${n} PO line(s) validated with received qty.`;
+        } else {
+            inventoryPrepareSummary.value = `${n} PO line(s) validated with received qty.`;
+        }
     } catch (e: unknown) {
-        workflowActionError.value =
-            e instanceof Error ? e.message : 'Prepare inventory failed.';
+        const axiosCode = (e as { code?: string })?.code;
+        if (axiosCode === 'ECONNABORTED') {
+            workflowActionError.value =
+                'Prepare timed out in the browser (Shopify sync can take several minutes). Refresh the page and try again, or run Shopify product + inventory sync from Maintenance first, then Prepare.';
+        } else {
+            workflowActionError.value =
+                e instanceof Error ? e.message : 'Prepare inventory failed.';
+        }
     } finally {
         workflowActionBusy.value = {
             ...workflowActionBusy.value,
@@ -405,26 +453,39 @@ function workflowRowButtonLabel(key: WorkflowChecklistKey): string | null {
         case 'select_and_arrange_product_images':
             return 'Review images';
         case 'set_selling_price':
-            return 'Set prices';
+            return 'Set/review';
         case 'import_handle_only':
             return 'Pull handles';
         case 'update_product_available_with_shopify_current_inventory_quantity':
             return 'Prepare';
-        case 'mark_latest_arrival_and_published_on_shopify':
-            return 'Mark flags';
+        case 'mark_published_on_shopify':
+            return 'Mark published';
+        case 'mark_latest_arrival':
+            return 'Mark latest';
         case 'export_to_shopify_get_handles':
             return 'Export';
         case 'import_product_available_quantity':
-            return 'Import qty';
+            return 'Push to Shopify';
         default:
             return null;
     }
+}
+
+function isPlamodVendor(vendor: string | null | undefined): boolean {
+    return (vendor ?? '').trim().toLowerCase() === 'plamod';
 }
 
 async function onWorkflowRowAction(key: WorkflowChecklistKey): Promise<void> {
     if (!po.value) return;
     switch (key) {
         case 'crawl_desc_image_price':
+            if (!isPlamodVendor(po.value.vendor)) {
+                const proceed = window.confirm(
+                    `Vendor is "${po.value.vendor}". Crawling desc/images/prices is only required for Plamod POs. Run crawl anyway?`,
+                );
+                if (!proceed) return;
+            }
+            await patchChecklist({ crawl_desc_image_price_skipped: false });
             await runWorkflowAction(
                 key,
                 `/api/v1/purchase-orders/${po.value.id}/workflow-actions/crawl-new-products`,
@@ -451,17 +512,23 @@ async function onWorkflowRowAction(key: WorkflowChecklistKey): Promise<void> {
         case 'update_product_available_with_shopify_current_inventory_quantity':
             await prepareInventoryForPo();
             return;
-        case 'mark_latest_arrival_and_published_on_shopify':
+        case 'mark_published_on_shopify':
             await runWorkflowAction(
                 key,
-                `/api/v1/purchase-orders/${po.value.id}/workflow-actions/mark-latest-arrival-published`,
+                `/api/v1/purchase-orders/${po.value.id}/workflow-actions/mark-published-on-shopify`,
+            );
+            return;
+        case 'mark_latest_arrival':
+            await runWorkflowAction(
+                key,
+                `/api/v1/purchase-orders/${po.value.id}/workflow-actions/mark-latest-arrival`,
             );
             return;
         case 'export_to_shopify_get_handles':
             await openExportShopifyPreview();
             return;
         case 'import_product_available_quantity':
-            importQtyOpen.value = true;
+            await openPushInventoryPreview();
             return;
         default:
             return;
@@ -530,6 +597,74 @@ function closeExportShopifyDialog(): void {
     exportShopifyPreview.value = null;
     exportShopifyPushSummary.value = null;
     exportShopifyPreviewError.value = null;
+}
+
+async function openPushInventoryPreview(): Promise<void> {
+    if (!po.value) return;
+    pushInventoryDialogOpen.value = true;
+    pushInventoryPreview.value = null;
+    pushInventoryPushSummary.value = null;
+    pushInventoryPreviewError.value = null;
+    pushInventoryPreviewLoading.value = true;
+    try {
+        const res = await api.get<{ ok: boolean; data: PoPushInventoryPreview }>(
+            `/api/v1/purchase-orders/${po.value.id}/workflow-actions/push-inventory/preview`,
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as { message?: string })?.message;
+            throw new Error(msg ?? `Preview failed (HTTP ${res.status}).`);
+        }
+        pushInventoryPreview.value = res.data.data;
+    } catch (e: unknown) {
+        pushInventoryPreviewError.value =
+            e instanceof Error ? e.message : 'Failed to load inventory push preview.';
+    } finally {
+        pushInventoryPreviewLoading.value = false;
+    }
+}
+
+function closePushInventoryDialog(): void {
+    if (pushInventoryPushBusy.value) return;
+    pushInventoryDialogOpen.value = false;
+    pushInventoryPreview.value = null;
+    pushInventoryPushSummary.value = null;
+    pushInventoryPreviewError.value = null;
+}
+
+async function confirmPushInventory(): Promise<void> {
+    if (!po.value || !pushInventoryPreview.value || pushInventoryPreview.value.push_count === 0) {
+        return;
+    }
+    pushInventoryPushBusy.value = true;
+    pushInventoryPreviewError.value = null;
+    try {
+        const res = await api.post<{
+            ok: boolean;
+            data: {
+                summary: PoPushInventorySummary;
+                purchase_order?: PurchaseOrder;
+            };
+        }>(
+            `/api/v1/purchase-orders/${po.value.id}/workflow-actions/push-inventory`,
+            {},
+            { validateStatus: () => true, timeout: 0 },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as { message?: string })?.message;
+            throw new Error(msg ?? `Push failed (HTTP ${res.status}).`);
+        }
+        pushInventoryPushSummary.value = res.data.data.summary ?? res.data.data;
+        if ((pushInventoryPushSummary.value?.failed ?? 0) === 0) {
+            applyWorkflowPoResponse(res.data.data ?? {});
+            await load();
+        }
+    } catch (e: unknown) {
+        pushInventoryPreviewError.value =
+            e instanceof Error ? e.message : 'Failed to push inventory to Shopify.';
+    } finally {
+        pushInventoryPushBusy.value = false;
+    }
 }
 
 async function openPullHandlesPreview(): Promise<void> {
@@ -662,6 +797,56 @@ async function confirmSetPricesApply(): Promise<void> {
     }
 }
 
+async function clearStaleLatestArrivalFromWorkflow(): Promise<void> {
+    if (!po.value) return;
+    const ok = window.confirm(
+        'Remove the latest arrival flag from products on POs older than 4 weeks (skipping products also on a PO within the last 4 weeks), and remove only the "latest arrival" tag on Shopify for those cleared? Published on Shopify and other tags are not changed.',
+    );
+    if (!ok) return;
+
+    clearingStaleLatestArrival.value = true;
+    workflowActionError.value = null;
+    clearStaleLatestArrivalSummary.value = null;
+    try {
+        const res = await api.post<{
+            ok: boolean;
+            data: {
+                purchase_orders_matched: number;
+                products_cleared: number;
+                cutoff_date: string;
+                shopify_tags_removed: number;
+                shopify_skipped_no_gid: number;
+                shopify_tag_removals_failed: number;
+            };
+        }>(
+            `/api/v1/purchase-orders/${po.value.id}/workflow-actions/clear-stale-latest-arrival`,
+            {},
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as { message?: string })?.message;
+            throw new Error(msg ?? `Clear failed (HTTP ${res.status}).`);
+        }
+        const d = res.data.data;
+        let msg = `Cleared latest arrival on ${d.products_cleared} product(s) from ${d.purchase_orders_matched} PO(s) before ${d.cutoff_date}.`;
+        if (d.shopify_tags_removed > 0) {
+            msg += ` Removed the latest arrival tag on ${d.shopify_tags_removed} Shopify product(s).`;
+        }
+        if (d.shopify_skipped_no_gid > 0) {
+            msg += ` ${d.shopify_skipped_no_gid} had no Shopify mirror.`;
+        }
+        if (d.shopify_tag_removals_failed > 0) {
+            msg += ` ${d.shopify_tag_removals_failed} Shopify tag removal(s) failed.`;
+        }
+        clearStaleLatestArrivalSummary.value = msg;
+    } catch (e: unknown) {
+        workflowActionError.value =
+            e instanceof Error ? e.message : 'Failed to clear stale latest arrival flags.';
+    } finally {
+        clearingStaleLatestArrival.value = false;
+    }
+}
+
 async function applyReceivedFromChecklist(): Promise<void> {
     if (!inventoryPrepareReady.value) {
         workflowActionError.value = 'Run Prepare first (pull Shopify qty and validate received qty).';
@@ -672,22 +857,24 @@ async function applyReceivedFromChecklist(): Promise<void> {
 }
 
 const checklist = computed<Record<WorkflowChecklistKey, boolean>>(() => {
-    const raw = po.value?.workflow_checklist ?? {};
+    const raw = (po.value?.workflow_checklist ?? {}) as Record<string, boolean>;
+    const legacy = Boolean(raw.mark_latest_arrival_and_published_on_shopify);
     return {
-        import_po: Boolean((raw as any)?.import_po),
-        crawl_desc_image_price: Boolean((raw as any)?.crawl_desc_image_price),
-        select_and_arrange_product_images: Boolean((raw as any)?.select_and_arrange_product_images),
-        set_selling_price: Boolean((raw as any)?.set_selling_price),
-        ensure_all_products_have_barcode: Boolean((raw as any)?.ensure_all_products_have_barcode),
-        export_to_shopify_get_handles: Boolean((raw as any)?.export_to_shopify_get_handles),
-        import_handle_only: Boolean((raw as any)?.import_handle_only),
+        import_po: Boolean(raw.import_po),
+        crawl_desc_image_price: Boolean(raw.crawl_desc_image_price),
+        select_and_arrange_product_images: Boolean(raw.select_and_arrange_product_images),
+        set_selling_price: Boolean(raw.set_selling_price),
+        ensure_all_products_have_barcode: Boolean(raw.ensure_all_products_have_barcode),
+        export_to_shopify_get_handles: Boolean(raw.export_to_shopify_get_handles),
+        import_handle_only: Boolean(raw.import_handle_only),
         update_product_available_with_shopify_current_inventory_quantity: Boolean(
-            (raw as any)?.update_product_available_with_shopify_current_inventory_quantity,
+            raw.update_product_available_with_shopify_current_inventory_quantity,
         ),
-        mark_latest_arrival_and_published_on_shopify: Boolean(
-            (raw as any)?.mark_latest_arrival_and_published_on_shopify,
+        mark_published_on_shopify: Boolean(
+            raw.mark_published_on_shopify ?? legacy,
         ),
-        import_product_available_quantity: Boolean((raw as any)?.import_product_available_quantity),
+        mark_latest_arrival: Boolean(raw.mark_latest_arrival ?? legacy),
+        import_product_available_quantity: Boolean(raw.import_product_available_quantity),
     };
 });
 
@@ -699,6 +886,17 @@ function parseFilenameFromContentDisposition(header: string | undefined): string
         return decodeURIComponent(m[1]);
     } catch {
         return m[1];
+    }
+}
+
+function poShipmentMethodLabel(method: PurchaseOrder['shipment_method']): string {
+    switch (method) {
+        case 'air':
+            return 'Air';
+        case 'sea':
+            return 'Sea';
+        default:
+            return '—';
     }
 }
 
@@ -1065,7 +1263,26 @@ async function toggleChecklist(key: WorkflowChecklistKey, next: boolean): Promis
     if (key === 'select_and_arrange_product_images' && !next) {
         changes.select_and_arrange_product_images_deferred = false;
     }
+    if (key === 'crawl_desc_image_price' && !next) {
+        changes.crawl_desc_image_price_skipped = false;
+    }
     await patchChecklist(changes);
+}
+
+async function skipCrawlStep(): Promise<void> {
+    if (!po.value || checklist.value.crawl_desc_image_price) return;
+
+    if (isPlamodVendor(po.value.vendor)) {
+        const ok = window.confirm(
+            'Skip crawling for this Plamod PO? New products will not get desc, images, or prices from crawl. You can run Crawl new later if needed.',
+        );
+        if (!ok) return;
+    }
+
+    await patchChecklist({
+        crawl_desc_image_price: true,
+        crawl_desc_image_price_skipped: true,
+    });
 }
 
 async function deferImageCuration(): Promise<void> {
@@ -1225,6 +1442,7 @@ async function applyReceivedQtyToAvailable(): Promise<void> {
 const draft = reactive<{
     vendor: string;
     supplier_order_id: string;
+    shipment_method: '' | 'air' | 'sea';
     vendor_currency_code: string;
     ordered_date: string;
     shipped_date: string;
@@ -1239,6 +1457,7 @@ const draft = reactive<{
 }>({
     vendor: '',
     supplier_order_id: '',
+    shipment_method: '',
     vendor_currency_code: 'CAD',
     ordered_date: '',
     shipped_date: '',
@@ -1495,6 +1714,7 @@ async function load(): Promise<void> {
             draft.product_total = po.value.product_total ?? '';
             draft.vendor_product_total = po.value.vendor_product_total ?? '';
             draft.notes = po.value.notes ?? '';
+            draft.shipment_method = po.value.shipment_method ?? '';
         }
     } catch {
         error.value = 'Failed to load purchase order.';
@@ -1522,6 +1742,7 @@ function startEdit(): void {
     draft.product_total = po.value.product_total ?? '';
     draft.vendor_product_total = po.value.vendor_product_total ?? '';
     draft.notes = po.value.notes ?? '';
+    draft.shipment_method = po.value.shipment_method ?? '';
 }
 
 function cancelEdit(): void {
@@ -1551,6 +1772,7 @@ async function save(): Promise<void> {
             vendor_product_total:
                 draft.vendor_product_total.trim() === '' ? null : draft.vendor_product_total.trim(),
             notes: draft.notes.trim() === '' ? null : draft.notes.trim(),
+            shipment_method: draft.shipment_method === '' ? null : draft.shipment_method,
         };
 
         const res = await api.patch<{ data: PurchaseOrder }>(
@@ -2011,6 +2233,9 @@ function buildPoImportFormData(mode: 'replace' | 'append'): FormData {
     if (importShippingTotal.value.trim() !== '' && !importProductTotalIncludesFees.value) {
         fd.append('shipping_total', importShippingTotal.value.trim());
     }
+    if (po.value.shipment_method) {
+        fd.append('shipment_method', po.value.shipment_method);
+    }
 
     return fd;
 }
@@ -2168,6 +2393,10 @@ onMounted(() => {
                             <span class="font-medium">Status:</span>
                             {{ draftStatusLabel(po.status) }}
                         </div>
+                        <div>
+                            <span class="font-medium">Shipment:</span>
+                            {{ poShipmentMethodLabel(po.shipment_method) }}
+                        </div>
                     </div>
                     <div class="flex items-center gap-2">
                         <button
@@ -2176,7 +2405,7 @@ onMounted(() => {
                             :disabled="exportDraftLinesBusy"
                             @click="exportDraftLinesCsv"
                         >
-                            {{ exportDraftLinesBusy ? 'Exporting…' : 'Export PO lines CSV' }}
+                            {{ exportDraftLinesBusy ? 'Exporting…' : 'Export order CSV' }}
                         </button>
                         <button
                             type="button"
@@ -2529,7 +2758,12 @@ onMounted(() => {
                             </div>
                             <div class="mt-1 text-xs text-slate-600">
                                 This checklist is saved on this PO. Checked steps stay checked;
-                                use Re-verify to auto-check completed steps.
+                                use Re-verify to auto-check completed steps. Only
+                                <span class="font-medium">Plamod</span> POs auto-complete crawl when
+                                PDP data exists; use <span class="font-medium">Skip</span> or
+                                <span class="font-medium">Crawl new</span> with confirmation when
+                                needed. Check <span class="font-medium">Set/review selling price</span> only
+                                after you review and approve prices in the dialog.
                             </div>
                         </div>
                         <div class="flex shrink-0 items-center gap-2">
@@ -2567,9 +2801,31 @@ onMounted(() => {
                                 <span class="min-w-0">{{ row.label }}</span>
                             </label>
                             <button
+                                v-if="row.key === 'mark_latest_arrival'"
+                                type="button"
+                                class="shrink-0 rounded-md border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="checklistBusy || clearingStaleLatestArrival"
+                                data-testid="workflow-clear-stale-latest-arrival"
+                                title="Remove latest arrival from products on POs older than 4 weeks"
+                                @click="clearStaleLatestArrivalFromWorkflow"
+                            >
+                                {{
+                                    clearingStaleLatestArrival
+                                        ? 'Clearing…'
+                                        : 'Clear old latest'
+                                }}
+                            </button>
+                            <button
                                 v-if="workflowRowButtonLabel(row.key)"
                                 type="button"
                                 class="shrink-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                :title="
+                                    row.key === 'mark_published_on_shopify'
+                                        ? 'Sets published_on_shopify in the ERP only until push'
+                                        : row.key === 'mark_latest_arrival'
+                                          ? 'Sets latest_arrival in the ERP for non-tools; push adds the Shopify tag'
+                                          : undefined
+                                "
                                 :disabled="
                                     checklistBusy ||
                                     Boolean(workflowActionBusy[row.key]) ||
@@ -2616,6 +2872,19 @@ onMounted(() => {
                             </button>
                             <button
                                 v-if="
+                                    row.key === 'crawl_desc_image_price' &&
+                                    !checklist.crawl_desc_image_price
+                                "
+                                type="button"
+                                class="shrink-0 rounded-md border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="checklistBusy"
+                                data-testid="workflow-skip-crawl"
+                                @click="skipCrawlStep"
+                            >
+                                Skip
+                            </button>
+                            <button
+                                v-if="
                                     row.key === 'select_and_arrange_product_images' &&
                                     !checklist.select_and_arrange_product_images
                                 "
@@ -2632,6 +2901,12 @@ onMounted(() => {
 
                     <p v-if="inventoryPrepareSummary" class="mt-2 text-xs text-emerald-800">
                         {{ inventoryPrepareSummary }}
+                    </p>
+                    <p
+                        v-if="clearStaleLatestArrivalSummary"
+                        class="mt-2 text-xs text-amber-900"
+                    >
+                        {{ clearStaleLatestArrivalSummary }}
                     </p>
                     <p v-if="workflowActionError" class="mt-3 text-sm text-rose-700">
                         {{ workflowActionError }}
@@ -2663,6 +2938,17 @@ onMounted(() => {
                                 type="text"
                                 class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                             />
+                        </div>
+                        <div>
+                            <label class="text-xs font-medium text-slate-700">Shipment</label>
+                            <select
+                                v-model="draft.shipment_method"
+                                class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                            >
+                                <option value="">—</option>
+                                <option value="air">Air</option>
+                                <option value="sea">Sea</option>
+                            </select>
                         </div>
                         <div>
                             <label class="text-xs font-medium text-slate-700">Ordered</label>
@@ -3295,6 +3581,15 @@ onMounted(() => {
         :error="pullHandlesPreviewError"
         @cancel="closePullHandlesDialog"
         @confirm="confirmPullHandles"
+    />
+    <PoWorkflowPushInventoryDialog
+        :open="pushInventoryDialogOpen"
+        :busy="pushInventoryPushBusy || pushInventoryPreviewLoading"
+        :preview="pushInventoryPreview"
+        :push-summary="pushInventoryPushSummary"
+        :error="pushInventoryPreviewError"
+        @cancel="closePushInventoryDialog"
+        @confirm="confirmPushInventory"
     />
     <PoImportPreviewDialog
         :open="importPreviewOpen"

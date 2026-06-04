@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
+import { nextTick } from 'vue';
 
 import ProductsTable from '../ProductsTable.vue';
 
@@ -49,11 +50,14 @@ describe('ProductsTable', () => {
                 onBulkRecrawlSelected: async () => undefined,
                 onUpdate: async () => undefined,
                 onUpdateAvailable,
+                onUpdateHold: async () => undefined,
                 onUpdateMaintain,
                 onToggleReady,
                 onToggleLatestArrival,
                 onToggleCritical: async () => undefined,
                 onToggleDiscontinue: async () => undefined,
+                onToggleHazardousShipment: async () => undefined,
+                onUpdateShipmentMethod: async () => undefined,
                 onSelectAllMatching,
                 onOpenPlamod,
                 onOpenPoLines: () => undefined,
@@ -131,12 +135,15 @@ describe('ProductsTable', () => {
                 onBulkRecrawlSelected: async () => undefined,
                 onUpdate: async () => undefined,
                 onUpdateAvailable,
+                onUpdateHold: async () => undefined,
                 onUpdateMaintain,
                 onOpenPlamod: () => undefined,
                 onToggleReady: async () => undefined,
                 onToggleLatestArrival,
                 onToggleCritical: async () => undefined,
                 onToggleDiscontinue: async () => undefined,
+                onToggleHazardousShipment: async () => undefined,
+                onUpdateShipmentMethod: async () => undefined,
                 onSelectAllMatching,
                 onOpenPoLines: () => undefined,
             },
@@ -197,11 +204,14 @@ describe('ProductsTable', () => {
                 onBulkRecrawlSelected: async () => undefined,
                 onUpdate: async () => undefined,
                 onUpdateAvailable,
+                onUpdateHold: async () => undefined,
                 onUpdateMaintain,
                 onToggleReady,
                 onToggleLatestArrival,
                 onToggleCritical: async () => undefined,
                 onToggleDiscontinue: async () => undefined,
+                onToggleHazardousShipment: async () => undefined,
+                onUpdateShipmentMethod: async () => undefined,
                 onSelectAllMatching,
                 onOpenPlamod: () => undefined,
                 onOpenPoLines: () => undefined,
@@ -259,11 +269,14 @@ describe('ProductsTable', () => {
                 onBulkRecrawlSelected: async () => undefined,
                 onUpdate: async () => undefined,
                 onUpdateAvailable,
+                onUpdateHold: async () => undefined,
                 onUpdateMaintain,
                 onToggleReady: async () => undefined,
                 onToggleLatestArrival,
                 onToggleCritical: async () => undefined,
                 onToggleDiscontinue: async () => undefined,
+                onToggleHazardousShipment: async () => undefined,
+                onUpdateShipmentMethod: async () => undefined,
                 onSelectAllMatching: async () => ['p-1'],
                 onOpenPlamod: () => undefined,
                 onOpenPoLines: () => undefined,
@@ -326,13 +339,14 @@ describe('ProductsTable', () => {
                 onToggleLatestArrival: async () => undefined,
                 onToggleCritical,
                 onToggleDiscontinue,
+                onToggleHazardousShipment: async () => undefined,
+                onUpdateShipmentMethod: async () => undefined,
                 onSelectAllMatching: async () => ['p-1'],
                 onOpenPlamod: () => undefined,
                 onOpenPoLines: () => undefined,
             },
             global: {
                 stubs: {
-                    ConfirmDialog: true,
                     BulkUpdateDialog: true,
                     BulkExportDialog: true,
                     BulkRecrawlDialog: true,
@@ -351,7 +365,153 @@ describe('ProductsTable', () => {
         const discontinue = wrapper.find('[data-testid="product-discontinue-toggle"]');
         expect(discontinue.exists()).toBe(true);
         await discontinue.setValue(true);
+        await nextTick();
+        expect(onToggleDiscontinue).not.toHaveBeenCalled();
+        expect(document.body.textContent).toContain('Mark product as discontinued?');
+
+        const confirmBtn = Array.from(document.body.querySelectorAll('button')).find(
+            (b) => b.textContent?.trim() === 'Mark discontinued',
+        );
+        expect(confirmBtn, 'Expected discontinue confirm button').toBeTruthy();
+        confirmBtn!.click();
+        await nextTick();
         expect(onToggleDiscontinue).toHaveBeenCalledWith('p-1', true);
+
+        wrapper.unmount();
+    });
+
+    it('requires confirmation before marking hazardous shipment', async () => {
+        const onToggleHazardousShipment = vi.fn(async () => undefined);
+
+        const wrapper = mount(ProductsTable, {
+            props: {
+                loading: false,
+                products: [
+                    {
+                        id: 'p-haz',
+                        sku: 'SKU-HAZ',
+                        barcode: null,
+                        description: 'Hazard test',
+                        type: null,
+                        vendor: null,
+                        published_on_shopify: false,
+                        is_ready: false,
+                        is_hazardous_shipment: false,
+                        available: null,
+                        maintain: null,
+                        pdp: { has_description: false, plamod_image_count: 0 },
+                    },
+                ],
+                totalMatching: 1,
+                selectionScopeKey: 'scope-1',
+                sortBy: 'sku',
+                sortDir: 'asc',
+                onSortChange: () => undefined,
+                onRefresh: async () => undefined,
+                onBulkDelete: async () => 0,
+                onBulkUpdate: async () => 0,
+                onBulkRenamePlamodAssets: async () => ({ queued: 0, batchId: '' }),
+                onBulkExportSelected: async () => undefined,
+                onBulkRecrawlSelected: async () => undefined,
+                onUpdate: async () => undefined,
+                onUpdateAvailable: async () => undefined,
+                onUpdateMaintain: async () => undefined,
+                onToggleReady: async () => undefined,
+                onToggleLatestArrival: async () => undefined,
+                onToggleCritical: async () => undefined,
+                onToggleDiscontinue: async () => undefined,
+                onToggleHazardousShipment,
+                onUpdateShipmentMethod: async () => undefined,
+                onSelectAllMatching: async () => ['p-haz'],
+                onOpenPlamod: () => undefined,
+                onOpenPoLines: () => undefined,
+            },
+            global: {
+                stubs: {
+                    BulkUpdateDialog: true,
+                    BulkExportDialog: true,
+                    BulkRecrawlDialog: true,
+                },
+            },
+        });
+
+        const hazardous = wrapper.find('[data-testid="product-hazardous-shipment-toggle"]');
+        await hazardous.setValue(true);
+        await nextTick();
+        expect(onToggleHazardousShipment).not.toHaveBeenCalled();
+        expect(document.body.textContent).toContain('Mark product as hazardous shipment?');
+
+        const confirmBtn = Array.from(document.body.querySelectorAll('button')).find(
+            (b) => b.textContent?.trim() === 'Mark hazardous',
+        );
+        expect(confirmBtn, 'Expected hazardous confirm button').toBeTruthy();
+        confirmBtn!.click();
+        await nextTick();
+        expect(onToggleHazardousShipment).toHaveBeenCalledWith('p-haz', true);
+
+        wrapper.unmount();
+    });
+
+    it('clears discontinue without confirmation', async () => {
+        const onToggleDiscontinue = vi.fn(async () => undefined);
+
+        const wrapper = mount(ProductsTable, {
+            props: {
+                loading: false,
+                products: [
+                    {
+                        id: 'p-2',
+                        sku: 'SKU-2',
+                        barcode: null,
+                        description: 'Discontinued product',
+                        type: null,
+                        vendor: null,
+                        published_on_shopify: false,
+                        is_ready: false,
+                        is_discontinued: true,
+                        available: null,
+                        maintain: null,
+                        pdp: { has_description: false, plamod_image_count: 0 },
+                    },
+                ],
+                totalMatching: 1,
+                selectionScopeKey: 'scope-1',
+                sortBy: 'sku',
+                sortDir: 'asc',
+                onSortChange: () => undefined,
+                onRefresh: async () => undefined,
+                onBulkDelete: async () => 0,
+                onBulkUpdate: async () => 0,
+                onBulkRenamePlamodAssets: async () => ({ queued: 0, batchId: '' }),
+                onBulkExportSelected: async () => undefined,
+                onBulkRecrawlSelected: async () => undefined,
+                onUpdate: async () => undefined,
+                onUpdateAvailable: async () => undefined,
+                onUpdateMaintain: async () => undefined,
+                onToggleReady: async () => undefined,
+                onToggleLatestArrival: async () => undefined,
+                onToggleCritical: async () => undefined,
+                onToggleDiscontinue,
+                onToggleHazardousShipment: async () => undefined,
+                onUpdateShipmentMethod: async () => undefined,
+                onSelectAllMatching: async () => ['p-2'],
+                onOpenPlamod: () => undefined,
+                onOpenPoLines: () => undefined,
+            },
+            global: {
+                stubs: {
+                    ConfirmDialog: true,
+                    BulkUpdateDialog: true,
+                    BulkExportDialog: true,
+                    BulkRecrawlDialog: true,
+                },
+            },
+        });
+
+        const discontinue = wrapper.find('[data-testid="product-discontinue-toggle"]');
+        await discontinue.setValue(false);
+        expect(onToggleDiscontinue).toHaveBeenCalledWith('p-2', false);
+        expect(document.body.textContent).not.toContain('Mark product as discontinued?');
     });
 
     it('renders inline available/maintain inputs and calls update callbacks', async () => {
@@ -390,11 +550,14 @@ describe('ProductsTable', () => {
                 onBulkRecrawlSelected: async () => undefined,
                 onUpdate: async () => undefined,
                 onUpdateAvailable,
+                onUpdateHold: async () => undefined,
                 onUpdateMaintain,
                 onToggleReady: async () => undefined,
                 onToggleLatestArrival: async () => undefined,
                 onToggleCritical: async () => undefined,
                 onToggleDiscontinue: async () => undefined,
+                onToggleHazardousShipment: async () => undefined,
+                onUpdateShipmentMethod: async () => undefined,
                 onSelectAllMatching: async () => ['p-1'],
                 onOpenPlamod: () => undefined,
                 onOpenPoLines: () => undefined,
@@ -477,11 +640,14 @@ describe('ProductsTable', () => {
                 onBulkRecrawlSelected: async () => undefined,
                 onUpdate: async () => undefined,
                 onUpdateAvailable,
+                onUpdateHold: async () => undefined,
                 onUpdateMaintain,
                 onToggleReady: async () => undefined,
                 onToggleLatestArrival,
                 onToggleCritical: async () => undefined,
                 onToggleDiscontinue: async () => undefined,
+                onToggleHazardousShipment: async () => undefined,
+                onUpdateShipmentMethod: async () => undefined,
                 onSelectAllMatching,
                 onOpenPlamod: () => undefined,
                 onOpenPoLines: () => undefined,
@@ -509,5 +675,63 @@ describe('ProductsTable', () => {
         expect(onSelectAllMatching).toHaveBeenCalledTimes(1);
         expect(wrapper.text()).toContain('4');
         expect(wrapper.text()).toContain('selected');
+    });
+
+    it('keeps the product table mounted while loading', () => {
+        const wrapper = mount(ProductsTable, {
+            props: {
+                loading: true,
+                products: [
+                    {
+                        id: 'p-1',
+                        sku: 'SKU-1',
+                        barcode: null,
+                        description: 'Test',
+                        type: null,
+                        vendor: null,
+                        published_on_shopify: false,
+                        is_ready: false,
+                        available: null,
+                        maintain: null,
+                        pdp: { has_description: false, plamod_image_count: 0 },
+                    },
+                ],
+                totalMatching: 1,
+                selectionScopeKey: 'scope-1',
+                sortBy: 'sku',
+                sortDir: 'asc',
+                onSortChange: () => undefined,
+                onRefresh: async () => undefined,
+                onBulkDelete: async () => 0,
+                onBulkUpdate: async () => 0,
+                onBulkRenamePlamodAssets: async () => ({ queued: 0, batchId: '' }),
+                onBulkExportSelected: async () => undefined,
+                onBulkRecrawlSelected: async () => undefined,
+                onUpdate: async () => undefined,
+                onUpdateAvailable: async () => undefined,
+                onUpdateMaintain: async () => undefined,
+                onToggleReady: async () => undefined,
+                onToggleLatestArrival: async () => undefined,
+                onToggleCritical: async () => undefined,
+                onToggleDiscontinue: async () => undefined,
+                onToggleHazardousShipment: async () => undefined,
+                onUpdateShipmentMethod: async () => undefined,
+                onSelectAllMatching: async () => [],
+                onOpenPlamod: () => undefined,
+                onOpenPoLines: () => undefined,
+            },
+            global: {
+                stubs: {
+                    ConfirmDialog: true,
+                    BulkUpdateDialog: true,
+                    BulkExportDialog: true,
+                    BulkRecrawlDialog: true,
+                },
+            },
+        });
+
+        expect(wrapper.find('table').exists()).toBe(true);
+        expect(wrapper.text()).toContain('Refreshing…');
+        expect(wrapper.text()).toContain('SKU-1');
     });
 });

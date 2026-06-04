@@ -31,6 +31,8 @@ export type ProductRow = {
     latest_arrival?: boolean;
     is_critical?: boolean;
     is_discontinued?: boolean;
+    is_hazardous_shipment?: boolean;
+    shipment_method?: 'air' | 'sea' | null;
     latest_unit_cost?: string | null;
     latest_landed_unit_cost?: string | null;
     /** Latest PO `received_date` (Y-m-d) from any received PO line; null if none. */
@@ -42,6 +44,7 @@ export type ProductRow = {
     };
     total_ordered?: number | null;
     available: number | null;
+    hold?: number | null;
     sold_4w?: number | null;
     maintain: number | null;
     not_arrived?: number | null;
@@ -94,6 +97,8 @@ export type BulkUpdateProductChanges = {
     latest_arrival?: boolean;
     is_critical?: boolean;
     is_discontinued?: boolean;
+    is_hazardous_shipment?: boolean;
+    shipment_method?: 'air' | 'sea' | null;
     available?: number | null;
     maintain?: number | null;
     archived?: boolean;
@@ -143,11 +148,14 @@ const props = defineProps<{
     }>;
     onUpdate: (id: string, payload: UpdateProductPayload) => Promise<void>;
     onUpdateAvailable: (id: string, available: number | null) => Promise<void>;
+    onUpdateHold: (id: string, hold: number | null) => Promise<void>;
     onUpdateMaintain: (id: string, maintain: number | null) => Promise<void>;
     onToggleReady: (id: string, isReady: boolean) => Promise<void>;
     onToggleLatestArrival: (id: string, latestArrival: boolean) => Promise<void>;
     onToggleCritical: (id: string, isCritical: boolean) => Promise<void>;
     onToggleDiscontinue: (id: string, isDiscontinued: boolean) => Promise<void>;
+    onToggleHazardousShipment: (id: string, isHazardousShipment: boolean) => Promise<void>;
+    onUpdateShipmentMethod: (id: string, shipmentMethod: 'air' | 'sea' | null) => Promise<void>;
     onSelectAllMatching: () => Promise<string[]>;
     onOpenPlamod: (id: string) => void;
     onOpenPoLines: (id: string) => void;
@@ -244,14 +252,29 @@ const togglingReady = ref<Record<string, true>>({});
 const togglingLatestArrival = ref<Record<string, true>>({});
 const togglingCritical = ref<Record<string, true>>({});
 const togglingDiscontinue = ref<Record<string, true>>({});
+const togglingHazardousShipment = ref<Record<string, true>>({});
+const updatingShipmentMethod = ref<Record<string, true>>({});
+const confirmDiscontinueOpen = ref(false);
+const confirmDiscontinueProductId = ref<string | null>(null);
+const confirmDiscontinueProductLabel = ref('');
+
+const confirmHazardousOpen = ref(false);
+const confirmHazardousProductId = ref<string | null>(null);
+const confirmHazardousProductLabel = ref('');
 
 const savingAvailableId = ref<string | null>(null);
+const savingHoldId = ref<string | null>(null);
 const savingMaintainId = ref<string | null>(null);
 const availableDrafts = ref<Record<string, string>>({});
+const holdDrafts = ref<Record<string, string>>({});
 const maintainDrafts = ref<Record<string, string>>({});
 
 function isSavingAvailable(id: string): boolean {
     return savingAvailableId.value === id;
+}
+
+function isSavingHold(id: string): boolean {
+    return savingHoldId.value === id;
 }
 
 function isSavingMaintain(id: string): boolean {
@@ -291,6 +314,43 @@ async function saveAvailableInline(productId: string, value: string | null): Pro
     } finally {
         if (savingAvailableId.value === productId) {
             savingAvailableId.value = null;
+        }
+    }
+}
+
+function startHoldInlineEdit(productId: string, current: number | null): void {
+    if (holdDrafts.value[productId] === undefined) {
+        holdDrafts.value = {
+            ...holdDrafts.value,
+            [productId]: current === null || current === 0 ? '' : String(current),
+        };
+    }
+}
+
+function updateHoldDraft(productId: string, value: string): void {
+    holdDrafts.value = { ...holdDrafts.value, [productId]: value };
+}
+
+function commitHoldInlineEdit(productId: string): void {
+    if (isSavingHold(productId)) return;
+    const value = holdDrafts.value[productId] ?? '';
+    const { [productId]: _omit, ...rest } = holdDrafts.value;
+    holdDrafts.value = rest;
+    void saveHoldInline(productId, value);
+}
+
+async function saveHoldInline(productId: string, value: string | null): Promise<void> {
+    savingHoldId.value = productId;
+    rowError.value = null;
+
+    try {
+        const hold = parseNonNegativeIntOrNull(value ?? '');
+        await props.onUpdateHold(productId, hold);
+    } catch (e: unknown) {
+        rowError.value = formatBulkError(e, 'Failed to save hold quantity.');
+    } finally {
+        if (savingHoldId.value === productId) {
+            savingHoldId.value = null;
         }
     }
 }
@@ -348,6 +408,14 @@ function isTogglingDiscontinue(id: string): boolean {
     return togglingDiscontinue.value[id] === true;
 }
 
+function isTogglingHazardousShipment(id: string): boolean {
+    return togglingHazardousShipment.value[id] === true;
+}
+
+function isUpdatingShipmentMethod(id: string): boolean {
+    return updatingShipmentMethod.value[id] === true;
+}
+
 async function toggleReady(id: string, isReady: boolean): Promise<void> {
     if (isTogglingReady(id)) return;
     togglingReady.value = { ...togglingReady.value, [id]: true };
@@ -398,6 +466,112 @@ async function toggleDiscontinue(id: string, isDiscontinued: boolean): Promise<v
         const { [id]: _omit, ...rest } = togglingDiscontinue.value;
         togglingDiscontinue.value = rest;
     }
+}
+
+function onDiscontinueChange(product: ProductRow, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const next = input.checked;
+
+    if (!next) {
+        void toggleDiscontinue(product.id, false);
+        return;
+    }
+
+    input.checked = false;
+    confirmDiscontinueProductId.value = product.id;
+    confirmDiscontinueProductLabel.value = product.description?.trim() || product.sku;
+    confirmDiscontinueOpen.value = true;
+}
+
+function cancelDiscontinueMark(): void {
+    confirmDiscontinueOpen.value = false;
+    confirmDiscontinueProductId.value = null;
+    confirmDiscontinueProductLabel.value = '';
+}
+
+async function confirmDiscontinueMark(): Promise<void> {
+    const id = confirmDiscontinueProductId.value;
+    if (id === null) {
+        cancelDiscontinueMark();
+        return;
+    }
+
+    confirmDiscontinueOpen.value = false;
+    confirmDiscontinueProductId.value = null;
+    confirmDiscontinueProductLabel.value = '';
+
+    await toggleDiscontinue(id, true);
+}
+
+async function toggleHazardousShipment(id: string, isHazardousShipment: boolean): Promise<void> {
+    if (isTogglingHazardousShipment(id)) return;
+    togglingHazardousShipment.value = { ...togglingHazardousShipment.value, [id]: true };
+    try {
+        await props.onToggleHazardousShipment(id, isHazardousShipment);
+    } catch (e: unknown) {
+        rowError.value = formatBulkError(e, 'Failed to update hazardous shipment flag.');
+    } finally {
+        const { [id]: _omit, ...rest } = togglingHazardousShipment.value;
+        togglingHazardousShipment.value = rest;
+    }
+}
+
+function onHazardousShipmentChange(product: ProductRow, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const next = input.checked;
+
+    if (!next) {
+        void toggleHazardousShipment(product.id, false);
+        return;
+    }
+
+    input.checked = false;
+    confirmHazardousProductId.value = product.id;
+    confirmHazardousProductLabel.value = product.description?.trim() || product.sku;
+    confirmHazardousOpen.value = true;
+}
+
+function cancelHazardousMark(): void {
+    confirmHazardousOpen.value = false;
+    confirmHazardousProductId.value = null;
+    confirmHazardousProductLabel.value = '';
+}
+
+async function confirmHazardousMark(): Promise<void> {
+    const id = confirmHazardousProductId.value;
+    if (id === null) {
+        cancelHazardousMark();
+        return;
+    }
+
+    confirmHazardousOpen.value = false;
+    confirmHazardousProductId.value = null;
+    confirmHazardousProductLabel.value = '';
+
+    await toggleHazardousShipment(id, true);
+}
+
+async function updateShipmentMethod(
+    id: string,
+    shipmentMethod: 'air' | 'sea' | null,
+): Promise<void> {
+    if (isUpdatingShipmentMethod(id)) return;
+    updatingShipmentMethod.value = { ...updatingShipmentMethod.value, [id]: true };
+    try {
+        await props.onUpdateShipmentMethod(id, shipmentMethod);
+    } catch (e: unknown) {
+        rowError.value = formatBulkError(e, 'Failed to update shipment method.');
+    } finally {
+        const { [id]: _omit, ...rest } = updatingShipmentMethod.value;
+        updatingShipmentMethod.value = rest;
+    }
+}
+
+function onShipmentMethodChange(product: ProductRow, event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    const raw = select.value.trim();
+    const next: 'air' | 'sea' | null = raw === 'air' || raw === 'sea' ? raw : null;
+    void updateShipmentMethod(product.id, next);
 }
 
 function formatBulkError(e: unknown, fallback: string): string {
@@ -504,6 +678,9 @@ watch(
         );
         maintainDrafts.value = Object.fromEntries(
             Object.entries(maintainDrafts.value).filter(([id]) => allowed.has(id)),
+        );
+        holdDrafts.value = Object.fromEntries(
+            Object.entries(holdDrafts.value).filter(([id]) => allowed.has(id)),
         );
     },
 );
@@ -854,7 +1031,6 @@ async function saveEdit(): Promise<void> {
             available: draft.value.available,
             maintain: draft.value.maintain,
         });
-        await props.onRefresh();
         cancelEdit();
     } catch (e: unknown) {
         rowError.value = 'Failed to save changes (check SKU uniqueness and required fields).';
@@ -889,9 +1065,19 @@ onUnmounted(() => {
 
 <template>
     <div class="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <div v-if="loading" class="px-4 py-3 text-sm text-slate-600">Loading…</div>
+        <div class="relative">
+            <div
+                v-if="loading"
+                class="pointer-events-none absolute inset-0 z-10 flex items-start justify-center bg-white/70 px-4 py-6"
+                aria-live="polite"
+                aria-busy="true"
+            >
+                <span class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 shadow-sm">
+                    Refreshing…
+                </span>
+            </div>
 
-        <div v-else class="overflow-x-auto">
+            <div class="overflow-x-auto" :class="loading ? 'opacity-60' : ''">
             <div
                 v-if="selected.size > 0"
                 class="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm"
@@ -1196,6 +1382,7 @@ onUnmounted(() => {
                                 {{ sortLabel('available') }}{{ sortIndicator('available') }}
                             </button>
                         </th>
+                        <th class="px-4 py-3 text-right">Hold</th>
                         <th class="min-w-[5.5rem] px-4 py-3 text-right">
                             <button
                                 type="button"
@@ -1375,15 +1562,45 @@ onUnmounted(() => {
                                             :disabled="
                                                 editingId === p.id || isTogglingDiscontinue(p.id)
                                             "
-                                            @change="
-                                                toggleDiscontinue(
-                                                    p.id,
-                                                    ($event.target as HTMLInputElement).checked,
-                                                )
-                                            "
+                                            @change="onDiscontinueChange(p, $event)"
                                             data-testid="product-discontinue-toggle"
                                         />
                                         <span class="select-none">Discontinue</span>
+                                    </label>
+                                    <label
+                                        class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
+                                    >
+                                        <input
+                                            class="h-3.5 w-3.5 rounded border-slate-300"
+                                            type="checkbox"
+                                            :checked="p.is_hazardous_shipment ?? false"
+                                            :disabled="
+                                                editingId === p.id ||
+                                                isTogglingHazardousShipment(p.id)
+                                            "
+                                            @change="onHazardousShipmentChange(p, $event)"
+                                            data-testid="product-hazardous-shipment-toggle"
+                                        />
+                                        <span class="select-none">Hazardous shipment</span>
+                                    </label>
+                                    <label
+                                        class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
+                                    >
+                                        <span class="select-none">Shipment</span>
+                                        <select
+                                            class="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px] font-medium text-slate-700"
+                                            :value="p.shipment_method ?? ''"
+                                            :disabled="
+                                                editingId === p.id ||
+                                                isUpdatingShipmentMethod(p.id)
+                                            "
+                                            data-testid="product-shipment-method-select"
+                                            @change="onShipmentMethodChange(p, $event)"
+                                        >
+                                            <option value="">—</option>
+                                            <option value="air">Air</option>
+                                            <option value="sea">Sea</option>
+                                        </select>
                                     </label>
                                 </div>
                             </template>
@@ -1624,6 +1841,27 @@ onUnmounted(() => {
                         </td>
 
                         <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                            <input
+                                class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
+                                type="number"
+                                min="0"
+                                inputmode="numeric"
+                                :disabled="isSavingHold(p.id)"
+                                :value="
+                                    holdDrafts[p.id] ??
+                                    (p.hold === null || p.hold === 0 ? '' : String(p.hold))
+                                "
+                                :data-testid="`product-hold-input:${p.id}`"
+                                @focus="startHoldInlineEdit(p.id, p.hold ?? null)"
+                                @input="
+                                    updateHoldDraft(p.id, ($event.target as HTMLInputElement).value)
+                                "
+                                @keydown.enter.prevent="commitHoldInlineEdit(p.id)"
+                                @blur="commitHoldInlineEdit(p.id)"
+                            />
+                        </td>
+
+                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
                             <button
                                 v-if="props.onOpenDemand"
                                 type="button"
@@ -1848,8 +2086,37 @@ onUnmounted(() => {
                     </tr>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
+
+    <ConfirmDialog
+        :open="confirmHazardousOpen"
+        title="Mark product as hazardous shipment?"
+        :message="`Mark “${confirmHazardousProductLabel}” as hazardous shipment? This flag is for operational tracking in the pricing tool.`"
+        confirm-text="Mark hazardous"
+        variant="danger"
+        :busy="
+            confirmHazardousProductId !== null &&
+            isTogglingHazardousShipment(confirmHazardousProductId)
+        "
+        @cancel="cancelHazardousMark"
+        @confirm="confirmHazardousMark"
+    />
+
+    <ConfirmDialog
+        :open="confirmDiscontinueOpen"
+        title="Mark product as discontinued?"
+        :message="`Mark “${confirmDiscontinueProductLabel}” as discontinued? This flag is for operational tracking in the pricing tool.`"
+        confirm-text="Mark discontinued"
+        variant="danger"
+        :busy="
+            confirmDiscontinueProductId !== null &&
+            isTogglingDiscontinue(confirmDiscontinueProductId)
+        "
+        @cancel="cancelDiscontinueMark"
+        @confirm="confirmDiscontinueMark"
+    />
 
     <ConfirmDialog
         :open="confirmBulkDeleteOpen"

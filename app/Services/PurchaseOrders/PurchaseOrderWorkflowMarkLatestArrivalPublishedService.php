@@ -4,30 +4,28 @@ declare(strict_types=1);
 
 namespace App\Services\PurchaseOrders;
 
-use App\Services\Products\ProductBulkUpdateService;
-
+/**
+ * @deprecated Prefer separate {@see PurchaseOrderWorkflowMarkPublishedOnShopifyService}
+ *             and {@see PurchaseOrderWorkflowMarkLatestArrivalService}.
+ */
 final class PurchaseOrderWorkflowMarkLatestArrivalPublishedService
 {
     public function __construct(
-        private readonly PurchaseOrderProductScopeService $scope,
-        private readonly ProductBulkUpdateService $bulkUpdate,
+        private readonly PurchaseOrderWorkflowMarkPublishedOnShopifyService $markPublished,
+        private readonly PurchaseOrderWorkflowMarkLatestArrivalService $markLatestArrival,
     ) {}
 
     /**
-     * @return array{updated:int}
+     * @return array{updated: int, skipped_tools: int}
      */
     public function markForPo(string $purchaseOrderUuid): array
     {
-        $uuids = $this->scope->productUuidsForPo($purchaseOrderUuid, false);
-        if ($uuids === []) {
-            return ['updated' => 0];
-        }
+        $published = $this->markPublished->markForPo($purchaseOrderUuid);
+        $latest = $this->markLatestArrival->markForPo($purchaseOrderUuid);
 
-        $updated = $this->bulkUpdate->updateByUuids($uuids, [
-            'latest_arrival' => true,
-            'published_on_shopify' => true,
-        ]);
-
-        return ['updated' => $updated];
+        return [
+            'updated' => max($published['updated'], $latest['updated']),
+            'skipped_tools' => $latest['skipped_tools'],
+        ];
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Api\V1;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 final class PurchaseOrderUpdateRequest extends FormRequest
 {
@@ -28,6 +29,7 @@ final class PurchaseOrderUpdateRequest extends FormRequest
             'vendor_product_total' => ['nullable', 'numeric'],
             'notes' => ['nullable', 'string'],
             'is_done' => ['sometimes', 'boolean'],
+            'shipment_method' => ['sometimes', 'nullable', 'string', Rule::in(['air', 'sea'])],
         ];
     }
 }

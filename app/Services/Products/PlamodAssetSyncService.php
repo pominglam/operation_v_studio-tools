@@ -179,11 +179,6 @@ final class PlamodAssetSyncService
         $assetRows = $this->buildAssetRows($zipStoragePath, $extractedPaths);
         $assets = $this->assets->replaceForProduct($product->id, self::SOURCE, $assetRows);
 
-        // Immediately rename image files to SEO-friendly filenames (ASCII-only).
-        // This updates both the on-disk path and the stored filename used by downloads.
-        $this->assetFilenames->renameImageAssetsForProductUuid($product->uuid);
-        $assets = $this->assets->listForProduct($product->id, self::SOURCE);
-
         // Best-effort: store a generic manufacturer/distributor-style description from HLJ
         // so the PDP preview can show something even if Plamod doesn't provide text.
         try {
@@ -191,6 +186,10 @@ final class PlamodAssetSyncService
         } catch (\Throwable) {
             // Ignore; Plamod assets are the primary goal of this job.
         }
+
+        // Rename ALL image assets (every source) to SEO-friendly filenames after Plamod + HLJ sync.
+        $this->assetFilenames->renameImageAssetsForProductUuid($product->uuid);
+        $assets = $this->assets->listForProduct($product->id, self::SOURCE);
 
         return new PlamodSyncResult(
             backupCreated: $backup['created'],

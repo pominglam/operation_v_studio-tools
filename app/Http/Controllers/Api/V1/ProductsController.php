@@ -75,6 +75,9 @@ final class ProductsController extends Controller
         /** @var array<int, string> $productFlags */
         $productFlags = $request->validated('product_flags') ?? [];
 
+        /** @var array<int, string> $shipmentMethods */
+        $shipmentMethods = $request->validated('shipment_methods') ?? [];
+
         /** @var string|null $sortBy */
         $sortBy = $request->validated('sort_by');
 
@@ -82,6 +85,11 @@ final class ProductsController extends Controller
         $sortDir = $request->validated('sort_dir') ?? 'asc';
 
         $includeArchived = (bool) ($request->validated('include_archived') ?? false);
+
+        $notArrivedIncludeDraftOrders = $request->validated('not_arrived_include_draft_orders');
+        $notArrivedIncludeDraftOrders = $notArrivedIncludeDraftOrders === null
+            ? true
+            : filter_var($notArrivedIncludeDraftOrders, FILTER_VALIDATE_BOOLEAN);
 
         return ProductResource::collection(
             $this->products->paginate(
@@ -103,6 +111,8 @@ final class ProductsController extends Controller
                 $reorderFilter,
                 $reorderGtOne,
                 $productFlags,
+                $shipmentMethods,
+                $notArrivedIncludeDraftOrders,
             ),
         );
     }

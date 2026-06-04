@@ -16,6 +16,7 @@ final class PurchaseOrderWorkflowChecklistUpdateRequest extends FormRequest
         return [
             'import_po' => ['sometimes', 'boolean'],
             'crawl_desc_image_price' => ['sometimes', 'boolean'],
+            'crawl_desc_image_price_skipped' => ['sometimes', 'boolean'],
             'select_and_arrange_product_images' => ['sometimes', 'boolean'],
             'select_and_arrange_product_images_deferred' => ['sometimes', 'boolean'],
             'set_selling_price' => ['sometimes', 'boolean'],
@@ -24,6 +25,8 @@ final class PurchaseOrderWorkflowChecklistUpdateRequest extends FormRequest
             'import_handle_only' => ['sometimes', 'boolean'],
             'update_product_available_with_shopify_current_inventory_quantity' => ['sometimes', 'boolean'],
             'import_product_available_quantity' => ['sometimes', 'boolean'],
+            'mark_published_on_shopify' => ['sometimes', 'boolean'],
+            'mark_latest_arrival' => ['sometimes', 'boolean'],
             'mark_latest_arrival_and_published_on_shopify' => ['sometimes', 'boolean'],
         ];
     }

@@ -66,7 +66,7 @@ function formatMultiplierChange(row: PoSetPricePreviewRow): string {
                 class="flex max-h-[85vh] w-full max-w-4xl flex-col rounded-lg bg-white shadow-xl"
             >
                 <div class="border-b border-slate-200 px-4 py-3">
-                    <div class="text-sm font-semibold text-slate-900">Set selling prices</div>
+                    <div class="text-sm font-semibold text-slate-900">Set/review selling prices</div>
                     <div v-if="preview" class="mt-1 text-xs text-slate-600">
                         Formula: landed cost × {{ preview.multiplier }}, rounded to X.99 CAD.
                         <span class="font-semibold text-slate-900">{{ preview.apply_count }}</span>

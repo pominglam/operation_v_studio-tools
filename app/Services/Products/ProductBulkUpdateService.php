@@ -160,6 +160,24 @@ final class ProductBulkUpdateService
             $updates['extended'] = $extended !== null ? trim((string) $extended) : null;
         }
 
+        if (array_key_exists('is_critical', $changes)) {
+            $updates['is_critical'] = (bool) $changes['is_critical'];
+        }
+
+        if (array_key_exists('is_discontinued', $changes)) {
+            $updates['is_discontinued'] = (bool) $changes['is_discontinued'];
+        }
+
+        if (array_key_exists('is_hazardous_shipment', $changes)) {
+            $updates['is_hazardous_shipment'] = (bool) $changes['is_hazardous_shipment'];
+        }
+
+        if (array_key_exists('shipment_method', $changes)) {
+            $shipmentMethod = $changes['shipment_method'];
+            $shipmentMethod = $shipmentMethod !== null ? trim((string) $shipmentMethod) : null;
+            $updates['shipment_method'] = $shipmentMethod !== '' ? $shipmentMethod : null;
+        }
+
         try {
             return $this->products->updateByUuids($uuids, $updates);
         } catch (QueryException $e) {

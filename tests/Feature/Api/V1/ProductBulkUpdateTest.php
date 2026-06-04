@@ -103,6 +103,44 @@ it('bulk update can unarchive selected products by uuid', function (): void {
     expect(Product::query()->where('uuid', $p1->uuid)->value('archived_at'))->toBeNull();
 });
 
+it('bulk updates hazardous shipment and shipment method flags', function (): void {
+    $p1 = Product::query()->create([
+        'sku' => 'BULK-FLAGS-1',
+        'description' => 'Bulk flags 1',
+        'vendor' => 'Plamod',
+        'is_hazardous_shipment' => false,
+        'shipment_method' => null,
+    ]);
+    $p2 = Product::query()->create([
+        'sku' => 'BULK-FLAGS-2',
+        'description' => 'Bulk flags 2',
+        'vendor' => 'Plamod',
+        'is_hazardous_shipment' => false,
+        'shipment_method' => 'air',
+    ]);
+
+    $this->postJson('/api/v1/products/bulk-update', [
+        'ids' => [$p1->uuid, $p2->uuid],
+        'changes' => [
+            'is_hazardous_shipment' => true,
+            'shipment_method' => 'sea',
+        ],
+    ])
+        ->assertOk()
+        ->assertJson(['updated' => 2]);
+
+    $this->assertDatabaseHas('products', [
+        'uuid' => $p1->uuid,
+        'is_hazardous_shipment' => 1,
+        'shipment_method' => 'sea',
+    ]);
+    $this->assertDatabaseHas('products', [
+        'uuid' => $p2->uuid,
+        'is_hazardous_shipment' => 1,
+        'shipment_method' => 'sea',
+    ]);
+});
+
 it('validates payload for bulk update', function (): void {
     $response = $this->postJson('/api/v1/products/bulk-update', [
         'ids' => [],
