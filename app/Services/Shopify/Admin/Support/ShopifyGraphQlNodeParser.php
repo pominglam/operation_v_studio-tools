@@ -35,4 +35,14 @@ final class ShopifyGraphQlNodeParser
             return null;
         }
     }
+
+    public static function timestampInShopTz(?string $iso): ?Carbon
+    {
+        $parsed = self::timestamp($iso);
+        if ($parsed === null) {
+            return null;
+        }
+
+        return $parsed->copy()->timezone('America/Toronto');
+    }
 }

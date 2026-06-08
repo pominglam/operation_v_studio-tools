@@ -118,6 +118,54 @@ final class ProductExportService
     /**
      * @return array<int, string>
      */
+    public function catalogHeader(): array
+    {
+        return [
+            'SKU',
+            'Barcode',
+            'Product Name',
+            'Handle',
+            'Vendor',
+            'Main Type',
+            'Type',
+            'Selling Price',
+            'Available',
+            'Hold',
+            'Maintain',
+            'Not Arrived',
+            'Reorder',
+            'Ready',
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function catalogRow(Product $product): array
+    {
+        $selling = $product->sellingPrice?->selling_price;
+
+        return [
+            (string) $product->sku,
+            (string) ($product->barcode ?? ''),
+            (string) $product->description,
+            (string) ($product->handle ?? ''),
+            (string) ($product->vendor ?? ''),
+            (string) ($product->main_type ?? ''),
+            (string) ($product->type ?? ''),
+            $selling !== null ? (string) $selling : '',
+            $product->available_qty !== null ? (string) max(0, (int) $product->available_qty) : '',
+            $product->hold_qty !== null ? (string) max(0, (int) $product->hold_qty) : '',
+            $product->maintain_qty !== null ? (string) max(0, (int) $product->maintain_qty) : '',
+            (string) max(0, (int) ($product->getAttribute('inbound_open_po_qty') ?? 0)),
+            (string) max(0, (int) ($product->getAttribute('reorder_qty') ?? 0)),
+            $product->is_ready ? 'yes' : 'no',
+        ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
     public function restockPoRow(Product $product, string $currencyCode, ?float $cadToHkdRate = null): array
     {
         $currency = strtoupper(trim($currencyCode));

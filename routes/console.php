@@ -12,3 +12,9 @@ Artisan::command('inspire', function () {
 Schedule::call(static function (): void {
     app(ShopifyOrderReconcileScheduler::class)->runIfDue();
 })->everyMinute()->name('shopify:orders-reconcile-if-due')->withoutOverlapping(5);
+
+Schedule::command('plamod:preorders-sync')
+    ->dailyAt('06:00')
+    ->timezone('America/Toronto')
+    ->name('plamod:preorders-sync-daily')
+    ->withoutOverlapping(120);

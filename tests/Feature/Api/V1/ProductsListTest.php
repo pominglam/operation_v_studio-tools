@@ -108,6 +108,54 @@ it('filters products by vendor', function (): void {
         ->assertJsonMissing(['sku' => 'VEND-1']);
 });
 
+it('filters products by selling price range', function (): void {
+    $low = \App\Models\Product::query()->create([
+        'sku' => 'PRICE-LOW',
+        'description' => 'Low price',
+        'vendor' => 'Plamod',
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $low->id,
+        'product_uuid' => $low->uuid,
+        'selling_price' => '5.00',
+    ]);
+
+    $mid = \App\Models\Product::query()->create([
+        'sku' => 'PRICE-MID',
+        'description' => 'Mid price',
+        'vendor' => 'Plamod',
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $mid->id,
+        'product_uuid' => $mid->uuid,
+        'selling_price' => '11.99',
+    ]);
+
+    $high = \App\Models\Product::query()->create([
+        'sku' => 'PRICE-HIGH',
+        'description' => 'High price',
+        'vendor' => 'Plamod',
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $high->id,
+        'product_uuid' => $high->uuid,
+        'selling_price' => '24.50',
+    ]);
+
+    \App\Models\Product::query()->create([
+        'sku' => 'PRICE-NONE',
+        'description' => 'No selling price',
+        'vendor' => 'Plamod',
+    ]);
+
+    $res = $this->getJson('/api/v1/products?per_page=100&selling_price_min=10&selling_price_max=20');
+    $res->assertOk()
+        ->assertJsonPath('data.0.sku', 'PRICE-MID')
+        ->assertJsonMissing(['sku' => 'PRICE-LOW'])
+        ->assertJsonMissing(['sku' => 'PRICE-HIGH'])
+        ->assertJsonMissing(['sku' => 'PRICE-NONE']);
+});
+
 it('sorts products by selling price', function (): void {
     $p1 = \App\Models\Product::query()->create([
         'sku' => 'SELL-10',
@@ -470,14 +518,41 @@ it('filters products by numeric available, not-arrived, and reorder fields', fun
         'qty_received' => 0,
     ]);
 
-    $res = $this->getJson('/api/v1/products?per_page=100&available=3&not_arrived=2&reorder=5');
+    $res = $this->getJson('/api/v1/products?per_page=100&available_min=3&available_max=3&not_arrived=2&reorder=5');
     $res->assertOk()
         ->assertJsonPath('data.0.sku', 'NUM-FILTER-MATCH')
         ->assertJsonMissing(['sku' => 'NUM-FILTER-OTHER']);
 });
 
+it('filters products by available qty range', function (): void {
+    $low = \App\Models\Product::query()->create([
+        'sku' => 'AVAIL-LOW',
+        'description' => 'Low available',
+        'vendor' => 'Plamod',
+        'available_qty' => 2,
+    ]);
+    $mid = \App\Models\Product::query()->create([
+        'sku' => 'AVAIL-MID',
+        'description' => 'Mid available',
+        'vendor' => 'Plamod',
+        'available_qty' => 8,
+    ]);
+    $high = \App\Models\Product::query()->create([
+        'sku' => 'AVAIL-HIGH',
+        'description' => 'High available',
+        'vendor' => 'Plamod',
+        'available_qty' => 20,
+    ]);
+
+    $res = $this->getJson('/api/v1/products?per_page=100&available_min=5&available_max=10');
+    $res->assertOk()
+        ->assertJsonPath('data.0.sku', 'AVAIL-MID')
+        ->assertJsonMissing(['sku' => 'AVAIL-LOW'])
+        ->assertJsonMissing(['sku' => 'AVAIL-HIGH']);
+});
+
 it('validates numeric product list filters as non-negative integers', function (): void {
-    $this->getJson('/api/v1/products?available=-1')->assertStatus(422);
+    $this->getJson('/api/v1/products?available_min=-1')->assertStatus(422);
     $this->getJson('/api/v1/products?not_arrived=-1')->assertStatus(422);
     $this->getJson('/api/v1/products?reorder=-1')->assertStatus(422);
 });

@@ -11,6 +11,7 @@ This folder is the **navigation hub** for **what each screen does**, how users m
 | **Competitor pricing** | [screens/price-research.md](screens/price-research.md) |
 | **PDP / Plamod rename batch progress** | [screens/sync-progress.md](screens/sync-progress.md) |
 | **Bandai TCG+ events** | [screens/tcg-events.md](screens/tcg-events.md) |
+| **Plamod preorders** | [screens/preorders.md](screens/preorders.md) |
 | **Maintenance & dangerous ops** | [screens/maintenance.md](screens/maintenance.md) |
 | **Full HTTP/job/service catalog** (dense backend reference) | [backend/system-catalog-services-and-http.md](backend/system-catalog-services-and-http.md) |
 
@@ -35,6 +36,7 @@ Shopify **Online Store theme** workflows (draft theme, static About page handoff
 | Shopify storefront static pages / theme duplication | [`../shopify-theme/static-content-pages-workflow-and-about-us.md`](../shopify-theme/static-content-pages-workflow-and-about-us.md) |
 | Stuck price run reset | [screens/maintenance.md](screens/maintenance.md) |
 | TCG+ events | [screens/tcg-events.md](screens/tcg-events.md) |
+| Plamod preorders | [screens/preorders.md](screens/preorders.md) |
 
 ## Screen ↔ route cheat sheet
 
@@ -51,6 +53,7 @@ Shopify **Online Store theme** workflows (draft theme, static About page handoff
 | `/price-research/runs/:id/logs` | `PriceResearchRunLogsPage.vue` |
 | `/sync-progress` | `SyncProgressPage.vue` |
 | `/tcg-events` | `TcgEventsPage.vue` |
+| `/preorders` | `PreordersPage.vue` |
 | `/maintenance` | `MaintenancePage.vue` |
 | `/shopify/webhooks` | `ShopifyWebhookLogsPage.vue` |
 

@@ -27,6 +27,13 @@ use App\Http\Controllers\Api\V1\JobBatchShowController;
 use App\Http\Controllers\Api\V1\LatestProductCostsRefreshController;
 use App\Http\Controllers\Api\V1\MaintenanceNoteController;
 use App\Http\Controllers\Api\V1\MaintenanceNoteUpsertController;
+use App\Http\Controllers\Api\V1\PlamodPreorderImageViewController;
+use App\Http\Controllers\Api\V1\PlamodPreordersIndexController;
+use App\Http\Controllers\Api\V1\PlamodPreordersSearchLinesController;
+use App\Http\Controllers\Api\V1\PlamodPreordersSettingsShowController;
+use App\Http\Controllers\Api\V1\PlamodPreordersSettingsUpdateController;
+use App\Http\Controllers\Api\V1\PlamodPreordersSyncController;
+use App\Http\Controllers\Api\V1\PlamodPreordersSyncStatusController;
 use App\Http\Controllers\Api\V1\PriceResearchFilterOptionsController;
 use App\Http\Controllers\Api\V1\PriceResearchProductsController;
 use App\Http\Controllers\Api\V1\PriceResearchQuoteMaintenanceController;
@@ -52,8 +59,8 @@ use App\Http\Controllers\Api\V1\ProductExternalAssetViewController;
 use App\Http\Controllers\Api\V1\ProductFilledController;
 use App\Http\Controllers\Api\V1\ProductFilterOptionsController;
 use App\Http\Controllers\Api\V1\ProductHandleImportController;
-use App\Http\Controllers\Api\V1\ProductHoldController;
 use App\Http\Controllers\Api\V1\ProductHazardousShipmentController;
+use App\Http\Controllers\Api\V1\ProductHoldController;
 use App\Http\Controllers\Api\V1\ProductImageAssetOrderController;
 use App\Http\Controllers\Api\V1\ProductImportController;
 use App\Http\Controllers\Api\V1\ProductInfoShowController;
@@ -80,6 +87,7 @@ use App\Http\Controllers\Api\V1\ProductsExportController;
 use App\Http\Controllers\Api\V1\ProductsExportMissingBarcodeController;
 use App\Http\Controllers\Api\V1\ProductsExportMissingSellingPriceController;
 use App\Http\Controllers\Api\V1\ProductsExportSelectedController;
+use App\Http\Controllers\Api\V1\ProductsFilteredExportController;
 use App\Http\Controllers\Api\V1\ProductShipmentMethodController;
 use App\Http\Controllers\Api\V1\ProductsRecrawlSelectedController;
 use App\Http\Controllers\Api\V1\ProductTypeBackfillController;
@@ -125,6 +133,7 @@ Route::prefix('v1')
     ->group(function (): void {
         Route::get('/products', [ProductsController::class, 'index']);
         Route::get('/products/export', ProductsExportController::class);
+        Route::get('/products/export/filtered', ProductsFilteredExportController::class);
         Route::post('/products/export/selected', ProductsExportSelectedController::class);
         Route::post('/products/recrawl/selected', ProductsRecrawlSelectedController::class);
         Route::get('/products/export/missing-barcode', ProductsExportMissingBarcodeController::class);
@@ -272,4 +281,12 @@ Route::prefix('v1')
 
         Route::get('/tcg/events', TcgEventsIndexController::class);
         Route::post('/tcg/events/refresh', TcgEventsRefreshController::class);
+
+        Route::get('/preorders', PlamodPreordersIndexController::class);
+        Route::post('/preorders/sync', PlamodPreordersSyncController::class);
+        Route::get('/preorders/sync-status', PlamodPreordersSyncStatusController::class);
+        Route::get('/preorders/settings', PlamodPreordersSettingsShowController::class);
+        Route::put('/preorders/settings', PlamodPreordersSettingsUpdateController::class);
+        Route::post('/preorders/search-lines', PlamodPreordersSearchLinesController::class);
+        Route::get('/preorders/{sku}/image', PlamodPreorderImageViewController::class);
     });

@@ -25,6 +25,7 @@ Tabs update the Vue Router **`hash`** so URLs are shareable and survive refresh:
 
 - **Reset filters** — clears search mode, typed filters, multi-selects; reloads (`data-testid=products-reset-filters-button`).
 - **Refresh** — re-fetches current page/filters without clearing them.
+- **Export filtered results** — downloads a UTF‑8 BOM catalog CSV of **all** products matching the active list filters across every page (`data-testid=products-export-filtered-button` → **`GET /api/v1/products/export/filtered`** with the same query params as the list).
 
 ### Search
 
@@ -46,7 +47,9 @@ Tabs update the Vue Router **`hash`** so URLs are shareable and survive refresh:
 - **Product flags** — multi-select (`products-filter-product-flags`): **Critical**, **Discontinued**, **Hazardous shipment**; sent as `product_flags[]` on **`GET /api/v1/products`**. Multiple selections use **OR** (match any selected flag).
 - **Shipment** — multi-select (`products-filter-shipment-methods`): **Air**, **Sea**; sent as `shipment_methods[]` on **`GET /api/v1/products`**. Multiple selections use **OR** (match air **or** sea).
 - **Include archived** checkbox — sends include-archived semantics to backend (`notArchived()` default excludes archived SKUs unless opted in).
-- **Available**, **Not arrived**, **Reorder** — free-text numeric filters (parses non-negative ints client-side helper).
+- **Available** — min/max integer inputs (`products-filter-available-min`, `products-filter-available-max`); sent as `available_min` / `available_max` on **`GET /api/v1/products`** (inclusive range on `available_qty`).
+- **Not arrived**, **Reorder** — free-text numeric filters (parses non-negative ints client-side helper).
+- **Selling price** — min/max decimal inputs (`products-filter-selling-price-min`, `products-filter-selling-price-max`); sent as `selling_price_min` / `selling_price_max` on **`GET /api/v1/products`** (inclusive range on `product_selling_prices.selling_price`; products without a price are excluded when either bound is set).
 - **Reorder > 1** checkbox — tightening filter on reorder column logic.
 - **Per page** — `25 … 1000`.
 

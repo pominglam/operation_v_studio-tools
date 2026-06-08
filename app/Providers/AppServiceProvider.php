@@ -41,6 +41,7 @@ use App\Services\Maintenance\DatabaseBackupManager;
 use App\Services\Maintenance\DatabaseBackupManagerService;
 use App\Services\Maintenance\DatabaseRestore;
 use App\Services\Maintenance\DatabaseRestoreService;
+use App\Services\Plamod\PlamodScraperHealthService;
 use App\Services\PriceResearch\Http\AliExpressScraperClient;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\PriceResearch\PriceResearchService;
@@ -107,6 +108,11 @@ class AppServiceProvider extends ServiceProvider
             return new PlamodScraperClient($url);
         });
         $this->app->bind(PlamodScraper::class, PlamodScraperClient::class);
+        $this->app->singleton(PlamodScraperHealthService::class, function (): PlamodScraperHealthService {
+            $url = (string) env('PLAMOD_SCRAPER_URL', 'http://plamod_scraper:3001');
+
+            return new PlamodScraperHealthService($url);
+        });
         $this->app->bind(HljContentSync::class, HljContentSyncService::class);
         $this->app->singleton(CloudflareQuickTunnelVerifier::class);
         $this->app->singleton(MaintenanceQuickTunnelVerifier::class);

@@ -55,6 +55,12 @@ it('upserts order line items and increments demand rollups', function (): void {
 
     app(ShopifyOrderUpsertService::class)->upsertFromGraphQlNode($node);
 
+    $order = ShopifyOrder::query()->where('gid', 'gid://shopify/Order/100')->first();
+    expect($order)->not->toBeNull()
+        ->and($order?->ordered_at_shop_tz?->timezoneName)->toBe('America/Toronto')
+        ->and($order?->ordered_at_shop_tz?->format('Y-m-d H:i:s'))->toBe('2026-05-20 11:00:00')
+        ->and($order?->graphql_updated_at?->format('Y-m-d H:i:s'))->toBe('2026-05-20 12:00:00');
+
     expect(ShopifyOrderLineItem::query()->count())->toBe(1);
     expect(ProductDemandDailyRollup::query()->where('product_id', $product->id)->sum('shopify_sold'))->toBe(3);
 

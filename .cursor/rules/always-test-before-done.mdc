@@ -1,16 +1,47 @@
 ---
-description: Always run relevant tests before finishing any change
+description: Always test new features and bug fixes before marking work complete
 alwaysApply: true
 ---
 
 # Always Test Before Done
 
-Before marking any task complete, the agent must run tests that directly cover the changed behavior.
+A task is **not complete** until behavior is verified the way a real user/system would use it.
 
-- Run at least one **targeted automated test** for each changed backend/frontend flow.
-- If a user reports a runtime bug, run the exact affected test file (or add one first), then re-run after the fix.
-- For API changes, run the corresponding feature test file(s) in `tests/Feature`.
-- For frontend behavior changes, run the corresponding Vitest/Playwright test file(s).
-- Report which commands were run and whether they passed.
-- If a test cannot be run, explicitly explain why and what is needed to unblock it.
+## Required for every change
 
+1. **Automated tests**
+   - New features: add or extend tests that cover the happy path and at least one failure path.
+   - Bug fixes: add a **regression test** that fails before the fix and passes after.
+   - Run the **targeted test file(s)** for the area you changed; report command + pass/fail in the final reply.
+
+2. **User-visible flows**
+   - UI/API features: verify in the **browser** (or Cursor browser) when the change is observable to users.
+   - Click the same buttons / hit the same endpoints the user will use; do not rely on code inspection alone.
+
+3. **Integration dependencies**
+   - If the feature calls another service (e.g. `plamod_scraper`, queue worker), smoke-test that dependency after code changes.
+   - After **Node/scraper** changes: restart `pricing-tool-plamod-scraper` and confirm `/health` lists required routes.
+
+## Test placement guide
+
+| Change type | Minimum tests |
+| --- | --- |
+| API route/controller | `tests/Feature/Api/V1/...` |
+| Service/business logic | `tests/Feature/Services/...` or unit test |
+| Vue page / interaction | `resources/js/pages/__tests__/...` (Vitest) |
+| External client (HTTP) | Fake HTTP + assert error mapping |
+| Reported bug | Reproduction test in the same PR/change set |
+
+## Commands (pricing-tool)
+
+- Backend: `php artisan test --filter=<Name>`
+- Frontend: `npm run test -- --run <spec-path>`
+- Frontend bundle after UI edits: `npm run build`
+
+## Final reply must include
+
+- Which tests were run and whether they passed.
+- If browser/integration testing was done, what was clicked/checked.
+- If something could not be run, why and what unblocks it.
+
+Do **not** mark a feature “done” after only writing code or only running unrelated tests.

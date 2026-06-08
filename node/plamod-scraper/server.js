@@ -1,6 +1,11 @@
 const http = require('http');
 
-const { downloadPlamodZipForSku } = require('./src/plamod');
+const {
+  downloadPlamodZipForSku,
+  exportPlamodPreordersCsv,
+  exportManufacturerPreordersCsv,
+  searchRetailerPreorders,
+} = require('./src/plamod');
 
 function readJson(req) {
   return new Promise((resolve, reject) => {
@@ -44,12 +49,20 @@ async function withTimeout(promise, timeoutMs) {
 }
 
 const port = Number.parseInt(process.env.PORT || '3001', 10);
-const requestTimeoutMs = Number.parseInt(process.env.PLAMOD_REQUEST_TIMEOUT_MS || '220000', 10);
+const requestTimeoutMs = Number.parseInt(process.env.PLAMOD_REQUEST_TIMEOUT_MS || '360000', 10);
 
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && req.url === '/health') {
-      return sendJson(res, 200, { ok: true });
+      return sendJson(res, 200, {
+        ok: true,
+        routes: [
+          'POST /download-zip',
+          'POST /export-preorders-csv',
+          'POST /export-manufacturer-preorders-csv',
+          'POST /search-retailer-preorders',
+        ],
+      });
     }
 
     if (req.method === 'POST' && req.url === '/download-zip') {
@@ -73,6 +86,66 @@ const server = http.createServer(async (req, res) => {
         // eslint-disable-next-line no-console
         console.log(`[plamod] download-zip error sku=${sku} msg=${String(e?.message || 'Unknown error')} ms=${Date.now() - started}`);
         return sendJson(res, 200, { ok: false, sku, error_message: String(e?.message || 'Unknown error'), duration_ms: Date.now() - started });
+      }
+    }
+
+    if (req.method === 'POST' && req.url === '/export-preorders-csv') {
+      const started = Date.now();
+      // eslint-disable-next-line no-console
+      console.log('[plamod] export-preorders-csv start');
+
+      try {
+        const out = await withTimeout(exportPlamodPreordersCsv(), requestTimeoutMs);
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] export-preorders-csv end ok=${Boolean(out?.ok)} ms=${Date.now() - started}`);
+        return sendJson(res, 200, out);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] export-preorders-csv error msg=${String(e?.message || 'Unknown error')} ms=${Date.now() - started}`);
+        return sendJson(res, 200, { ok: false, error_message: String(e?.message || 'Unknown error'), duration_ms: Date.now() - started });
+      }
+    }
+
+    if (req.method === 'POST' && req.url === '/export-manufacturer-preorders-csv') {
+      const payload = await readJson(req);
+      const manufacturerId = payload.manufacturer_id ?? payload.manufacturerId ?? 1;
+      const tab = typeof payload.tab === 'string' ? payload.tab : 'Preorder';
+      const category = payload.category === null ? null : (typeof payload.category === 'string' ? payload.category : 'Plastic Model Kits');
+      const started = Date.now();
+      // eslint-disable-next-line no-console
+      console.log(`[plamod] export-manufacturer-preorders-csv start id=${manufacturerId} tab=${tab}`);
+
+      try {
+        const out = await withTimeout(
+          exportManufacturerPreordersCsv({ manufacturerId, tab, category }),
+          requestTimeoutMs,
+        );
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] export-manufacturer-preorders-csv end ok=${Boolean(out?.ok)} rows=${out?.row_count ?? 0} ms=${Date.now() - started}`);
+        return sendJson(res, 200, out);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] export-manufacturer-preorders-csv error msg=${String(e?.message || 'Unknown error')} ms=${Date.now() - started}`);
+        return sendJson(res, 200, { ok: false, error_message: String(e?.message || 'Unknown error'), duration_ms: Date.now() - started });
+      }
+    }
+
+    if (req.method === 'POST' && req.url === '/search-retailer-preorders') {
+      const payload = await readJson(req);
+      const queries = Array.isArray(payload.queries) ? payload.queries : [];
+      const started = Date.now();
+      // eslint-disable-next-line no-console
+      console.log(`[plamod] search-retailer-preorders start count=${queries.length}`);
+
+      try {
+        const out = await withTimeout(searchRetailerPreorders(queries), requestTimeoutMs);
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] search-retailer-preorders end ok=${Boolean(out?.ok)} ms=${Date.now() - started}`);
+        return sendJson(res, 200, out);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] search-retailer-preorders error msg=${String(e?.message || 'Unknown error')} ms=${Date.now() - started}`);
+        return sendJson(res, 200, { ok: false, error_message: String(e?.message || 'Unknown error'), duration_ms: Date.now() - started });
       }
     }
 

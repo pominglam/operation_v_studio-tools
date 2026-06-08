@@ -207,7 +207,7 @@ async function ensureLoggedIn(page, baseUrl, context, debugSku) {
   const probeUrl = debugSku
     ? `${baseUrl}/retailer/products/${encodeURIComponent(debugSku)}`
     : `${baseUrl}/retailer-sign-in`;
-  await gotoWithTimeout(page, probeUrl, 15_000);
+  await gotoWithTimeout(page, probeUrl, 45_000);
   if (debugSku) {
     await writeDebugSnapshot(page, debugSku, 'auth-precheck-retailer-pdp').catch(() => undefined);
   }
@@ -298,28 +298,44 @@ async function ensureLoggedIn(page, baseUrl, context, debugSku) {
     throw new Error('Plamod login failed: could not populate company/username fields.');
   }
 
-  // Submit button
-  const clicked = await clickFirst(page, [
-    'button[type="submit"]',
-    'button:has-text("Sign in")',
-    'button:has-text("Login")',
-    'button:has-text("Sign In")',
-  ]);
+  // Submit: prefer Enter on password field (React forms often bind submit there).
+  const passInput = await page.$('input[name="password"], input[type="password"]');
+  let clicked = false;
+  if (passInput) {
+    await passInput.press('Enter').catch(() => undefined);
+    clicked = true;
+  }
+  if (!clicked) {
+    clicked = await clickFirst(page, [
+      'button[type="submit"]',
+      'button:has-text("Sign in")',
+      'button:has-text("Login")',
+      'button:has-text("Sign In")',
+    ]);
+  }
   if (!clicked) {
     throw new Error('Could not find sign-in submit button on Plamod sign-in page');
   }
 
-  // Snapshot immediately after clicking submit (before any redirect).
-  await page.waitForTimeout(500);
+  // Wait for login POST + redirect into retailer area.
+  await Promise.race([
+    page.waitForURL((url) => String(url).includes('/retailer/') && !String(url).includes('retailer-sign-in'), {
+      timeout: 25_000,
+    }),
+    page.waitForResponse(
+      (r) => String(r.url()).includes('/retailer-sign-in') && r.request().method() === 'POST' && r.status() < 500,
+      { timeout: 25_000 },
+    ),
+    page.waitForFunction(() => /sign in failed|an error occurred/i.test(document?.body?.innerText || ''), {
+      timeout: 25_000,
+    }),
+  ]).catch(() => undefined);
+  await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => undefined);
+  await page.waitForTimeout(1500);
+
   if (debugSku) {
     await writeDebugSnapshot(page, debugSku, 'login-after-click-sign-in').catch(() => undefined);
   }
-
-  // Wait briefly for either inline error UI to appear or some navigation/render.
-  await Promise.race([
-    page.waitForFunction(() => /sign in failed|an error occurred/i.test(document?.body?.innerText || ''), { timeout: 8_000 }),
-    page.waitForLoadState('domcontentloaded', { timeout: 8_000 }),
-  ]).catch(() => undefined);
 
   // If the UI already shows an inline failure, throw NOW (so debug snapshot captures it).
   const immediateInlineError = await extractInlineLoginError(page);
@@ -331,7 +347,7 @@ async function ensureLoggedIn(page, baseUrl, context, debugSku) {
   }
 
   // Validate auth by hitting the retailer PDP probe and ensuring it doesn't show the sign-in UI.
-  await gotoWithTimeout(page, probeUrl, 15_000);
+  await gotoWithTimeout(page, probeUrl, 45_000);
 
   const postLoginUrl = page.url();
   const postLooksAuthed = postLoginUrl.includes('/retailer/') && !(await looksLikeSignInPage(page));
@@ -669,6 +685,1146 @@ async function downloadPlamodZipForSku({ sku }) {
   }
 }
 
-module.exports = { downloadPlamodZipForSku };
+function parseSimpleCsvFile(csvPath) {
+  const raw = fs.readFileSync(csvPath, 'utf8');
+  const lines = raw.split(/\r?\n/).filter((line) => line.trim() !== '');
+  if (lines.length === 0) {
+    return { header: [], rows: new Map() };
+  }
+
+  const parseLine = (line) => {
+    /** @type {string[]} */
+    const out = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+      if (ch === '"') {
+        inQuotes = !inQuotes;
+        continue;
+      }
+      if (ch === ',' && !inQuotes) {
+        out.push(cur);
+        cur = '';
+        continue;
+      }
+      cur += ch;
+    }
+    out.push(cur);
+    return out;
+  };
+
+  const header = parseLine(lines[0]);
+  /** @type {Map<string, string[]>} */
+  const rows = new Map();
+  for (let i = 1; i < lines.length; i += 1) {
+    const cols = parseLine(lines[i]);
+    const sku = String(cols[0] || '').trim();
+    if (sku !== '') {
+      rows.set(sku, cols);
+    }
+  }
+
+  return { header, rows };
+}
+
+function writeSimpleCsvFile(csvPath, header, rowsMap) {
+  const esc = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const lines = [header.map(esc).join(',')];
+  for (const cols of rowsMap.values()) {
+    lines.push(cols.map(esc).join(','));
+  }
+  fs.writeFileSync(csvPath, `${lines.join('\n')}\n`, 'utf8');
+}
+
+async function scrollLoadPreorderGrid(page) {
+  let prevVisible = 0;
+  for (let i = 0; i < 40; i += 1) {
+    await page.evaluate(() => {
+      window.scrollTo(0, document.body.scrollHeight);
+      const nodes = document.querySelectorAll('[data-radix-scroll-area-viewport], .overflow-auto, main');
+      nodes.forEach((node) => {
+        if (node instanceof HTMLElement) {
+          node.scrollTop = node.scrollHeight;
+        }
+      });
+    });
+    await page.waitForTimeout(700);
+    const visible = await page
+      .evaluate(() => document.querySelectorAll('a[href*="/retailer/products/"]').length)
+      .catch(() => 0);
+    if (visible > 0 && visible === prevVisible && i > 6) {
+      break;
+    }
+    prevVisible = visible;
+  }
+
+  await page.evaluate(() => window.scrollTo(0, 0)).catch(() => undefined);
+  await page.waitForTimeout(500);
+  return prevVisible;
+}
+
+async function clickExactManufacturerStatusTab(page, tabLabel) {
+  const clicked = await page
+    .evaluate((label) => {
+      const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const hit = buttons.find((button) => {
+        const spans = Array.from(button.querySelectorAll('span'));
+        if (spans.some((span) => norm(span.textContent) === label)) {
+          return true;
+        }
+        return norm(button.textContent) === label;
+      });
+      if (!hit) {
+        return false;
+      }
+      hit.click();
+      return true;
+    }, tabLabel)
+    .catch(() => false);
+
+  if (!clicked) {
+    return false;
+  }
+
+  await page.waitForLoadState('networkidle', { timeout: 45_000 }).catch(() => undefined);
+  await page.waitForTimeout(1500);
+  return true;
+}
+
+async function readManufacturerTabBadge(page, tabLabel) {
+  return page
+    .evaluate((label) => {
+      const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const hit = buttons.find((button) => {
+        const spans = Array.from(button.querySelectorAll('span'));
+        return spans.some((span) => norm(span.textContent) === label) || norm(button.textContent).startsWith(label);
+      });
+      return hit ? norm(hit.textContent) : null;
+    }, tabLabel)
+    .catch(() => null);
+}
+
+async function ensureManufacturerPlasticModelKitsOnly(page) {
+  const clicked = await clickFirst(page, [
+    'button:has-text("Clear Categories")',
+    'button:has-text("Clear Category")',
+  ]);
+  if (clicked) {
+    await page.waitForTimeout(800);
+  }
+
+  const categoryClicked = await clickFirst(page, ['button:has-text("CATEGORY")']);
+  if (!categoryClicked) {
+    return false;
+  }
+
+  await page.waitForTimeout(600);
+  const selected = await page
+    .evaluate(() => {
+      const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+      const labels = Array.from(document.querySelectorAll('label, span, div'));
+      const hit = labels.find((node) => norm(node.textContent) === 'Plastic Model Kits');
+      if (!hit) {
+        return false;
+      }
+      const row = hit.closest('div');
+      const checkbox = row?.querySelector('input[type="checkbox"]');
+      if (!(checkbox instanceof HTMLInputElement)) {
+        return false;
+      }
+      if (!checkbox.checked) {
+        checkbox.click();
+      }
+      return true;
+    })
+    .catch(() => false);
+
+  await page.keyboard.press('Escape').catch(() => undefined);
+  await page.waitForLoadState('networkidle', { timeout: 45_000 }).catch(() => undefined);
+  await page.waitForTimeout(1200);
+  return selected;
+}
+
+function createManufacturerSkuCollector() {
+  /** @type {Map<string, Record<string, string>>} */
+  const rowsBySku = new Map();
+
+  const ingestBody = (body) => {
+    const text = String(body || '');
+    if (!/"sku"|\/retailer\/products\//i.test(text)) {
+      return;
+    }
+
+    const skuMatches = [...text.matchAll(/"sku"\s*:\s*"([^"]+)"/gi)];
+    for (const match of skuMatches) {
+      const sku = String(match[1] || '').trim();
+      if (!sku) {
+        continue;
+      }
+      if (!rowsBySku.has(sku)) {
+        rowsBySku.set(sku, { sku });
+      }
+    }
+
+    const nameMatches = [...text.matchAll(/"productName"\s*:\s*"([^"]+)"/gi)];
+    for (const match of nameMatches) {
+      const name = String(match[1] || '').trim();
+      if (!name) {
+        continue;
+      }
+      const existing = [...rowsBySku.values()].find((row) => row.product_name === name);
+      if (existing) {
+        continue;
+      }
+    }
+
+    const pairMatches = [...text.matchAll(/"sku"\s*:\s*"([^"]+)"[\s\S]{0,400}?"productName"\s*:\s*"([^"]+)"/gi)];
+    for (const match of pairMatches) {
+      const sku = String(match[1] || '').trim();
+      const productName = String(match[2] || '').trim();
+      if (!sku) {
+        continue;
+      }
+      const row = rowsBySku.get(sku) || { sku };
+      if (productName) {
+        row.product_name = productName;
+      }
+      rowsBySku.set(sku, row);
+    }
+
+    const hrefMatches = [...text.matchAll(/\/retailer\/products\/([0-9A-Za-z_-]+)/g)];
+    for (const match of hrefMatches) {
+      const sku = String(match[1] || '').trim();
+      if (!sku || rowsBySku.has(sku)) {
+        continue;
+      }
+      rowsBySku.set(sku, { sku });
+    }
+  };
+
+  return { rowsBySku, ingestBody };
+}
+
+function attachPlamodNetworkCapture(page, skuCollector = null) {
+  /** @type {Array<{status: number, url: string, content_type: string, body_preview: string}>} */
+  const captured = [];
+
+  page.on('response', async (response) => {
+    const url = response.url();
+    if (!/plamod\.com/i.test(url)) {
+      return;
+    }
+    if (!/(api|graphql|search|product|manufacturer|preorder|export|csv|retailer)/i.test(url)) {
+      return;
+    }
+
+    const contentType = response.headers()['content-type'] || '';
+    let bodyPreview = '';
+    try {
+      if (
+        contentType.includes('json') ||
+        contentType.includes('text/csv') ||
+        contentType.includes('text/plain') ||
+        contentType.includes('text/x-component')
+      ) {
+        const fullBody = await response.text();
+        skuCollector?.ingestBody(fullBody);
+        bodyPreview = fullBody.slice(0, 1200);
+      }
+    } catch {
+      bodyPreview = '';
+    }
+
+    captured.push({
+      status: response.status(),
+      url,
+      content_type: contentType,
+      body_preview: bodyPreview,
+    });
+  });
+
+  return captured;
+}
+
+function extractManufacturerPreorderCardsFromDocument() {
+  const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+
+  const skuFromHref = (href) => {
+    const clean = String(href || '').split('?')[0];
+    const parts = clean.split('/').filter(Boolean);
+    const sku = parts[parts.length - 1] || '';
+    return /^[0-9A-Za-z_-]+$/.test(sku) ? sku : '';
+  };
+
+  /** @type {Array<Record<string, string>>} */
+  const rows = [];
+  const seen = new Set();
+
+  const productAnchors = Array.from(document.querySelectorAll('a[href*="/retailer/products/"]'));
+  for (const anchor of productAnchors) {
+    const sku = skuFromHref(anchor.getAttribute('href') || '');
+    if (!sku || seen.has(sku)) {
+      continue;
+    }
+
+    let container = anchor;
+    for (let depth = 0; depth < 14; depth += 1) {
+      if (!container.parentElement) {
+        break;
+      }
+      container = container.parentElement;
+      if ((container.textContent || '').includes('SKU:')) {
+        break;
+      }
+    }
+
+    const fields = {};
+    container.querySelectorAll('.text-gray-500').forEach((labelNode) => {
+      const key = norm(labelNode.textContent).replace(/:$/, '');
+      const valueNode = labelNode.nextElementSibling;
+      if (!key || !valueNode) {
+        return;
+      }
+      fields[key] = norm(valueNode.textContent);
+    });
+
+    const manufacturer =
+      norm(container.querySelector('a[href*="/retailer/manufacturers/"]')?.textContent || '') || '';
+    const category =
+      norm(container.querySelector('a[href*="/retailer/search?categories="]')?.textContent || '') || '';
+    const series =
+      norm(container.querySelector('a[href*="/retailer/search?series="]')?.textContent || '') || fields.Series || '';
+    const productName = norm(anchor.textContent) || fields['Product Name'] || sku;
+    const imageUrl = norm(container.querySelector('img[src*="plamod"], img[src*="images.plamod"]')?.getAttribute('src') || '');
+
+    let pricePreorder = '';
+    let quantityPreorder = '';
+    const preorderHeader = Array.from(container.querySelectorAll('thead td, thead th, td, th')).find((node) =>
+      /preorder/i.test(norm(node.textContent)),
+    );
+    if (preorderHeader) {
+      const table = preorderHeader.closest('table');
+      const priceNode = table?.querySelector('[class*="price"], .font-bold, .text-lg');
+      if (priceNode) {
+        pricePreorder = norm(priceNode.textContent).replace(/[^0-9.]/g, '');
+      }
+      const qtyCells = table ? Array.from(table.querySelectorAll('td div.text-center, td .font-bold')) : [];
+      const qty = qtyCells.map((n) => norm(n.textContent)).find((v) => /^\d+$/.test(v));
+      if (qty) {
+        quantityPreorder = qty;
+      }
+    }
+
+    seen.add(sku);
+    rows.push({
+      sku,
+      barcode: fields.Barcode || '',
+      product_name: productName,
+      series,
+      release_date: fields.Release || '',
+      manufacturer,
+      category,
+      price_preorder: pricePreorder,
+      quantity_preorder: quantityPreorder,
+      image_url: imageUrl,
+    });
+  }
+
+  return rows;
+}
+
+async function scrapeManufacturerPreorderRows(page, expectedCount = 0, networkRowsBySku = null) {
+  /** @type {Map<string, Record<string, string>>} */
+  const rowsBySku = networkRowsBySku || new Map();
+  let staleRounds = 0;
+
+  await page.evaluate(() => window.scrollTo(0, 0)).catch(() => undefined);
+  await page.waitForTimeout(500);
+
+  for (let round = 0; round < 320; round += 1) {
+    const batch = await page.evaluate(extractManufacturerPreorderCardsFromDocument);
+    let newRows = 0;
+    for (const row of batch) {
+      if (!row?.sku) {
+        continue;
+      }
+      const hadSku = rowsBySku.has(row.sku);
+      const existing = rowsBySku.get(row.sku) || {};
+      rowsBySku.set(row.sku, { ...existing, ...row });
+      if (!hadSku) {
+        newRows += 1;
+      }
+    }
+
+    if (expectedCount > 0 && rowsBySku.size >= expectedCount) {
+      break;
+    }
+
+    if (newRows === 0) {
+      staleRounds += 1;
+      if (staleRounds >= 16) {
+        break;
+      }
+    } else {
+      staleRounds = 0;
+    }
+
+    await page
+      .evaluate(() => {
+        window.scrollBy(0, Math.max(500, Math.floor(window.innerHeight * 0.85)));
+        const nodes = document.querySelectorAll('[data-radix-scroll-area-viewport], .overflow-auto, main');
+        nodes.forEach((node) => {
+          if (node instanceof HTMLElement) {
+            node.scrollTop += Math.max(500, Math.floor(window.innerHeight * 0.85));
+          }
+        });
+      })
+      .catch(() => undefined);
+    await page.waitForTimeout(500);
+  }
+
+  return rowsBySku;
+}
+
+function manufacturerRowsToCsv(header, rowsBySku) {
+  const esc = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  const lines = [header.map(esc).join(',')];
+  for (const row of rowsBySku.values()) {
+    lines.push(
+      [
+        row.sku,
+        row.barcode,
+        row.product_name,
+        row.series,
+        row.release_date,
+        row.manufacturer,
+        row.category,
+        row.price_stock || '',
+        row.price_preorder,
+        row.price_backorder || '',
+        row.quantity_preorder,
+        row.po_due_date || '',
+        row.eta_date || '',
+        row.image_url,
+      ]
+        .map(esc)
+        .join(','),
+    );
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+async function tryDownloadCsvViaCapturedResponses(page, captured, destPath) {
+  for (const entry of [...captured].reverse()) {
+    if (!/csv|export/i.test(entry.url) && !entry.content_type.includes('csv')) {
+      continue;
+    }
+    if (!entry.body_preview || entry.body_preview.length < 20) {
+      continue;
+    }
+    if (!entry.body_preview.includes('SKU') && !entry.body_preview.includes('Product Name')) {
+      continue;
+    }
+    fs.writeFileSync(destPath, entry.body_preview, 'utf8');
+    return true;
+  }
+  return false;
+}
+
+async function downloadPreordersCsvFromPage(page, csvHandle, destPath) {
+  async function attemptCsvDownload(attemptNo) {
+    // eslint-disable-next-line no-console
+    console.log(`[plamod] click preorders csv attempt=${attemptNo}`);
+    const [download] = await Promise.all([
+      page.waitForEvent('download', { timeout: 60_000 }),
+      csvHandle.click(),
+    ]);
+    return download;
+  }
+
+  let download;
+  try {
+    download = await attemptCsvDownload(1);
+  } catch (e) {
+    const msg = String(e?.message || '');
+    if (!/timeout/i.test(msg)) {
+      throw e;
+    }
+    // eslint-disable-next-line no-console
+    console.log('[plamod] preorders csv download timeout; retrying');
+    await page.waitForTimeout(1000);
+    download = await attemptCsvDownload(2);
+  }
+
+  await Promise.race([
+    download.saveAs(destPath),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('download_save_timeout')), 60_000)),
+  ]);
+
+  const failure = await download.failure().catch(() => null);
+  if (failure) {
+    throw new Error(`CSV download failed: ${failure}`);
+  }
+}
+
+async function exportPlamodPreordersCsv() {
+  const baseUrl = String(process.env.PLAMOD_BASE_URL || 'https://plamod.com').replace(/\/+$/, '');
+  const profileDir = String(process.env.PLAMOD_PERSISTENT_PROFILE_DIR || path.resolve(__dirname, '..', '..', '.pw-user-data'));
+  const probeSku = '5060358';
+  const debugSku = 'preorders-export';
+
+  const root = storageRoot();
+  const rawDir = path.join(root, 'plamod', 'preorder_exports');
+  ensureDir(rawDir);
+  const csvFilename = `${nowStamp()}.csv`;
+  const csvPath = path.join(rawDir, csvFilename);
+  const csvStoragePath = path.posix.join('plamod', 'preorder_exports', csvFilename);
+
+  // eslint-disable-next-line global-require
+  const { chromium } = require('playwright');
+
+  const started = Date.now();
+  cleanupPersistentProfileLocks(profileDir);
+
+  // eslint-disable-next-line no-console
+  console.log('[plamod] export preorders csv start');
+  const context = await chromium.launchPersistentContext(profileDir, {
+    timeout: 30_000,
+    headless: true,
+    acceptDownloads: true,
+    viewport: { width: 1400, height: 900 },
+    locale: 'en-CA',
+    timezoneId: 'America/Toronto',
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    args: ['--disable-blink-features=AutomationControlled'],
+  });
+
+  try {
+    const page = await context.newPage();
+    await ensureLoggedIn(page, baseUrl, context, probeSku);
+    await gotoWithTimeout(page, `${baseUrl}/retailer/preorders`, 45_000);
+
+    if (await looksLikeSignInPage(page)) {
+      const prevForce = process.env.PLAMOD_FORCE_LOGIN;
+      process.env.PLAMOD_FORCE_LOGIN = 'true';
+      try {
+        await ensureLoggedIn(page, baseUrl, context, debugSku);
+      } finally {
+        if (prevForce === undefined) {
+          delete process.env.PLAMOD_FORCE_LOGIN;
+        } else {
+          process.env.PLAMOD_FORCE_LOGIN = prevForce;
+        }
+      }
+      await gotoWithTimeout(page, `${baseUrl}/retailer/preorders`, 45_000);
+    }
+
+    await page.waitForLoadState('networkidle', { timeout: 45_000 }).catch(() => undefined);
+    await page.waitForTimeout(1200);
+
+    // Reset filters/sorts: CSV export reflects the current on-screen preorders view.
+    if (page.url().includes('?')) {
+      await gotoWithTimeout(page, `${baseUrl}/retailer/preorders`, 45_000);
+      await page.waitForLoadState('networkidle', { timeout: 45_000 }).catch(() => undefined);
+      await page.waitForTimeout(1200);
+    }
+
+    await clickFirst(page, [
+      'button:has-text("Clear filters")',
+      'button:has-text("Clear Filters")',
+      'button:has-text("Reset")',
+      'button:has-text("All")',
+    ]);
+
+    if (await looksLikeSignInPage(page)) {
+      const debug = await writeDebugSnapshot(page, debugSku, 'sign-in');
+      return {
+        ok: false,
+        error_message: 'Plamod login failed for preorders page. Check PLAMOD_COMPANY, PLAMOD_USERNAME, and PLAMOD_PASSWORD.',
+        debug,
+        duration_ms: Date.now() - started,
+      };
+    }
+
+    // Plamod CSV export is tab-scoped: "New Preorders" and "Offer Sheets" are separate lists.
+    const tabLabels = ['New Preorders', 'Offer Sheets'];
+    /** @type {string[]} */
+    let mergedHeader = [];
+    /** @type {Map<string, string[]>} */
+    const mergedRows = new Map();
+
+    for (const tabLabel of tabLabels) {
+      const clicked = await clickFirst(page, [`button:has-text("${tabLabel}")`]);
+      if (!clicked) {
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] preorders tab not found: ${tabLabel}`);
+        continue;
+      }
+
+      await page.waitForLoadState('networkidle', { timeout: 45_000 }).catch(() => undefined);
+      await page.waitForTimeout(1500);
+      const visible = await scrollLoadPreorderGrid(page);
+      await writeDebugSnapshot(page, debugSku, `preorders-before-csv-${tabLabel.replace(/\s+/g, '-')}`).catch(() => undefined);
+
+      const csvHandle = await findFirstHandle(page, [
+        'a:has-text("CSV")',
+        'button:has-text("CSV")',
+        'a[href*="csv" i]',
+        'a[href*="export" i]',
+        '[data-testid="export-csv"]',
+        'text=/^CSV$/i',
+      ]);
+
+      if (!csvHandle) {
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] csv control missing on tab: ${tabLabel}`);
+        continue;
+      }
+
+      const partialPath = `${csvPath}.${tabLabel.replace(/\s+/g, '_')}.partial.csv`;
+      try {
+        await downloadPreordersCsvFromPage(page, csvHandle, partialPath);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] tab csv download failed tab=${tabLabel} msg=${String(e?.message || 'unknown')}`);
+        continue;
+      }
+
+      const parsed = parseSimpleCsvFile(partialPath);
+      if (mergedHeader.length === 0 && parsed.header.length > 0) {
+        mergedHeader = parsed.header;
+      }
+      for (const [sku, cols] of parsed.rows.entries()) {
+        if (!mergedRows.has(sku)) {
+          mergedRows.set(sku, cols);
+        }
+      }
+      fs.unlinkSync(partialPath);
+      // eslint-disable-next-line no-console
+      console.log(`[plamod] tab csv merged tab=${tabLabel} rows=${parsed.rows.size} visible_links=${visible}`);
+    }
+
+    if (mergedRows.size === 0) {
+      const debug = await writeDebugSnapshot(page, debugSku, 'missing-csv');
+      return {
+        ok: false,
+        error_message: 'Could not export any preorder CSV rows from Plamod tabs',
+        debug,
+        duration_ms: Date.now() - started,
+      };
+    }
+
+    writeSimpleCsvFile(csvPath, mergedHeader, mergedRows);
+    const stat = fs.statSync(csvPath);
+
+    // eslint-disable-next-line no-console
+    console.log(`[plamod] export preorders csv saved path=${csvStoragePath} bytes=${stat.size} rows=${mergedRows.size}`);
+
+    return {
+      ok: true,
+      csv_storage_path: csvStoragePath,
+      bytes: stat.size,
+      duration_ms: Date.now() - started,
+    };
+  } catch (e) {
+    const page = context.pages()[0];
+    const debug = page ? await writeDebugSnapshot(page, debugSku, 'exception').catch(() => ({})) : {};
+    return {
+      ok: false,
+      error_message: String(e?.message || 'Unknown error'),
+      debug,
+      duration_ms: Date.now() - started,
+    };
+  } finally {
+    await safeCloseContext(context);
+  }
+}
+
+/**
+ * Export preorder CSV from a Plamod manufacturer page (e.g. BANDAI HOBBY = id 1).
+ *
+ * @param {{ manufacturerId?: number|string, tab?: string, category?: string|null }} opts
+ */
+async function exportManufacturerPreordersCsv(opts = {}) {
+  const manufacturerId = String(opts.manufacturerId ?? 1).trim();
+  const tabLabel = String(opts.tab ?? 'Preorder').trim();
+  const categoryLabel = opts.category === null ? null : String(opts.category ?? 'Plastic Model Kits').trim();
+  const baseUrl = String(process.env.PLAMOD_BASE_URL || 'https://plamod.com').replace(/\/+$/, '');
+  const profileDir = String(process.env.PLAMOD_PERSISTENT_PROFILE_DIR || path.resolve(__dirname, '..', '..', '.pw-user-data'));
+  const probeSku = '5060358';
+  const debugSku = `manufacturer-${manufacturerId}-export`;
+
+  const root = storageRoot();
+  const rawDir = path.join(root, 'plamod', 'manufacturer_preorder_exports');
+  ensureDir(rawDir);
+  const csvFilename = `mfr-${manufacturerId}-${nowStamp()}.csv`;
+  const csvPath = path.join(rawDir, csvFilename);
+  const csvStoragePath = path.posix.join('plamod', 'manufacturer_preorder_exports', csvFilename);
+
+  // eslint-disable-next-line global-require
+  const { chromium } = require('playwright');
+
+  const started = Date.now();
+  cleanupPersistentProfileLocks(profileDir);
+
+  // eslint-disable-next-line no-console
+  console.log(`[plamod] export manufacturer preorders csv start id=${manufacturerId} tab=${tabLabel} category=${categoryLabel || '(none)'}`);
+  const context = await chromium.launchPersistentContext(profileDir, {
+    timeout: 30_000,
+    headless: true,
+    acceptDownloads: true,
+    viewport: { width: 1400, height: 900 },
+    locale: 'en-CA',
+    timezoneId: 'America/Toronto',
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    args: ['--disable-blink-features=AutomationControlled'],
+  });
+
+  try {
+    const page = await context.newPage();
+    const skuCollector = createManufacturerSkuCollector();
+    const captured = attachPlamodNetworkCapture(page, skuCollector);
+    const manufacturerUrl = `${baseUrl}/retailer/manufacturers/${manufacturerId}`;
+    const categoryId = categoryLabel ? '1' : '';
+    const searchUrl = categoryId
+      ? `${baseUrl}/retailer/search?manufacturers=${encodeURIComponent(manufacturerId)}&categories=${categoryId}&tab=preorder`
+      : `${baseUrl}/retailer/search?manufacturers=${encodeURIComponent(manufacturerId)}&tab=preorder`;
+    const csvHeader = [
+      'SKU',
+      'Barcode',
+      'Product Name',
+      'Series',
+      'Release Date',
+      'Manufacturer',
+      'Category',
+      'Price Stock',
+      'Price Preorder',
+      'Price Backorder',
+      'Quantity Preorder',
+      'PO Due Date',
+      'ETA Date',
+      'Image URL',
+    ];
+
+    await ensureLoggedIn(page, baseUrl, context, probeSku);
+    await gotoWithTimeout(page, manufacturerUrl, 45_000);
+
+    if (await looksLikeSignInPage(page)) {
+      const prevForce = process.env.PLAMOD_FORCE_LOGIN;
+      process.env.PLAMOD_FORCE_LOGIN = 'true';
+      try {
+        await ensureLoggedIn(page, baseUrl, context, debugSku);
+      } finally {
+        if (prevForce === undefined) {
+          delete process.env.PLAMOD_FORCE_LOGIN;
+        } else {
+          process.env.PLAMOD_FORCE_LOGIN = prevForce;
+        }
+      }
+      await gotoWithTimeout(page, manufacturerUrl, 45_000);
+    }
+
+    await page.waitForLoadState('networkidle', { timeout: 45_000 }).catch(() => undefined);
+    await page.waitForTimeout(1200);
+
+    const tabClicked = await clickExactManufacturerStatusTab(page, tabLabel);
+    if (!tabClicked) {
+      const debug = await writeDebugSnapshot(page, debugSku, 'missing-tab');
+      return {
+        ok: false,
+        error_message: `Could not find manufacturer status tab: ${tabLabel}`,
+        debug,
+        duration_ms: Date.now() - started,
+      };
+    }
+
+    if (categoryLabel) {
+      await ensureManufacturerPlasticModelKitsOnly(page);
+    }
+
+    const tabBadgeText = await readManufacturerTabBadge(page, tabLabel);
+    const expectedCount = Number.parseInt(String(tabBadgeText || '').replace(/[^\d]/g, ''), 10) || 0;
+    await writeDebugSnapshot(page, debugSku, 'before-export').catch(() => undefined);
+
+    if (await looksLikeSignInPage(page)) {
+      const debug = await writeDebugSnapshot(page, debugSku, 'sign-in');
+      return {
+        ok: false,
+        error_message: 'Plamod login failed for manufacturer preorder export. Check PLAMOD credentials.',
+        debug,
+        duration_ms: Date.now() - started,
+      };
+    }
+
+    let parsed = { header: csvHeader, rows: new Map() };
+    let exportMode = 'scrape';
+
+    const csvHandle = await findFirstHandle(page, [
+      'a:has-text("CSV")',
+      'button:has-text("CSV")',
+      'a[href*="csv" i]',
+      'a[href*="export" i]',
+      '[data-testid="export-csv"]',
+      'text=/^CSV$/i',
+    ]);
+
+    if (csvHandle) {
+      try {
+        await downloadPreordersCsvFromPage(page, csvHandle, csvPath);
+        parsed = parseSimpleCsvFile(csvPath);
+        exportMode = 'csv_button';
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] manufacturer csv button download failed msg=${String(e?.message || 'unknown')}`);
+      }
+    }
+
+    if (parsed.rows.size === 0 && (await tryDownloadCsvViaCapturedResponses(page, captured, csvPath))) {
+      parsed = parseSimpleCsvFile(csvPath);
+      exportMode = 'captured_response';
+    }
+
+    if (parsed.rows.size === 0) {
+      const scrapedRows = await scrapeManufacturerPreorderRows(page, expectedCount, skuCollector.rowsBySku);
+      if (scrapedRows.size === 0) {
+        const debug = await writeDebugSnapshot(page, debugSku, 'missing-rows');
+        return {
+          ok: false,
+          error_message: 'Could not export manufacturer preorder rows (no CSV control and scrape returned zero rows)',
+          debug,
+          manufacturer_url: manufacturerUrl,
+          search_url: searchUrl,
+          tab_badge_text: tabBadgeText,
+          expected_row_count: expectedCount,
+          captured_responses: captured.length,
+          duration_ms: Date.now() - started,
+        };
+      }
+
+      const supplementQueries = ['RE 1/100 VIGNA-GHINA'];
+      for (const query of supplementQueries) {
+        if (scrapedRows.has('0225768')) {
+          break;
+        }
+        try {
+          const hit = await scrapeRetailerSearchPage(page, baseUrl, query, context);
+          if (hit?.sku) {
+            scrapedRows.set(hit.sku, {
+              sku: hit.sku,
+              product_name: hit.product_name || query,
+              manufacturer: 'BANDAI HOBBY',
+              category: 'Plastic Model Kits',
+            });
+          }
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.log(`[plamod] manufacturer supplement search failed query=${query} msg=${String(e?.message || 'unknown')}`);
+        }
+      }
+
+      fs.writeFileSync(csvPath, manufacturerRowsToCsv(csvHeader, scrapedRows), 'utf8');
+      parsed = parseSimpleCsvFile(csvPath);
+      exportMode = scrapedRows.has('0225768') ? 'dom_scrape+search_supplement' : 'dom_scrape';
+    }
+
+    const visible = parsed.rows.size;
+    if (parsed.rows.size === 0) {
+      const debug = await writeDebugSnapshot(page, debugSku, 'empty-csv');
+      return {
+        ok: false,
+        error_message: 'Manufacturer preorder CSV export returned zero rows',
+        debug,
+        tab_badge_text: tabBadgeText,
+        visible_product_links: visible,
+        duration_ms: Date.now() - started,
+      };
+    }
+
+    const stat = fs.statSync(csvPath);
+    const skus = Array.from(parsed.rows.keys());
+    const hasVignaSku = parsed.rows.has('0225768');
+    const hasVignaName = skus.some((sku) => {
+      const cols = parsed.rows.get(sku) || [];
+      const nameIdx = parsed.header.findIndex((h) => String(h).toLowerCase() === 'product name');
+      const name = nameIdx >= 0 ? String(cols[nameIdx] || '') : '';
+      return /vigna-?ghina/i.test(name);
+    });
+
+    // eslint-disable-next-line no-console
+    console.log(
+      `[plamod] export manufacturer preorders csv saved path=${csvStoragePath} bytes=${stat.size} rows=${parsed.rows.size} vigna_sku=${hasVignaSku} vigna_name=${hasVignaName}`,
+    );
+
+    return {
+      ok: true,
+      manufacturer_id: manufacturerId,
+      tab: tabLabel,
+      category: categoryLabel,
+      manufacturer_url: manufacturerUrl,
+      search_url: searchUrl,
+      export_mode: exportMode,
+      csv_storage_path: csvStoragePath,
+      bytes: stat.size,
+      row_count: parsed.rows.size,
+      expected_row_count: expectedCount,
+      has_vigna_sku: hasVignaSku,
+      has_vigna_name: hasVignaName,
+      tab_badge_text: tabBadgeText,
+      visible_product_links: visible,
+      duration_ms: Date.now() - started,
+    };
+  } catch (e) {
+    const page = context.pages()[0];
+    const debug = page ? await writeDebugSnapshot(page, debugSku, 'exception').catch(() => ({})) : {};
+    return {
+      ok: false,
+      error_message: String(e?.message || 'Unknown error'),
+      debug,
+      duration_ms: Date.now() - started,
+    };
+  } finally {
+    await safeCloseContext(context);
+  }
+}
+
+function normalizeSearchText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[#/-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function searchTokens(query) {
+  const stop = new Set(['re', 'hguc', 'hg', 'mg', 'rg', 'pg', 'eg', 'fm', 'hgbd', '100', '144', '60', 'the', 'ver', 'ka', 'custom', 'type']);
+  return normalizeSearchText(query)
+    .split(' ')
+    .filter((t) => t.length >= 2 && !stop.has(t) && !/^\d+$/.test(t));
+}
+
+function scoreSearchHit(query, productName) {
+  const q = normalizeSearchText(query);
+  const p = normalizeSearchText(productName);
+  if (!q || !p) return 0;
+  if (p.includes(q) || q.includes(p)) return 100;
+  const tokens = searchTokens(query);
+  if (tokens.length === 0) return 0;
+  let hits = 0;
+  for (const token of tokens) {
+    if (p.includes(token)) hits += 1;
+  }
+  return Math.round((hits / tokens.length) * 90);
+}
+
+function extractProductHitsFromDocument() {
+  /** @type {Array<{sku: string, product_name: string}>} */
+  const out = [];
+  const seen = new Set();
+
+  const skuFromHref = (href) => {
+    const clean = String(href || '').split('?')[0];
+    const parts = clean.split('/').filter(Boolean);
+    const sku = parts[parts.length - 1] || '';
+    return /^[0-9A-Za-z_-]+$/.test(sku) ? sku : '';
+  };
+
+  const cardText = (anchor) => {
+    const title = (anchor.textContent || '').replace(/\s+/g, ' ').trim();
+    if (title.length >= 4) return title;
+    const row =
+      anchor.closest('tr, li, article, [class*="product"], [class*="result"], [class*="row"]') ||
+      anchor.parentElement;
+    return (row?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+  };
+
+  document.querySelectorAll('h3 a[href*="/retailer/products/"], a[href*="/retailer/products/"], a[href*="/products/"]').forEach((anchor) => {
+    const href = anchor.getAttribute('href') || '';
+    const sku = skuFromHref(href);
+    const productName = cardText(anchor);
+    if (!sku || !productName || seen.has(sku)) return;
+    seen.add(sku);
+    out.push({ sku, product_name: productName });
+  });
+
+  return out;
+}
+
+async function scrapeRetailerSearchPage(page, baseUrl, query, context) {
+  const searchUrl = `${baseUrl}/retailer/search?tab=preorder&q=${encodeURIComponent(query)}`;
+
+  const openSearchResults = async () => {
+    await gotoWithTimeout(page, `${baseUrl}/retailer`, 30_000);
+    await page.waitForLoadState('domcontentloaded', { timeout: 20_000 }).catch(() => undefined);
+    await page.waitForTimeout(800);
+
+    if (page.url().includes('/retailer-sign-in')) {
+      if (!context) return false;
+      await ensureLoggedIn(page, baseUrl, context, 'search');
+      await gotoWithTimeout(page, `${baseUrl}/retailer`, 30_000);
+      await page.waitForTimeout(800);
+    }
+
+    const filled = await fillFirst(page, [
+      'input[type="search"]',
+      'input[placeholder*="Search" i]',
+      'input[name="q"]',
+      'input[aria-label*="Search" i]',
+    ], query);
+    if (filled) {
+      const input = await page.$('input[type="search"], input[placeholder*="Search" i], input[name="q"]');
+      if (input) {
+        await input.press('Enter').catch(() => undefined);
+      }
+      await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => undefined);
+      await page.waitForTimeout(1200);
+      if (!page.url().includes('/retailer/search')) {
+        await gotoWithTimeout(page, searchUrl, 45_000);
+      }
+    } else {
+      await gotoWithTimeout(page, searchUrl, 45_000);
+    }
+
+    await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => undefined);
+    await page.waitForTimeout(1200);
+    return !page.url().includes('/retailer-sign-in');
+  };
+
+  let authed = await openSearchResults();
+  if (!authed && context) {
+    await ensureLoggedIn(page, baseUrl, context, 'search');
+    authed = await openSearchResults();
+  }
+  if (!authed) {
+    await writeDebugSnapshot(page, 'search', `auth-failed-${safeSkuDir(query).slice(0, 40)}`).catch(() => undefined);
+    return null;
+  }
+
+  /** @type {Array<{sku: string, product_name: string}>} */
+  let hits = await page.evaluate(extractProductHitsFromDocument);
+
+  if (hits.length === 0) {
+    await clickFirst(page, [
+      'button:has-text("Preorder")',
+      'a:has-text("Preorder")',
+      '[role="tab"]:has-text("Preorder")',
+      'label:has-text("Preorder")',
+    ]);
+    await page.waitForTimeout(1200);
+    hits = await page.evaluate(extractProductHitsFromDocument);
+  }
+
+  let best = null;
+  let bestScore = 0;
+  for (const hit of hits) {
+    const score = scoreSearchHit(query, hit.product_name);
+    if (score > bestScore) {
+      bestScore = score;
+      best = hit;
+    }
+  }
+
+  if (!best || bestScore < 40) {
+    await writeDebugSnapshot(page, 'search', `no-hit-${safeSkuDir(query).slice(0, 40)}`).catch(() => undefined);
+    return null;
+  }
+
+  let productName = best.product_name.trim();
+  const skuMarker = productName.indexOf('SKU:');
+  if (skuMarker > 0) {
+    productName = productName.slice(0, skuMarker).trim();
+  }
+  const kitMatch = productName.match(
+    /((?:RE|HGUC|HG|MG|RG|PG|FM|EG|HGBD|1\/\d+)\s+[^]+?)(?=(?:BANDAI|SKU:|Barcode:|$))/i,
+  );
+  if (kitMatch?.[1]) {
+    productName = kitMatch[1].replace(/\s+/g, ' ').trim();
+  }
+
+  return {
+    sku: best.sku,
+    product_name: productName,
+    plamod_pdp_url: `${baseUrl}/retailer/products/${encodeURIComponent(best.sku)}`,
+    match_score: bestScore,
+  };
+}
+
+/**
+ * @param {string[]} queries
+ */
+async function searchRetailerPreorders(queries) {
+  const baseUrl = String(process.env.PLAMOD_BASE_URL || 'https://plamod.com').replace(/\/+$/, '');
+  const profileDir = String(process.env.PLAMOD_PERSISTENT_PROFILE_DIR || path.resolve(__dirname, '..', '..', '.pw-user-data'));
+  const probeSku = '5060358';
+
+  const cleaned = [];
+  for (const q of queries) {
+    if (typeof q !== 'string') continue;
+    const v = q.trim();
+    if (v !== '') cleaned.push(v);
+  }
+  if (cleaned.length === 0) {
+    return { ok: false, error_message: 'queries is required' };
+  }
+
+  // eslint-disable-next-line global-require
+  const { chromium } = require('playwright');
+  const started = Date.now();
+  cleanupPersistentProfileLocks(profileDir);
+
+  const context = await chromium.launchPersistentContext(profileDir, {
+    timeout: 30_000,
+    headless: true,
+    acceptDownloads: true,
+    viewport: { width: 1400, height: 900 },
+    locale: 'en-CA',
+    timezoneId: 'America/Toronto',
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    args: ['--disable-blink-features=AutomationControlled'],
+  });
+
+  /** @type {Record<string, any>} */
+  const results = {};
+
+  try {
+    const page = await context.newPage();
+    await ensureLoggedIn(page, baseUrl, context, probeSku);
+
+    for (const query of cleaned) {
+      try {
+        results[query] = await scrapeRetailerSearchPage(page, baseUrl, query, context);
+      } catch (e) {
+        results[query] = null;
+      }
+    }
+
+    return {
+      ok: true,
+      results,
+      duration_ms: Date.now() - started,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error_message: String(e?.message || 'Unknown error'),
+      results,
+      duration_ms: Date.now() - started,
+    };
+  } finally {
+    await safeCloseContext(context);
+  }
+}
+
+module.exports = {
+  downloadPlamodZipForSku,
+  exportPlamodPreordersCsv,
+  exportManufacturerPreordersCsv,
+  searchRetailerPreorders,
+};
 
 

@@ -10,6 +10,7 @@ use App\Exceptions\Shopify\ShopifyGraphQlException;
 use App\Models\Shopify\ShopifySyncLog;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlQueries;
 use App\Services\Shopify\Admin\ShopifySettingsService;
+use App\Services\Shopify\Admin\Support\ShopifyGraphQlNodeParser;
 use App\Services\Shopify\Admin\Sync\ShopifySyncMetrics;
 use Illuminate\Support\Carbon;
 use Throwable;
@@ -99,7 +100,8 @@ final class ShopifyOrderReconcileService
         }
 
         $metrics = new ShopifySyncMetrics;
-        $maxUpdatedAt = null;
+        $maxUpdatedAtUtc = null;
+        $maxUpdatedAtShopTz = null;
         $minCreatedAt = null;
         $maxCreatedAt = null;
 
@@ -135,11 +137,15 @@ final class ShopifyOrderReconcileService
                     $this->upsert->upsertFromGraphQlNode($node);
                     $metrics->recordUpsert(false);
 
-                    $updatedAt = isset($node['updatedAt']) && is_string($node['updatedAt'])
+                    $updatedAtUtc = isset($node['updatedAt']) && is_string($node['updatedAt'])
                         ? Carbon::parse($node['updatedAt'])
                         : null;
-                    if ($updatedAt !== null && ($maxUpdatedAt === null || $updatedAt->greaterThan($maxUpdatedAt))) {
-                        $maxUpdatedAt = $updatedAt;
+                    $updatedAtShopTz = ShopifyGraphQlNodeParser::timestampInShopTz(
+                        isset($node['updatedAt']) && is_string($node['updatedAt']) ? $node['updatedAt'] : null,
+                    );
+                    if ($updatedAtUtc !== null && ($maxUpdatedAtUtc === null || $updatedAtUtc->greaterThan($maxUpdatedAtUtc))) {
+                        $maxUpdatedAtUtc = $updatedAtUtc;
+                        $maxUpdatedAtShopTz = $updatedAtShopTz;
                     }
 
                     $createdAt = isset($node['createdAt']) && is_string($node['createdAt'])
@@ -166,7 +172,7 @@ final class ShopifyOrderReconcileService
 
             $syncLog->status = 'completed';
             if ($advanceWatermark) {
-                $this->syncState->markRunSucceeded(ShopifySettingsService::SYNC_KEY_ORDERS, $maxUpdatedAt);
+                $this->syncState->markRunSucceeded(ShopifySettingsService::SYNC_KEY_ORDERS, $maxUpdatedAtShopTz);
             }
         } catch (Throwable $e) {
             $syncLog->status = 'failed';

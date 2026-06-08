@@ -100,6 +100,18 @@ function isActive(name: string): boolean {
                 </RouterLink>
                 <RouterLink
                     v-if="!isEmployee"
+                    to="/preorders"
+                    class="rounded-md px-3 py-1.5 transition"
+                    :class="
+                        isActive('preorders')
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-100'
+                    "
+                >
+                    Preorders
+                </RouterLink>
+                <RouterLink
+                    v-if="!isEmployee"
                     to="/tcg-events"
                     class="rounded-md px-3 py-1.5 transition"
                     :class="

@@ -67,7 +67,7 @@ final class ShopifyOrderDemandEligibility
             ? $node['cancelledAt']
             : null;
 
-        return ShopifyGraphQlNodeParser::timestamp($cancelledAt);
+        return ShopifyGraphQlNodeParser::timestampInShopTz($cancelledAt);
     }
 
     private function isEligible(?\Carbon\CarbonInterface $cancelledAt, ?string $displayFinancialStatus): bool

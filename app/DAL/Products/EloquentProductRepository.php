@@ -422,12 +422,105 @@ final class EloquentProductRepository implements ProductRepository
      * @param  array<int, string>  $productFlags
      * @param  array<int, string>  $shipmentMethods
      */
-    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], bool $includeArchived = false, ?string $poProductNovelty = null, ?string $ready = null, ?int $available = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true): LengthAwarePaginator
+    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], bool $includeArchived = false, ?string $poProductNovelty = null, ?string $ready = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null): LengthAwarePaginator
     {
-        [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+        $q = $this->buildFilteredListQuery(
+            $search,
+            $mainTypes,
+            $types,
+            $vendors,
+            $missing,
+            $purchaseOrderUuids,
+            $searchTerms,
+            $includeArchived,
+            $poProductNovelty,
+            $ready,
+            $availableMin,
+            $availableMax,
+            $notArrived,
+            $reorder,
+            $reorderGtOne,
+            $productFlags,
+            $shipmentMethods,
+            $notArrivedIncludeDraftOrders,
+            $sellingPriceMin,
+            $sellingPriceMax,
+        );
 
+        [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+        $this->applyListOrdering($q, $sortColumn, $sortDir);
+
+        return $q->paginate(perPage: $perPage);
+    }
+
+    public function listFiltered(?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], bool $includeArchived = false, ?string $poProductNovelty = null, ?string $ready = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null): Collection
+    {
+        $q = $this->buildFilteredListQuery(
+            $search,
+            $mainTypes,
+            $types,
+            $vendors,
+            $missing,
+            $purchaseOrderUuids,
+            $searchTerms,
+            $includeArchived,
+            $poProductNovelty,
+            $ready,
+            $availableMin,
+            $availableMax,
+            $notArrived,
+            $reorder,
+            $reorderGtOne,
+            $productFlags,
+            $shipmentMethods,
+            $notArrivedIncludeDraftOrders,
+            $sellingPriceMin,
+            $sellingPriceMax,
+        );
+
+        [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
+        $this->applyListOrdering($q, $sortColumn, $sortDir);
+
+        /** @var Collection<int, Product> $products */
+        $products = $q->get();
+
+        return $products;
+    }
+
+    /**
+     * @param  array<int, string>  $mainTypes
+     * @param  array<int, string>  $types
+     * @param  array<int, string>  $vendors
+     * @param  array<int, string>  $missing
+     * @param  array<int, string>  $purchaseOrderUuids
+     * @param  array<int, string>  $searchTerms
+     * @param  array<int, string>  $productFlags
+     * @param  array<int, string>  $shipmentMethods
+     */
+    private function buildFilteredListQuery(
+        ?string $search,
+        array $mainTypes,
+        array $types,
+        array $vendors,
+        array $missing,
+        array $purchaseOrderUuids,
+        array $searchTerms,
+        bool $includeArchived,
+        ?string $poProductNovelty,
+        ?string $ready,
+        ?int $availableMin,
+        ?int $availableMax,
+        ?int $notArrived,
+        ?int $reorder,
+        bool $reorderGtOne,
+        array $productFlags,
+        array $shipmentMethods,
+        bool $notArrivedIncludeDraftOrders,
+        ?float $sellingPriceMin,
+        ?float $sellingPriceMax,
+    ) {
         $q = Product::query()
-            ->with(['sellingPrice', 'hljExternalContent', 'plamodExternalContent'])
+            ->with(['sellingPrice'])
             ->withCount(['imageAssets as plamod_image_assets_count']);
         $inboundOpenPoQtyExpr = $this->inboundOpenPoQtyExpression($notArrivedIncludeDraftOrders);
         $reorderQtyExpr = $this->reorderQtyExpression($inboundOpenPoQtyExpr);
@@ -439,16 +532,12 @@ final class EloquentProductRepository implements ProductRepository
         }
 
         $q->addSelect([
-            // Used by ProductResource to avoid N+1 checks and to align missing PDP logic
-            // with the intuitive rule: any source with a non-empty description counts.
             DB::raw("EXISTS(
                 select 1 from product_external_contents pec
                 where pec.product_id = products.id
                   and pec.description_html is not null
                   and pec.description_html <> ''
             ) as pdp_has_description"),
-            // Total cost across all PO lines for this product (sum of unit_cost * qty).
-            // Uses received qty when present (>0), otherwise ordered qty.
             DB::raw('(
                 select sum(
                     coalesce(poi.unit_cost, 0) *
@@ -487,9 +576,7 @@ final class EloquentProductRepository implements ProductRepository
         $this->applyReadyFilter($q, $ready);
         $this->applyProductFlagsFilter($q, $productFlags);
         $this->applyShipmentMethodsFilter($q, $shipmentMethods);
-        if ($available !== null) {
-            $q->whereRaw('coalesce(products.available_qty, 0) = ?', [$available]);
-        }
+        $this->applyAvailableRangeFilter($q, $availableMin, $availableMax);
         if ($notArrived !== null) {
             $q->whereRaw("{$inboundOpenPoQtyExpr} = ?", [$notArrived]);
         }
@@ -499,14 +586,20 @@ final class EloquentProductRepository implements ProductRepository
         if ($reorderGtOne) {
             $q->whereRaw("{$reorderQtyExpr} > 1");
         }
+        $this->applySellingPriceRangeFilter($q, $sellingPriceMin, $sellingPriceMax);
 
+        return $q;
+    }
+
+    private function applyListOrdering($q, string $sortColumn, string $sortDir): void
+    {
         if ($sortColumn === '__selling_price') {
             $expr = "(select nullif(trim(sps.selling_price), '') from product_selling_prices sps where sps.product_id = products.id limit 1)";
             $q->orderByRaw("{$expr} is null asc");
             $q->orderByRaw("cast({$expr} as decimal(10,2)) {$sortDir}");
             $q->orderBy('sku', 'asc');
 
-            return $q->paginate(perPage: $perPage);
+            return;
         }
 
         if ($sortColumn === '__received_date') {
@@ -515,7 +608,7 @@ final class EloquentProductRepository implements ProductRepository
             $q->orderByRaw("{$expr} {$sortDir}");
             $q->orderBy('sku', 'asc');
 
-            return $q->paginate(perPage: $perPage);
+            return;
         }
 
         if ($sortColumn === 'sold_4w') {
@@ -523,10 +616,40 @@ final class EloquentProductRepository implements ProductRepository
             $q->orderByRaw("{$expr} {$sortDir}");
             $q->orderBy('sku', 'asc');
 
-            return $q->paginate(perPage: $perPage);
+            return;
         }
 
-        return $q->orderBy($sortColumn, $sortDir)->paginate(perPage: $perPage);
+        $q->orderBy($sortColumn, $sortDir);
+    }
+
+    private function sellingPriceExpression(): string
+    {
+        return "(select nullif(trim(sps.selling_price), '') from product_selling_prices sps where sps.product_id = products.id limit 1)";
+    }
+
+    private function applyAvailableRangeFilter($q, ?int $availableMin, ?int $availableMax): void
+    {
+        if ($availableMin !== null) {
+            $q->whereRaw('coalesce(products.available_qty, 0) >= ?', [$availableMin]);
+        }
+        if ($availableMax !== null) {
+            $q->whereRaw('coalesce(products.available_qty, 0) <= ?', [$availableMax]);
+        }
+    }
+
+    private function applySellingPriceRangeFilter($q, ?float $sellingPriceMin, ?float $sellingPriceMax): void
+    {
+        if ($sellingPriceMin === null && $sellingPriceMax === null) {
+            return;
+        }
+
+        $expr = $this->sellingPriceExpression();
+        if ($sellingPriceMin !== null) {
+            $q->whereRaw("cast({$expr} as decimal(10,2)) >= ?", [$sellingPriceMin]);
+        }
+        if ($sellingPriceMax !== null) {
+            $q->whereRaw("cast({$expr} as decimal(10,2)) <= ?", [$sellingPriceMax]);
+        }
     }
 
     private function applyReadyFilter($q, ?string $ready): void

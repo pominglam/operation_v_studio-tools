@@ -1,0 +1,218 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Jobs\Plamod\SyncPlamodPreordersJob;
+use App\Models\PlamodPreorder;
+use App\Models\Product;
+use App\Services\Plamod\PlamodPreorderSettingsService;
+use App\Services\Products\Http\PlamodScraper;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+
+it('lists preorders with is_new and unit selling price', function (): void {
+    PlamodPreorder::query()->create([
+        'sku' => 'NEW-SKU',
+        'product_name' => 'New kit',
+        'price_stock' => '10.00',
+        'image_download_status' => 'pending',
+    ]);
+
+    PlamodPreorder::query()->create([
+        'sku' => 'OLD-SKU',
+        'product_name' => 'Existing kit',
+        'price_stock' => '20.00',
+        'image_download_status' => 'pending',
+    ]);
+
+    Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000088801',
+        'sku' => 'OLD-SKU',
+        'description' => 'Exists',
+        'vendor' => 'Plamod',
+    ]);
+
+    $this->getJson('/api/v1/preorders?per_page=50')
+        ->assertOk()
+        ->assertJsonFragment(['sku' => 'NEW-SKU', 'is_new' => true, 'unit_selling_price' => '15.00'])
+        ->assertJsonFragment(['sku' => 'OLD-SKU', 'is_new' => false, 'unit_selling_price' => '30.00']);
+});
+
+it('filters new_only preorders', function (): void {
+    PlamodPreorder::query()->create([
+        'sku' => 'ONLY-NEW',
+        'product_name' => 'Only new',
+        'image_download_status' => 'pending',
+    ]);
+
+    PlamodPreorder::query()->create([
+        'sku' => 'IN-CAT',
+        'product_name' => 'In catalog',
+        'image_download_status' => 'pending',
+    ]);
+
+    Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000088802',
+        'sku' => 'IN-CAT',
+        'description' => 'Exists',
+        'vendor' => 'Plamod',
+    ]);
+
+    $this->getJson('/api/v1/preorders?new_only=1')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.sku', 'ONLY-NEW');
+});
+
+it('queues preorder sync job when scraper health is ready', function (): void {
+    Queue::fake();
+
+    Http::fake([
+        'http://plamod_scraper:3001/health' => Http::response([
+            'ok' => true,
+            'routes' => [
+                'POST /download-zip',
+                'POST /export-preorders-csv',
+                'POST /export-manufacturer-preorders-csv',
+                'POST /search-retailer-preorders',
+            ],
+        ], 200),
+    ]);
+
+    $this->postJson('/api/v1/preorders/sync')
+        ->assertOk()
+        ->assertJsonPath('data.ok', true)
+        ->assertJsonStructure(['data' => ['sync_log_id']]);
+
+    Queue::assertPushed(SyncPlamodPreordersJob::class);
+});
+
+it('returns actionable error when plamod scraper is outdated', function (): void {
+    Queue::fake();
+
+    Http::fake([
+        'http://plamod_scraper:3001/health' => Http::response(['ok' => true], 200),
+    ]);
+
+    $this->postJson('/api/v1/preorders/sync')
+        ->assertStatus(422)
+        ->assertJsonPath('data.ok', false)
+        ->assertJsonPath('data.sync_log_id', null)
+        ->assertJsonFragment([
+            'error_message' => 'Plamod scraper is running outdated code. Restart the pricing-tool-plamod-scraper container, then retry.',
+        ]);
+
+    Queue::assertNothingPushed();
+});
+
+it('updates excluded category settings', function (): void {
+    $this->putJson('/api/v1/preorders/settings', [
+        'excluded_categories' => ['Shokugan', 'Tools'],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.excluded_categories', ['Shokugan', 'Tools']);
+
+    $settings = app(PlamodPreorderSettingsService::class)->get();
+    expect($settings['excluded_categories'])->toBe(['Shokugan', 'Tools']);
+});
+
+it('searches pasted lines and reports not found', function (): void {
+    PlamodPreorder::query()->create([
+        'sku' => '5058006',
+        'barcode' => '4573105580066',
+        'product_name' => 'HGUC Qubeley',
+        'image_download_status' => 'pending',
+    ]);
+
+    $scraper = Mockery::mock(PlamodScraper::class);
+    $scraper->shouldReceive('searchRetailerPreorders')
+        ->once()
+        ->with(['missing-kit-name'])
+        ->andReturn([
+            'ok' => true,
+            'results' => ['missing-kit-name' => null],
+        ]);
+    app()->instance(PlamodScraper::class, $scraper);
+
+    $this->postJson('/api/v1/preorders/search-lines', [
+        'lines' => ['5058006', 'missing-kit-name'],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.matched.0.sku', '5058006')
+        ->assertJsonPath('data.not_found.0', 'missing-kit-name')
+        ->assertJsonPath('data.plamod_only', []);
+});
+
+it('returns snapshot phase without calling live scraper', function (): void {
+    PlamodPreorder::query()->create([
+        'sku' => '5058006',
+        'barcode' => '4573105580066',
+        'product_name' => 'HGUC Qubeley',
+        'image_download_status' => 'pending',
+    ]);
+
+    $scraper = Mockery::mock(PlamodScraper::class);
+    $scraper->shouldNotReceive('searchRetailerPreorders');
+    app()->instance(PlamodScraper::class, $scraper);
+
+    $this->postJson('/api/v1/preorders/search-lines', [
+        'lines' => ['5058006', 'missing-kit-name'],
+        'phase' => 'snapshot',
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.matched.0.sku', '5058006')
+        ->assertJsonPath('data.pending_live.0', 'missing-kit-name');
+});
+
+it('returns live phase results for pending lines only', function (): void {
+    $scraper = Mockery::mock(PlamodScraper::class);
+    $scraper->shouldReceive('searchRetailerPreorders')
+        ->once()
+        ->with(['RE 1/100 VIGNA-GHINA'])
+        ->andReturn([
+            'ok' => true,
+            'results' => [
+                'RE 1/100 VIGNA-GHINA' => [
+                    'sku' => '0225768',
+                    'product_name' => 'RE 1/100 VIGNA-GHINA',
+                    'plamod_pdp_url' => 'https://plamod.com/retailer/products/0225768',
+                ],
+            ],
+        ]);
+    app()->instance(PlamodScraper::class, $scraper);
+
+    $this->postJson('/api/v1/preorders/search-lines', [
+        'lines' => ['RE 1/100 VIGNA-GHINA'],
+        'phase' => 'live',
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.plamod_only.0.sku', '0225768')
+        ->assertJsonPath('data.not_found', []);
+});
+
+it('falls back to live Plamod search when a line is missing from the import snapshot', function (): void {
+    $scraper = Mockery::mock(PlamodScraper::class);
+    $scraper->shouldReceive('searchRetailerPreorders')
+        ->once()
+        ->with(['RE 1/100 VIGNA-GHINA'])
+        ->andReturn([
+            'ok' => true,
+            'results' => [
+                'RE 1/100 VIGNA-GHINA' => [
+                    'sku' => '0225768',
+                    'product_name' => 'RE 1/100 VIGNA-GHINA',
+                    'plamod_pdp_url' => 'https://plamod.com/retailer/products/0225768',
+                ],
+            ],
+        ]);
+    app()->instance(PlamodScraper::class, $scraper);
+
+    $this->postJson('/api/v1/preorders/search-lines', [
+        'lines' => ['RE 1/100 VIGNA-GHINA'],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.matched', [])
+        ->assertJsonPath('data.plamod_only.0.sku', '0225768')
+        ->assertJsonPath('data.plamod_only.0.product_name', 'RE 1/100 VIGNA-GHINA')
+        ->assertJsonPath('data.not_found', []);
+});

@@ -213,6 +213,7 @@ Two **different orchestrations** deliberately exist:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/products/export` | Canonical **Shopify CSV** rows; **omit products without selling price** (see `ProductExportService` + requirements). **`Published`** column reflects **`published_on_shopify`**. |
+| GET | `/products/export/filtered` | UTF‑8 BOM **catalog CSV** for all products matching **`GET /products` list filters** (same query params; no pagination). Columns from `ProductExportService::catalogHeader()`. |
 | POST | `/products/export/selected` | Same Shopify format but constrained to submitted UUID subset. |
 | GET | `/products/export/missing-barcode` | Operational export of barcode gaps. |
 | GET | `/products/export/missing-selling-price` | Operational export before pricing work. |
@@ -380,6 +381,20 @@ Two **different orchestrations** deliberately exist:
 | --- | --- | --- |
 | GET | `/tcg/events` | Cached JSON feed for UI consumption. |
 | POST | `/tcg/events/refresh` | Hits Bandai TCG Plus HTTP client (`HttpBandaiTcgPlusApi`) and refreshes storage (see controller + refresh service tests if present). |
+
+### Plamod preorders (`app/Services/Plamod`)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/preorders` | Paginated active preorder rows; `new_only`, `search`; excludes `plamod_preorder.excluded_categories` runtime setting. |
+| POST | `/preorders/sync` | Queues `SyncPlamodPreordersJob` (CSV export via Plamod scraper, import, 15-day image cleanup, image download jobs). |
+| GET | `/preorders/sync-status` | Latest `plamod_preorder_sync_logs` snapshot for UI polling. |
+| GET | `/preorders/settings` | Read excluded category list. |
+| PUT | `/preorders/settings` | Persist excluded categories to `app_runtime_settings`. |
+| POST | `/preorders/search-lines` | Multi-line match; optional `phase` (`snapshot` \| `live` \| `all`). Live fallback returns `plamod_only`. |
+| GET | `/preorders/{sku}/image` | Serve cached image from `storage/app/private/plamod/preorder-images/`. |
+
+Scheduled: `plamod:preorders-sync` daily 06:00 America/Toronto.
 
 ---
 

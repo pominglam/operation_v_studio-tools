@@ -64,8 +64,10 @@ final class ProductsController extends Controller
         /** @var string|null $ready */
         $ready = $request->validated('ready');
 
-        $availableFilter = $request->validated('available');
-        $availableFilter = is_numeric($availableFilter) ? (int) $availableFilter : null;
+        $availableMin = $request->validated('available_min');
+        $availableMin = is_numeric($availableMin) ? (int) $availableMin : null;
+        $availableMax = $request->validated('available_max');
+        $availableMax = is_numeric($availableMax) ? (int) $availableMax : null;
         $notArrivedFilter = $request->validated('not_arrived');
         $notArrivedFilter = is_numeric($notArrivedFilter) ? (int) $notArrivedFilter : null;
         $reorderFilter = $request->validated('reorder');
@@ -91,6 +93,11 @@ final class ProductsController extends Controller
             ? true
             : filter_var($notArrivedIncludeDraftOrders, FILTER_VALIDATE_BOOLEAN);
 
+        $sellingPriceMin = $request->validated('selling_price_min');
+        $sellingPriceMin = is_numeric($sellingPriceMin) ? (float) $sellingPriceMin : null;
+        $sellingPriceMax = $request->validated('selling_price_max');
+        $sellingPriceMax = is_numeric($sellingPriceMax) ? (float) $sellingPriceMax : null;
+
         return ProductResource::collection(
             $this->products->paginate(
                 $perPage,
@@ -106,13 +113,16 @@ final class ProductsController extends Controller
                 $includeArchived,
                 $poProductNovelty,
                 $ready,
-                $availableFilter,
+                $availableMin,
+                $availableMax,
                 $notArrivedFilter,
                 $reorderFilter,
                 $reorderGtOne,
                 $productFlags,
                 $shipmentMethods,
                 $notArrivedIncludeDraftOrders,
+                $sellingPriceMin,
+                $sellingPriceMax,
             ),
         );
     }

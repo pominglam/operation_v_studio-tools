@@ -44,9 +44,9 @@ final class ShopifyOrderUpsertService
                 'name' => isset($node['name']) && is_string($node['name']) ? $node['name'] : null,
                 'display_financial_status' => $financial,
                 'display_fulfillment_status' => $fulfillment,
-                'ordered_at_shop_tz' => ShopifyGraphQlNodeParser::timestamp($orderedAtStr),
+                'ordered_at_shop_tz' => ShopifyGraphQlNodeParser::timestampInShopTz($orderedAtStr),
                 'cancelled_at' => $this->demandEligibility->parseCancelledAt($node),
-                'graphql_updated_at' => ShopifyGraphQlNodeParser::timestamp(
+                'graphql_updated_at' => ShopifyGraphQlNodeParser::timestampInShopTz(
                     isset($node['updatedAt']) && is_string($node['updatedAt']) ? $node['updatedAt'] : null,
                 ),
                 'payload_json' => $node,

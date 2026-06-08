@@ -86,6 +86,25 @@ function setActiveTab(next: ProductsToolTab): void {
     }
 }
 
+function appendQueryParams(params: URLSearchParams, listParams: Record<string, unknown>): void {
+    for (const [key, value] of Object.entries(listParams)) {
+        if (value === undefined || value === null) continue;
+        if (Array.isArray(value)) {
+            for (const item of value) {
+                params.append(`${key}[]`, String(item));
+            }
+            continue;
+        }
+        params.set(key, String(value));
+    }
+}
+
+function downloadFilteredExport(): void {
+    const params = new URLSearchParams();
+    appendQueryParams(params, productsListParams(1, 1));
+    window.location.assign(`/api/v1/products/export/filtered?${params.toString()}`);
+}
+
 function downloadExport(): void {
     const params = new URLSearchParams();
     params.set('format', exportFormat.value);
@@ -345,11 +364,14 @@ type PoProductNovelty = 'all' | 'new' | 'existing';
 const poProductNovelty = ref<PoProductNovelty>('all');
 type ReadyFilter = 'all' | 'ready' | 'not_ready';
 const readyFilter = ref<ReadyFilter>('all');
-const availableFilter = ref('');
+const availableMinFilter = ref('');
+const availableMaxFilter = ref('');
 const notArrivedFilter = ref('');
 const notArrivedIncludeDraftOrders = ref(true);
 const reorderFilter = ref('');
 const reorderGtOne = ref(false);
+const sellingPriceMinFilter = ref('');
+const sellingPriceMaxFilter = ref('');
 
 type SearchMode = 'single' | 'bulk';
 const searchMode = ref<SearchMode>('single');
@@ -475,6 +497,14 @@ function parseNonNegativeIntegerFilter(raw: string): number | undefined {
     return Number.isFinite(n) ? n : undefined;
 }
 
+function parseNonNegativeDecimalFilter(raw: string): number | undefined {
+    const trimmed = raw.trim();
+    if (trimmed === '') return undefined;
+    if (!/^\d+(\.\d{1,2})?$/.test(trimmed)) return undefined;
+    const n = Number.parseFloat(trimmed);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
 const selectionScopeKey = computed<string>(() => {
     const mainTypes = [...selectedMainTypes.value]
         .map((t) => t.trim())
@@ -519,11 +549,14 @@ const selectionScopeKey = computed<string>(() => {
         purchase_order_uuids: pos,
         po_product_novelty: poProductNovelty.value,
         ready: readyFilter.value,
-        available: parseNonNegativeIntegerFilter(availableFilter.value) ?? null,
+        available_min: parseNonNegativeIntegerFilter(availableMinFilter.value) ?? null,
+        available_max: parseNonNegativeIntegerFilter(availableMaxFilter.value) ?? null,
         not_arrived: parseNonNegativeIntegerFilter(notArrivedFilter.value) ?? null,
         not_arrived_include_draft_orders: notArrivedIncludeDraftOrders.value,
         reorder: parseNonNegativeIntegerFilter(reorderFilter.value) ?? null,
         reorder_gt_one: reorderGtOne.value,
+        selling_price_min: parseNonNegativeDecimalFilter(sellingPriceMinFilter.value) ?? null,
+        selling_price_max: parseNonNegativeDecimalFilter(sellingPriceMaxFilter.value) ?? null,
         include_archived: includeArchived.value,
     });
 });
@@ -548,11 +581,14 @@ function productsListParams(per_page: number, pageNum: number): Record<string, u
                 ? selectedShipmentMethods.value
                 : undefined,
         ready: readyFilter.value !== 'all' ? readyFilter.value : undefined,
-        available: parseNonNegativeIntegerFilter(availableFilter.value),
+        available_min: parseNonNegativeIntegerFilter(availableMinFilter.value),
+        available_max: parseNonNegativeIntegerFilter(availableMaxFilter.value),
         not_arrived: parseNonNegativeIntegerFilter(notArrivedFilter.value),
         not_arrived_include_draft_orders: notArrivedIncludeDraftOrders.value ? 1 : 0,
         reorder: parseNonNegativeIntegerFilter(reorderFilter.value),
         reorder_gt_one: reorderGtOne.value ? 1 : undefined,
+        selling_price_min: parseNonNegativeDecimalFilter(sellingPriceMinFilter.value),
+        selling_price_max: parseNonNegativeDecimalFilter(sellingPriceMaxFilter.value),
         include_archived: includeArchived.value ? 1 : undefined,
     };
 
@@ -638,10 +674,13 @@ function buildLoadKey(): string {
         purchase_order_uuids: pos,
         po_product_novelty: poProductNovelty.value,
         ready: readyFilter.value,
-        available: parseNonNegativeIntegerFilter(availableFilter.value) ?? null,
+        available_min: parseNonNegativeIntegerFilter(availableMinFilter.value) ?? null,
+        available_max: parseNonNegativeIntegerFilter(availableMaxFilter.value) ?? null,
         not_arrived: parseNonNegativeIntegerFilter(notArrivedFilter.value) ?? null,
         reorder: parseNonNegativeIntegerFilter(reorderFilter.value) ?? null,
         reorder_gt_one: reorderGtOne.value,
+        selling_price_min: parseNonNegativeDecimalFilter(sellingPriceMinFilter.value) ?? null,
+        selling_price_max: parseNonNegativeDecimalFilter(sellingPriceMaxFilter.value) ?? null,
         include_archived: includeArchived.value,
     });
 }
@@ -1587,11 +1626,14 @@ watch(
         selectedProductFlags,
         selectedShipmentMethods,
         readyFilter,
-        availableFilter,
+        availableMinFilter,
+        availableMaxFilter,
         notArrivedFilter,
         notArrivedIncludeDraftOrders,
         reorderFilter,
         reorderGtOne,
+        sellingPriceMinFilter,
+        sellingPriceMaxFilter,
         sortBy,
         sortDir,
         purchaseOrderUuids,
@@ -1642,10 +1684,14 @@ onMounted(() => {
         selectedShipmentMethods?: string[];
         readyFilter?: ReadyFilter;
         availableFilter?: string;
+        availableMinFilter?: string;
+        availableMaxFilter?: string;
         notArrivedFilter?: string;
         notArrivedIncludeDraftOrders?: boolean;
         reorderFilter?: string;
         reorderGtOne?: boolean;
+        sellingPriceMinFilter?: string;
+        sellingPriceMaxFilter?: string;
         purchaseOrderUuid?: string; // legacy
         purchaseOrderUuids?: string[];
         poProductNovelty?: PoProductNovelty;
@@ -1683,8 +1729,14 @@ onMounted(() => {
         ) {
             readyFilter.value = saved.readyFilter;
         }
-        if (typeof saved.availableFilter === 'string')
-            availableFilter.value = saved.availableFilter;
+        if (typeof saved.availableMinFilter === 'string') {
+            availableMinFilter.value = saved.availableMinFilter;
+        } else if (typeof saved.availableFilter === 'string') {
+            availableMinFilter.value = saved.availableFilter;
+        }
+        if (typeof saved.availableMaxFilter === 'string') {
+            availableMaxFilter.value = saved.availableMaxFilter;
+        }
         if (typeof saved.notArrivedFilter === 'string')
             notArrivedFilter.value = saved.notArrivedFilter;
         if (typeof saved.notArrivedIncludeDraftOrders === 'boolean') {
@@ -1692,6 +1744,12 @@ onMounted(() => {
         }
         if (typeof saved.reorderFilter === 'string') reorderFilter.value = saved.reorderFilter;
         if (typeof saved.reorderGtOne === 'boolean') reorderGtOne.value = saved.reorderGtOne;
+        if (typeof saved.sellingPriceMinFilter === 'string') {
+            sellingPriceMinFilter.value = saved.sellingPriceMinFilter;
+        }
+        if (typeof saved.sellingPriceMaxFilter === 'string') {
+            sellingPriceMaxFilter.value = saved.sellingPriceMaxFilter;
+        }
         if (Array.isArray(saved.purchaseOrderUuids))
             purchaseOrderUuids.value = saved.purchaseOrderUuids;
         else if (
@@ -1771,11 +1829,14 @@ watch(
         selectedProductFlags,
         selectedShipmentMethods,
         readyFilter,
-        availableFilter,
+        availableMinFilter,
+        availableMaxFilter,
         notArrivedFilter,
         notArrivedIncludeDraftOrders,
         reorderFilter,
         reorderGtOne,
+        sellingPriceMinFilter,
+        sellingPriceMaxFilter,
         sortBy,
         sortDir,
         purchaseOrderUuids,
@@ -1799,11 +1860,14 @@ watch(
             selectedProductFlags: selectedProductFlags.value,
             selectedShipmentMethods: selectedShipmentMethods.value,
             readyFilter: readyFilter.value,
-            availableFilter: availableFilter.value,
+            availableMinFilter: availableMinFilter.value,
+            availableMaxFilter: availableMaxFilter.value,
             notArrivedFilter: notArrivedFilter.value,
             notArrivedIncludeDraftOrders: notArrivedIncludeDraftOrders.value,
             reorderFilter: reorderFilter.value,
             reorderGtOne: reorderGtOne.value,
+            sellingPriceMinFilter: sellingPriceMinFilter.value,
+            sellingPriceMaxFilter: sellingPriceMaxFilter.value,
             purchaseOrderUuids: purchaseOrderUuids.value,
             poProductNovelty: poProductNovelty.value,
         });
@@ -1827,11 +1891,14 @@ function resetListState(): void {
     selectedProductFlags.value = [];
     selectedShipmentMethods.value = [];
     readyFilter.value = 'all';
-    availableFilter.value = '';
+    availableMinFilter.value = '';
+    availableMaxFilter.value = '';
     notArrivedFilter.value = '';
     notArrivedIncludeDraftOrders.value = true;
     reorderFilter.value = '';
     reorderGtOne.value = false;
+    sellingPriceMinFilter.value = '';
+    sellingPriceMaxFilter.value = '';
     purchaseOrderUuids.value = [];
     poProductNovelty.value = 'all';
     void load();
@@ -2137,20 +2204,31 @@ function resetListState(): void {
 
                             <div>
                                 <label
-                                    for="products-filter-available"
                                     class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                                     >Available</label
                                 >
-                                <input
-                                    id="products-filter-available"
-                                    v-model="availableFilter"
-                                    type="text"
-                                    inputmode="numeric"
-                                    pattern="[0-9]*"
-                                    class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
-                                    placeholder="Any"
-                                    data-testid="products-filter-available"
-                                />
+                                <div class="mt-1 grid grid-cols-2 gap-2">
+                                    <input
+                                        id="products-filter-available-min"
+                                        v-model="availableMinFilter"
+                                        type="text"
+                                        inputmode="numeric"
+                                        pattern="[0-9]*"
+                                        class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                        placeholder="Min"
+                                        data-testid="products-filter-available-min"
+                                    />
+                                    <input
+                                        id="products-filter-available-max"
+                                        v-model="availableMaxFilter"
+                                        type="text"
+                                        inputmode="numeric"
+                                        pattern="[0-9]*"
+                                        class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                        placeholder="Max"
+                                        data-testid="products-filter-available-max"
+                                    />
+                                </div>
                             </div>
 
                             <div>
@@ -2214,6 +2292,33 @@ function resetListState(): void {
                             <div>
                                 <label
                                     class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                                    >Selling price</label
+                                >
+                                <div class="mt-1 grid grid-cols-2 gap-2">
+                                    <input
+                                        id="products-filter-selling-price-min"
+                                        v-model="sellingPriceMinFilter"
+                                        type="text"
+                                        inputmode="decimal"
+                                        class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                        placeholder="Min"
+                                        data-testid="products-filter-selling-price-min"
+                                    />
+                                    <input
+                                        id="products-filter-selling-price-max"
+                                        v-model="sellingPriceMaxFilter"
+                                        type="text"
+                                        inputmode="decimal"
+                                        class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                        placeholder="Max"
+                                        data-testid="products-filter-selling-price-max"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label
+                                    class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                                     >Per page</label
                                 >
                                 <select
@@ -2243,6 +2348,15 @@ function resetListState(): void {
                             </div>
 
                             <div class="flex flex-col gap-2 md:flex-row md:items-center">
+                                <button
+                                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                                    type="button"
+                                    :disabled="loading || total === 0"
+                                    data-testid="products-export-filtered-button"
+                                    @click="downloadFilteredExport"
+                                >
+                                    Export filtered results ({{ total }})
+                                </button>
                                 <div v-if="syncMissingError" class="text-rose-700">
                                     {{ syncMissingError }}
                                 </div>
