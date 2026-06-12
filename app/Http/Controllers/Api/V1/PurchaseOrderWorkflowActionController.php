@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Exceptions\Shopify\ShopifyAdminConfigurationException;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\PurchaseOrderPrepareInventoryRequest;
 use App\Http\Resources\Api\V1\PurchaseOrderResource;
 use App\Services\Products\ClearStaleLatestArrivalService;
 use App\Services\PurchaseOrders\Exceptions\PurchaseOrderWorkflowPrepareInventoryException;
@@ -161,10 +162,11 @@ final class PurchaseOrderWorkflowActionController extends Controller
 
     public function prepareInventory(
         string $id,
+        PurchaseOrderPrepareInventoryRequest $request,
         PurchaseOrderWorkflowPrepareInventoryService $prepare,
     ): JsonResponse {
         try {
-            $summary = $prepare->prepare($id);
+            $summary = $prepare->prepare($id, $request->pullShopify());
         } catch (PurchaseOrderWorkflowPrepareInventoryException $e) {
             return response()->json([
                 'ok' => false,

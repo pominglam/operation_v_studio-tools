@@ -25,6 +25,7 @@ it('accepts plamod scraper with preorders export route', function (): void {
                 'POST /download-zip',
                 'POST /export-preorders-csv',
                 'POST /export-manufacturer-preorders-csv',
+                'POST /list-manufacturer-preorders-filters',
                 'POST /search-retailer-preorders',
             ],
         ], 200),

@@ -53,6 +53,39 @@ it('posts manufacturer preorder export requests to the scraper', function (): vo
     expect($result['has_vigna_sku'])->toBeTrue();
 });
 
+it('lists manufacturer preorder filters from the scraper', function (): void {
+    Http::fake([
+        'http://plamod-scraper.test/list-manufacturer-preorders-filters' => Http::response([
+            'ok' => true,
+            'series' => [['name' => 'Mobile Suit Gundam', 'preorder_count' => 10, 'other_count' => 2]],
+            'category_lines' => [['name' => 'SD Cross Silhouette', 'preorder_count' => 0, 'other_count' => 0]],
+        ], 200),
+    ]);
+
+    $client = new PlamodScraperClient('http://plamod-scraper.test');
+    $result = $client->listManufacturerPreorderFilters(1);
+
+    expect($result['ok'])->toBeTrue();
+    expect($result['series'][0]['name'])->toBe('Mobile Suit Gundam');
+});
+
+it('posts per-series manufacturer export requests to the scraper', function (): void {
+    Http::fake([
+        'http://plamod-scraper.test/export-manufacturer-preorders-csv' => Http::response([
+            'ok' => true,
+            'csv_storage_path' => 'plamod/manufacturer_preorder_exports/msg.csv',
+            'row_count' => 27,
+            'series' => 'Mobile Suit Gundam',
+        ], 200),
+    ]);
+
+    $client = new PlamodScraperClient('http://plamod-scraper.test');
+    $result = $client->exportManufacturerPreordersCsv(1, 'Mobile Suit Gundam');
+
+    expect($result['ok'])->toBeTrue();
+    expect($result['row_count'])->toBe(27);
+});
+
 it('posts retailer preorder search queries to the scraper', function (): void {
     Http::fake([
         'http://plamod-scraper.test/search-retailer-preorders' => Http::response([

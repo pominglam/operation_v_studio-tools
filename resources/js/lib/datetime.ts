@@ -46,7 +46,10 @@ export function formatTorontoDateTime(iso: string | null | undefined): string {
 
 export function formatTorontoDate(iso: string | null | undefined): string {
     if (!iso) return '—';
-    const d = new Date(iso);
+    const s = String(iso).trim();
+    if (s === '') return '—';
+    // API calendar dates (Y-m-d) are date-only — parse at local noon to avoid UTC day shifts.
+    const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(`${s}T12:00:00`) : new Date(s);
     if (Number.isNaN(d.getTime())) return '—';
 
     // en-CA yields YYYY-MM-DD, and we pin to America/Toronto to match backend timezone.

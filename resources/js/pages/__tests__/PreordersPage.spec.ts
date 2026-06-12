@@ -41,6 +41,18 @@ describe('PreordersPage', () => {
             if (url === '/api/v1/preorders/sync-status') {
                 return Promise.resolve({ data: { data: { status: 'never', counts: {} } } });
             }
+            if (url === '/api/v1/preorders/manufacturer-filters') {
+                return Promise.resolve({
+                    data: {
+                        data: {
+                            counts: { undecided: 1, include: 1, exclude: 0 },
+                            undecided: [{ id: 1, name: 'Dragon Ball Z', filter_type: 'series', plamod_preorder_count: 5 }],
+                            include: [{ id: 2, name: 'Mobile Suit Gundam', filter_type: 'series', plamod_preorder_count: 27 }],
+                            exclude: [],
+                        },
+                    },
+                });
+            }
             return Promise.resolve({ data: {} });
         });
     });
@@ -92,5 +104,66 @@ describe('PreordersPage', () => {
                 params: expect.objectContaining({ per_page: 50 }),
             }),
         );
+    });
+
+    it('loads manufacturer filters on mount', async () => {
+        const wrapper = mount(PreordersPage);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(apiGet).toHaveBeenCalledWith('/api/v1/preorders/manufacturer-filters');
+        expect(wrapper.text()).toContain('Mobile Suit Gundam');
+        expect(wrapper.text()).toContain('Not decided');
+    });
+
+    it('shows live manufacturer export progress while sync is running', async () => {
+        apiGet.mockImplementation((url: string) => {
+            if (url === '/api/v1/preorders/sync-status') {
+                return Promise.resolve({
+                    data: {
+                        data: {
+                            status: 'running',
+                            counts: {
+                                phase: 'manufacturer_export',
+                                manufacturer_filters_processed: 15,
+                                manufacturer_filters_total: 72,
+                                manufacturer_export_succeeded: 14,
+                                manufacturer_export_failed: 1,
+                                manufacturer_current_filter: 'Mobile Suit Gundam',
+                            },
+                        },
+                    },
+                });
+            }
+            if (url === '/api/v1/preorders') {
+                return Promise.resolve({
+                    data: { data: [], meta: { current_page: 1, last_page: 1, per_page: 50, total: 0, categories: [] } },
+                });
+            }
+            if (url === '/api/v1/preorders/settings') {
+                return Promise.resolve({ data: { data: { excluded_categories: [] } } });
+            }
+            if (url === '/api/v1/preorders/manufacturer-filters') {
+                return Promise.resolve({
+                    data: {
+                        data: {
+                            counts: { undecided: 0, include: 1, exclude: 0 },
+                            undecided: [],
+                            include: [],
+                            exclude: [],
+                        },
+                    },
+                });
+            }
+            return Promise.resolve({ data: {} });
+        });
+
+        const wrapper = mount(PreordersPage);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(wrapper.get('[data-testid="preorders-sync-progress"]').text()).toContain('Exporting manufacturer filters (15/72)');
+        expect(wrapper.get('[data-testid="preorders-sync-progress"]').text()).toContain('Mobile Suit Gundam');
+        expect(wrapper.get('[data-testid="preorders-sync-progress"]').text()).toContain('14 succeeded');
     });
 });

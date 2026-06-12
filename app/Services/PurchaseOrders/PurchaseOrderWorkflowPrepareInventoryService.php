@@ -33,7 +33,7 @@ final class PurchaseOrderWorkflowPrepareInventoryService
      *   shopify_quantities: array<int, array{sku:string, shopify_available:int|null}>
      * }
      */
-    public function prepare(string $purchaseOrderUuid): array
+    public function prepare(string $purchaseOrderUuid, bool $pullShopify = false): array
     {
         $freshness = $this->mirrorFreshness->snapshot();
 
@@ -44,6 +44,19 @@ final class PurchaseOrderWorkflowPrepareInventoryService
                 ...$summary,
                 'sync_mode' => 'skipped_mirror_fresh',
                 'mirror_fresh' => true,
+                'max_age_seconds' => $freshness['max_age_seconds'],
+                'products_last_completed_at' => $freshness['products_last_completed_at'],
+                'inventory_levels_last_completed_at' => $freshness['inventory_levels_last_completed_at'],
+            ];
+        }
+
+        if (! $pullShopify) {
+            $summary = $this->validateAndSummarize($purchaseOrderUuid);
+
+            return [
+                ...$summary,
+                'sync_mode' => 'mirror_stale_confirmation_required',
+                'mirror_fresh' => false,
                 'max_age_seconds' => $freshness['max_age_seconds'],
                 'products_last_completed_at' => $freshness['products_last_completed_at'],
                 'inventory_levels_last_completed_at' => $freshness['inventory_levels_last_completed_at'],

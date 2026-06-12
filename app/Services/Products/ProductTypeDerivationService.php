@@ -34,6 +34,7 @@ final class ProductTypeDerivationService
             '/\bHGAC\b/i' => 'HGAC',
             '/\bHGUC\b/i' => 'HGUC',
             '/\bHGAW\b/i' => 'HGAW',
+            '/\bRE\s+1\s*\/\s*100\b/i' => 'RE',
             '/\bFULL\s+MECHANICS\b/i' => 'FM',
             '/\bENTRY\s+GRADE\b/i' => 'EG',
             '/\bOPTION\s+PARTS\b/i' => 'OPTION PARTS',
@@ -56,7 +57,7 @@ final class ProductTypeDerivationService
         }
 
         // Generic model-grade prefixes.
-        if (preg_match('/^(HGUC|HGBF|HGCE|HGAC|HG|MG|RG|SDW?|SD|30MM)\b/i', $name, $m) === 1) {
+        if (preg_match('/^(HGUC|HGBF|HGCE|HGAC|HG|MG|RG|RE|SDW?|SD|30MM)\b/i', $name, $m) === 1) {
             return mb_strtoupper((string) $m[1]);
         }
 

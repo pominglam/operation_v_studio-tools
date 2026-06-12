@@ -10,6 +10,7 @@ it('derives expected product types from name using mapping rules', function (): 
     expect($svc->deriveFromName('Orphans HG 1/144 Something'))->toBe('Orphans HG');
     expect($svc->deriveFromName('BB368 OO Gundam'))->toBe('SD');
     expect($svc->deriveFromName('FULL MECHANICS 1/100 Gundam'))->toBe('FM');
+    expect($svc->deriveFromName('Bandai RE 1/100 Bawoo'))->toBe('RE');
     expect($svc->deriveFromName('EX-STANDARD Hello'))->toBe('EX-Standard');
     expect($svc->deriveFromName('EX-Standard Hello'))->toBe('EX-Standard');
     expect($svc->deriveFromName('SDBF Star Winning Gundam'))->toBe('SDBF');
@@ -31,6 +32,7 @@ it('falls back to common grade prefixes when no specific mapping exists', functi
     $svc = app(ProductTypeDerivationService::class);
 
     expect($svc->deriveFromName('HG 1/144 Gundam'))->toBe('HG');
+    expect($svc->deriveFromName('RE 1/100 Bawoo'))->toBe('RE');
     expect($svc->deriveFromName('RG 1/144 Gundam'))->toBe('RG');
     expect($svc->deriveFromName('SD Gundam'))->toBe('SD');
     expect($svc->deriveFromName('Totally Unknown Product'))->toBeNull();

@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace App\Jobs\Plamod;
 
-use App\Models\PlamodPreorderSyncLog;
-use App\Services\Plamod\PlamodPreorderSyncLogger;
-use App\Services\Plamod\PlamodPreorderSyncService;
+use App\Services\Plamod\PlamodPreorderSyncAutoResume;
+use App\Services\Plamod\PlamodPreorderSyncOrchestrator;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
@@ -14,33 +13,29 @@ final class SyncPlamodPreordersJob implements ShouldQueue
 {
     use Queueable;
 
-    public int $timeout = 3600;
+    public int $timeout = 120;
+
+    public int $tries = 1;
 
     public function __construct(
         public readonly int $syncLogId,
-    ) {}
+        public readonly bool $resume = false,
+        public readonly int $autoResumeAttempt = 0,
+    ) {
+        $this->onQueue(PlamodPreorderSyncOrchestrator::QUEUE);
+    }
 
-    public function handle(PlamodPreorderSyncService $sync, PlamodPreorderSyncLogger $logger): void
+    public function handle(PlamodPreorderSyncOrchestrator $orchestrator): void
     {
-        try {
-            $sync->run($this->syncLogId);
-        } catch (\Throwable $e) {
-            /** @var PlamodPreorderSyncLog|null $log */
-            $log = PlamodPreorderSyncLog::query()->find($this->syncLogId);
-            if ($log !== null && $log->status !== 'failed') {
-                $logger->fail($log, $e->getMessage());
-            }
-
-            throw $e;
-        }
+        $orchestrator->start($this->syncLogId, $this->resume);
     }
 
     public function failed(\Throwable $exception): void
     {
-        /** @var PlamodPreorderSyncLog|null $log */
-        $log = PlamodPreorderSyncLog::query()->find($this->syncLogId);
-        if ($log !== null && $log->status !== 'failed' && $log->status !== 'completed') {
-            app(PlamodPreorderSyncLogger::class)->fail($log, $exception->getMessage());
-        }
+        app(PlamodPreorderSyncAutoResume::class)->scheduleIfRecoverable(
+            $this->syncLogId,
+            $exception,
+            $this->autoResumeAttempt,
+        );
     }
 }

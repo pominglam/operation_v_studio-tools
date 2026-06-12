@@ -3,8 +3,11 @@ const http = require('http');
 const {
   downloadPlamodZipForSku,
   exportPlamodPreordersCsv,
+  listManufacturerPreorderFilters,
   exportManufacturerPreordersCsv,
   searchRetailerPreorders,
+  resetPlamodScraperSessions,
+  enrichPreorderPdpFields,
 } = require('./src/plamod');
 
 function readJson(req) {
@@ -60,9 +63,30 @@ const server = http.createServer(async (req, res) => {
           'POST /download-zip',
           'POST /export-preorders-csv',
           'POST /export-manufacturer-preorders-csv',
+          'POST /list-manufacturer-preorders-filters',
           'POST /search-retailer-preorders',
+          'POST /reset-scraper-sessions',
+          'POST /enrich-preorder-pdp-fields',
         ],
       });
+    }
+
+    if (req.method === 'POST' && req.url === '/reset-scraper-sessions') {
+      const started = Date.now();
+      // eslint-disable-next-line no-console
+      console.log('[plamod] reset-scraper-sessions start');
+      try {
+        const out = await resetPlamodScraperSessions();
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] reset-scraper-sessions end ok=${Boolean(out?.ok)} ms=${Date.now() - started}`);
+        return sendJson(res, 200, out);
+      } catch (e) {
+        return sendJson(res, 200, {
+          ok: false,
+          error_message: String(e?.message || 'Unknown error'),
+          duration_ms: Date.now() - started,
+        });
+      }
     }
 
     if (req.method === 'POST' && req.url === '/download-zip') {
@@ -110,14 +134,30 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJson(req);
       const manufacturerId = payload.manufacturer_id ?? payload.manufacturerId ?? 1;
       const tab = typeof payload.tab === 'string' ? payload.tab : 'Preorder';
-      const category = payload.category === null ? null : (typeof payload.category === 'string' ? payload.category : 'Plastic Model Kits');
+      const series = typeof payload.series === 'string' && payload.series.trim() ? payload.series.trim() : null;
+      const categoryLine =
+        typeof payload.category_line === 'string' && payload.category_line.trim()
+          ? payload.category_line.trim()
+          : typeof payload.categoryLine === 'string' && payload.categoryLine.trim()
+            ? payload.categoryLine.trim()
+            : null;
+      const category =
+        series || categoryLine
+          ? null
+          : payload.category === null
+            ? null
+            : typeof payload.category === 'string'
+              ? payload.category
+              : 'Plastic Model Kits';
       const started = Date.now();
       // eslint-disable-next-line no-console
-      console.log(`[plamod] export-manufacturer-preorders-csv start id=${manufacturerId} tab=${tab}`);
+      console.log(
+        `[plamod] export-manufacturer-preorders-csv start id=${manufacturerId} tab=${tab} series=${series || '-'} category_line=${categoryLine || '-'}`,
+      );
 
       try {
         const out = await withTimeout(
-          exportManufacturerPreordersCsv({ manufacturerId, tab, category }),
+          exportManufacturerPreordersCsv({ manufacturerId, tab, category, series, categoryLine }),
           requestTimeoutMs,
         );
         // eslint-disable-next-line no-console
@@ -126,6 +166,51 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         // eslint-disable-next-line no-console
         console.log(`[plamod] export-manufacturer-preorders-csv error msg=${String(e?.message || 'Unknown error')} ms=${Date.now() - started}`);
+        return sendJson(res, 200, { ok: false, error_message: String(e?.message || 'Unknown error'), duration_ms: Date.now() - started });
+      }
+    }
+
+    if (req.method === 'POST' && req.url === '/list-manufacturer-preorders-filters') {
+      const payload = await readJson(req);
+      const manufacturerId = payload.manufacturer_id ?? payload.manufacturerId ?? 1;
+      const tab = typeof payload.tab === 'string' ? payload.tab : 'Preorder';
+      const started = Date.now();
+      // eslint-disable-next-line no-console
+      console.log(`[plamod] list-manufacturer-preorders-filters start id=${manufacturerId} tab=${tab}`);
+
+      try {
+        const out = await withTimeout(listManufacturerPreorderFilters({ manufacturerId, tab }), requestTimeoutMs);
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plamod] list-manufacturer-preorders-filters end ok=${Boolean(out?.ok)} series=${out?.series?.length ?? 0} ms=${Date.now() - started}`,
+        );
+        return sendJson(res, 200, out);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plamod] list-manufacturer-preorders-filters error msg=${String(e?.message || 'Unknown error')} ms=${Date.now() - started}`,
+        );
+        return sendJson(res, 200, { ok: false, error_message: String(e?.message || 'Unknown error'), duration_ms: Date.now() - started });
+      }
+    }
+
+    if (req.method === 'POST' && req.url === '/enrich-preorder-pdp-fields') {
+      const payload = await readJson(req);
+      const skus = Array.isArray(payload.skus) ? payload.skus : [];
+      const started = Date.now();
+      // eslint-disable-next-line no-console
+      console.log(`[plamod] enrich-preorder-pdp-fields start count=${skus.length}`);
+
+      try {
+        const out = await withTimeout(enrichPreorderPdpFields(skus), requestTimeoutMs);
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plamod] enrich-preorder-pdp-fields end ok=${Boolean(out?.ok)} enriched=${out?.enriched ?? 0} ms=${Date.now() - started}`,
+        );
+        return sendJson(res, 200, out);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] enrich-preorder-pdp-fields error msg=${String(e?.message || 'Unknown error')} ms=${Date.now() - started}`);
         return sendJson(res, 200, { ok: false, error_message: String(e?.message || 'Unknown error'), duration_ms: Date.now() - started });
       }
     }

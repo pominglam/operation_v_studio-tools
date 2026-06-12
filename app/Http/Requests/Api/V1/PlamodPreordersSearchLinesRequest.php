@@ -14,9 +14,10 @@ final class PlamodPreordersSearchLinesRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'lines' => ['required', 'array', 'min:1', 'max:200'],
+            'lines' => ['required_unless:phase,live_poll', 'array', 'min:1', 'max:200'],
             'lines.*' => ['string', 'max:500'],
-            'phase' => ['sometimes', 'string', 'in:snapshot,live,all'],
+            'phase' => ['sometimes', 'string', 'in:snapshot,live,live_start,live_poll,all'],
+            'job_id' => ['required_if:phase,live_poll', 'uuid'],
         ];
     }
 }

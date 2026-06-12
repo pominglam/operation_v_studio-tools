@@ -49,6 +49,7 @@ final class PlamodScraperHealthService
         $required = [
             'POST /export-preorders-csv',
             'POST /export-manufacturer-preorders-csv',
+            'POST /list-manufacturer-preorders-filters',
             'POST /search-retailer-preorders',
         ];
         $missing = array_values(array_filter($required, static fn (string $route): bool => ! in_array($route, $routes, true)));

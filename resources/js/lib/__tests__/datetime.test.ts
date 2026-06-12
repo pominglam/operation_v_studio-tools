@@ -24,6 +24,12 @@ describe('datetime', () => {
     expect(out).toBe('2026-04-06');
   });
 
+  it('does not shift API calendar dates (Y-m-d) across timezones', () => {
+    expect(formatTorontoDate('2018-05-01')).toBe('2018-05-01');
+    expect(formatTorontoDate('2026-06-09')).toBe('2026-06-09');
+    expect(formatTorontoDate('2027-01-31')).toBe('2027-01-31');
+  });
+
   it('returns placeholder for null/undefined/invalid', () => {
     expect(formatTorontoDateTime(null)).toBe('—');
     expect(formatTorontoDateTime(undefined)).toBe('—');

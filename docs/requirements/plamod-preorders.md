@@ -7,7 +7,9 @@ Browse Plamod **new preorders** inside the pricing tool: import the retailer CSV
 ## Data source
 
 - Plamod retailer portal: `GET /retailer/preorders` → **CSV export** (Playwright via `plamod-scraper`).
-- Full snapshot **replace** each sync; rows missing from the new CSV are marked `dropped_at`.
+- Full snapshot merge each sync from hub CSV (both preorder tabs) + included Bandai manufacturer series exports.
+- Rows missing from the merged CSV are marked `dropped_at` only after **3+ days** without `last_seen_at` (grace for incomplete exports).
+- Live multi-line search upserts PDP-enriched `plamod_only` hits into the snapshot until the next refresh.
 
 ## Server settings (global, not per-user)
 
@@ -16,7 +18,7 @@ Browse Plamod **new preorders** inside the pricing tool: import the retailer CSV
 
 ## Selling price
 
-- `unit_selling_price = price_stock × 1.5` (two decimal places).
+- `unit_selling_price = CharmPricingCalculator::sellingPriceX99FromCost(price_preorder ?? price_stock, 1.5)` — charm-priced **X.99** (PO cost preferred).
 
 ## Images
 
@@ -30,7 +32,7 @@ Browse Plamod **new preorders** inside the pricing tool: import the retailer CSV
 
 - Table columns: image, new badge, SKU, barcode, product name, series, release date, manufacturer, category, stock/preorder/backorder costs, unit selling price, preorder qty, PO due date, ETA, Plamod PDP link.
 - Filters: excluded categories (settings), **New only** (in Plamod, not in our catalog).
-- Multi-line search paste → matched rows + **not found** list.
+- Multi-line search paste → **`rows`** populate the main grid (imported + live PDP-enriched); only **not found** lines stay in the paste panel.
 - **Refresh from Plamod** button; auto-refresh table while sync job runs.
 - Last sync status panel.
 

@@ -31,9 +31,10 @@ final class PlamodPreorderStatusService
         $counts = $latest->counts_json ?? [];
         $status = (string) $latest->status;
         if ($status === 'running') {
+            $phase = (string) ($counts['phase'] ?? '');
             $total = (int) ($counts['images_total'] ?? 0);
             $done = (int) ($counts['images_completed'] ?? 0) + (int) ($counts['images_failed'] ?? 0);
-            if ($total > 0 && $done < $total) {
+            if ($phase === 'images' || ($total > 0 && $done < $total)) {
                 $counts['phase'] = 'images';
             }
         }

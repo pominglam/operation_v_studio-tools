@@ -22,6 +22,7 @@ type PreorderRow = {
     po_due_date: string | null;
     eta_date: string | null;
     is_new: boolean;
+    not_in_import: boolean;
     image_url: string | null;
     image_download_status: string;
     plamod_pdp_url: string;
@@ -38,13 +39,19 @@ type Paginated<T> = {
     };
 };
 
+type FailureSummaryRow = {
+    error_kind: string;
+    error_message: string;
+    count: number;
+};
+
 type SyncStatus = {
     status: string;
     sync_log_id: number | null;
     started_at: string | null;
     finished_at: string | null;
     duration_ms: number | null;
-    counts: Record<string, number | string>;
+    counts: Record<string, number | string | FailureSummaryRow[]>;
     error_summary: string | null;
 };
 
@@ -52,6 +59,23 @@ type SearchLinesResult = {
     matched: Array<{ line: string; sku: string; product_name: string; in_snapshot?: boolean }>;
     plamod_only: Array<{ line: string; sku: string; product_name: string; plamod_pdp_url: string }>;
     not_found: string[];
+};
+
+type ManufacturerFilterRow = {
+    id: number;
+    filter_type: 'series' | 'category_line';
+    name: string;
+    plamod_preorder_count: number | null;
+    plamod_other_count: number | null;
+    decision: 'undecided' | 'include' | 'exclude';
+    last_seen_at: string | null;
+};
+
+type ManufacturerFiltersGrouped = {
+    undecided: ManufacturerFilterRow[];
+    include: ManufacturerFilterRow[];
+    exclude: ManufacturerFilterRow[];
+    counts: { undecided: number; include: number; exclude: number };
 };
 
 const rows = ref<PreorderRow[]>([]);
@@ -73,13 +97,24 @@ const excludedCategories = ref<string[]>([]);
 const settingsSaving = ref(false);
 const settingsError = ref<string | null>(null);
 
+const manufacturerFilters = ref<ManufacturerFiltersGrouped | null>(null);
+const manufacturerFiltersLoading = ref(false);
+const manufacturerFiltersDiscovering = ref(false);
+const manufacturerFiltersSaving = ref(false);
+const manufacturerFiltersError = ref<string | null>(null);
+
 const pasteLines = ref('');
 const pasteSearching = ref(false);
 const pasteSearchStatus = ref<string | null>(null);
 const pasteResult = ref<SearchLinesResult | null>(null);
+const pasteGridActive = ref(false);
+const pasteGridRows = ref<PreorderRow[]>([]);
 const pasteError = ref<string | null>(null);
 
-const LIVE_SEARCH_BATCH_SIZE = 3;
+const displayRows = computed(() => (pasteGridActive.value ? pasteGridRows.value : rows.value));
+
+const LIVE_SEARCH_POLL_MS = 3000;
+const MANUFACTURER_DISCOVER_POLL_MS = 3000;
 
 let pollTimer: number | null = null;
 
@@ -88,19 +123,130 @@ const excludedCategoryOptions = computed<MultiSelectOption[]>(() =>
 );
 
 const syncBusy = computed(
-    () => syncing.value || ['queued', 'running'].includes(syncStatus.value?.status ?? ''),
+    () =>
+        syncing.value
+        || ['queued', 'running'].includes(syncStatus.value?.status ?? ''),
 );
+
+const syncAutoResumeAttempt = computed(() => Number(syncStatus.value?.counts?.auto_resume_attempt ?? 0));
+
+const syncFailureSummary = computed((): FailureSummaryRow[] => {
+    const raw = syncStatus.value?.counts?.failure_summary;
+    if (!Array.isArray(raw)) {
+        return [];
+    }
+
+    return raw.filter(
+        (row): row is FailureSummaryRow =>
+            typeof row === 'object'
+            && row !== null
+            && typeof (row as FailureSummaryRow).error_kind === 'string'
+            && typeof (row as FailureSummaryRow).error_message === 'string'
+            && typeof (row as FailureSummaryRow).count === 'number',
+    );
+});
+
+const syncManufacturerFailureLabel = computed((): string | null => {
+    const failed = Number(syncStatus.value?.counts?.manufacturer_export_failed ?? 0);
+    const succeeded = Number(syncStatus.value?.counts?.manufacturer_export_succeeded ?? 0);
+    const retried = Number(syncStatus.value?.counts?.manufacturer_export_retried ?? 0);
+    if (failed <= 0) {
+        return null;
+    }
+
+    return `Manufacturer export: ${succeeded} succeeded, ${failed} failed (${retried} retries).`;
+});
 
 const syncPhaseLabel = computed(() => {
     const counts = syncStatus.value?.counts ?? {};
     const phase = String(counts.phase ?? '');
+    if (phase === 'queued' && syncAutoResumeAttempt.value > 0) {
+        return `Auto-resuming sync (attempt ${syncAutoResumeAttempt.value}/5)…`;
+    }
+    if (phase === 'discover') {
+        return 'Discovering manufacturer filters…';
+    }
+    if (phase === 'hub_export') {
+        return 'Exporting hub preorders…';
+    }
+    if (phase === 'manufacturer_export' || phase === 'manufacturer_recovery') {
+        const processed = Number(counts.manufacturer_filters_processed ?? 0);
+        const total = Number(counts.manufacturer_filters_total ?? 0);
+        const current = String(counts.manufacturer_current_filter ?? '').trim();
+        const succeeded = Number(counts.manufacturer_export_succeeded ?? 0);
+        const failed = Number(counts.manufacturer_export_failed ?? 0);
+        const prefix =
+            phase === 'manufacturer_recovery' ? 'Retrying failed filters' : 'Exporting manufacturer filters';
+        if (total > 0) {
+            const base = `${prefix} (${processed}/${total})`;
+            if (current !== '') {
+                return `${base} — ${current}`;
+            }
+            if (succeeded > 0 || failed > 0) {
+                return `${base} · ${succeeded} ok, ${failed} failed`;
+            }
+
+            return base;
+        }
+
+        return `${prefix}…`;
+    }
+    if (phase === 'import') {
+        return 'Merging and importing rows…';
+    }
     if (phase === 'images') {
         const total = Number(counts.images_total ?? 0);
         const done = Number(counts.images_completed ?? 0) + Number(counts.images_failed ?? 0);
         return `Downloading images (${done}/${total})`;
     }
-    if (syncBusy.value) return 'Importing CSV…';
+    if (syncBusy.value) {
+        return 'Sync in progress…';
+    }
+
     return '';
+});
+
+const syncProgressPercent = computed((): number | null => {
+    const counts = syncStatus.value?.counts ?? {};
+    const phase = String(counts.phase ?? '');
+    if (phase === 'manufacturer_export' || phase === 'manufacturer_recovery') {
+        const processed = Number(counts.manufacturer_filters_processed ?? 0);
+        const total = Number(counts.manufacturer_filters_total ?? 0);
+        if (total <= 0) {
+            return null;
+        }
+
+        return Math.min(100, Math.round((processed / total) * 100));
+    }
+    if (phase === 'images') {
+        const total = Number(counts.images_total ?? 0);
+        const done = Number(counts.images_completed ?? 0) + Number(counts.images_failed ?? 0);
+        if (total <= 0) {
+            return null;
+        }
+
+        return Math.min(100, Math.round((done / total) * 100));
+    }
+
+    return null;
+});
+
+const syncProgressDetail = computed((): string | null => {
+    if (!syncBusy.value) {
+        return null;
+    }
+
+    const counts = syncStatus.value?.counts ?? {};
+    const phase = String(counts.phase ?? '');
+    if (phase === 'manufacturer_export' || phase === 'manufacturer_recovery') {
+        const succeeded = Number(counts.manufacturer_export_succeeded ?? 0);
+        const failed = Number(counts.manufacturer_export_failed ?? 0);
+        if (succeeded > 0 || failed > 0) {
+            return `${succeeded} succeeded · ${failed} failed so far`;
+        }
+    }
+
+    return null;
 });
 
 function stopPolling(): void {
@@ -123,8 +269,40 @@ function startPolling(): void {
     }, 3000);
 }
 
+function clearPasteGrid(): void {
+    pasteGridActive.value = false;
+    pasteGridRows.value = [];
+}
+
+function mergePasteRowsInLineOrder(
+    lines: string[],
+    matched: SearchLinesResult['matched'],
+    importedRows: PreorderRow[],
+    plamodOnly: SearchLinesResult['plamod_only'],
+    liveRows: PreorderRow[],
+): PreorderRow[] {
+    const importedBySku = new Map(importedRows.map((row) => [row.sku, row]));
+    const matchedByLine = new Map(
+        matched.map((hit) => [hit.line, importedBySku.get(hit.sku) ?? null]),
+    );
+    const liveByLine = new Map(
+        plamodOnly.map((hit, index) => [hit.line, liveRows[index] ?? null]),
+    );
+
+    const ordered: PreorderRow[] = [];
+    for (const line of lines) {
+        const row = matchedByLine.get(line) ?? liveByLine.get(line) ?? null;
+        if (row) {
+            ordered.push(row);
+        }
+    }
+
+    return ordered;
+}
+
 async function fetchRows(opts?: { silent?: boolean }): Promise<void> {
     if (!opts?.silent) {
+        clearPasteGrid();
         loading.value = true;
         errorMessage.value = null;
     }
@@ -160,6 +338,103 @@ async function loadSettings(): Promise<void> {
     } catch (err) {
         settingsError.value = err instanceof Error ? err.message : String(err);
     }
+}
+
+async function loadManufacturerFilters(): Promise<void> {
+    manufacturerFiltersLoading.value = true;
+    manufacturerFiltersError.value = null;
+    try {
+        const res = await api.get<{ data: ManufacturerFiltersGrouped }>('/api/v1/preorders/manufacturer-filters');
+        manufacturerFilters.value = res.data.data ?? null;
+    } catch (err) {
+        manufacturerFiltersError.value = err instanceof Error ? err.message : String(err);
+    } finally {
+        manufacturerFiltersLoading.value = false;
+    }
+}
+
+async function pollManufacturerFilterDiscoverJob(jobId: string): Promise<ManufacturerFiltersGrouped> {
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+        const res = await api.post<{
+            data: {
+                status: string;
+                ok?: boolean;
+                filters?: ManufacturerFiltersGrouped;
+                error_message?: string | null;
+            };
+        }>('/api/v1/preorders/manufacturer-filters/discover', { job_id: jobId }, { timeout: 30_000 });
+
+        const status = res.data.data?.status ?? '';
+        if (status === 'completed') {
+            if (res.data.data?.filters) {
+                return res.data.data.filters;
+            }
+            throw new Error('Discover completed without filter data.');
+        }
+        if (status === 'failed') {
+            throw new Error(res.data.data?.error_message ?? 'Discover failed');
+        }
+        if (status === 'missing') {
+            throw new Error(res.data.data?.error_message ?? 'Discover job not found.');
+        }
+
+        await sleep(MANUFACTURER_DISCOVER_POLL_MS);
+    }
+
+    throw new Error('Discover timed out while waiting for background job.');
+}
+
+async function discoverManufacturerFilters(): Promise<void> {
+    manufacturerFiltersDiscovering.value = true;
+    manufacturerFiltersError.value = null;
+    try {
+        const startRes = await api.post<{ data: { job_id: string; status: string } }>(
+            '/api/v1/preorders/manufacturer-filters/discover',
+            {},
+            { timeout: 30_000 },
+        );
+        const jobId = startRes.data.data?.job_id ?? '';
+        if (jobId === '') {
+            manufacturerFiltersError.value = 'Discover did not return a job id.';
+            return;
+        }
+
+        manufacturerFilters.value = await pollManufacturerFilterDiscoverJob(jobId);
+    } catch (err) {
+        manufacturerFiltersError.value = extractApiError(err);
+    } finally {
+        manufacturerFiltersDiscovering.value = false;
+    }
+}
+
+async function setManufacturerFilterDecision(
+    row: ManufacturerFilterRow,
+    decision: ManufacturerFilterRow['decision'],
+): Promise<void> {
+    manufacturerFiltersSaving.value = true;
+    manufacturerFiltersError.value = null;
+    try {
+        const res = await api.put<{ data: ManufacturerFiltersGrouped }>('/api/v1/preorders/manufacturer-filters', {
+            updates: [{ id: row.id, decision }],
+        });
+        manufacturerFilters.value = res.data.data ?? null;
+    } catch (err) {
+        manufacturerFiltersError.value = err instanceof Error ? err.message : String(err);
+    } finally {
+        manufacturerFiltersSaving.value = false;
+    }
+}
+
+function manufacturerFilterBadge(row: ManufacturerFilterRow): string {
+    const pre = row.plamod_preorder_count;
+    const other = row.plamod_other_count;
+    if (pre === null && other === null) {
+        return '';
+    }
+    if (other === null) {
+        return String(pre ?? 0);
+    }
+    return `${pre ?? 0} / ${other}`;
 }
 
 async function saveSettings(): Promise<void> {
@@ -215,6 +490,47 @@ async function refreshFromPlamod(): Promise<void> {
     }
 }
 
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+        window.setTimeout(resolve, ms);
+    });
+}
+
+async function pollLiveSearchJob(
+    jobId: string,
+): Promise<Pick<SearchLinesResult, 'plamod_only' | 'not_found'> & { rows: PreorderRow[] }> {
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+        const res = await api.post<{
+            data: {
+                status: string;
+                plamod_only: SearchLinesResult['plamod_only'];
+                not_found: SearchLinesResult['not_found'];
+                rows: PreorderRow[];
+                error_summary: string | null;
+            };
+        }>('/api/v1/preorders/search-lines', { phase: 'live_poll', job_id: jobId }, { timeout: 30_000 });
+
+        const status = res.data.data?.status ?? '';
+        if (status === 'completed') {
+            return {
+                plamod_only: res.data.data?.plamod_only ?? [],
+                not_found: res.data.data?.not_found ?? [],
+                rows: res.data.data?.rows ?? [],
+            };
+        }
+        if (status === 'failed') {
+            throw new Error(res.data.data?.error_summary ?? 'Live Plamod search failed.');
+        }
+        if (status === 'missing') {
+            throw new Error(res.data.data?.error_summary ?? 'Live search job not found.');
+        }
+
+        await sleep(LIVE_SEARCH_POLL_MS);
+    }
+
+    throw new Error('Live Plamod search timed out while waiting for background job.');
+}
+
 function formatSearchError(err: unknown): string {
     if (err && typeof err === 'object' && 'response' in err) {
         const status = (err as { response?: { status?: number } }).response?.status;
@@ -230,6 +546,7 @@ async function searchPasteLines(): Promise<void> {
     pasteSearchStatus.value = null;
     pasteError.value = null;
     pasteResult.value = null;
+    clearPasteGrid();
     const lines = pasteLines.value
         .split(/\r?\n/)
         .map((l) => l.trim())
@@ -241,41 +558,56 @@ async function searchPasteLines(): Promise<void> {
     try {
         pasteSearchStatus.value = `Step 1/2: Matching imported snapshot (${lines.length} lines)…`;
         const snapshotRes = await api.post<{
-            data: { matched: SearchLinesResult['matched']; pending_live: string[] };
+            data: {
+                matched: SearchLinesResult['matched'];
+                pending_live: string[];
+                rows: PreorderRow[];
+            };
         }>('/api/v1/preorders/search-lines', { lines, phase: 'snapshot' }, { timeout: 60_000 });
 
         const matched = snapshotRes.data.data?.matched ?? [];
         const pendingLive = snapshotRes.data.data?.pending_live ?? [];
+        const importedRows = snapshotRes.data.data?.rows ?? [];
         pasteResult.value = { matched, plamod_only: [], not_found: [] };
 
         if (pendingLive.length === 0) {
-            pasteSearchStatus.value = 'Done — all lines matched the imported snapshot.';
+            pasteGridRows.value = mergePasteRowsInLineOrder(lines, matched, importedRows, [], []);
+            pasteGridActive.value = true;
+            pasteSearchStatus.value = `Done — ${pasteGridRows.value.length} row(s) in grid.`;
             return;
         }
 
-        const totalBatches = Math.ceil(pendingLive.length / LIVE_SEARCH_BATCH_SIZE);
-        const plamodOnly: SearchLinesResult['plamod_only'] = [];
-        const notFound: string[] = [];
-
-        for (let i = 0; i < pendingLive.length; i += LIVE_SEARCH_BATCH_SIZE) {
-            const batch = pendingLive.slice(i, i + LIVE_SEARCH_BATCH_SIZE);
-            const batchNo = Math.floor(i / LIVE_SEARCH_BATCH_SIZE) + 1;
-            pasteSearchStatus.value = `Step 2/2: Searching Plamod live (batch ${batchNo}/${totalBatches}, ${batch.length} line${batch.length === 1 ? '' : 's'})…`;
-
-            const liveRes = await api.post<{
-                data: Pick<SearchLinesResult, 'plamod_only' | 'not_found'>;
-            }>(
-                '/api/v1/preorders/search-lines',
-                { lines: batch, phase: 'live' },
-                { timeout: 180_000 },
-            );
-
-            plamodOnly.push(...(liveRes.data.data?.plamod_only ?? []));
-            notFound.push(...(liveRes.data.data?.not_found ?? []));
-            pasteResult.value = { matched, plamod_only: [...plamodOnly], not_found: [...notFound] };
+        pasteSearchStatus.value = `Step 2/2: Queuing live Plamod search (${pendingLive.length} lines)…`;
+        const startRes = await api.post<{ data: { job_id: string; status: string } }>(
+            '/api/v1/preorders/search-lines',
+            { lines: pendingLive, phase: 'live_start' },
+            { timeout: 30_000 },
+        );
+        const jobId = startRes.data.data?.job_id ?? '';
+        if (jobId === '') {
+            pasteGridRows.value = mergePasteRowsInLineOrder(lines, matched, importedRows, [], []);
+            pasteGridActive.value = true;
+            pasteSearchStatus.value = `Done — ${pasteGridRows.value.length} row(s) in grid.`;
+            return;
         }
 
-        pasteSearchStatus.value = `Done — ${matched.length} imported, ${plamodOnly.length} on Plamod only, ${notFound.length} not found.`;
+        pasteSearchStatus.value = `Step 2/2: Searching Plamod live (${pendingLive.length} lines in background)…`;
+        const live = await pollLiveSearchJob(jobId);
+        pasteResult.value = {
+            matched,
+            plamod_only: live.plamod_only,
+            not_found: live.not_found,
+        };
+        pasteGridRows.value = mergePasteRowsInLineOrder(
+            lines,
+            matched,
+            importedRows,
+            live.plamod_only,
+            live.rows,
+        );
+        pasteGridActive.value = true;
+
+        pasteSearchStatus.value = `Done — ${pasteGridRows.value.length} in grid (${matched.length} imported, ${live.plamod_only.length} on Plamod only, ${live.not_found.length} not found).`;
     } catch (err) {
         pasteError.value = formatSearchError(err);
     } finally {
@@ -289,7 +621,7 @@ watch([newOnly, perPage], async () => {
 });
 
 onMounted(async () => {
-    await Promise.all([fetchRows(), loadSettings(), loadSyncStatus()]);
+    await Promise.all([fetchRows(), loadSettings(), loadManufacturerFilters(), loadSyncStatus()]);
     if (syncBusy.value) {
         startPolling();
     }
@@ -310,7 +642,7 @@ onUnmounted(() => {
                     <span v-if="syncStatus?.finished_at" class="ml-2 text-slate-500">
                         Last sync: {{ formatTorontoDateTime(syncStatus.finished_at) }}
                     </span>
-                    <span v-if="syncPhaseLabel" class="ml-2 font-medium text-amber-700">
+                    <span v-if="syncPhaseLabel && syncProgressPercent === null" class="ml-2 font-medium text-amber-700">
                         {{ syncPhaseLabel }}
                     </span>
                 </p>
@@ -327,10 +659,42 @@ onUnmounted(() => {
             </button>
         </div>
 
+        <div
+            v-if="syncBusy && syncProgressPercent !== null"
+            class="rounded-lg border border-amber-200 bg-amber-50/70 p-3"
+            data-testid="preorders-sync-progress"
+        >
+            <div class="flex flex-wrap items-center justify-between gap-2 text-sm text-amber-900">
+                <span class="font-medium">{{ syncPhaseLabel }}</span>
+                <span v-if="syncProgressDetail" class="text-amber-800">{{ syncProgressDetail }}</span>
+            </div>
+            <div class="mt-2 h-2 overflow-hidden rounded-full bg-amber-100">
+                <div
+                    class="h-full rounded-full bg-amber-500 transition-all duration-500"
+                    :style="{ width: `${syncProgressPercent}%` }"
+                />
+            </div>
+        </div>
+
         <p v-if="syncError" class="text-sm text-red-700">{{ syncError }}</p>
         <p v-if="syncStatus?.status === 'failed' && syncStatus.error_summary" class="text-sm text-red-700">
             Sync failed: {{ syncStatus.error_summary }}
         </p>
+        <div
+            v-if="syncManufacturerFailureLabel || syncFailureSummary.length > 0"
+            class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+            data-testid="preorders-sync-failures"
+        >
+            <p v-if="syncManufacturerFailureLabel" class="font-medium">{{ syncManufacturerFailureLabel }}</p>
+            <ul v-if="syncFailureSummary.length > 0" class="mt-2 list-disc space-y-1 pl-5">
+                <li v-for="row in syncFailureSummary.slice(0, 6)" :key="`${row.error_kind}-${row.error_message}`">
+                    {{ row.count }}× {{ row.error_kind }} — {{ row.error_message }}
+                </li>
+            </ul>
+            <p v-if="syncStatus?.counts?.failure_log_path" class="mt-2 font-mono text-xs text-amber-800">
+                Failure log: {{ syncStatus.counts.failure_log_path }}
+            </p>
+        </div>
 
         <div class="rounded-lg border border-slate-200 bg-white p-4">
             <h2 class="mb-2 text-sm font-semibold text-slate-800">Settings</h2>
@@ -353,6 +717,146 @@ onUnmounted(() => {
                 </button>
             </div>
             <p v-if="settingsError" class="mt-2 text-sm text-red-700">{{ settingsError }}</p>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                    <h2 class="text-sm font-semibold text-slate-800">Bandai manufacturer series</h2>
+                    <p class="mt-1 text-xs text-slate-600">
+                        Choose which BANDAI HOBBY SERIES (and SD category lines) to pull on refresh. Undecided
+                        filters are skipped until you include them.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    class="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-800 transition hover:bg-slate-100 disabled:opacity-60"
+                    :disabled="manufacturerFiltersDiscovering || syncBusy"
+                    data-testid="preorders-discover-manufacturer-filters"
+                    @click="discoverManufacturerFilters"
+                >
+                    {{ manufacturerFiltersDiscovering ? 'Discovering…' : 'Refresh series list' }}
+                </button>
+            </div>
+
+            <p v-if="manufacturerFiltersLoading" class="text-sm text-slate-600">Loading manufacturer filters…</p>
+            <p v-if="manufacturerFiltersError" class="text-sm text-red-700">{{ manufacturerFiltersError }}</p>
+
+            <div v-if="manufacturerFilters" class="grid gap-4 lg:grid-cols-3">
+                <div>
+                    <h3 class="text-xs font-semibold uppercase tracking-wide text-amber-700">
+                        Not decided ({{ manufacturerFilters.counts.undecided }})
+                    </h3>
+                    <ul class="mt-2 max-h-64 space-y-2 overflow-y-auto text-sm">
+                        <li
+                            v-for="row in manufacturerFilters.undecided"
+                            :key="row.id"
+                            class="rounded border border-amber-100 bg-amber-50/40 px-2 py-1.5"
+                        >
+                            <div class="font-medium text-slate-900">{{ row.name }}</div>
+                            <div class="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                                <span>{{ row.filter_type === 'category_line' ? 'Category line' : 'Series' }}</span>
+                                <span v-if="manufacturerFilterBadge(row)">Preorder {{ manufacturerFilterBadge(row) }}</span>
+                            </div>
+                            <div class="mt-1 flex gap-1">
+                                <button
+                                    type="button"
+                                    class="rounded border border-emerald-300 px-2 py-0.5 text-xs text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
+                                    :disabled="manufacturerFiltersSaving"
+                                    @click="setManufacturerFilterDecision(row, 'include')"
+                                >
+                                    Include
+                                </button>
+                                <button
+                                    type="button"
+                                    class="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                                    :disabled="manufacturerFiltersSaving"
+                                    @click="setManufacturerFilterDecision(row, 'exclude')"
+                                >
+                                    Exclude
+                                </button>
+                            </div>
+                        </li>
+                        <li v-if="manufacturerFilters.undecided.length === 0" class="text-slate-500">None</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h3 class="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                        Included ({{ manufacturerFilters.counts.include }})
+                    </h3>
+                    <ul class="mt-2 max-h-64 space-y-2 overflow-y-auto text-sm">
+                        <li
+                            v-for="row in manufacturerFilters.include"
+                            :key="row.id"
+                            class="rounded border border-emerald-100 bg-emerald-50/40 px-2 py-1.5"
+                        >
+                            <div class="font-medium text-slate-900">{{ row.name }}</div>
+                            <div class="mt-0.5 text-xs text-slate-600">
+                                <span>{{ row.filter_type === 'category_line' ? 'Category line' : 'Series' }}</span>
+                                <span v-if="manufacturerFilterBadge(row)" class="ml-2">Preorder {{ manufacturerFilterBadge(row) }}</span>
+                            </div>
+                            <div class="mt-1 flex gap-1">
+                                <button
+                                    type="button"
+                                    class="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                                    :disabled="manufacturerFiltersSaving"
+                                    @click="setManufacturerFilterDecision(row, 'undecided')"
+                                >
+                                    Undecided
+                                </button>
+                                <button
+                                    type="button"
+                                    class="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                                    :disabled="manufacturerFiltersSaving"
+                                    @click="setManufacturerFilterDecision(row, 'exclude')"
+                                >
+                                    Exclude
+                                </button>
+                            </div>
+                        </li>
+                        <li v-if="manufacturerFilters.include.length === 0" class="text-slate-500">None</li>
+                    </ul>
+                </div>
+
+                <div>
+                    <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Excluded ({{ manufacturerFilters.counts.exclude }})
+                    </h3>
+                    <ul class="mt-2 max-h-64 space-y-2 overflow-y-auto text-sm">
+                        <li
+                            v-for="row in manufacturerFilters.exclude"
+                            :key="row.id"
+                            class="rounded border border-slate-200 bg-slate-50 px-2 py-1.5"
+                        >
+                            <div class="font-medium text-slate-900">{{ row.name }}</div>
+                            <div class="mt-0.5 text-xs text-slate-600">
+                                <span>{{ row.filter_type === 'category_line' ? 'Category line' : 'Series' }}</span>
+                                <span v-if="manufacturerFilterBadge(row)" class="ml-2">Preorder {{ manufacturerFilterBadge(row) }}</span>
+                            </div>
+                            <div class="mt-1 flex gap-1">
+                                <button
+                                    type="button"
+                                    class="rounded border border-emerald-300 px-2 py-0.5 text-xs text-emerald-800 hover:bg-emerald-50 disabled:opacity-60"
+                                    :disabled="manufacturerFiltersSaving"
+                                    @click="setManufacturerFilterDecision(row, 'include')"
+                                >
+                                    Include
+                                </button>
+                                <button
+                                    type="button"
+                                    class="rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                                    :disabled="manufacturerFiltersSaving"
+                                    @click="setManufacturerFilterDecision(row, 'undecided')"
+                                >
+                                    Undecided
+                                </button>
+                            </div>
+                        </li>
+                        <li v-if="manufacturerFilters.exclude.length === 0" class="text-slate-500">None</li>
+                    </ul>
+                </div>
+            </div>
         </div>
 
         <div class="rounded-lg border border-slate-200 bg-white p-4">
@@ -382,44 +886,11 @@ onUnmounted(() => {
                 </p>
             </div>
             <p v-if="pasteError" class="mt-2 text-sm text-red-700">{{ pasteError }}</p>
-            <div v-if="pasteResult" class="mt-3 space-y-3">
-                <div class="grid gap-3 md:grid-cols-2">
-                    <div>
-                        <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500">Matched (imported)</h3>
-                        <ul class="mt-1 space-y-1 text-sm">
-                            <li v-for="m in pasteResult.matched" :key="m.line">
-                                <span class="font-mono text-slate-700">{{ m.sku }}</span>
-                                — {{ m.product_name }}
-                                <span class="text-slate-400">({{ m.line }})</span>
-                            </li>
-                            <li v-if="pasteResult.matched.length === 0" class="text-slate-500">None</li>
-                        </ul>
-                    </div>
-                    <div>
-                        <h3 class="text-xs font-semibold uppercase tracking-wide text-slate-500">Not found</h3>
-                        <ul class="mt-1 space-y-1 text-sm text-red-700">
-                            <li v-for="nf in pasteResult.not_found" :key="nf">{{ nf }}</li>
-                            <li v-if="pasteResult.not_found.length === 0" class="text-slate-500">None</li>
-                        </ul>
-                    </div>
-                </div>
-                <div v-if="pasteResult.plamod_only.length > 0">
-                    <h3 class="text-xs font-semibold uppercase tracking-wide text-amber-700">
-                        On Plamod (not in latest import)
-                    </h3>
-                    <ul class="mt-1 space-y-1 text-sm text-amber-900">
-                        <li v-for="p in pasteResult.plamod_only" :key="p.line">
-                            <a
-                                :href="p.plamod_pdp_url"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="font-mono underline"
-                            >{{ p.sku }}</a>
-                            — {{ p.product_name }}
-                            <span class="text-amber-700/80">({{ p.line }})</span>
-                        </li>
-                    </ul>
-                </div>
+            <div v-if="pasteResult && pasteResult.not_found.length > 0" class="mt-3">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-red-700">Not found</h3>
+                <ul class="mt-1 space-y-1 text-sm text-red-700">
+                    <li v-for="nf in pasteResult.not_found" :key="nf">{{ nf }}</li>
+                </ul>
             </div>
         </div>
 
@@ -450,6 +921,16 @@ onUnmounted(() => {
         </div>
 
         <p v-if="errorMessage" class="text-sm text-red-700">{{ errorMessage }}</p>
+        <p v-if="pasteGridActive" class="text-sm text-slate-600">
+            Showing multi-line search results ({{ pasteGridRows.length }} rows).
+            <button
+                type="button"
+                class="ml-1 text-blue-700 underline"
+                @click="clearPasteGrid(); fetchRows()"
+            >
+                Clear and show all preorders
+            </button>
+        </p>
 
         <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
             <table class="min-w-full text-left text-sm">
@@ -468,7 +949,7 @@ onUnmounted(() => {
                 </thead>
                 <tbody>
                     <tr
-                        v-for="row in rows"
+                        v-for="row in displayRows"
                         :key="row.sku"
                         class="border-b border-slate-100 hover:bg-slate-50"
                     >
@@ -502,6 +983,12 @@ onUnmounted(() => {
                                 >
                                     New
                                 </span>
+                                <span
+                                    v-if="row.not_in_import"
+                                    class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-900"
+                                >
+                                    Plamod only
+                                </span>
                             </div>
                             <div class="mt-0.5 text-xs text-slate-500">
                                 <span v-if="row.series">{{ row.series }}</span>
@@ -514,7 +1001,7 @@ onUnmounted(() => {
                             {{ row.release_date ? formatTorontoDate(row.release_date) : '—' }}
                         </td>
                         <td class="px-3 py-2 align-middle">{{ row.category ?? '—' }}</td>
-                        <td class="px-3 py-2 align-middle">{{ formatMoney2OrEmpty(row.price_stock) }}</td>
+                        <td class="px-3 py-2 align-middle">{{ formatMoney2OrEmpty(row.price_preorder ?? row.price_stock) }}</td>
                         <td class="px-3 py-2 align-middle font-medium">{{ formatMoney2OrEmpty(row.unit_selling_price) }}</td>
                         <td class="px-3 py-2 align-middle">{{ row.quantity_preorder ?? '—' }}</td>
                         <td class="px-3 py-2 whitespace-nowrap align-middle">
@@ -524,14 +1011,14 @@ onUnmounted(() => {
                             {{ row.eta_date ? formatTorontoDate(row.eta_date) : '—' }}
                         </td>
                     </tr>
-                    <tr v-if="!loading && rows.length === 0">
+                    <tr v-if="!loading && displayRows.length === 0">
                         <td colspan="9" class="px-3 py-8 text-center text-slate-500">No preorders found.</td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
-        <div v-if="meta" class="flex items-center justify-between text-sm text-slate-600">
+        <div v-if="meta && !pasteGridActive" class="flex items-center justify-between text-sm text-slate-600">
             <span>
                 Page {{ meta.current_page }} of {{ meta.last_page }} · {{ meta.total }} rows
             </span>

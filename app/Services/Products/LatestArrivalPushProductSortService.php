@@ -119,14 +119,37 @@ final class LatestArrivalPushProductSortService
 
     private function resolveTypeLabel(Product $product): string
     {
-        $type = is_string($product->type) ? trim($product->type) : '';
-        if ($type !== '') {
-            return $this->normalizeTypeLabel($type);
+        $stored = is_string($product->type) ? trim($product->type) : '';
+        $storedLabel = $stored !== '' ? $this->normalizeTypeLabel($stored) : '';
+        $derived = $this->typeDerivation->deriveFromName((string) $product->description);
+        $derivedLabel = $derived !== null ? $this->normalizeTypeLabel($derived) : '';
+
+        if ($derivedLabel !== '' && $this->isGenericSortType($storedLabel)) {
+            return $derivedLabel;
         }
 
-        $derived = $this->typeDerivation->deriveFromName((string) $product->description);
+        if ($storedLabel !== '') {
+            return $storedLabel;
+        }
 
-        return $derived !== null ? $this->normalizeTypeLabel($derived) : '';
+        return $derivedLabel;
+    }
+
+    private function isGenericSortType(string $normalizedType): bool
+    {
+        if ($normalizedType === '' || $normalizedType === 'OTHERS') {
+            return true;
+        }
+
+        /** @var array<string, int> $map */
+        $map = config('latest_arrival.type_to_rank', []);
+        foreach ($map as $key => $_rank) {
+            if ($this->normalizeTypeLabel((string) $key) === $normalizedType) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function normalizeTypeLabel(string $type): string
@@ -174,7 +197,7 @@ final class LatestArrivalPushProductSortService
     private function typeRankSortIndex(int $rank): int
     {
         /** @var array<int, int> $order */
-        $order = config('latest_arrival.type_rank_display_order', [7, 69, 6, 5, 4, 3, 2, 1, 8]);
+        $order = config('latest_arrival.type_rank_display_order', [7, 69, 6, 65, 5, 4, 3, 2, 8]);
         $pos = array_search($rank, $order, true);
 
         return $pos === false ? PHP_INT_MAX : (int) $pos;

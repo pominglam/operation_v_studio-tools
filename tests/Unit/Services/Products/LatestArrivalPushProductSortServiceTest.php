@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use App\Models\Product;
+use Tests\TestCase;
+
+uses(TestCase::class);
 use App\Services\Products\LatestArrivalPushProductSortService;
 use App\Services\Products\ProductTypeDerivationService;
 use Illuminate\Support\Carbon;
@@ -47,6 +50,95 @@ it('sorts preview rows by type rank order then created_at descending', function 
         'HG-OLD',
         'EG-1',
     ]);
+});
+
+it('derives RE from description when stored type is Others', function (): void {
+    $service = new LatestArrivalPushProductSortService(new ProductTypeDerivationService);
+
+    $re = new Product([
+        'sku' => 'RE-OTHERS',
+        'type' => 'Others',
+        'description' => 'RE 1/100 Bawoo',
+    ]);
+    $re->created_at = Carbon::parse('2026-01-01');
+    $mg = new Product([
+        'sku' => 'MG-1',
+        'type' => 'MG',
+        'description' => 'MG kit',
+    ]);
+    $mg->created_at = Carbon::parse('2026-06-01');
+    $rg = new Product([
+        'sku' => 'RG-1',
+        'type' => 'RG',
+        'description' => 'RG kit',
+    ]);
+    $rg->created_at = Carbon::parse('2026-07-01');
+
+    expect($service->typeLabelForProduct($re))->toBe('RE')
+        ->and($service->typeRankForProduct($re))->toBe(65);
+
+    $sorted = $service->sortProducts([$re, $rg, $mg]);
+
+    expect(array_map(static fn (Product $p): string => (string) $p->sku, $sorted))->toBe([
+        'MG-1',
+        'RE-OTHERS',
+        'RG-1',
+    ]);
+});
+
+it('places RE and Full Mechanics immediately after MG', function (): void {
+    $service = new LatestArrivalPushProductSortService(new ProductTypeDerivationService);
+
+    $re = new Product([
+        'sku' => 'RE-1',
+        'type' => null,
+        'description' => 'RE 1/100 Bawoo',
+        'created_at' => Carbon::parse('2026-06-01'),
+    ]);
+    $fm = new Product([
+        'sku' => 'FM-1',
+        'type' => null,
+        'description' => 'FULL MECHANICS 1/100 Forbidden Gundam',
+        'created_at' => Carbon::parse('2026-05-01'),
+    ]);
+    $mg = new Product([
+        'sku' => 'MG-1',
+        'type' => 'MG',
+        'description' => 'MG kit',
+        'created_at' => Carbon::parse('2026-04-01'),
+    ]);
+    $rg = new Product([
+        'sku' => 'RG-1',
+        'type' => 'RG',
+        'description' => 'RG kit',
+        'created_at' => Carbon::parse('2026-07-01'),
+    ]);
+
+    $sorted = $service->sortProducts([$rg, $fm, $re, $mg]);
+
+    expect(array_map(static fn (Product $p): string => (string) $p->sku, $sorted))->toBe([
+        'MG-1',
+        'RE-1',
+        'FM-1',
+        'RG-1',
+    ]);
+});
+
+it('places Entry Grade and Pokemon after 30MM 30MF and 30MS within rank 8', function (): void {
+    $service = new LatestArrivalPushProductSortService(new ProductTypeDerivationService);
+
+    $rows = [
+        ['sku' => 'FR-1', 'type_rank' => 8, 'type_label' => 'FIGURE-RISE', 'product_created_at' => '2026-06-01T12:00:00+00:00'],
+        ['sku' => 'PK-1', 'type_rank' => 8, 'type_label' => 'POKEMON', 'product_created_at' => '2026-05-01T12:00:00+00:00'],
+        ['sku' => 'EG-1', 'type_rank' => 8, 'type_label' => 'EG', 'product_created_at' => '2026-04-01T12:00:00+00:00'],
+        ['sku' => 'MS-1', 'type_rank' => 8, 'type_label' => '30MS', 'product_created_at' => '2026-03-01T12:00:00+00:00'],
+        ['sku' => 'MF-1', 'type_rank' => 8, 'type_label' => '30MF', 'product_created_at' => '2026-02-01T12:00:00+00:00'],
+        ['sku' => 'MM-1', 'type_rank' => 8, 'type_label' => '30MM', 'product_created_at' => '2026-01-01T12:00:00+00:00'],
+    ];
+
+    $sorted = $service->sortPreviewRows($rows);
+
+    expect(array_column($sorted, 'sku'))->toBe(['MM-1', 'MF-1', 'MS-1', 'EG-1', 'PK-1', 'FR-1']);
 });
 
 it('maps product types to rank buckets from config', function (): void {
@@ -150,7 +242,7 @@ it('groups Orphans HG together before regular HG within rank 3', function (): vo
     expect(array_column($sorted, 'sku'))->toBe(['ORPHAN-1', 'ORPHAN-2', 'HG-1', 'HG-2']);
 });
 
-it('groups 30MM then 30MF then 30MS then Figure-rise within rank 8', function (): void {
+it('groups 30MM then 30MF then 30MS then Figure-rise within rank 8 when no Entry Grade or Pokemon', function (): void {
     $service = new LatestArrivalPushProductSortService(new ProductTypeDerivationService);
 
     $rows = [
@@ -173,20 +265,20 @@ it('sorts products by type rank then newest created_at within group', function (
         'sku' => '111',
         'type' => 'HG',
         'description' => 'Older HG',
-        'created_at' => Carbon::parse('2026-01-10'),
     ]);
+    $olderHg->created_at = Carbon::parse('2026-01-10');
     $newerHg = new Product([
         'sku' => '222',
         'type' => 'HG',
         'description' => 'Newer HG',
-        'created_at' => Carbon::parse('2026-05-10'),
     ]);
+    $newerHg->created_at = Carbon::parse('2026-05-10');
     $rg = new Product([
         'sku' => '333',
         'type' => 'RG',
         'description' => 'RG kit',
-        'created_at' => Carbon::parse('2026-06-01'),
     ]);
+    $rg->created_at = Carbon::parse('2026-06-01');
 
     $sorted = $service->sortProducts([$olderHg, $rg, $newerHg]);
 

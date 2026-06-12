@@ -54,7 +54,53 @@ it('skips full store sync on prepare when catalog mirror is fresh within one hou
         ->assertJsonPath('data.lines_validated', 1);
 });
 
-it('refreshes only PO SKUs on prepare when catalog mirror is stale', function (): void {
+it('validates and asks for pull confirmation when catalog mirror is stale', function (): void {
+    $product = ShopifyProduct::query()->create([
+        'gid' => 'gid://shopify/Product/9001',
+        'handle' => 'prep-po-sku',
+        'title' => 'Prep PO SKU',
+        'status' => 'ACTIVE',
+    ]);
+    ShopifyProductVariant::query()->create([
+        'gid' => 'gid://shopify/ProductVariant/9001',
+        'product_gid' => $product->gid,
+        'sku' => 'PREP-PO-1',
+        'inventory_item_gid' => 'gid://shopify/InventoryItem/9001',
+        'inventory_quantity' => 4,
+    ]);
+
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000112011',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+    ]);
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000112012',
+        'sku' => 'PREP-PO-1',
+        'description' => 'Prepare PO scoped',
+        'vendor' => 'Plamod',
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $p->id,
+        'sku' => 'PREP-PO-1',
+        'vendor' => 'Plamod',
+        'qty_ordered' => 3,
+        'qty_received' => 3,
+    ]);
+
+    $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/prepare-inventory")
+        ->assertOk()
+        ->assertJsonPath('data.sync_mode', 'mirror_stale_confirmation_required')
+        ->assertJsonPath('data.mirror_fresh', false)
+        ->assertJsonPath('data.lines_validated', 1)
+        ->assertJsonPath('data.shopify_quantities.0.shopify_available', 4);
+
+    expect(ShopifyInventoryLevel::query()->where('inventory_item_gid', 'gid://shopify/InventoryItem/9001')->exists())
+        ->toBeFalse();
+});
+
+it('refreshes only PO SKUs on prepare when catalog mirror is stale and pull is confirmed', function (): void {
     $product = ShopifyProduct::query()->create([
         'gid' => 'gid://shopify/Product/9001',
         'handle' => 'prep-po-sku',
@@ -104,7 +150,9 @@ it('refreshes only PO SKUs on prepare when catalog mirror is stale', function ()
         'qty_received' => 3,
     ]);
 
-    $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/prepare-inventory")
+    $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/prepare-inventory", [
+        'pull_shopify' => true,
+    ])
         ->assertOk()
         ->assertJsonPath('data.sync_mode', 'po_inventory_refresh')
         ->assertJsonPath('data.mirror_fresh', false)

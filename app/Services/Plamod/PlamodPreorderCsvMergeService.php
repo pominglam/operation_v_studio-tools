@@ -23,6 +23,7 @@ final class PlamodPreorderCsvMergeService
         }
 
         $disk = Storage::disk('local');
+        /** @var array<int, string|null>|null $header */
         $header = null;
         /** @var array<string, array<int, string|null>> $rowsBySku */
         $rowsBySku = [];
@@ -38,12 +39,12 @@ final class PlamodPreorderCsvMergeService
             }
 
             try {
-                $fileHeader = fgetcsv($handle);
+                $fileHeader = fgetcsv($handle, escape: '\\');
                 if (! is_array($fileHeader)) {
                     continue;
                 }
 
-                if ($header === null) {
+                if ($header === null || count($fileHeader) > count($header)) {
                     $header = $fileHeader;
                 }
 
@@ -52,17 +53,24 @@ final class PlamodPreorderCsvMergeService
                     continue;
                 }
 
-                while (($row = fgetcsv($handle)) !== false) {
+                $fileMap = $this->headerMap($fileHeader);
+
+                while (($row = fgetcsv($handle, escape: '\\')) !== false) {
                     if (! is_array($row)) {
                         continue;
                     }
 
                     $sku = trim((string) ($row[$skuIndex] ?? ''));
-                    if ($sku === '') {
+                    if (! PlamodPreorderSkuValidator::isValid($sku)) {
                         continue;
                     }
 
-                    $rowsBySku[$sku] = $row;
+                    $rowsBySku[$sku] = $this->overlayRow(
+                        $header,
+                        $rowsBySku[$sku] ?? null,
+                        $fileMap,
+                        $row,
+                    );
                 }
             } finally {
                 fclose($handle);
@@ -81,15 +89,77 @@ final class PlamodPreorderCsvMergeService
         }
 
         try {
-            fputcsv($out, $header);
+            fputcsv($out, $header, escape: '\\');
             foreach ($rowsBySku as $row) {
-                fputcsv($out, $row);
+                fputcsv($out, $this->padRow($header, $row), escape: '\\');
             }
         } finally {
             fclose($out);
         }
 
         return $destinationStoragePath;
+    }
+
+    /**
+     * @param  array<int, string|null>  $header
+     * @param  array<int, string|null>|null  $existing
+     * @param  array<string, int>  $fileMap
+     * @param  array<int, string|null>  $row
+     * @return array<int, string|null>
+     */
+    private function overlayRow(array $header, ?array $existing, array $fileMap, array $row): array
+    {
+        $canonicalMap = $this->headerMap($header);
+        $merged = $existing ?? array_fill(0, count($header), null);
+
+        foreach ($canonicalMap as $column => $canonicalIndex) {
+            if (! isset($fileMap[$column])) {
+                continue;
+            }
+
+            $cell = trim((string) ($row[$fileMap[$column]] ?? ''));
+            if ($cell === '') {
+                continue;
+            }
+
+            $merged[$canonicalIndex] = $row[$fileMap[$column]];
+        }
+
+        return $merged;
+    }
+
+    /**
+     * @param  array<int, string|null>  $header
+     * @param  array<int, string|null>  $row
+     * @return array<int, string|null>
+     */
+    private function padRow(array $header, array $row): array
+    {
+        $padded = array_fill(0, count($header), null);
+        foreach ($row as $index => $value) {
+            if ($index < count($header)) {
+                $padded[$index] = $value;
+            }
+        }
+
+        return $padded;
+    }
+
+    /**
+     * @param  array<int, string|null>  $header
+     * @return array<string, int>
+     */
+    private function headerMap(array $header): array
+    {
+        $map = [];
+        foreach ($header as $idx => $name) {
+            if (! is_string($name)) {
+                continue;
+            }
+            $map[trim($name)] = (int) $idx;
+        }
+
+        return $map;
     }
 
     /**

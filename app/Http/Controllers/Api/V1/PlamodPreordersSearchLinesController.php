@@ -16,13 +16,15 @@ final class PlamodPreordersSearchLinesController extends Controller
         PlamodPreorderSearchLinesService $search,
     ): JsonResponse {
         $validated = $request->validated();
-        /** @var array<int, string> $lines */
-        $lines = $validated['lines'];
         $phase = (string) ($validated['phase'] ?? 'all');
+        /** @var array<int, string> $lines */
+        $lines = is_array($validated['lines'] ?? null) ? $validated['lines'] : [];
 
         $data = match ($phase) {
             'snapshot' => $search->searchSnapshot($lines),
             'live' => $search->searchLive($lines),
+            'live_start' => $search->startLiveSearchJob($lines),
+            'live_poll' => $search->liveSearchJobStatus((string) ($validated['job_id'] ?? '')),
             default => $search->search($lines),
         };
 

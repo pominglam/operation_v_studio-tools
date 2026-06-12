@@ -100,10 +100,15 @@ function skipLabel(reason: PoPushInventoryPreviewRow['skip_reason']): string {
                         Push to Shopify — Latest Arrivals order
                     </div>
                     <div v-if="preview" class="mt-1 text-xs text-slate-600">
-                        Listed in Latest Arrivals order (PG → Mega → MG
-                        <span class="font-semibold text-slate-900">(MGEX first)</span> → … →
-                        <span class="font-semibold text-slate-900">30MM → 30MF → 30MS → Figure-rise</span
-                        >, newest within each group). Syncs title, description, images, tags, price,
+                        This PO preview sorts by grade (PG → Mega → MG
+                        <span class="font-semibold text-slate-900">(MGEX first)</span> → RE → Full
+                        Mechanics → RG → HGUC → HG → SD/BB →
+                        <span class="font-semibold text-slate-900"
+                            >30MM → 30MF → 30MS → Entry Grade → Pokemon → Figure-rise</span
+                        >, newest within each grade). The storefront collection groups by PO
+                        (newest first; multi-PO products use their newest PO), then the same grade
+                        order within each received PO (unreceived POs are ignored on the
+                        storefront). Syncs title, description, images, tags, price,
                         status, sales channels (all publications when published), and available
                         inventory for
                         <span class="font-semibold text-slate-900">{{ preview.push_count }}</span>

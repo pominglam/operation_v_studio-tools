@@ -3,11 +3,18 @@
 declare(strict_types=1);
 
 /**
- * Latest Arrivals collection / PO push sort: type groups appear in this rank sequence (first → last).
+ * Latest Arrivals sort within each PO (and PO push preview).
+ *
+ * Storefront collection: received POs only, newest received_date first; products on multiple
+ * received POs use newest received PO only; unreceived POs are ignored;
+ * then this grade sequence within each PO (newest product created_at within each grade).
+ *
+ * PG → Mega → MG (MGEX first) → RE → Full Mechanics → RG → HGUC → HG → SD/BB
+ * → 30MM → 30MF → 30MS → Entry Grade → Pokemon → Figure-rise
  */
 return [
 
-    'type_rank_display_order' => [7, 69, 6, 5, 4, 3, 2, 1, 8],
+    'type_rank_display_order' => [7, 69, 6, 65, 5, 4, 3, 2, 8],
 
     /**
      * Map products.type (or derived type) to a rank bucket. Unknown types use rank 8.
@@ -19,6 +26,8 @@ return [
         'MG' => 6,
         'MGEX' => 6,
         'MGSD' => 6,
+        'RE' => 65,
+        'FM' => 65,
         'RG' => 5,
         'HGUC' => 4,
         'HGBF' => 4,
@@ -27,11 +36,10 @@ return [
         'HGFC' => 4,
         'HGBC' => 4,
         'HGAW' => 4,
-        'ENTRY GRADE' => 1,
+        'ENTRY GRADE' => 8,
         'HG' => 3,
-        'FM' => 3,
         'Orphans HG' => 3,
-        'EG' => 2,
+        'EG' => 8,
         'SD' => 2,
         'SDW' => 2,
         'BB' => 2,
@@ -57,19 +65,25 @@ return [
         3 => [
             'ORPHANS-HG' => 0,
             'HG' => 1,
-            'FM' => 2,
         ],
         6 => [
             'MGEX' => 0,
             'MGSD' => 1,
             'MG' => 2,
         ],
+        65 => [
+            'RE' => 0,
+            'FM' => 1,
+        ],
         8 => [
             '30MM' => 0,
             '30MF' => 1,
             '30MS' => 2,
             '30MP' => 3,
-            'FIGURE-RISE' => 4,
+            'ENTRY-GRADE' => 4,
+            'EG' => 5,
+            'POKEMON' => 6,
+            'FIGURE-RISE' => 7,
         ],
     ],
 

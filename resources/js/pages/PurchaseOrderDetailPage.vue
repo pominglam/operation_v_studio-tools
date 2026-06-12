@@ -286,13 +286,11 @@ const checklistLabels: Array<{ key: WorkflowChecklistKey; label: string }> = [
     },
     {
         key: 'mark_latest_arrival',
-        label:
-            'Mark latest arrival (ERP flag — push adds tag; skips tools; toggle on Products for exceptions)',
+        label: 'Mark latest arrival (ERP flag — push adds tag; skips tools; toggle on Products for exceptions)',
     },
     {
         key: 'import_product_available_quantity',
-        label:
-            'Push to Shopify — Latest Arrivals order (content, tags, price, inventory; sorted by type, newest first)',
+        label: 'Push to Shopify — Latest Arrivals order (content, tags, price, inventory; sorted by type, newest first)',
     },
 ];
 
@@ -380,60 +378,107 @@ async function runWorkflowAction(
     }
 }
 
+type PrepareInventoryResponse = {
+    ok: boolean;
+    data: {
+        lines_validated: number;
+        sync_mode?:
+            | 'skipped_mirror_fresh'
+            | 'mirror_stale_confirmation_required'
+            | 'po_inventory_refresh';
+        mirror_fresh?: boolean;
+        max_age_seconds?: number;
+        products_last_completed_at?: string | null;
+        inventory_levels_last_completed_at?: string | null;
+        skus_refreshed?: number;
+        inventory_items_refreshed?: number;
+        shopify_quantities: Array<{ sku: string }>;
+    };
+    message?: string;
+    issues?: Array<{ sku: string; reason: string }>;
+};
+
+function formatShopifyMirrorSyncLabel(iso: string | null | undefined): string {
+    if (!iso) return 'never';
+    const parsed = new Date(iso);
+    if (Number.isNaN(parsed.getTime())) return iso;
+    return parsed.toLocaleString();
+}
+
+function prepareInventorySummaryFromResponse(data: PrepareInventoryResponse['data']): string {
+    const n = data.lines_validated ?? 0;
+    const mode = data.sync_mode;
+    if (mode === 'skipped_mirror_fresh') {
+        return `Catalog mirror is fresh (synced within the last hour). ${n} PO line(s) validated with received qty.`;
+    }
+    if (mode === 'po_inventory_refresh') {
+        const skuCount = data.skus_refreshed ?? n;
+        return `Refreshed Shopify inventory for ${skuCount} PO SKU(s). ${n} PO line(s) validated with received qty.`;
+    }
+    if (mode === 'mirror_stale_confirmation_required') {
+        return `Validated ${n} PO line(s) with received qty. Using existing Shopify mirror data (not refreshed).`;
+    }
+    return `${n} PO line(s) validated with received qty.`;
+}
+
+async function postPrepareInventory(
+    pullShopify: boolean,
+): Promise<PrepareInventoryResponse['data']> {
+    if (!po.value) {
+        throw new Error('Purchase order is not loaded.');
+    }
+    const res = await api.post<PrepareInventoryResponse>(
+        `/api/v1/purchase-orders/${po.value.id}/workflow-actions/prepare-inventory`,
+        pullShopify ? { pull_shopify: true } : {},
+        // PO-SKU Shopify inventory pull can exceed the default 60s API timeout.
+        { validateStatus: () => true, timeout: 0 },
+    );
+    if (res.status !== 200) {
+        const issues = res.data?.issues ?? [];
+        const lines = issues
+            .slice(0, 8)
+            .map((i) => `${i.sku}: ${i.reason}`)
+            .join('; ');
+        throw new Error(
+            `${res.data?.message ?? 'Prepare inventory failed.'}${lines ? ` ${lines}` : ''}`,
+        );
+    }
+    return res.data.data;
+}
+
 async function prepareInventoryForPo(): Promise<void> {
     if (!po.value) return;
+    const workflowKey = 'update_product_available_with_shopify_current_inventory_quantity';
     workflowActionBusy.value = {
         ...workflowActionBusy.value,
-        update_product_available_with_shopify_current_inventory_quantity: true,
+        [workflowKey]: true,
     };
     workflowActionError.value = null;
     inventoryPrepareReady.value = false;
     inventoryPrepareSummary.value = null;
     try {
-        const res = await api.post<{
-            ok: boolean;
-            data: {
-                lines_validated: number;
-                sync_mode?: 'skipped_mirror_fresh' | 'po_inventory_refresh';
-                mirror_fresh?: boolean;
-                skus_refreshed?: number;
-                inventory_items_refreshed?: number;
-                shopify_quantities: Array<{ sku: string }>;
-            };
-            message?: string;
-            issues?: Array<{ sku: string; reason: string }>;
-        }>(
-            `/api/v1/purchase-orders/${po.value.id}/workflow-actions/prepare-inventory`,
-            {},
-            // Full Shopify product + inventory sync can exceed the default 60s API timeout.
-            { validateStatus: () => true, timeout: 0 },
-        );
-        if (res.status !== 200) {
-            const issues = res.data?.issues ?? [];
-            const lines = issues
-                .slice(0, 8)
-                .map((i) => `${i.sku}: ${i.reason}`)
-                .join('; ');
-            throw new Error(
-                `${res.data?.message ?? 'Prepare inventory failed.'}${lines ? ` ${lines}` : ''}`,
+        let data = await postPrepareInventory(false);
+        if (data.sync_mode === 'mirror_stale_confirmation_required') {
+            const maxAgeHours = Math.max(1, Math.round((data.max_age_seconds ?? 3600) / 3600));
+            const productsAt = formatShopifyMirrorSyncLabel(data.products_last_completed_at);
+            const inventoryAt = formatShopifyMirrorSyncLabel(
+                data.inventory_levels_last_completed_at,
             );
+            const n = data.lines_validated ?? 0;
+            const pullConfirmed = window.confirm(
+                `Qty received validated on ${n} PO line(s).\n\nShopify catalog data is older than ${maxAgeHours} hour(s) (products last synced: ${productsAt}; inventory last synced: ${inventoryAt}).\n\nPull fresh inventory for PO SKUs from Shopify now? This may take a few minutes.`,
+            );
+            if (pullConfirmed) {
+                data = await postPrepareInventory(true);
+            }
         }
         inventoryPrepareReady.value = true;
-        const n = res.data.data?.lines_validated ?? 0;
-        const mode = res.data.data?.sync_mode;
-        if (mode === 'skipped_mirror_fresh') {
-            inventoryPrepareSummary.value = `Catalog mirror is fresh (synced within the last hour). ${n} PO line(s) validated with received qty.`;
-        } else if (mode === 'po_inventory_refresh') {
-            const skuCount = res.data.data?.skus_refreshed ?? n;
-            inventoryPrepareSummary.value = `Refreshed Shopify inventory for ${skuCount} PO SKU(s). ${n} PO line(s) validated with received qty.`;
-        } else {
-            inventoryPrepareSummary.value = `${n} PO line(s) validated with received qty.`;
-        }
+        inventoryPrepareSummary.value = prepareInventorySummaryFromResponse(data);
     } catch (e: unknown) {
         const axiosCode = (e as { code?: string })?.code;
         if (axiosCode === 'ECONNABORTED') {
             workflowActionError.value =
-                'Prepare timed out in the browser (Shopify sync can take several minutes). Refresh the page and try again, or run Shopify product + inventory sync from Maintenance first, then Prepare.';
+                'Prepare timed out in the browser while pulling Shopify inventory. Refresh the page and try Prepare again.';
         } else {
             workflowActionError.value =
                 e instanceof Error ? e.message : 'Prepare inventory failed.';
@@ -441,7 +486,7 @@ async function prepareInventoryForPo(): Promise<void> {
     } finally {
         workflowActionBusy.value = {
             ...workflowActionBusy.value,
-            update_product_available_with_shopify_current_inventory_quantity: false,
+            [workflowKey]: false,
         };
     }
 }
@@ -849,7 +894,8 @@ async function clearStaleLatestArrivalFromWorkflow(): Promise<void> {
 
 async function applyReceivedFromChecklist(): Promise<void> {
     if (!inventoryPrepareReady.value) {
-        workflowActionError.value = 'Run Prepare first (pull Shopify qty and validate received qty).';
+        workflowActionError.value =
+            'Run Prepare first (pull Shopify qty and validate received qty).';
         return;
     }
     await applyReceivedQtyToAvailable();
@@ -870,9 +916,7 @@ const checklist = computed<Record<WorkflowChecklistKey, boolean>>(() => {
         update_product_available_with_shopify_current_inventory_quantity: Boolean(
             raw.update_product_available_with_shopify_current_inventory_quantity,
         ),
-        mark_published_on_shopify: Boolean(
-            raw.mark_published_on_shopify ?? legacy,
-        ),
+        mark_published_on_shopify: Boolean(raw.mark_published_on_shopify ?? legacy),
         mark_latest_arrival: Boolean(raw.mark_latest_arrival ?? legacy),
         import_product_available_quantity: Boolean(raw.import_product_available_quantity),
     };
@@ -1164,7 +1208,8 @@ async function exportDraftLinesCsv(): Promise<void> {
 
         const header = (res.headers as Record<string, string | undefined>)['content-disposition'];
         const filename =
-            parseFilenameFromContentDisposition(header) ?? `purchase-order-${po.value.id}-lines.csv`;
+            parseFilenameFromContentDisposition(header) ??
+            `purchase-order-${po.value.id}-lines.csv`;
         const blob = res.data as Blob;
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -1175,7 +1220,8 @@ async function exportDraftLinesCsv(): Promise<void> {
         a.remove();
         window.URL.revokeObjectURL(url);
     } catch (e: unknown) {
-        exportDraftLinesError.value = e instanceof Error ? e.message : 'Failed to export draft lines.';
+        exportDraftLinesError.value =
+            e instanceof Error ? e.message : 'Failed to export draft lines.';
     } finally {
         exportDraftLinesBusy.value = false;
     }
@@ -2263,7 +2309,8 @@ async function loadPoImportPreview(mode: 'replace' | 'append'): Promise<void> {
     } catch (e: unknown) {
         const anyErr = e as any;
         importPreviewError.value =
-            anyErr?.response?.data?.message ?? 'Preview failed. Check the file format and try again.';
+            anyErr?.response?.data?.message ??
+            'Preview failed. Check the file format and try again.';
     } finally {
         importPreviewLoading.value = false;
     }
@@ -2453,7 +2500,9 @@ onMounted(() => {
                                 inputmode="decimal"
                                 class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                                 :placeholder="
-                                    importProductTotalIncludesFees ? 'Product + shipping' : 'Optional'
+                                    importProductTotalIncludesFees
+                                        ? 'Product + shipping'
+                                        : 'Optional'
                                 "
                                 :disabled="reimporting || importMoreing || importPreviewLoading"
                             />
@@ -2490,7 +2539,9 @@ onMounted(() => {
                             />
                         </div>
                         <div class="lg:col-span-3">
-                            <label class="text-xs font-medium text-slate-700">CSV / XLSX file</label>
+                            <label class="text-xs font-medium text-slate-700"
+                                >CSV / XLSX file</label
+                            >
                             <input
                                 type="file"
                                 accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -2521,8 +2572,8 @@ onMounted(() => {
                                 Re-import replaces existing lines unless you use the option above
                                 when receipt data exists. Import more appends new lines and keeps
                                 existing lines. For Dspiae/Stedi PM invoices, use Preview import
-                                first. Import more combines product, shipping, and vendor
-                                totals from each import into the PO header.
+                                first. Import more combines product, shipping, and vendor totals
+                                from each import into the PO header.
                             </div>
                         </div>
                         <div class="lg:col-span-1 space-y-2">
@@ -2722,9 +2773,12 @@ onMounted(() => {
                     v-if="po.status === 'draft'"
                     class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3"
                 >
-                    <div class="text-xs font-semibold text-slate-800">Draft PO: add products by SKU</div>
+                    <div class="text-xs font-semibold text-slate-800">
+                        Draft PO: add products by SKU
+                    </div>
                     <p class="mt-1 text-xs text-slate-600">
-                        Paste SKUs separated by comma, space, or newline. Existing lines are skipped.
+                        Paste SKUs separated by comma, space, or newline. Existing lines are
+                        skipped.
                     </p>
                     <textarea
                         v-model="draftAddSkus"
@@ -2757,13 +2811,14 @@ onMounted(() => {
                                 Workflow checklist
                             </div>
                             <div class="mt-1 text-xs text-slate-600">
-                                This checklist is saved on this PO. Checked steps stay checked;
-                                use Re-verify to auto-check completed steps. Only
+                                This checklist is saved on this PO. Checked steps stay checked; use
+                                Re-verify to auto-check completed steps. Only
                                 <span class="font-medium">Plamod</span> POs auto-complete crawl when
                                 PDP data exists; use <span class="font-medium">Skip</span> or
                                 <span class="font-medium">Crawl new</span> with confirmation when
-                                needed. Check <span class="font-medium">Set/review selling price</span> only
-                                after you review and approve prices in the dialog.
+                                needed. Check
+                                <span class="font-medium">Set/review selling price</span> only after
+                                you review and approve prices in the dialog.
                             </div>
                         </div>
                         <div class="flex shrink-0 items-center gap-2">
@@ -2785,7 +2840,9 @@ onMounted(() => {
                             :key="row.key"
                             class="flex items-center gap-2"
                         >
-                            <label class="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-800">
+                            <label
+                                class="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-800"
+                            >
                                 <input
                                     type="checkbox"
                                     class="h-4 w-4 shrink-0 rounded border-slate-300"
@@ -2809,11 +2866,7 @@ onMounted(() => {
                                 title="Remove latest arrival from products on POs older than 4 weeks"
                                 @click="clearStaleLatestArrivalFromWorkflow"
                             >
-                                {{
-                                    clearingStaleLatestArrival
-                                        ? 'Clearing…'
-                                        : 'Clear old latest'
-                                }}
+                                {{ clearingStaleLatestArrival ? 'Clearing…' : 'Clear old latest' }}
                             </button>
                             <button
                                 v-if="workflowRowButtonLabel(row.key)"
@@ -2824,12 +2877,16 @@ onMounted(() => {
                                         ? 'Sets published_on_shopify in the ERP only until push'
                                         : row.key === 'mark_latest_arrival'
                                           ? 'Sets latest_arrival in the ERP for non-tools; push adds the Shopify tag'
-                                          : undefined
+                                          : row.key ===
+                                              'update_product_available_with_shopify_current_inventory_quantity'
+                                            ? 'Validates qty received on all lines. If Shopify mirror data is stale, asks whether to pull fresh inventory for PO SKUs. Run before Apply received.'
+                                            : undefined
                                 "
                                 :disabled="
                                     checklistBusy ||
                                     Boolean(workflowActionBusy[row.key]) ||
-                                    (row.key === 'export_to_shopify_get_handles' && !poHasProducts) ||
+                                    (row.key === 'export_to_shopify_get_handles' &&
+                                        !poHasProducts) ||
                                     (row.key === 'crawl_desc_image_price' && !poHasProducts)
                                 "
                                 @click="onWorkflowRowAction(row.key)"
@@ -2840,9 +2897,7 @@ onMounted(() => {
                                         'update_product_available_with_shopify_current_inventory_quantity'
                                     "
                                 >
-                                    {{
-                                        workflowActionBusy[row.key] ? 'Preparing…' : 'Prepare'
-                                    }}
+                                    {{ workflowActionBusy[row.key] ? 'Preparing…' : 'Prepare' }}
                                 </template>
                                 <template v-else>
                                     {{
@@ -2866,9 +2921,7 @@ onMounted(() => {
                                 "
                                 @click="applyReceivedFromChecklist"
                             >
-                                {{
-                                    applyingReceivedToAvailable ? 'Applying…' : 'Apply received'
-                                }}
+                                {{ applyingReceivedToAvailable ? 'Applying…' : 'Apply received' }}
                             </button>
                             <button
                                 v-if="
@@ -2902,10 +2955,7 @@ onMounted(() => {
                     <p v-if="inventoryPrepareSummary" class="mt-2 text-xs text-emerald-800">
                         {{ inventoryPrepareSummary }}
                     </p>
-                    <p
-                        v-if="clearStaleLatestArrivalSummary"
-                        class="mt-2 text-xs text-amber-900"
-                    >
+                    <p v-if="clearStaleLatestArrivalSummary" class="mt-2 text-xs text-amber-900">
                         {{ clearStaleLatestArrivalSummary }}
                     </p>
                     <p v-if="workflowActionError" class="mt-3 text-sm text-rose-700">
@@ -3300,7 +3350,8 @@ onMounted(() => {
                                                     type="text"
                                                     :value="
                                                         barcodeDrafts[it.id] ??
-                                                        (it.product_barcode ?? '')
+                                                        it.product_barcode ??
+                                                        ''
                                                     "
                                                     :disabled="
                                                         !it.product_id ||
@@ -3317,7 +3368,9 @@ onMounted(() => {
                                                                 .value,
                                                         )
                                                     "
-                                                    @keydown.enter.prevent="commitBarcodeEdit(it.id)"
+                                                    @keydown.enter.prevent="
+                                                        commitBarcodeEdit(it.id)
+                                                    "
                                                     @blur="commitBarcodeEdit(it.id)"
                                                 />
                                             </div>

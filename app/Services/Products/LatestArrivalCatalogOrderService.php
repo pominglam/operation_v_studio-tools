@@ -9,7 +9,13 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Builds storefront Latest Arrivals order: POs newest-first, then product sort within each PO.
+ * Builds storefront Latest Arrivals order.
+ *
+ * 1. Group products by received purchase orders only (newest received_date first).
+ * 2. Unreceived POs (null received_date) are ignored for grouping and PO ranking.
+ * 3. Products on multiple POs are placed only under their newest received PO.
+ * 4. Products with no received PO line fall back to grade-only sort at the end.
+ * 5. Within each PO, sort by grade order (see config/latest_arrival.php), then newest created_at.
  */
 final class LatestArrivalCatalogOrderService
 {
@@ -44,10 +50,11 @@ final class LatestArrivalCatalogOrderService
         $rows = DB::table('purchase_order_items as poi')
             ->join('purchase_orders as po', 'po.id', '=', 'poi.purchase_order_id')
             ->whereIn('poi.product_id', $productIds)
+            ->whereNotNull('po.received_date')
             ->select([
                 'poi.product_id',
                 'po.id as purchase_order_id',
-                DB::raw('COALESCE(po.received_date, DATE(po.created_at)) as po_sort_date'),
+                'po.received_date as po_sort_date',
             ])
             ->get();
 
@@ -55,10 +62,17 @@ final class LatestArrivalCatalogOrderService
             $productId = (int) $row->product_id;
             $poId = (int) $row->purchase_order_id;
             $date = (string) $row->po_sort_date;
-            if (
-                ! isset($bestPoByProduct[$productId])
-                || $date > $bestPoByProduct[$productId]['po_sort_date']
-            ) {
+            if (! isset($bestPoByProduct[$productId])) {
+                $bestPoByProduct[$productId] = [
+                    'purchase_order_id' => $poId,
+                    'po_sort_date' => $date,
+                ];
+
+                continue;
+            }
+
+            $current = $bestPoByProduct[$productId];
+            if ($this->isNewerPo($date, $poId, (string) $current['po_sort_date'], (int) $current['purchase_order_id'])) {
                 $bestPoByProduct[$productId] = [
                     'purchase_order_id' => $poId,
                     'po_sort_date' => $date,
@@ -79,15 +93,26 @@ final class LatestArrivalCatalogOrderService
             }
         }
 
-        /** @var array<int, string> $poSortDates */
-        $poSortDates = [];
+        /** @var array<int, array{purchase_order_id: int, po_sort_date: string}> $poOrderKeys */
+        $poOrderKeys = [];
         foreach ($bestPoByProduct as $info) {
-            $poSortDates[$info['purchase_order_id']] = $info['po_sort_date'];
+            $poId = (int) $info['purchase_order_id'];
+            if (! isset($poOrderKeys[$poId])) {
+                $poOrderKeys[$poId] = $info;
+            }
         }
-        arsort($poSortDates);
+        uasort(
+            $poOrderKeys,
+            fn (array $a, array $b): int => $this->comparePoRecency(
+                (string) $b['po_sort_date'],
+                (int) $b['purchase_order_id'],
+                (string) $a['po_sort_date'],
+                (int) $a['purchase_order_id'],
+            ),
+        );
 
         $ordered = [];
-        foreach (array_keys($poSortDates) as $poId) {
+        foreach (array_keys($poOrderKeys) as $poId) {
             if (! isset($byPo[$poId])) {
                 continue;
             }
@@ -103,5 +128,20 @@ final class LatestArrivalCatalogOrderService
         }
 
         return $ordered;
+    }
+
+    private function isNewerPo(string $date, int $poId, string $otherDate, int $otherPoId): bool
+    {
+        return $this->comparePoRecency($date, $poId, $otherDate, $otherPoId) > 0;
+    }
+
+    private function comparePoRecency(string $aDate, int $aPoId, string $bDate, int $bPoId): int
+    {
+        $cmp = strcmp($aDate, $bDate);
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+
+        return $aPoId <=> $bPoId;
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Plamod;
 
+use App\Jobs\Plamod\RunPlamodPreorderLiveSearchJob;
 use App\Models\PlamodPreorder;
 use App\Services\Products\Http\PlamodScraper;
 
@@ -11,13 +12,15 @@ final class PlamodPreorderSearchLinesService
 {
     /** @var array<int, string> */
     private const array STOP_TOKENS = [
-        're', 'hguc', 'hg', 'mg', 'rg', 'pg', 'eg', 'fm', 'hgbd', '100', '144', '60',
-        'the', 'ver', 'ka', 'custom', 'type', 'mass', 'production',
+        're', 'hguc', 'hg', 'mg', 'rg', 'pg', 'eg', 'fm', 'hgbd', 'hgac', '100', '144', '60',
+        'the', 'ver', 'ka', 'custom', 'type', 'mass', 'production', 'gundam', 'rx',
     ];
 
     public function __construct(
         private readonly PlamodPreorderSettingsService $settings,
         private readonly PlamodScraper $scraper,
+        private readonly PlamodPreorderLiveSearchStore $liveSearchStore,
+        private readonly PlamodPreorderSearchRowAssembler $rowAssembler,
     ) {}
 
     /**
@@ -25,7 +28,8 @@ final class PlamodPreorderSearchLinesService
      * @return array{
      *   matched: array<int, array{line: string, sku: string, product_name: string, in_snapshot: bool}>,
      *   plamod_only: array<int, array{line: string, sku: string, product_name: string, plamod_pdp_url: string}>,
-     *   not_found: array<int, string>
+     *   not_found: array<int, string>,
+     *   rows: array<int, array<string, mixed>>
      * }
      */
     public function search(array $lines): array
@@ -37,6 +41,13 @@ final class PlamodPreorderSearchLinesService
             'matched' => $snapshot['matched'],
             'plamod_only' => $live['plamod_only'],
             'not_found' => $live['not_found'],
+            'rows' => $this->rowAssembler->rowsInLineOrder(
+                $this->normalizeTerms($lines),
+                $snapshot['matched'],
+                $snapshot['rows'],
+                $live['plamod_only'],
+                $live['rows'],
+            ),
         ];
     }
 
@@ -44,14 +55,15 @@ final class PlamodPreorderSearchLinesService
      * @param  array<int, string>  $lines
      * @return array{
      *   matched: array<int, array{line: string, sku: string, product_name: string, in_snapshot: bool}>,
-     *   pending_live: array<int, string>
+     *   pending_live: array<int, string>,
+     *   rows: array<int, array<string, mixed>>
      * }
      */
     public function searchSnapshot(array $lines): array
     {
         $terms = $this->normalizeTerms($lines);
         if ($terms === []) {
-            return ['matched' => [], 'pending_live' => []];
+            return ['matched' => [], 'pending_live' => [], 'rows' => []];
         }
 
         $rows = $this->snapshotRows();
@@ -75,6 +87,7 @@ final class PlamodPreorderSearchLinesService
         return [
             'matched' => $matched,
             'pending_live' => $pendingLive,
+            'rows' => $this->rowAssembler->rowsForSkus(array_column($matched, 'sku')),
         ];
     }
 
@@ -82,18 +95,20 @@ final class PlamodPreorderSearchLinesService
      * @param  array<int, string>  $lines
      * @return array{
      *   plamod_only: array<int, array{line: string, sku: string, product_name: string, plamod_pdp_url: string}>,
-     *   not_found: array<int, string>
+     *   not_found: array<int, string>,
+     *   rows: array<int, array<string, mixed>>
      * }
      */
     public function searchLive(array $lines): array
     {
         $terms = $this->normalizeTerms($lines);
         if ($terms === []) {
-            return ['plamod_only' => [], 'not_found' => []];
+            return ['plamod_only' => [], 'not_found' => [], 'rows' => []];
         }
 
         $plamodOnly = [];
         $notFound = [];
+        $rows = [];
 
         $live = $this->scraper->searchRetailerPreorders($terms);
         /** @var array<string, mixed> $liveResults */
@@ -120,11 +135,67 @@ final class PlamodPreorderSearchLinesService
                 'product_name' => $productName,
                 'plamod_pdp_url' => $pdp,
             ];
+            $rows[] = $this->rowAssembler->rowFromLiveHit($remote);
         }
 
         return [
             'plamod_only' => $plamodOnly,
             'not_found' => $notFound,
+            'rows' => $rows,
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $lines
+     * @return array{job_id: string, status: string}
+     */
+    public function startLiveSearchJob(array $lines): array
+    {
+        $terms = $this->normalizeTerms($lines);
+        if ($terms === []) {
+            return [
+                'job_id' => '',
+                'status' => 'completed',
+            ];
+        }
+
+        $jobId = $this->liveSearchStore->create($terms);
+        RunPlamodPreorderLiveSearchJob::dispatch($jobId, $terms);
+
+        return [
+            'job_id' => $jobId,
+            'status' => 'queued',
+        ];
+    }
+
+    /**
+     * @return array{
+     *   status: string,
+     *   plamod_only: array<int, array{line: string, sku: string, product_name: string, plamod_pdp_url: string}>,
+     *   not_found: array<int, string>,
+     *   rows: array<int, array<string, mixed>>,
+     *   error_summary: string|null
+     * }
+     */
+    public function liveSearchJobStatus(string $jobId): array
+    {
+        $payload = $this->liveSearchStore->get($jobId);
+        if ($payload === null) {
+            return [
+                'status' => 'missing',
+                'plamod_only' => [],
+                'not_found' => [],
+                'rows' => [],
+                'error_summary' => 'Live search job not found or expired.',
+            ];
+        }
+
+        return [
+            'status' => (string) ($payload['status'] ?? 'queued'),
+            'plamod_only' => is_array($payload['plamod_only'] ?? null) ? $payload['plamod_only'] : [],
+            'not_found' => is_array($payload['not_found'] ?? null) ? $payload['not_found'] : [],
+            'rows' => is_array($payload['rows'] ?? null) ? $payload['rows'] : [],
+            'error_summary' => is_string($payload['error_summary'] ?? null) ? $payload['error_summary'] : null,
         ];
     }
 
@@ -210,8 +281,28 @@ final class PlamodPreorderSearchLinesService
      */
     private function significantTokens(string $term): array
     {
-        $parts = preg_split('/\s+/', $this->normalizeForMatch($term)) ?: [];
         $tokens = [];
+
+        if (preg_match_all('/#(\d+)/', $term, $matches)) {
+            foreach ($matches[1] as $number) {
+                if ($number !== '') {
+                    $tokens[] = $number;
+                }
+            }
+        }
+
+        if (preg_match_all('/\b([A-Za-z]{2,3}-\d+(?:-\d+)?)\b/', $term, $matches)) {
+            foreach ($matches[1] as $code) {
+                $normalized = mb_strtolower(str_replace('-', ' ', $code));
+                foreach (preg_split('/\s+/', $normalized) ?: [] as $segment) {
+                    if ($segment !== '' && strlen($segment) >= 2 && ! in_array($segment, self::STOP_TOKENS, true)) {
+                        $tokens[] = $segment;
+                    }
+                }
+            }
+        }
+
+        $parts = preg_split('/\s+/', $this->normalizeForMatch($term)) ?: [];
         foreach ($parts as $part) {
             if ($part === '' || strlen($part) < 2) {
                 continue;

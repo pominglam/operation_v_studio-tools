@@ -150,7 +150,7 @@ Below, **verbs** reflect Laravel router methods. **`{id}` on products** uses **U
 | PATCH | `/products/{id}/discontinue` | Discontinue product flag (`is_discontinued`, default false). |
 | PATCH | `/products/{id}/hazardous-shipment` | Hazardous shipment flag (`is_hazardous_shipment`, default false). |
 | PATCH | `/products/{id}/shipment-method` | Shipment method (`shipment_method`: `air`, `sea`, or null). |
-| POST | `/purchase-orders/{id}/workflow-actions/prepare-inventory` | Validates PO **qty received**; skips Shopify if mirror fresh (default 1h); else PO-SKU inventory refresh only. |
+| POST | `/purchase-orders/{id}/workflow-actions/prepare-inventory` | Validates PO **qty received**; skips Shopify if mirror fresh (default 1h). If stale, returns confirmation payload unless body **`pull_shopify: true`** (PO-SKU inventory refresh only). |
 | GET | `/products` | List supports `product_flags[]`: `critical`, `discontinued`, `hazardous_shipment` (multi-select OR); `shipment_methods[]`: `air`, `sea` (multi-select OR). |
 | PUT | `/products/{id}/selling-price` | Upsert **`product_selling_prices`** row (Shopify variant price drives exports). |
 
@@ -387,10 +387,13 @@ Two **different orchestrations** deliberately exist:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/preorders` | Paginated active preorder rows; `new_only`, `search`; excludes `plamod_preorder.excluded_categories` runtime setting. |
-| POST | `/preorders/sync` | Queues `SyncPlamodPreordersJob` (CSV export via Plamod scraper, import, 15-day image cleanup, image download jobs). |
+| POST | `/preorders/sync` | Queues `SyncPlamodPreordersJob`, which starts a **serial** `Bus::chain` on `plamod_sync` (hub CSV → per included series → recovery → merge/import; image jobs on `default`). |
 | GET | `/preorders/sync-status` | Latest `plamod_preorder_sync_logs` snapshot for UI polling. |
 | GET | `/preorders/settings` | Read excluded category list. |
 | PUT | `/preorders/settings` | Persist excluded categories to `app_runtime_settings`. |
+| GET | `/preorders/manufacturer-filters` | Bandai manufacturer series/category-line catalog grouped by decision (`undecided` / `include` / `exclude`). |
+| POST | `/preorders/manufacturer-filters/discover` | Queue discover job (no body) or poll status (`job_id`); job scrapes Plamod sidebar and upserts `plamod_preorder_manufacturer_filters`. |
+| PUT | `/preorders/manufacturer-filters` | Batch update filter decisions (`updates: [{ id, decision }]`). |
 | POST | `/preorders/search-lines` | Multi-line match; optional `phase` (`snapshot` \| `live` \| `all`). Live fallback returns `plamod_only`. |
 | GET | `/preorders/{sku}/image` | Serve cached image from `storage/app/private/plamod/preorder-images/`. |
 

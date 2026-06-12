@@ -130,11 +130,11 @@ services:
         "php",
         "artisan",
         "queue:work",
-        "--queue=price_research,pdp_sync,default",
+        "--queue=price_research,pdp_sync,plamod_sync,default",
         "--sleep=1",
         "--tries=1",
-        "--timeout=3600",
-        "--max-time=3600",
+        "--timeout=21600",
+        "--max-time=0",
       ]
 
   scheduler:
@@ -192,6 +192,8 @@ services:
       PLAMOD_PERSISTENT_PROFILE_DIR: /app/.pw-user-data
       # Shared with Laravel container for storing downloaded ZIPs.
       PLAMOD_STORAGE_ROOT: /var/www/html/storage/app/private
+      PLAMOD_MANUFACTURER_PDP_ENRICH_MAX: "25"
+      PLAMOD_REQUEST_TIMEOUT_MS: "480000"
     volumes:
       - .:/var/www/html
       - ./node/plamod-scraper:/app
