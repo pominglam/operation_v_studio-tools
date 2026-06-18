@@ -1,0 +1,57 @@
+---
+description: Shopify productSet push invariants for bulk/PO write paths
+globs:
+  - app/Services/Shopify/Admin/Write/**
+  - app/Jobs/PushSelectedProductToShopifyJob.php
+  - tests/**/Shopify*ProductSet*
+  - tests/**/PushSelectedProductToShopifyJob*
+alwaysApply: false
+---
+
+# Shopify `productSet` push rules
+
+## Non-negotiable payload rule
+
+When **`productSet.variants`** includes **`optionValues`**, the payload **MUST** also include non-empty **`productOptions`** (default single-option kit shape: `Title` / `Default Title`).
+
+This applies to **create and update**, including **partial bulk push** (quantities-only, price-only, etc.).
+
+- Enforced in code: `ShopifyProductSetPayloadValidator::assertValid()` (called before every GraphQL `productSet` write).
+- Do **not** omit `productOptions` on update paths to “send fewer fields”.
+
+## Required tests before finishing Shopify push work
+
+Run and keep green:
+
+1. `php artisan test --filter=ShopifyProductSetPayloadValidator`
+2. `php artisan test --filter=ShopifyProductUpsertFromErpService`
+3. `php artisan test --filter=PushSelectedProductToShopifyJob`
+
+Must include the **Products bulk-push default matrix** (user workflow):
+
+| Field | Value |
+| --- | --- |
+| info | true |
+| images | **false** (tunnel often off) |
+| quantities | true |
+| price | true |
+| publish_status | true |
+| sales_channels | true |
+
+Assert the recorded `productSet` has **`productOptions`**, variant **`id`**, and expected partial/full fields.
+
+## Queue worker after PHP write changes
+
+Bulk push runs on **`pricing-tool-queue`**. After changing Shopify write services/jobs:
+
+```powershell
+docker exec pricing-tool-php php artisan queue:restart
+```
+
+Long-running `queue:work` may serve stale OPcache until restarted — code on disk is not enough.
+
+## Related files
+
+- Builder: `ShopifyProductUpsertFromErpService::buildProductSet()`
+- Job: `PushSelectedProductToShopifyJob`
+- Bulk UI: `BulkPushShopifyDialog.vue`

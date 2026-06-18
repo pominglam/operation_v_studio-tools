@@ -83,6 +83,8 @@ use App\Http\Controllers\Api\V1\ProductPreferredDescriptionSourceController;
 use App\Http\Controllers\Api\V1\ProductReadyController;
 use App\Http\Controllers\Api\V1\ProductReplenishmentExportController;
 use App\Http\Controllers\Api\V1\ProductReplenishmentPreviewController;
+use App\Http\Controllers\Api\V1\ProductsBulkPushShopifyPreviewController;
+use App\Http\Controllers\Api\V1\ProductsBulkPushShopifySelectedController;
 use App\Http\Controllers\Api\V1\ProductsController;
 use App\Http\Controllers\Api\V1\ProductSellingPriceController;
 use App\Http\Controllers\Api\V1\ProductsExportBarcodedController;
@@ -139,6 +141,8 @@ Route::prefix('v1')
         Route::get('/products/export/filtered', ProductsFilteredExportController::class);
         Route::post('/products/export/selected', ProductsExportSelectedController::class);
         Route::post('/products/recrawl/selected', ProductsRecrawlSelectedController::class);
+        Route::post('/products/shopify-push/preview', ProductsBulkPushShopifyPreviewController::class);
+        Route::post('/products/shopify-push/selected', ProductsBulkPushShopifySelectedController::class);
         Route::get('/products/export/missing-barcode', ProductsExportMissingBarcodeController::class);
         Route::get('/products/export/barcoded', ProductsExportBarcodedController::class);
         Route::get('/products/export/missing-selling-price', ProductsExportMissingSellingPriceController::class);

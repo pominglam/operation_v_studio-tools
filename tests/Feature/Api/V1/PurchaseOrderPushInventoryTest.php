@@ -205,12 +205,12 @@ it('pushes full product via productSet for PO products', function (): void {
     ]);
 
     $fake = new FakeShopifyAdminGraphQlClient;
+    $fake->queueResponse(FakeShopifyAdminGraphQlClient::wrapProductSet($productGid, 'push-qty-2'));
     $fake->queueResponse(FakeShopifyAdminGraphQlClient::wrapPublications([
         'gid://shopify/Publication/1',
         'gid://shopify/Publication/2',
         'gid://shopify/Publication/3',
     ]));
-    $fake->queueResponse(FakeShopifyAdminGraphQlClient::wrapProductSet($productGid, 'push-qty-2'));
     $fake->queueResponse(FakeShopifyAdminGraphQlClient::wrapPublishablePublish());
     $this->app->instance(ShopifyAdminGraphQlClientInterface::class, $fake);
 

@@ -1,5 +1,16 @@
 import { expect, test } from './fixtures';
 
+async function setArchivedFilter(
+    page: import('@playwright/test').Page,
+    value: 'active' | 'all' | 'archived',
+): Promise<void> {
+    await page.getByTestId('products-filter-archived').selectOption(value);
+    await page.waitForResponse(
+        (r) => r.url().includes('/api/v1/products') && r.request().method() === 'GET',
+        { timeout: 30_000 },
+    );
+}
+
 test('bulk update can archive and unarchive selected products', async ({
     page,
     request,
@@ -27,10 +38,7 @@ test('bulk update can archive and unarchive selected products', async ({
         (r) => r.url().includes('/api/v1/products') && r.request().method() === 'GET',
         { timeout: 30_000 },
     );
-    const includeArchivedToggle = page.getByLabel('Include archived');
-    if (await includeArchivedToggle.isChecked()) {
-        await includeArchivedToggle.uncheck();
-    }
+    await setArchivedFilter(page, 'active');
 
     await page.getByPlaceholder('Search SKU / barcode / name…').fill(sku);
     await page.waitForResponse(
@@ -58,7 +66,7 @@ test('bulk update can archive and unarchive selected products', async ({
     await expect(page.getByText('Updated')).toBeVisible();
 
     const archivedRes = await request.get(
-        `/api/v1/products?per_page=10&search=${encodeURIComponent(sku)}&include_archived=1`,
+        `/api/v1/products?per_page=10&search=${encodeURIComponent(sku)}&archived=archived`,
     );
     expect(
         archivedRes.ok(),
@@ -69,7 +77,7 @@ test('bulk update can archive and unarchive selected products', async ({
     expect(archivedProduct).toBeTruthy();
     expect(archivedProduct?.is_archived).toBe(true);
 
-    await includeArchivedToggle.check();
+    await setArchivedFilter(page, 'archived');
     await expect(page.getByText(sku, { exact: true })).toBeVisible();
 
     const rowArchived = page.locator('tr', { has: page.getByText(sku, { exact: true }) });
@@ -85,11 +93,11 @@ test('bulk update can archive and unarchive selected products', async ({
         .click({ force: true });
     await expect(page.getByText('Updated')).toBeVisible();
 
-    await includeArchivedToggle.uncheck();
+    await setArchivedFilter(page, 'active');
     await expect(page.getByText(sku, { exact: true })).toBeVisible();
 
     const unarchivedRes = await request.get(
-        `/api/v1/products?per_page=10&search=${encodeURIComponent(sku)}&include_archived=1`,
+        `/api/v1/products?per_page=10&search=${encodeURIComponent(sku)}&archived=all`,
     );
     expect(
         unarchivedRes.ok(),
@@ -100,4 +108,3 @@ test('bulk update can archive and unarchive selected products', async ({
     expect(unarchivedProduct).toBeTruthy();
     expect(unarchivedProduct?.is_archived).toBe(false);
 });
-

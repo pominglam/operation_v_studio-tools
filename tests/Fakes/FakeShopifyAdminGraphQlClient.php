@@ -182,6 +182,50 @@ final class FakeShopifyAdminGraphQlClient implements ShopifyAdminGraphQlClientIn
     }
 
     /**
+     * @param  array<int, string>  $mediaIds
+     * @return array<string, mixed>
+     */
+    public static function wrapProductMediaIds(array $mediaIds, bool $hasNextPage = false, ?string $endCursor = null): array
+    {
+        $nodes = [];
+        foreach ($mediaIds as $id) {
+            $nodes[] = ['id' => $id];
+        }
+
+        return [
+            'data' => [
+                'product' => [
+                    'id' => 'gid://shopify/Product/1',
+                    'media' => [
+                        'pageInfo' => [
+                            'hasNextPage' => $hasNextPage,
+                            'endCursor' => $endCursor,
+                        ],
+                        'nodes' => $nodes,
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $deletedMediaIds
+     * @return array<string, mixed>
+     */
+    public static function wrapProductDeleteMedia(array $deletedMediaIds): array
+    {
+        return [
+            'data' => [
+                'productDeleteMedia' => [
+                    'deletedMediaIds' => $deletedMediaIds,
+                    'mediaUserErrors' => [],
+                    'userErrors' => [],
+                ],
+            ],
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public static function wrapTagsRemove(string $nodeId): array

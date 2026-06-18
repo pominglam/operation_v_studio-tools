@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ref } from 'vue';
+
 export type PoPushInventoryPreviewRow = {
     product_uuid: string;
     sku: string;
@@ -81,6 +83,34 @@ function skipLabel(reason: PoPushInventoryPreviewRow['skip_reason']): string {
             return 'Skipped';
     }
 }
+
+const copyNamesFeedback = ref<'idle' | 'copied' | 'failed'>('idle');
+
+function productNamesClipboardText(): string {
+    if (!props.preview) {
+        return '';
+    }
+
+    return props.preview.products.map((row) => row.description).join('\n');
+}
+
+async function copyProductNames(): Promise<void> {
+    const text = productNamesClipboardText();
+    if (text === '') {
+        return;
+    }
+
+    try {
+        await navigator.clipboard.writeText(text);
+        copyNamesFeedback.value = 'copied';
+    } catch {
+        copyNamesFeedback.value = 'failed';
+    }
+
+    window.setTimeout(() => {
+        copyNamesFeedback.value = 'idle';
+    }, 2000);
+}
 </script>
 
 <template>
@@ -93,7 +123,7 @@ function skipLabel(reason: PoPushInventoryPreviewRow['skip_reason']): string {
             @click.self="emit('cancel')"
         >
             <div
-                class="flex max-h-[85vh] w-full max-w-5xl flex-col rounded-lg bg-white shadow-xl"
+                class="flex max-h-[85vh] w-full max-w-7xl flex-col rounded-lg bg-white shadow-xl"
             >
                 <div class="border-b border-slate-200 px-4 py-3">
                     <div class="text-sm font-semibold text-slate-900">
@@ -186,18 +216,35 @@ function skipLabel(reason: PoPushInventoryPreviewRow['skip_reason']): string {
                             tunnel for signed image URLs.
                         </p>
 
+                        <div class="mb-2 flex items-center justify-end">
+                            <button
+                                type="button"
+                                class="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                :disabled="preview.products.length === 0"
+                                @click="copyProductNames"
+                            >
+                                {{
+                                    copyNamesFeedback === 'copied'
+                                        ? 'Copied!'
+                                        : copyNamesFeedback === 'failed'
+                                          ? 'Copy failed'
+                                          : 'Copy product names'
+                                }}
+                            </button>
+                        </div>
+
                         <div class="overflow-x-auto rounded-md border border-slate-200">
-                            <table class="min-w-full divide-y divide-slate-200 text-xs">
+                            <table class="min-w-full table-fixed divide-y divide-slate-200 text-xs">
                                 <thead class="bg-slate-50 text-left text-slate-600">
                                     <tr>
-                                        <th class="px-3 py-2 font-medium">SKU</th>
-                                        <th class="px-3 py-2 font-medium">Product</th>
-                                        <th class="px-3 py-2 font-medium">Price</th>
-                                        <th class="px-3 py-2 font-medium">Available</th>
-                                        <th class="px-3 py-2 font-medium">Hold</th>
-                                        <th class="px-3 py-2 font-medium">Push qty</th>
-                                        <th class="px-3 py-2 font-medium">Shopify qty</th>
-                                        <th class="px-3 py-2 font-medium">Action</th>
+                                        <th class="w-[5.5rem] px-3 py-2 font-medium">SKU</th>
+                                        <th class="min-w-[18rem] px-3 py-2 font-medium">Product</th>
+                                        <th class="w-[4.5rem] px-3 py-2 font-medium">Price</th>
+                                        <th class="w-[4.5rem] px-3 py-2 font-medium">Available</th>
+                                        <th class="w-[3.5rem] px-3 py-2 font-medium">Hold</th>
+                                        <th class="w-[4.5rem] px-3 py-2 font-medium">Push qty</th>
+                                        <th class="w-[5rem] px-3 py-2 font-medium">Shopify qty</th>
+                                        <th class="w-[5.5rem] px-3 py-2 font-medium">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-100 bg-white text-slate-800">
@@ -205,24 +252,26 @@ function skipLabel(reason: PoPushInventoryPreviewRow['skip_reason']): string {
                                         v-for="row in preview.products"
                                         :key="row.product_uuid"
                                     >
-                                        <td class="px-3 py-2 font-mono">{{ row.sku }}</td>
-                                        <td class="max-w-[180px] truncate px-3 py-2">
+                                        <td class="px-3 py-2 align-top font-mono">{{ row.sku }}</td>
+                                        <td
+                                            class="px-3 py-2 align-top whitespace-normal break-words leading-snug"
+                                        >
                                             {{ row.description }}
                                         </td>
-                                        <td class="px-3 py-2">{{ row.selling_price ?? '—' }}</td>
-                                        <td class="px-3 py-2">
+                                        <td class="px-3 py-2 align-top">{{ row.selling_price ?? '—' }}</td>
+                                        <td class="px-3 py-2 align-top">
                                             {{ formatQty(row.erp_available_qty) }}
                                         </td>
-                                        <td class="px-3 py-2">
+                                        <td class="px-3 py-2 align-top">
                                             {{ formatQty(row.erp_hold_qty) }}
                                         </td>
-                                        <td class="px-3 py-2 font-medium text-slate-900">
+                                        <td class="px-3 py-2 align-top font-medium text-slate-900">
                                             {{ formatQty(row.shopify_push_qty) }}
                                         </td>
-                                        <td class="px-3 py-2">
+                                        <td class="px-3 py-2 align-top">
                                             {{ formatQty(row.shopify_available_qty) }}
                                         </td>
-                                        <td class="px-3 py-2">
+                                        <td class="px-3 py-2 align-top">
                                             <span
                                                 v-if="row.push_eligible"
                                                 class="font-medium text-emerald-800"

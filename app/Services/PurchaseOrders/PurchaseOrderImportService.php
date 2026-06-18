@@ -91,6 +91,8 @@ final class PurchaseOrderImportService
         private readonly ProductLatestCostCacheService $latestCosts,
         private readonly PurchaseOrderXlsxReader $xlsxReader,
         private readonly PurchaseOrderShipmentMethodService $shipmentMethods,
+        private readonly PurchaseOrderLineMergeService $lineMerge,
+        private readonly PurchaseOrderDerivedTotalsService $derivedTotals,
     ) {}
 
     /**
@@ -142,6 +144,9 @@ final class PurchaseOrderImportService
 
         $this->applyAllInFeesCadSplit($meta, $preambleMeta);
 
+        $mergedRows = $this->lineMerge->mergeParsedImportRows($rows);
+        $rows = $mergedRows['rows'];
+
         $productsBySku = $this->resolveOrCreateProductsBySku($vendor, $rows);
         $importMode = array_key_exists('import_mode', $meta)
             ? strtolower(trim((string) $meta['import_mode']))
@@ -174,14 +179,64 @@ final class PurchaseOrderImportService
 
             $items = 0;
             $lots = 0;
+            /** @var array<int, PurchaseOrderItem> $existingItemsByProductId */
+            $existingItemsByProductId = [];
+            if ($appendMode) {
+                foreach ($po->items as $existingItem) {
+                    $productId = (int) ($existingItem->product_id ?? 0);
+                    if ($productId > 0) {
+                        $existingItemsByProductId[$productId] = $existingItem;
+                    }
+                }
+            }
 
             foreach ($rows as $r) {
                 /** @var Product $product */
                 $product = $productsBySku[(string) $r['sku']];
+                $productId = (int) $product->id;
+
+                if ($appendMode && isset($existingItemsByProductId[$productId])) {
+                    $item = $existingItemsByProductId[$productId];
+                    $previousReceived = (int) ($item->qty_received ?? 0);
+
+                    if ($po->vendor_currency_code === 'CAD') {
+                        $this->lineMerge->mergeImportRowIntoItem($item, $r);
+                    } else {
+                        $item->qty_ordered = $this->lineMerge->sumNullableInts(
+                            $item->qty_ordered !== null ? (int) $item->qty_ordered : null,
+                            $r['qty_ordered'],
+                        );
+                        $item->qty_shipped = $this->lineMerge->sumNullableInts(
+                            $item->qty_shipped !== null ? (int) $item->qty_shipped : null,
+                            $r['qty_shipped'],
+                        );
+                        $item->qty_received = $this->lineMerge->sumNullableInts(
+                            $item->qty_received !== null ? (int) $item->qty_received : null,
+                            $r['qty_received'],
+                        );
+                        $item->vendor_unit_cost = $this->lineMerge->weightedAverageDecimal([
+                            ['cost' => $item->vendor_unit_cost !== null ? (string) $item->vendor_unit_cost : null, 'weight' => max(1, (int) ($item->qty_ordered ?? 1))],
+                            ['cost' => $r['unit_cost'], 'weight' => max(1, (int) ($r['qty_ordered'] ?? $r['qty_received'] ?? 1))],
+                        ]);
+                        $item->unit_cost = $item->vendor_unit_cost !== null && $fxRateForLines !== null
+                            ? $this->mulDecimalRounded((string) $item->vendor_unit_cost, $fxRateForLines, 4)
+                            : null;
+                    }
+
+                    $this->purchaseOrders->saveItem($item);
+                    $items++;
+
+                    $receivedDelta = max(0, (int) ($item->qty_received ?? 0) - $previousReceived);
+                    if ($receivedDelta > 0) {
+                        $lots += $this->createInventoryLotForItem($po, $item, $product, $receivedDelta);
+                    }
+
+                    continue;
+                }
 
                 $item = new PurchaseOrderItem;
                 $item->purchase_order_id = $po->id;
-                $item->product_id = (int) $product->id;
+                $item->product_id = $productId;
                 $item->sku = (string) $product->sku;
                 $item->vendor = (string) ($product->vendor ?? $vendor);
                 $item->vendor_unit_cost = $po->vendor_currency_code !== 'CAD' ? $r['unit_cost'] : null;
@@ -192,6 +247,7 @@ final class PurchaseOrderImportService
                 $item->qty_shipped = $r['qty_shipped'];
                 $item->qty_received = $r['qty_received'];
                 $this->purchaseOrders->createItem($item);
+                $existingItemsByProductId[$productId] = $item;
                 $items++;
 
                 $qtyReceived = (int) ($item->qty_received ?? 0);
@@ -199,24 +255,10 @@ final class PurchaseOrderImportService
                     continue;
                 }
 
-                $lot = new InventoryLot;
-                $lot->product_id = (int) $product->id;
-                $lot->purchase_order_item_id = $item->id;
-                $lot->source_type = 'po';
-                $lot->unit_cost = $item->unit_cost;
-                $lot->shipping_per_unit = null;
-                $lot->qty_received = $qtyReceived;
-                $lot->qty_remaining = $qtyReceived;
-                $lot->received_at = $this->resolveReceivedAt(
-                    $po->received_date,
-                    $po->shipped_date,
-                    $po->ordered_date,
-                );
-                $this->inventory->createLot($lot);
-                $lots++;
+                $lots += $this->createInventoryLotForItem($po, $item, $product, $qtyReceived);
             }
 
-            $shippingPerUnit = $this->recomputePurchaseOrderDerivedTotalsAndLots($po);
+            $shippingPerUnit = $this->derivedTotals->recompute($po);
 
             if ($appendMode) {
                 $combinedFx = $this->deriveFxRateToCad(
@@ -669,102 +711,32 @@ final class PurchaseOrderImportService
         return CarbonImmutable::parse($candidate)->startOfDay();
     }
 
-    private function recomputePurchaseOrderDerivedTotalsAndLots(PurchaseOrder $po): ?string
-    {
-        $items = $this->purchaseOrders->itemsForPurchaseOrderId((int) $po->id);
-
-        $totalReceived = 0;
-        $productTotalCents = 0;
-        $hasCadUnitCosts = false;
-        foreach ($items as $item) {
-            $qtyReceived = (int) ($item->qty_received ?? 0);
-            if ($qtyReceived > 0) {
-                $totalReceived += $qtyReceived;
-            }
-
-            $qtyForProductTotal = $qtyReceived > 0 ? $qtyReceived : (int) ($item->qty_ordered ?? 0);
-            if ($qtyForProductTotal <= 0) {
-                continue;
-            }
-
-            $unitCostCents = $item->unit_cost !== null ? $this->moneyToCentsOrNull((string) $item->unit_cost) : null;
-            if ($unitCostCents === null) {
-                continue;
-            }
-
-            $hasCadUnitCosts = true;
-            $productTotalCents += ($unitCostCents * $qtyForProductTotal);
+    private function createInventoryLotForItem(
+        PurchaseOrder $po,
+        PurchaseOrderItem $item,
+        Product $product,
+        int $qtyReceived,
+    ): int {
+        if ($qtyReceived <= 0) {
+            return 0;
         }
 
-        $shippingPerUnit = null;
-        $shippingTotal = $po->shipping_total !== null ? trim((string) $po->shipping_total) : null;
-        if ($shippingTotal !== null && $shippingTotal !== '' && $totalReceived > 0) {
-            $shippingPerUnit = $this->divideDecimal($shippingTotal, $totalReceived, 6);
-        }
+        $lot = new InventoryLot;
+        $lot->product_id = (int) $product->id;
+        $lot->purchase_order_item_id = $item->id;
+        $lot->source_type = 'po';
+        $lot->unit_cost = $item->unit_cost;
+        $lot->shipping_per_unit = null;
+        $lot->qty_received = $qtyReceived;
+        $lot->qty_remaining = $qtyReceived;
+        $lot->received_at = $this->resolveReceivedAt(
+            $po->received_date,
+            $po->shipped_date,
+            $po->ordered_date,
+        );
+        $this->inventory->createLot($lot);
 
-        // For foreign-currency imports without a known FX rate yet, unit_cost (CAD)
-        // can be null for all lines. In that case, preserve user-provided product_total
-        // instead of forcing it to 0.00.
-        if ($hasCadUnitCosts) {
-            $po->product_total = $this->centsToMoney($productTotalCents);
-        }
-        $this->purchaseOrders->save($po);
-
-        $itemIds = $items->pluck('id')->all();
-        if ($itemIds !== []) {
-            InventoryLot::query()
-                ->whereIn('purchase_order_item_id', $itemIds)
-                ->where('source_type', '=', 'po')
-                ->update([
-                    'shipping_per_unit' => $shippingPerUnit,
-                    'received_at' => $this->resolveReceivedAt(
-                        $po->received_date,
-                        $po->shipped_date,
-                        $po->ordered_date,
-                    ),
-                    'updated_at' => now(),
-                ]);
-        }
-
-        return $shippingPerUnit;
-    }
-
-    private function moneyToCentsOrNull(string $value): ?int
-    {
-        $trimmed = trim($value);
-        if ($trimmed === '') {
-            return null;
-        }
-
-        $clean = preg_replace('/[^0-9\.\-]/', '', $trimmed) ?? '';
-        if ($clean === '' || $clean === '-' || ! preg_match('/^-?\d+(\.\d+)?$/', $clean)) {
-            return null;
-        }
-
-        $negative = str_starts_with($clean, '-');
-        $raw = $negative ? substr($clean, 1) : $clean;
-        $parts = explode('.', $raw, 2);
-        $whole = $parts[0] === '' ? '0' : $parts[0];
-        $fraction = str_pad((string) ($parts[1] ?? ''), 3, '0');
-        $cents2 = substr($fraction, 0, 2);
-        $third = (int) substr($fraction, 2, 1);
-
-        $cents = ((int) $whole) * 100 + ((int) $cents2);
-        if ($third >= 5) {
-            $cents += 1;
-        }
-
-        return $negative ? -$cents : $cents;
-    }
-
-    private function centsToMoney(int $cents): string
-    {
-        $negative = $cents < 0;
-        $abs = abs($cents);
-        $dollars = intdiv($abs, 100);
-        $remainder = $abs % 100;
-
-        return sprintf('%s%d.%02d', $negative ? '-' : '', $dollars, $remainder);
+        return 1;
     }
 
     /**

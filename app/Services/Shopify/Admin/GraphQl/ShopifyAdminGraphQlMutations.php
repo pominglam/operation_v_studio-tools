@@ -21,6 +21,22 @@ final class ShopifyAdminGraphQlMutations
         }
         GQL;
 
+    public const string PRODUCT_DELETE_MEDIA = <<<'GQL'
+        mutation productDeleteMedia($productId: ID!, $mediaIds: [ID!]!) {
+            productDeleteMedia(productId: $productId, mediaIds: $mediaIds) {
+                deletedMediaIds
+                mediaUserErrors {
+                    field
+                    message
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GQL;
+
     public const string PUBLISHABLE_PUBLISH = <<<'GQL'
         mutation publishablePublish($id: ID!, $input: [PublicationInput!]!) {
             publishablePublish(id: $id, input: $input) {

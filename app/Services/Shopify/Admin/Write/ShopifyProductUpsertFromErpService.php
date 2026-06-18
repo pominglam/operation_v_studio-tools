@@ -6,12 +6,13 @@ namespace App\Services\Shopify\Admin\Write;
 
 use App\Contracts\Shopify\ShopifyAdminGraphQlClientInterface;
 use App\DAL\Products\ProductRepository;
+use App\DTOs\Shopify\ShopifyProductPushOptionsDTO;
 use App\Exceptions\Shopify\ShopifyGraphQlException;
 use App\Models\Product;
 use App\Services\Products\ProductExportService;
 use App\Services\Products\ShopifyContentExportService;
-use App\Support\Products\ProductHoldQty;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlMutations;
+use App\Support\Products\ProductHoldQty;
 use Illuminate\Support\Facades\Log;
 
 final class ShopifyProductUpsertFromErpService
@@ -24,6 +25,7 @@ final class ShopifyProductUpsertFromErpService
         private readonly ProductRepository $products,
         private readonly ShopifyProductMirrorBySkuResolver $mirrorBySku,
         private readonly ShopifyPublishProductToAllChannelsService $publishAllChannels,
+        private readonly ShopifyProductMediaService $productMedia,
     ) {}
 
     /**
@@ -41,9 +43,12 @@ final class ShopifyProductUpsertFromErpService
         ?string $tunnelBaseUrl,
         string $locationGid,
         array &$usedHandles,
+        ?ShopifyProductPushOptionsDTO $options = null,
     ): array {
+        $options = $options ?? ShopifyProductPushOptionsDTO::allEnabled();
+
         $this->scopeGuard->assertWriteProductsScope();
-        if ($locationGid !== '') {
+        if ($options->requiresInventoryScope() && $locationGid !== '') {
             $this->scopeGuard->assertWriteInventoryScope();
         }
 
@@ -52,7 +57,7 @@ final class ShopifyProductUpsertFromErpService
         $isUpdate = $mirror !== null && $this->mirrorBySku->isUpsertableMirror($mirror);
 
         if ($isUpdate) {
-            return $this->upsertExisting($product, $tunnelBaseUrl, $locationGid, $mirror);
+            return $this->upsertExisting($product, $tunnelBaseUrl, $locationGid, $mirror, $options);
         }
 
         if ($storedHandle !== '') {
@@ -63,7 +68,7 @@ final class ShopifyProductUpsertFromErpService
             ));
         }
 
-        return $this->upsertCreate($product, $tunnelBaseUrl, $locationGid, $usedHandles);
+        return $this->upsertCreate($product, $tunnelBaseUrl, $locationGid, $usedHandles, $options);
     }
 
     /**
@@ -87,16 +92,21 @@ final class ShopifyProductUpsertFromErpService
         ?string $tunnelBaseUrl,
         string $locationGid,
         array $mirror,
+        ShopifyProductPushOptionsDTO $options,
     ): array {
         $handle = is_string($product->handle) && trim($product->handle) !== ''
             ? trim($product->handle)
             : (string) ($mirror['shopify_handle'] ?? '');
 
-        $productSet = $this->buildProductSet($product, $handle, $tunnelBaseUrl, $locationGid);
+        $productSet = $this->buildProductSet($product, $handle, $tunnelBaseUrl, $locationGid, $options, true);
         $productSet['id'] = $mirror['product_gid'];
         $productSet['variants'][0]['id'] = $mirror['variant_gid'];
 
-        $payload = $this->executeProductSet($product, $handle, $productSet, 'update');
+        if ($options->images && $this->hasProductSetFiles($productSet)) {
+            $this->productMedia->clearExistingMedia((string) $mirror['product_gid']);
+        }
+
+        $payload = $this->executeProductSet($product, $handle, $productSet, 'update', $options);
 
         return [
             'product_uuid' => (string) $product->uuid,
@@ -122,12 +132,13 @@ final class ShopifyProductUpsertFromErpService
         ?string $tunnelBaseUrl,
         string $locationGid,
         array &$usedHandles,
+        ShopifyProductPushOptionsDTO $options,
     ): array {
         $handle = $this->exports->shopifyHandleForProduct($product, $usedHandles);
         $usedHandles[$handle] = true;
 
-        $productSet = $this->buildProductSet($product, $handle, $tunnelBaseUrl, $locationGid);
-        $payload = $this->executeProductSet($product, $handle, $productSet, 'create');
+        $productSet = $this->buildProductSet($product, $handle, $tunnelBaseUrl, $locationGid, $options, false);
+        $payload = $this->executeProductSet($product, $handle, $productSet, 'create', $options);
 
         $product->handle = $payload['handle'];
         $this->products->save($product);
@@ -144,8 +155,13 @@ final class ShopifyProductUpsertFromErpService
     /**
      * @return array{shopify_gid: string, handle: string}
      */
-    private function executeProductSet(Product $product, string $handle, array $productSet, string $mode): array
-    {
+    private function executeProductSet(
+        Product $product,
+        string $handle,
+        array $productSet,
+        string $mode,
+        ShopifyProductPushOptionsDTO $options,
+    ): array {
         $startedAt = microtime(true);
         Log::channel('shopify')->info('shopify.write.product_set.start', [
             'sku' => (string) $product->sku,
@@ -153,6 +169,8 @@ final class ShopifyProductUpsertFromErpService
             'mode' => $mode,
             'images' => count(is_array($productSet['files'] ?? null) ? $productSet['files'] : []),
         ]);
+
+        ShopifyProductSetPayloadValidator::assertValid($productSet);
 
         $response = $this->client->query(ShopifyAdminGraphQlMutations::PRODUCT_SET, [
             'synchronous' => true,
@@ -193,7 +211,9 @@ final class ShopifyProductUpsertFromErpService
             throw new ShopifyGraphQlException('Shopify productSet succeeded without product id/handle.');
         }
 
-        $this->publishAllChannels->publishWhenEligible($product, $shopifyGid);
+        if ($options->salesChannels || $options->publishStatus) {
+            $this->publishAllChannels->publishWhenEligible($product, $shopifyGid);
+        }
 
         return [
             'shopify_gid' => $shopifyGid,
@@ -209,9 +229,12 @@ final class ShopifyProductUpsertFromErpService
         string $handle,
         ?string $tunnelBaseUrl,
         string $locationGid,
+        ShopifyProductPushOptionsDTO $options,
+        bool $isUpdate,
     ): array {
-        $price = $this->requireSellingPrice($product);
-        $files = $this->contentExport->productSetFilesForProduct($product, $tunnelBaseUrl);
+        $files = $options->images
+            ? $this->contentExport->productSetFilesForProduct($product, $tunnelBaseUrl)
+            : [];
 
         $variant = [
             'optionValues' => [
@@ -220,16 +243,21 @@ final class ShopifyProductUpsertFromErpService
                     'name' => 'Default Title',
                 ],
             ],
-            'price' => $price,
-            'sku' => (string) $product->sku,
         ];
 
-        $barcode = is_string($product->barcode) ? trim($product->barcode) : '';
-        if ($barcode !== '') {
-            $variant['barcode'] = $barcode;
+        if ($options->price || ! $isUpdate) {
+            $variant['price'] = $this->requireSellingPrice($product);
         }
 
-        if ($locationGid !== '') {
+        if ($options->info || ! $isUpdate) {
+            $variant['sku'] = (string) $product->sku;
+            $barcode = is_string($product->barcode) ? trim($product->barcode) : '';
+            if ($barcode !== '') {
+                $variant['barcode'] = $barcode;
+            }
+        }
+
+        if ($options->quantities && $locationGid !== '') {
             $variant['inventoryItem'] = ['tracked' => true];
             $variant['inventoryQuantities'] = [
                 [
@@ -238,37 +266,56 @@ final class ShopifyProductUpsertFromErpService
                     'quantity' => ProductHoldQty::sellableForProduct($product),
                 ],
             ];
-        } else {
+        } elseif (! $isUpdate) {
             $variant['inventoryItem'] = ['tracked' => false];
         }
 
-        if ($files !== []) {
+        if ($options->images && $files !== []) {
             $variant['file'] = $files[0];
         }
 
         $productSet = [
-            'title' => (string) $product->description,
-            'descriptionHtml' => $this->contentExport->bodyHtmlForProduct($product),
-            'handle' => $handle,
-            'productType' => trim((string) ($product->type ?? '')),
-            'tags' => $this->exports->shopifyTagsListForProduct($product),
-            'status' => $this->exports->shopifyStatusEnumForProduct($product),
-            'productOptions' => [
-                [
-                    'name' => 'Title',
-                    'values' => [
-                        ['name' => 'Default Title'],
-                    ],
-                ],
-            ],
             'variants' => [$variant],
+            'productOptions' => $this->defaultProductOptions(),
         ];
 
-        if ($files !== []) {
+        if (! $isUpdate) {
+            $productSet['handle'] = $handle;
+            $productSet['title'] = (string) $product->description;
+        }
+
+        if ($options->info || ! $isUpdate) {
+            $productSet['title'] = (string) $product->description;
+            $productSet['descriptionHtml'] = $this->contentExport->bodyHtmlForProduct($product);
+            $productType = trim((string) ($product->type ?? ''));
+            if ($productType !== '') {
+                $productSet['productType'] = $productType;
+            }
+            $tags = $this->exports->shopifyTagsListForProduct($product);
+            if ($tags !== []) {
+                $productSet['tags'] = $tags;
+            }
+        }
+
+        if ($options->publishStatus || ! $isUpdate) {
+            $productSet['status'] = $this->exports->shopifyStatusEnumForProduct($product);
+        }
+
+        if ($options->images && $files !== []) {
             $productSet['files'] = $files;
         }
 
         return $productSet;
+    }
+
+    /**
+     * @param  array<string, mixed>  $productSet
+     */
+    private function hasProductSetFiles(array $productSet): bool
+    {
+        $files = $productSet['files'] ?? null;
+
+        return is_array($files) && $files !== [];
     }
 
     private function requireSellingPrice(Product $product): string
@@ -280,5 +327,23 @@ final class ShopifyProductUpsertFromErpService
         }
 
         return $price;
+    }
+
+    /**
+     * Shopify requires productOptions whenever variants (with optionValues) are sent,
+     * including partial updates on existing products.
+     *
+     * @return array<int, array{name: string, values: array<int, array{name: string}>}>
+     */
+    private function defaultProductOptions(): array
+    {
+        return [
+            [
+                'name' => 'Title',
+                'values' => [
+                    ['name' => 'Default Title'],
+                ],
+            ],
+        ];
     }
 }

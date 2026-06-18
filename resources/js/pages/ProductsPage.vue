@@ -22,6 +22,7 @@ import ProductsTable, {
 } from '../components/products/ProductsTable.vue';
 import type { ProductsBulkExportType } from '../components/products/BulkExportDialog.vue';
 import type { ProductsRecrawlSource } from '../components/products/BulkRecrawlDialog.vue';
+import type { ShopifyProductPushOptions } from '../components/products/BulkPushShopifyDialog.vue';
 import PlamodDrawer from '../components/products/PlamodDrawer.vue';
 import ProductDemandDetailDialog from '../components/products/ProductDemandDetailDialog.vue';
 import ProductPoLinesDrawer from '../components/products/ProductPoLinesDrawer.vue';
@@ -304,6 +305,36 @@ async function bulkRecrawlSelected(ids: string[], sources: ProductsRecrawlSource
     await router.push({ name: 'sync-progress', query: { batch_id: res.data.batch_id } });
 }
 
+async function bulkPushShopifySelected(
+    ids: string[],
+    pushOptions: ShopifyProductPushOptions,
+): Promise<void> {
+    const res = await api.post<{ ok: boolean; batch_id: string; queued: number }>(
+        '/api/v1/products/shopify-push/selected',
+        { ids, push_options: pushOptions },
+        { validateStatus: () => true },
+    );
+    if (res.status !== 202 || !res.data?.batch_id) {
+        const status = res.status;
+        const anyData = res.data as any;
+        const rawMessage: unknown = anyData?.message ?? anyData?.error ?? anyData?.errors;
+
+        let details = '';
+        if (typeof rawMessage === 'string') {
+            details = rawMessage.trim();
+        } else if (rawMessage !== null && rawMessage !== undefined) {
+            try {
+                details = JSON.stringify(rawMessage);
+            } catch {
+                details = String(rawMessage);
+            }
+        }
+
+        throw new Error(`Failed to queue Shopify push (HTTP ${status}).${details ? ` ${details}` : ''}`);
+    }
+    await router.push({ name: 'sync-progress', query: { batch_id: res.data.batch_id } });
+}
+
 async function createDraftPurchaseOrderFromSelectedProducts(ids: string[]): Promise<{
     purchase_order_uuid: string;
     added: number;
@@ -364,6 +395,8 @@ type PoProductNovelty = 'all' | 'new' | 'existing';
 const poProductNovelty = ref<PoProductNovelty>('all');
 type ReadyFilter = 'all' | 'ready' | 'not_ready';
 const readyFilter = ref<ReadyFilter>('all');
+type ArchivedFilter = 'active' | 'all' | 'archived';
+const archivedFilter = ref<ArchivedFilter>('active');
 const availableMinFilter = ref('');
 const availableMaxFilter = ref('');
 const notArrivedFilter = ref('');
@@ -487,8 +520,6 @@ const total = computed<number>(() => meta.value?.total ?? 0);
 const currentPage = computed<number>(() => meta.value?.current_page ?? page.value);
 const lastPage = computed<number>(() => meta.value?.last_page ?? 1);
 
-const includeArchived = ref(false);
-
 function parseNonNegativeIntegerFilter(raw: string): number | undefined {
     const trimmed = raw.trim();
     if (trimmed === '') return undefined;
@@ -557,7 +588,7 @@ const selectionScopeKey = computed<string>(() => {
         reorder_gt_one: reorderGtOne.value,
         selling_price_min: parseNonNegativeDecimalFilter(sellingPriceMinFilter.value) ?? null,
         selling_price_max: parseNonNegativeDecimalFilter(sellingPriceMaxFilter.value) ?? null,
-        include_archived: includeArchived.value,
+        archived: archivedFilter.value,
     });
 });
 
@@ -589,7 +620,7 @@ function productsListParams(per_page: number, pageNum: number): Record<string, u
         reorder_gt_one: reorderGtOne.value ? 1 : undefined,
         selling_price_min: parseNonNegativeDecimalFilter(sellingPriceMinFilter.value),
         selling_price_max: parseNonNegativeDecimalFilter(sellingPriceMaxFilter.value),
-        include_archived: includeArchived.value ? 1 : undefined,
+        archived: archivedFilter.value !== 'active' ? archivedFilter.value : undefined,
     };
 
     if (isBulkActive.value) {
@@ -681,7 +712,7 @@ function buildLoadKey(): string {
         reorder_gt_one: reorderGtOne.value,
         selling_price_min: parseNonNegativeDecimalFilter(sellingPriceMinFilter.value) ?? null,
         selling_price_max: parseNonNegativeDecimalFilter(sellingPriceMaxFilter.value) ?? null,
-        include_archived: includeArchived.value,
+        archived: archivedFilter.value,
     });
 }
 
@@ -1626,6 +1657,7 @@ watch(
         selectedProductFlags,
         selectedShipmentMethods,
         readyFilter,
+        archivedFilter,
         availableMinFilter,
         availableMaxFilter,
         notArrivedFilter,
@@ -1683,6 +1715,7 @@ onMounted(() => {
         selectedProductFlags?: string[];
         selectedShipmentMethods?: string[];
         readyFilter?: ReadyFilter;
+        archivedFilter?: ArchivedFilter;
         availableFilter?: string;
         availableMinFilter?: string;
         availableMaxFilter?: string;
@@ -1728,6 +1761,13 @@ onMounted(() => {
             saved.readyFilter === 'not_ready'
         ) {
             readyFilter.value = saved.readyFilter;
+        }
+        if (
+            saved.archivedFilter === 'active' ||
+            saved.archivedFilter === 'all' ||
+            saved.archivedFilter === 'archived'
+        ) {
+            archivedFilter.value = saved.archivedFilter;
         }
         if (typeof saved.availableMinFilter === 'string') {
             availableMinFilter.value = saved.availableMinFilter;
@@ -1829,6 +1869,7 @@ watch(
         selectedProductFlags,
         selectedShipmentMethods,
         readyFilter,
+        archivedFilter,
         availableMinFilter,
         availableMaxFilter,
         notArrivedFilter,
@@ -1860,6 +1901,7 @@ watch(
             selectedProductFlags: selectedProductFlags.value,
             selectedShipmentMethods: selectedShipmentMethods.value,
             readyFilter: readyFilter.value,
+            archivedFilter: archivedFilter.value,
             availableMinFilter: availableMinFilter.value,
             availableMaxFilter: availableMaxFilter.value,
             notArrivedFilter: notArrivedFilter.value,
@@ -1891,6 +1933,7 @@ function resetListState(): void {
     selectedProductFlags.value = [];
     selectedShipmentMethods.value = [];
     readyFilter.value = 'all';
+    archivedFilter.value = 'active';
     availableMinFilter.value = '';
     availableMaxFilter.value = '';
     notArrivedFilter.value = '';
@@ -2187,19 +2230,20 @@ function resetListState(): void {
 
                             <div>
                                 <label
+                                    for="products-archived-filter"
                                     class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                                     >Archived</label
                                 >
-                                <label
-                                    class="mt-2 inline-flex items-center gap-2 text-sm text-slate-700"
+                                <select
+                                    id="products-archived-filter"
+                                    v-model="archivedFilter"
+                                    class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                    data-testid="products-filter-archived"
                                 >
-                                    <input
-                                        v-model="includeArchived"
-                                        type="checkbox"
-                                        class="h-4 w-4 rounded border-slate-300 text-slate-900"
-                                    />
-                                    <span>Include archived</span>
-                                </label>
+                                    <option value="active">Active only</option>
+                                    <option value="all">All (active + archived)</option>
+                                    <option value="archived">Archived only</option>
+                                </select>
                             </div>
 
                             <div>
@@ -2426,6 +2470,7 @@ function resetListState(): void {
                         :on-bulk-rename-plamod-assets="bulkRenamePlamodAssets"
                         :on-bulk-export-selected="bulkExportSelected"
                         :on-bulk-recrawl-selected="bulkRecrawlSelected"
+                        :on-bulk-push-shopify-selected="bulkPushShopifySelected"
                         :on-create-draft-purchase-order="createDraftPurchaseOrderFromSelectedProducts"
                         :on-update="updateProduct"
                         :on-update-available="updateProductAvailable"

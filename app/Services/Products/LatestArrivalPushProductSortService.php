@@ -124,7 +124,7 @@ final class LatestArrivalPushProductSortService
         $derived = $this->typeDerivation->deriveFromName((string) $product->description);
         $derivedLabel = $derived !== null ? $this->normalizeTypeLabel($derived) : '';
 
-        if ($derivedLabel !== '' && $this->isGenericSortType($storedLabel)) {
+        if ($derivedLabel !== '' && ($this->isGenericSortType($storedLabel) || $this->shouldPreferDerivedOverStored($derivedLabel))) {
             return $derivedLabel;
         }
 
@@ -150,6 +150,19 @@ final class LatestArrivalPushProductSortService
         }
 
         return true;
+    }
+
+    private function shouldPreferDerivedOverStored(string $normalizedDerived): bool
+    {
+        /** @var array<int, string> $types */
+        $types = config('latest_arrival.prefer_derived_over_stored_types', []);
+        foreach ($types as $type) {
+            if ($this->normalizeTypeLabel((string) $type) === $normalizedDerived) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function normalizeTypeLabel(string $type): string

@@ -4,6 +4,10 @@ import ConfirmDialog from '../ui/ConfirmDialog.vue';
 import BulkUpdateDialog from './BulkUpdateDialog.vue';
 import BulkExportDialog, { type ProductsBulkExportType } from './BulkExportDialog.vue';
 import BulkRecrawlDialog, { type ProductsRecrawlSource } from './BulkRecrawlDialog.vue';
+import BulkPushShopifyDialog, {
+    type BulkPushShopifyPreview,
+    type ShopifyProductPushOptions,
+} from './BulkPushShopifyDialog.vue';
 import { formatMoney2 } from '../../lib/money';
 import { parseNonNegativeIntOrNull } from '../../lib/numbers';
 
@@ -140,6 +144,10 @@ const props = defineProps<{
     onBulkRenamePlamodAssets: (ids: string[]) => Promise<{ queued: number; batchId: string }>;
     onBulkExportSelected: (ids: string[], exportType: ProductsBulkExportType) => Promise<void>;
     onBulkRecrawlSelected: (ids: string[], sources: ProductsRecrawlSource[]) => Promise<void>;
+    onBulkPushShopifySelected: (
+        ids: string[],
+        pushOptions: ShopifyProductPushOptions,
+    ) => Promise<void>;
     onCreateDraftPurchaseOrder?: (ids: string[]) => Promise<{
         purchase_order_uuid: string;
         added: number;
@@ -243,6 +251,8 @@ const confirmBulkArchiveCount = ref(0);
 const bulkUpdateOpen = ref(false);
 const bulkExportOpen = ref(false);
 const bulkRecrawlOpen = ref(false);
+const bulkShopifyPushOpen = ref(false);
+const bulkShopifyPushing = ref(false);
 
 const editingId = ref<string | null>(null);
 const draft = ref<UpdateProductPayload | null>(null);
@@ -804,6 +814,19 @@ function requestBulkRecrawl(): void {
     bulkRecrawlOpen.value = true;
 }
 
+function requestBulkShopifyPush(): void {
+    bulkError.value = null;
+    bulkMessage.value = null;
+
+    const ids = Array.from(selected.value);
+    if (ids.length === 0) {
+        bulkError.value = 'No products selected.';
+        return;
+    }
+
+    bulkShopifyPushOpen.value = true;
+}
+
 async function confirmBulkDelete(): Promise<void> {
     bulkError.value = null;
     bulkMessage.value = null;
@@ -951,6 +974,38 @@ async function confirmBulkRecrawl(payload: { sources: ProductsRecrawlSource[] })
         bulkError.value = msg !== '' ? msg : 'Failed to queue recrawl.';
     } finally {
         bulkExporting.value = false;
+    }
+}
+
+async function confirmBulkShopifyPush(payload: {
+    pushOptions: ShopifyProductPushOptions;
+    preview: BulkPushShopifyPreview;
+}): Promise<void> {
+    bulkError.value = null;
+    bulkMessage.value = null;
+
+    const ids = Array.from(selected.value);
+    if (ids.length === 0) {
+        bulkError.value = 'No products selected.';
+        return;
+    }
+
+    if (payload.preview.push_count === 0) {
+        bulkError.value = 'No eligible products to push.';
+        return;
+    }
+
+    bulkShopifyPushing.value = true;
+    try {
+        await props.onBulkPushShopifySelected(ids, payload.pushOptions);
+        bulkMessage.value = `Shopify push queued for ${payload.preview.push_count} product(s). Open Sync Progress to watch it.`;
+        bulkShopifyPushOpen.value = false;
+    } catch (e: unknown) {
+        const anyErr = e as any;
+        const msg = typeof anyErr?.message === 'string' ? anyErr.message.trim() : '';
+        bulkError.value = msg !== '' ? msg : 'Failed to queue Shopify push.';
+    } finally {
+        bulkShopifyPushing.value = false;
     }
 }
 
@@ -1127,6 +1182,20 @@ onUnmounted(() => {
                         @click="requestBulkExport"
                     >
                         {{ bulkExporting ? 'Exporting…' : 'Export selected' }}
+                    </button>
+                    <button
+                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                        type="button"
+                        :disabled="
+                            bulkDeleting ||
+                            bulkArchiving ||
+                            bulkUpdating ||
+                            bulkExporting ||
+                            bulkShopifyPushing
+                        "
+                        @click="requestBulkShopifyPush"
+                    >
+                        {{ bulkShopifyPushing ? 'Queuing push…' : 'Push to Shopify' }}
                     </button>
                     <button
                         class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
@@ -1440,7 +1509,12 @@ onUnmounted(() => {
                         </td>
                     </tr>
 
-                    <tr v-for="p in products" :key="p.id" class="hover:bg-slate-50">
+                    <tr
+                        v-for="p in products"
+                        :key="p.id"
+                        class="hover:bg-slate-50"
+                        :class="p.is_archived ? 'bg-slate-50/80' : ''"
+                    >
                         <td class="px-4 py-3">
                             <input
                                 class="h-4 w-4 rounded border-slate-300"
@@ -1509,6 +1583,13 @@ onUnmounted(() => {
                                         :title="p.description"
                                     >
                                         {{ p.description }}
+                                        <span
+                                            v-if="p.is_archived"
+                                            class="ml-2 inline-flex rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700"
+                                            data-testid="product-archived-badge"
+                                        >
+                                            Archived
+                                        </span>
                                     </div>
                                     <div
                                         class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-600"
@@ -2168,5 +2249,14 @@ onUnmounted(() => {
         :busy="bulkExporting"
         @cancel="bulkRecrawlOpen = false"
         @confirm="confirmBulkRecrawl"
+    />
+
+    <BulkPushShopifyDialog
+        :open="bulkShopifyPushOpen"
+        :selected-count="selected.size"
+        :selected-ids="Array.from(selected)"
+        :busy="bulkShopifyPushing"
+        @cancel="bulkShopifyPushOpen = false"
+        @confirm="confirmBulkShopifyPush"
     />
 </template>

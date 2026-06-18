@@ -9,12 +9,14 @@ declare(strict_types=1);
  * received POs use newest received PO only; unreceived POs are ignored;
  * then this grade sequence within each PO (newest product created_at within each grade).
  *
- * PG → Mega → MG (MGEX first) → RE → Full Mechanics → RG → HGUC → HG → SD/BB
- * → 30MM → 30MF → 30MS → Entry Grade → Pokemon → Figure-rise
+ * CCS toys → Sazabi bust (before all Gundams) → PG → Mega → MG … → HG
+ * → SD/BB/EX-Standard → Kun DX → Macross (end of Gundam block)
+ * → 30MM (Armored Core first) → 30MF → 30MS → 30MP → Figure-rise → Entry Grade → Pokemon → Keroro
+ * → Action base → System base → LED → Option parts set Gunpla (last)
  */
 return [
 
-    'type_rank_display_order' => [7, 69, 6, 65, 5, 4, 3, 2, 8],
+    'type_rank_display_order' => [100, 7, 69, 6, 65, 5, 4, 3, 2, 1, 25, 8],
 
     /**
      * Map products.type (or derived type) to a rank bucket. Unknown types use rank 8.
@@ -39,11 +41,15 @@ return [
         'ENTRY GRADE' => 8,
         'HG' => 3,
         'Orphans HG' => 3,
+        'MACROSS' => 25,
         'EG' => 8,
         'SD' => 2,
         'SDW' => 2,
         'BB' => 2,
+        'EX-Standard' => 2,
+        'KUN DX' => 1,
         '30MM' => 8,
+        'ARMORED CORE' => 8,
         '30MF' => 8,
         '30MS' => 8,
         '30MP' => 8,
@@ -55,7 +61,24 @@ return [
         'KEYCHAIN' => 8,
         'PLAMAX' => 8,
         'POKEMON' => 8,
-        'EX-Standard' => 8,
+        'KERORO' => 8,
+        'CCS TOYS' => 100,
+        'SAZABI BUST' => 100,
+        'SYSTEM BASE' => 8,
+        'LED' => 8,
+        'OPTION PARTS SET' => 8,
+    ],
+
+    /**
+     * When the product name derives one of these types, use it even if products.type is set
+     * (e.g. OPTION PARTS SET GUNPLA mis-tagged as EG).
+     *
+     * @var array<int, string>
+     */
+    'prefer_derived_over_stored_types' => [
+        'OPTION PARTS SET',
+        'MACROSS',
+        'ARMORED CORE',
     ],
 
     /**
@@ -75,15 +98,32 @@ return [
             'RE' => 0,
             'FM' => 1,
         ],
+        2 => [
+            'SD' => 0,
+            'BB' => 1,
+            'SDW' => 2,
+            'EX-STANDARD' => 3,
+        ],
+        100 => [
+            'CCS-TOYS' => 0,
+            'SAZABI-BUST' => 1,
+        ],
         8 => [
-            '30MM' => 0,
-            '30MF' => 1,
-            '30MS' => 2,
-            '30MP' => 3,
-            'ENTRY-GRADE' => 4,
-            'EG' => 5,
-            'POKEMON' => 6,
-            'FIGURE-RISE' => 7,
+            'ARMORED-CORE' => 0,
+            '30MM' => 1,
+            '30MF' => 2,
+            '30MS' => 3,
+            '30MP' => 4,
+            'FIGURE-RISE' => 5,
+            'ENTRY-GRADE' => 6,
+            'EG' => 7,
+            'POKEMON' => 8,
+            'KERORO' => 9,
+            'OPTION-PARTS' => 90,
+            'ACTION-BASE' => 91,
+            'SYSTEM-BASE' => 92,
+            'LED' => 93,
+            'OPTION-PARTS-SET' => 94,
         ],
     ],
 

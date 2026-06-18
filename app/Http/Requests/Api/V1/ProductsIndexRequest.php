@@ -27,6 +27,7 @@ final class ProductsIndexRequest extends FormRequest
             'purchase_order_uuids.*' => ['uuid'],
             'po_product_novelty' => ['sometimes', 'string', Rule::in(['all', 'new', 'existing'])],
             'include_archived' => ['sometimes', 'boolean'],
+            'archived' => ['sometimes', 'string', Rule::in(['active', 'all', 'archived'])],
             'ready' => ['sometimes', 'string', Rule::in(['all', 'ready', 'not_ready'])],
             'product_flags' => ['sometimes', 'array'],
             'product_flags.*' => [
@@ -87,5 +88,19 @@ final class ProductsIndexRequest extends FormRequest
             'vendors' => ['sometimes', 'array'],
             'vendors.*' => ['string', 'max:128'],
         ];
+    }
+
+    public function archivedFilter(): string
+    {
+        $archived = $this->validated('archived');
+        if (is_string($archived) && in_array($archived, ['all', 'archived'], true)) {
+            return $archived;
+        }
+
+        if ((bool) ($this->validated('include_archived') ?? false)) {
+            return 'all';
+        }
+
+        return 'active';
     }
 }

@@ -226,6 +226,8 @@ Two **different orchestrations** deliberately exist:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | POST | `/products/recrawl/selected` | Queues `RecrawlSelectedProductJob` subset for PDP/seller rescrape flows. |
+| POST | `/products/shopify-push/preview` | Preview bulk ERP → Shopify push for selected product UUIDs + `push_options` field matrix (`ProductsBulkPushShopifyPreviewService`). |
+| POST | `/products/shopify-push/selected` | Queues `PushSelectedProductToShopifyJob` batch (`push_selected_products_shopify`); **202** + `batch_id`. |
 | POST | `/products/backfill-types` | Backfills **type** derivation gaps using `ProductTypeBackfill`/related orchestration. |
 | POST | `/products/recompute-types` | Runs smarter/type rules across catalog (`ProductTypeRecomputeService`). |
 | POST | `/products/bulk-delete` | Destructive multi-delete guarded by validations + tests (`ProductBulkDeleteService`). |
@@ -448,6 +450,7 @@ Uses relationship **`shopifyImageAssets`**:
 | `SyncProductInfoJob` | **`POST /products/{id}/product-info/sync`** only (direct `dispatch`, **not** enqueued inside `sync-missing-info` batches). Implements `Batchable` + `SkipIfBatchCancelled` but **usual path has no Laravel batch parent** (`$this->batch()` null) unless tests/mocks attach one—`JobBatchItemService` mutations then no-op guarded by batch id checks. |
 | `RunPriceResearchJob` | `/price-research/run` asynchronous mode |
 | `RecrawlSelectedProductJob` | `/products/recrawl/selected` |
+| `PushSelectedProductToShopifyJob` | `/products/shopify-push/selected` |
 | `SyncPlamodAssetsJob` | **`POST /products/{id}/plamod/sync`** (immediate dispatch) **and** bulk **`POST /products/sync-missing-info`** batches. Wraps **`PlamodAssetSyncService`**, logs **`plamod.sync.completed`** with **`backup_created`**, **`assets_count`**. |
 | `RenameSelectedProductAssetsJob` | `/products/bulk/plamod-assets/rename` |
 

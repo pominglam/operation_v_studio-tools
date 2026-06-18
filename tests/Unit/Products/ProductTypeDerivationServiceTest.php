@@ -26,6 +26,18 @@ it('derives expected product types from name using mapping rules', function (): 
     expect($svc->deriveFromName('Mega Size Model'))->toBe('MEGA');
     expect($svc->deriveFromName('Sanding Stick 600'))->toBe('SANDING');
     expect($svc->deriveFromName('PLAMAX Something'))->toBe('PLAMAX');
+    expect($svc->deriveFromName('KERORO - GIRORO ROBO MK2'))->toBe('KERORO');
+    expect($svc->deriveFromName('1/1 ZAKUPLA-KUN DX SET'))->toBe('KUN DX');
+    expect($svc->deriveFromName('1/1 GUNPLA-KUN DX SET'))->toBe('KUN DX');
+    expect($svc->deriveFromName('30MF LIBER ARCHER'))->toBe('30MF');
+    expect($svc->deriveFromName('CCS EVANGELION Unit-02 Type II'))->toBe('CCS TOYS');
+    expect($svc->deriveFromName('Sazabi (Universal Century Saga)'))->toBe('SAZABI BUST');
+    expect($svc->deriveFromName('System Base 001'))->toBe('SYSTEM BASE');
+    expect($svc->deriveFromName('LED Unit (Blue)'))->toBe('LED');
+    expect($svc->deriveFromName('OPTION PARTS SET GUNPLA 14 (GUNBARREL STRIKER)'))->toBe('OPTION PARTS SET');
+    expect($svc->deriveFromName('HG 1/100 VF-31C SIEGFRIED (MIRAGE FARINA JENIUS)'))->toBe('MACROSS');
+    expect($svc->deriveFromName('MACROSS Delta VF-31 Siegfried'))->toBe('MACROSS');
+    expect($svc->deriveFromName('30MM ARMORED CORE VI FIRES OF RUBICON'))->toBe('ARMORED CORE');
 });
 
 it('falls back to common grade prefixes when no specific mapping exists', function (): void {

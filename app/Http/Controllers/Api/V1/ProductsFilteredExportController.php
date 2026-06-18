@@ -78,7 +78,7 @@ final class ProductsFilteredExportController extends Controller
         /** @var string $sortDir */
         $sortDir = $request->validated('sort_dir') ?? 'asc';
 
-        $includeArchived = (bool) ($request->validated('include_archived') ?? false);
+        $archivedFilter = $request->archivedFilter();
 
         $notArrivedIncludeDraftOrders = $request->validated('not_arrived_include_draft_orders');
         $notArrivedIncludeDraftOrders = $notArrivedIncludeDraftOrders === null
@@ -103,7 +103,7 @@ final class ProductsFilteredExportController extends Controller
                 $sortDir,
                 $purchaseOrderUuids,
                 $searchTerms,
-                $includeArchived,
+                $archivedFilter,
                 $poProductNovelty,
                 $ready,
                 $availableMin,

@@ -225,4 +225,18 @@ query Collections($first: Int!, $after: String) {
   }
 }
 GQL;
+
+    public const PRODUCT_MEDIA_IDS = <<<'GQL'
+query ProductMediaIds($id: ID!, $first: Int!, $after: String) {
+  product(id: $id) {
+    id
+    media(first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id
+      }
+    }
+  }
+}
+GQL;
 }
