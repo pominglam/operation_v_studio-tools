@@ -55,6 +55,25 @@ final class ShopifyWriteScopeGuard
         return $this->hasScope('read_publications');
     }
 
+    public function assertWriteOnlineStoreNavigationScope(): void
+    {
+        if (! $this->hasWriteOnlineStoreNavigationScope()) {
+            throw new ShopifyAdminConfigurationException(
+                'Shopify OAuth token is missing write_online_store_navigation scope. Re-install the app with read_online_store_navigation,write_online_store_navigation in SHOPIFY_OAUTH_SCOPES, then complete OAuth again.',
+            );
+        }
+    }
+
+    public function hasWriteOnlineStoreNavigationScope(): bool
+    {
+        return $this->hasScope('write_online_store_navigation');
+    }
+
+    public function hasReadOnlineStoreNavigationScope(): bool
+    {
+        return $this->hasScope('read_online_store_navigation');
+    }
+
     private function hasScope(string $scope): bool
     {
         /** @var string|null $scopesRaw */

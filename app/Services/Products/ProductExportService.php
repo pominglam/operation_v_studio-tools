@@ -8,6 +8,7 @@ use App\DAL\Products\ProductRepository;
 use App\Models\Product;
 use App\Models\ProductExternalContent;
 use App\Services\PriceResearch\FxRateService;
+use App\Support\Products\Storefront\ProductStorefrontClassifier;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
@@ -18,6 +19,7 @@ final class ProductExportService
     public function __construct(
         private readonly ProductRepository $products,
         private readonly FxRateService $fxRates,
+        private readonly ProductStorefrontClassifier $storefrontClassifier,
     ) {}
 
     /**
@@ -308,21 +310,7 @@ final class ProductExportService
      */
     public function shopifyTagsListForProduct(Product $product): array
     {
-        $type = $product->type !== null ? trim((string) $product->type) : '';
-        $tagsCsv = $this->shopifyTagsForProduct($product, $type);
-        if ($tagsCsv === '') {
-            return [];
-        }
-
-        $out = [];
-        foreach (explode(',', $tagsCsv) as $tag) {
-            $tag = trim($tag);
-            if ($tag !== '') {
-                $out[] = $tag;
-            }
-        }
-
-        return $out;
+        return $this->storefrontClassifier->classify($product)->shopifyTags;
     }
 
     public function shopifyStatusEnumForProduct(Product $product): string
@@ -345,7 +333,7 @@ final class ProductExportService
         $availableQty = $product->available_qty ?? 0;
         $selling = $product->sellingPrice?->selling_price;
         $type = $product->type !== null ? trim((string) $product->type) : '';
-        $tags = $this->shopifyTagsForProduct($product, $type);
+        $tags = $this->storefrontClassifier->classify($product)->shopifyTagsCsv();
         $isArchived = $product->archived_at !== null;
         $shouldPublish = ! $isArchived && (bool) $product->published_on_shopify;
         $status = $isArchived ? 'archived' : ($shouldPublish ? 'active' : 'draft');
@@ -416,41 +404,6 @@ final class ProductExportService
             static fn (string $col): string => (string) ($map[$col] ?? ''),
             $header,
         );
-    }
-
-    private function shopifyTagsForProduct(Product $product, string $type): string
-    {
-        $mainType = trim((string) $product->main_type);
-        if ($mainType === '') {
-            // Explicitly treat empty main_type as "no tags at all" for Shopify exports.
-            return '';
-        }
-
-        $tags = [$mainType];
-
-        if ($type !== '') {
-            $tags[] = $type;
-        }
-        if ($product->latest_arrival) {
-            $tags[] = self::LATEST_ARRIVAL_TAG;
-        }
-
-        $out = [];
-        $seen = [];
-        foreach ($tags as $t) {
-            $t = trim((string) $t);
-            if ($t === '') {
-                continue;
-            }
-            $key = strtolower($t);
-            if (isset($seen[$key])) {
-                continue;
-            }
-            $seen[$key] = true;
-            $out[] = $t;
-        }
-
-        return implode(', ', $out);
     }
 
     private function resolveBodyHtml(Product $product): string

@@ -211,6 +211,89 @@ query Customers($first: Int!, $after: String) {
 }
 GQL;
 
+    public const string COLLECTION_BY_HANDLE = <<<'GQL'
+query CollectionByHandle($handle: String!) {
+  collectionByHandle(handle: $handle) {
+    id
+    handle
+    title
+    productsCount {
+      count
+    }
+  }
+}
+GQL;
+
+    public const string MENU_BY_HANDLE = <<<'GQL'
+query MenuByHandle($query: String!) {
+  menus(first: 1, query: $query) {
+    nodes {
+      id
+      handle
+      title
+      items {
+        id
+        title
+        url
+        type
+        resourceId
+        items {
+          id
+          title
+          url
+          type
+          resourceId
+          items {
+            id
+            title
+            url
+            type
+            resourceId
+            items {
+              id
+              title
+              url
+              type
+              resourceId
+            }
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+    public const string COLLECTION_PRODUCTS_PREVIEW = <<<'GQL'
+query CollectionProductsPreview($id: ID!, $first: Int!) {
+  collection(id: $id) {
+    id
+    handle
+    title
+    productsCount {
+      count
+    }
+    products(first: $first) {
+      nodes {
+        id
+        handle
+        tags
+      }
+    }
+  }
+}
+GQL;
+
+    public const string PRODUCT_TAGS_BY_ID = <<<'GQL'
+query ProductTagsById($id: ID!) {
+  product(id: $id) {
+    id
+    handle
+    tags
+  }
+}
+GQL;
+
     public const COLLECTIONS_PAGE = <<<'GQL'
 query Collections($first: Int!, $after: String) {
   collections(first: $first, after: $after) {
@@ -234,6 +317,29 @@ query ProductMediaIds($id: ID!, $first: Int!, $after: String) {
       pageInfo { hasNextPage endCursor }
       nodes {
         id
+      }
+    }
+  }
+}
+GQL;
+
+    public const PRODUCT_MEDIA_STATUS = <<<'GQL'
+query ProductMediaStatus($id: ID!, $first: Int!, $after: String) {
+  product(id: $id) {
+    id
+    media(first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        ... on MediaImage {
+          id
+          status
+          mediaContentType
+          mediaErrors {
+            code
+            details
+            message
+          }
+        }
       }
     }
   }

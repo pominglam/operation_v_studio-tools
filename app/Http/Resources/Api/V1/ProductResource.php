@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources\Api\V1;
 
 use App\Models\Product;
+use App\Support\Products\Storefront\ProductStorefrontClassifier;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -95,6 +96,7 @@ final class ProductResource extends JsonResource
             'reorder' => max(0, (int) ($product->getAttribute('reorder_qty') ?? 0)),
             'extended' => $this->money2($product->extended),
             'po_total_cost' => $this->money2($product->getAttribute('po_total_cost')),
+            'storefront_classification' => app(ProductStorefrontClassifier::class)->classify($product)->toArray(),
             'created_at' => optional($product->created_at)->toISOString(),
             'updated_at' => optional($product->updated_at)->toISOString(),
         ];

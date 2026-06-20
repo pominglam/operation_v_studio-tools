@@ -66,7 +66,7 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
         if ($running && $id !== '') {
             // Prefer cached URL (cloudflared prints the trycloudflare hostname once on startup,
             // and it can scroll out of the recent log tail quickly).
-            $url = $this->cachedTunnelUrl($id);
+            $url = $this->cachedTunnelUrl($id, $startedAtUnix);
             if ($url === null) {
                 $url = $this->extractTryCloudflareUrlFromLogs($id, $startedAtUnix);
                 if (is_string($url) && trim($url) !== '') {
@@ -151,7 +151,9 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
             if (is_string($url) && trim($url) !== '') {
                 $this->cacheTunnelUrl($id, $url);
             } else {
-                $url = $this->cachedTunnelUrl($id);
+                $fresh = $this->getContainerByName(self::CONTAINER_NAME);
+                $freshStartedAt = $fresh !== null ? $this->containerStartedAtUnix($fresh) : $startedAtUnix;
+                $url = $this->cachedTunnelUrl($id, $freshStartedAt);
             }
 
             return [
@@ -210,7 +212,7 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
         ];
     }
 
-    private function cachedTunnelUrl(string $containerId): ?string
+    private function cachedTunnelUrl(string $containerId, ?int $startedAtUnix = null): ?string
     {
         $disk = Storage::disk('local');
         if (! $disk->exists(self::URL_CACHE_PATH)) {
@@ -223,9 +225,37 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
             return null;
         }
 
-        $url = $decoded[$containerId]['tunnel_url'] ?? null;
+        $entry = $decoded[$containerId] ?? null;
+        if (! is_array($entry)) {
+            return null;
+        }
+
+        if ($this->isCachedTunnelUrlStale($entry, $startedAtUnix)) {
+            return null;
+        }
+
+        $url = $entry['tunnel_url'] ?? null;
 
         return is_string($url) && trim($url) !== '' ? $url : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     */
+    private function isCachedTunnelUrlStale(array $entry, ?int $startedAtUnix): bool
+    {
+        if (! is_int($startedAtUnix) || $startedAtUnix <= 0) {
+            return false;
+        }
+
+        $cachedAt = $entry['cached_at'] ?? null;
+        if (! is_string($cachedAt) || trim($cachedAt) === '') {
+            return false;
+        }
+
+        $cachedAtUnix = strtotime($cachedAt);
+
+        return is_int($cachedAtUnix) && $cachedAtUnix > 0 && $startedAtUnix > $cachedAtUnix;
     }
 
     private function cacheTunnelUrl(string $containerId, string $tunnelUrl): void

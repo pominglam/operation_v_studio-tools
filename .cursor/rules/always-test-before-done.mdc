@@ -15,8 +15,8 @@ A task is **not complete** until behavior is verified the way a real user/system
    - Run the **targeted test file(s)** for the area you changed; report command + pass/fail in the final reply.
 
 2. **User-visible flows**
-   - UI/API features: verify in the **browser** (or Cursor browser) when the change is observable to users.
-   - Click the same buttons / hit the same endpoints the user will use; do not rely on code inspection alone.
+   - UI/storefront changes: follow **`verify-ui-before-done.mdc`** — open the real page, click controls, and confirm filters/results match customer expectations before saying work is complete.
+   - API-only changes: hit the same endpoints the client will use; do not rely on code inspection alone.
 
 3. **Integration dependencies**
    - If the feature calls another service (e.g. `plamod_scraper`, queue worker), smoke-test that dependency after code changes.
@@ -41,7 +41,7 @@ A task is **not complete** until behavior is verified the way a real user/system
 ## Final reply must include
 
 - Which tests were run and whether they passed.
-- If browser/integration testing was done, what was clicked/checked.
+- If UI was tested: URL, actions performed, and pass/fail vs customer expectation (see `verify-ui-before-done.mdc`).
 - If something could not be run, why and what unblocks it.
 
 Do **not** mark a feature “done” after only writing code or only running unrelated tests.

@@ -42,7 +42,7 @@ Assert the recorded `productSet` has **`productOptions`**, variant **`id`**, and
 
 ## Queue worker after PHP write changes
 
-Bulk push runs on **`pricing-tool-queue`**. After changing Shopify write services/jobs:
+Bulk push runs on **`pricing-tool-queue`** (`shopify` queue, highest priority). After changing Shopify write services/jobs:
 
 ```powershell
 docker exec pricing-tool-php php artisan queue:restart

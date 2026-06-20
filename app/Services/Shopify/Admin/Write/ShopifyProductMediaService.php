@@ -18,6 +18,19 @@ final class ShopifyProductMediaService
         private readonly ShopifyAdminGraphQlClientInterface $client,
     ) {}
 
+    /**
+     * @return array<int, string>
+     */
+    public function listMediaIds(string $productGid): array
+    {
+        return $this->fetchMediaIds($productGid);
+    }
+
+    public function mediaCount(string $productGid): int
+    {
+        return count($this->fetchMediaIds($productGid));
+    }
+
     public function clearExistingMedia(string $productGid): void
     {
         $productGid = trim($productGid);
@@ -25,7 +38,7 @@ final class ShopifyProductMediaService
             return;
         }
 
-        $mediaIds = $this->listMediaIds($productGid);
+        $mediaIds = $this->fetchMediaIds($productGid);
         if ($mediaIds === []) {
             return;
         }
@@ -61,7 +74,7 @@ final class ShopifyProductMediaService
     /**
      * @return array<int, string>
      */
-    private function listMediaIds(string $productGid): array
+    private function fetchMediaIds(string $productGid): array
     {
         $ids = [];
         $after = null;

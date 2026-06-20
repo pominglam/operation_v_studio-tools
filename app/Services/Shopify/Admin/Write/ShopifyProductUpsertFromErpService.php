@@ -9,6 +9,7 @@ use App\DAL\Products\ProductRepository;
 use App\DTOs\Shopify\ShopifyProductPushOptionsDTO;
 use App\Exceptions\Shopify\ShopifyGraphQlException;
 use App\Models\Product;
+use App\Services\Products\PlamodAssetFilenameService;
 use App\Services\Products\ProductExportService;
 use App\Services\Products\ShopifyContentExportService;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlMutations;
@@ -22,10 +23,13 @@ final class ShopifyProductUpsertFromErpService
         private readonly ShopifyWriteScopeGuard $scopeGuard,
         private readonly ProductExportService $exports,
         private readonly ShopifyContentExportService $contentExport,
+        private readonly PlamodAssetFilenameService $assetFilenames,
         private readonly ProductRepository $products,
         private readonly ShopifyProductMirrorBySkuResolver $mirrorBySku,
         private readonly ShopifyPublishProductToAllChannelsService $publishAllChannels,
         private readonly ShopifyProductMediaService $productMedia,
+        private readonly ShopifyPushImageSourceVerifier $imageSourceVerifier,
+        private readonly ShopifyProductMediaProcessingWaiter $mediaWaiter,
     ) {}
 
     /**
@@ -46,6 +50,10 @@ final class ShopifyProductUpsertFromErpService
         ?ShopifyProductPushOptionsDTO $options = null,
     ): array {
         $options = $options ?? ShopifyProductPushOptionsDTO::allEnabled();
+
+        if ($options->images) {
+            $this->prepareImagesForPush($product, $tunnelBaseUrl);
+        }
 
         $this->scopeGuard->assertWriteProductsScope();
         if ($options->requiresInventoryScope() && $locationGid !== '') {
@@ -172,6 +180,11 @@ final class ShopifyProductUpsertFromErpService
 
         ShopifyProductSetPayloadValidator::assertValid($productSet);
 
+        $files = is_array($productSet['files'] ?? null) ? $productSet['files'] : [];
+        if ($options->images && $files !== []) {
+            $this->imageSourceVerifier->assertReachable($files);
+        }
+
         $response = $this->client->query(ShopifyAdminGraphQlMutations::PRODUCT_SET, [
             'synchronous' => true,
             'productSet' => $productSet,
@@ -215,6 +228,10 @@ final class ShopifyProductUpsertFromErpService
             $this->publishAllChannels->publishWhenEligible($product, $shopifyGid);
         }
 
+        if ($options->images && $files !== []) {
+            $this->mediaWaiter->waitForReady($shopifyGid, count($files));
+        }
+
         return [
             'shopify_gid' => $shopifyGid,
             'handle' => $createdHandle,
@@ -235,6 +252,13 @@ final class ShopifyProductUpsertFromErpService
         $files = $options->images
             ? $this->contentExport->productSetFilesForProduct($product, $tunnelBaseUrl)
             : [];
+
+        if ($options->images && $files === [] && $this->hasShopifyEnabledImageAssets($product)) {
+            throw new \InvalidArgumentException(sprintf(
+                'Product %s has Shopify-enabled images but none are readable on disk.',
+                (string) $product->sku,
+            ));
+        }
 
         $variant = [
             'optionValues' => [
@@ -316,6 +340,27 @@ final class ShopifyProductUpsertFromErpService
         $files = $productSet['files'] ?? null;
 
         return is_array($files) && $files !== [];
+    }
+
+    private function prepareImagesForPush(Product $product, ?string $tunnelBaseUrl): void
+    {
+        $tunnelBaseUrl = is_string($tunnelBaseUrl) ? trim($tunnelBaseUrl) : '';
+        if ($tunnelBaseUrl === '') {
+            throw new \InvalidArgumentException(sprintf(
+                'Product %s: image push requires the Cloudflare tunnel to be running.',
+                (string) $product->sku,
+            ));
+        }
+
+        $this->assetFilenames->renameImageAssetsForProductUuid((string) $product->uuid);
+        $product->load('shopifyImageAssets');
+    }
+
+    private function hasShopifyEnabledImageAssets(Product $product): bool
+    {
+        $assets = $product->shopifyImageAssets?->all() ?? [];
+
+        return $assets !== [];
     }
 
     private function requireSellingPrice(Product $product): string

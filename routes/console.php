@@ -13,8 +13,10 @@ Schedule::call(static function (): void {
     app(ShopifyOrderReconcileScheduler::class)->runIfDue();
 })->everyMinute()->name('shopify:orders-reconcile-if-due')->withoutOverlapping(5);
 
-Schedule::command('plamod:preorders-sync')
-    ->dailyAt('06:00')
-    ->timezone('America/Toronto')
-    ->name('plamod:preorders-sync-daily')
-    ->withoutOverlapping(120);
+// Temporarily disabled (2026-06-18): daily run was blocking the shared queue worker and sync is not stable yet.
+// Manual trigger remains: POST /api/v1/preorders/sync or `php artisan plamod:preorders-sync`.
+// Schedule::command('plamod:preorders-sync')
+//     ->dailyAt('06:00')
+//     ->timezone('America/Toronto')
+//     ->name('plamod:preorders-sync-daily')
+//     ->withoutOverlapping(120);

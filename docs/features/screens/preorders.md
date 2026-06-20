@@ -115,7 +115,7 @@ The **136-row gap** vs manual was mostly kits on Plamod’s **Offer Sheets** tab
 
 ## Schedule
 
-- `plamod:preorders-sync` daily at 06:00 America/Toronto (`routes/console.php`).
+- **Daily cron disabled (2026-06-18):** `plamod:preorders-sync` at 06:00 America/Toronto is commented out in `routes/console.php` until sync is stable. Manual run: **Sync preorders** on `/preorders` or `php artisan plamod:preorders-sync`.
 
 ## Ops note
 

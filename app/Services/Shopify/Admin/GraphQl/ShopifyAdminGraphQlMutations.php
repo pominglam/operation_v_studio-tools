@@ -82,6 +82,54 @@ final class ShopifyAdminGraphQlMutations
         }
         GQL;
 
+    public const string COLLECTION_CREATE = <<<'GQL'
+        mutation collectionCreate($input: CollectionInput!) {
+            collectionCreate(input: $input) {
+                collection {
+                    id
+                    handle
+                    title
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GQL;
+
+    public const string COLLECTION_UPDATE = <<<'GQL'
+        mutation collectionUpdate($input: CollectionInput!) {
+            collectionUpdate(input: $input) {
+                collection {
+                    id
+                    handle
+                    title
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GQL;
+
+    public const string MENU_UPDATE = <<<'GQL'
+        mutation menuUpdate($id: ID!, $title: String!, $handle: String!, $items: [MenuItemUpdateInput!]!) {
+            menuUpdate(id: $id, title: $title, handle: $handle, items: $items) {
+                menu {
+                    id
+                    handle
+                    title
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GQL;
+
     public const string INVENTORY_SET_QUANTITIES = <<<'GQL'
         mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
             inventorySetQuantities(input: $input) {

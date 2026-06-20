@@ -15,6 +15,7 @@ use App\Services\Shopify\Admin\Write\ShopifyProductMirrorBySkuResolver;
 use App\Services\Shopify\Admin\Write\ShopifyProductUpsertFromErpService;
 use App\Services\Shopify\Admin\Write\ShopifyWriteScopeGuard;
 use App\Services\Shopify\CloudflaredTunnel;
+use App\Services\Shopify\ShopifyImageTunnelLeaseService;
 use App\Support\Products\ProductHoldQty;
 
 final class PurchaseOrderWorkflowPushInventoryService
@@ -27,6 +28,7 @@ final class PurchaseOrderWorkflowPushInventoryService
         private readonly ShopifyProductMirrorBySkuResolver $mirrorBySku,
         private readonly ShopifyProductUpsertFromErpService $shopifyUpsert,
         private readonly CloudflaredTunnel $tunnel,
+        private readonly ShopifyImageTunnelLeaseService $tunnelLease,
         private readonly LatestArrivalPushProductSortService $productSort,
         private readonly ShopifyLatestArrivalsCollectionReorderService $collectionReorder,
     ) {}
@@ -118,8 +120,10 @@ final class PurchaseOrderWorkflowPushInventoryService
 
         /** @var \Illuminate\Support\Collection<int, Product> $products */
         $productsByUuid = $this->products->listForShopifyContentExportByUuids($uuids)->keyBy('uuid');
-        $tunnelUrl = is_string($preview['tunnel_url'] ?? null) ? $preview['tunnel_url'] : null;
         $locationGid = $preview['location_gid'];
+
+        $tunnelLeaseHandle = $this->tunnelLease->acquire();
+        $tunnelUrl = $tunnelLeaseHandle->tunnelUrl;
 
         $usedHandles = [];
         $created = 0;
@@ -127,30 +131,34 @@ final class PurchaseOrderWorkflowPushInventoryService
         $failed = 0;
         $errors = [];
 
-        foreach ($uuids as $uuid) {
-            $product = $productsByUuid->get($uuid);
-            if ($product === null) {
-                continue;
-            }
-            try {
-                $result = $this->shopifyUpsert->upsertFromProduct(
-                    $product,
-                    $tunnelUrl,
-                    $locationGid,
-                    $usedHandles,
-                );
-                if ($result['action'] === 'created') {
-                    $created++;
-                } else {
-                    $updated++;
+        try {
+            foreach ($uuids as $uuid) {
+                $product = $productsByUuid->get($uuid);
+                if ($product === null) {
+                    continue;
                 }
-            } catch (\Throwable $e) {
-                $failed++;
-                $errors[] = [
-                    'sku' => (string) $product->sku,
-                    'message' => $e->getMessage(),
-                ];
+                try {
+                    $result = $this->shopifyUpsert->upsertFromProduct(
+                        $product,
+                        $tunnelUrl,
+                        $locationGid,
+                        $usedHandles,
+                    );
+                    if ($result['action'] === 'created') {
+                        $created++;
+                    } else {
+                        $updated++;
+                    }
+                } catch (\Throwable $e) {
+                    $failed++;
+                    $errors[] = [
+                        'sku' => (string) $product->sku,
+                        'message' => $e->getMessage(),
+                    ];
+                }
             }
+        } finally {
+            $tunnelLeaseHandle->release();
         }
 
         $collectionReorder = ['attempted' => false, 'collection_gid' => null, 'product_count' => 0, 'moves_sent' => 0, 'job_id' => null, 'skipped_reason' => 'push_had_failures'];

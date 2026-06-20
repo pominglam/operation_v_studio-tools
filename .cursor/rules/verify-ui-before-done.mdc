@@ -1,0 +1,66 @@
+---
+description: Verify UI behavior in a real browser before telling the user work is complete
+alwaysApply: true
+---
+
+# Verify UI Before Done
+
+Do **not** tell the user a UI/storefront change is **done**, **fixed**, **live**, or **verified** until you have exercised it in a **real browser** (Cursor browser or equivalent) the way a customer would.
+
+Code review, `curl`, HTML string checks, and passing unit tests **alone** are not enough for user-visible behavior.
+
+## When this applies
+
+Any change that affects what customers **see**, **click**, **filter**, **sort**, **navigate**, or **submit** — including:
+
+- `pricing-tool` Vue SPA (`resources/js/**`)
+- Shopify theme (`ovs-shopify-theme/**`) on the live/staging storefront URL
+- Collection filters, menus, drawers, dialogs, forms, and pagination
+
+## Required before “it’s good”
+
+1. **Open the actual page** the customer uses (correct URL, tenant, collection, or route — not only `?section_id=` unless full-page is blocked).
+2. **Hard refresh** or confirm fresh assets when theme/frontend bundles changed (avoid stale JS/CSS).
+3. **Perform the user action** — do not only confirm the element exists in HTML.
+4. **Assert customer-visible outcomes** — counts, visible rows/cards, URL/query updates, dialog open/close, navigation target, error/success copy.
+5. **If it fails customer expectations, keep working** — do not hand off with “should work” or “try hard refresh.”
+
+## Filters (mandatory checks)
+
+For every new or changed filter (facets, checkboxes, chips, dropdowns):
+
+- [ ] Select **one** value → only matching items remain; **count matches** what the dedicated shelf/collection shows when comparable.
+- [ ] Clear or deselect → full list returns.
+- [ ] **Multiselect** (if supported) → union behaves correctly.
+- [ ] **Pagination** → filtering includes products on later pages (or document/limit if server-side only). Never sign off when filter only affects page 1.
+- [ ] **Desktop and mobile** panel if both exist (sync, no duplicate-panel desync).
+- [ ] Changing **Availability** or native facets does not break custom filters (re-test after).
+
+## Clickables (mandatory checks)
+
+For every new or changed interactive control:
+
+- [ ] Click/tap works (not dead, not blocked by overlay).
+- [ ] Correct destination or state change (route, modal, expanded section, download).
+- [ ] Disabled/loading states behave sensibly.
+- [ ] Destructive actions still confirm when required (`confirm-delete-actions.mdc`).
+
+## Storefront-specific (Shopify theme)
+
+- Test on **operationvstudio.com** (or configured `storefront_base_url`), not only local mirrors.
+- After `theme push`, verify in browser — CDN/cache can lag behind section fetches.
+- Compare filter results to the **child collection** when the hub mirrors department shelves.
+
+## Final reply must include
+
+- **URL tested**
+- **Actions performed** (e.g. “Checked Brushes filter → 9 products; clicked mobile drawer checkbox → same count”)
+- **Pass/fail against customer expectation** — not just “HTTP 200” or “needle found in HTML”
+
+If browser testing is blocked (auth, credentials, service down), say so explicitly and list what remains unverified. Do **not** imply the UI is correct.
+
+## Related rules
+
+- `always-test-before-done.mdc` — automated tests
+- `definition_of_done.mdc` — WORKING / external integration checks
+- `project.mdc` — browser testing before product review

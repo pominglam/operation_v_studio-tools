@@ -40,6 +40,16 @@
             "last_completed": null,
             "interval_days": null,
             "description": "After product hold_qty ships: revisit non-Shopify exports (barcoded CSV, products export, etc.) — see docs/requirements/product-hold-qty.md § Deferred"
+        },
+        "storefront_category_filter_order_review": {
+            "last_completed": "2026-05-25",
+            "interval_days": null,
+            "description": "After pilot collections (Phases 2–8) stabilize: review per-collection filter group labels, option lists, and display order in theme sidebars; align Tools & Supplies nav dropdown order (§2) before Phase 9 cutover. See docs/requirements/tools-supplies-classification.md §4.6"
+        },
+        "storefront_getting_started_nav": {
+            "last_completed": null,
+            "interval_days": null,
+            "description": "Phase 9.4 deferred: add top-level Getting started placeholder nav + content pages when ready. See docs/requirements/tools-supplies-classification.md §1 and Phase 10."
         }
     }
 }

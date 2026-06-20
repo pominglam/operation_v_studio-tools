@@ -24,14 +24,16 @@ const emit = defineEmits<{
     (e: 'confirm', payload: { pushOptions: ShopifyProductPushOptions; preview: BulkPushShopifyPreview }): void;
 }>();
 
-const pushOptions = ref<ShopifyProductPushOptions>({
-    info: true,
-    images: true,
-    quantities: true,
-    price: true,
-    publish_status: true,
-    sales_channels: true,
+const defaultPushOptions = (): ShopifyProductPushOptions => ({
+    info: false,
+    images: false,
+    quantities: false,
+    price: false,
+    publish_status: false,
+    sales_channels: false,
 });
+
+const pushOptions = ref<ShopifyProductPushOptions>(defaultPushOptions());
 
 const previewBase = ref<BulkPushShopifyPreviewBase | null>(null);
 const previewLoading = ref(false);
@@ -70,7 +72,9 @@ const scopeWarnings = computed(() => {
         warnings.push('Missing write_publications OAuth scope for sales channel publish.');
     }
     if (pushOptions.value.images && !data.images_enabled) {
-        warnings.push('Cloudflare tunnel is off — images will not be pushed.');
+        warnings.push(
+            'Cloudflare tunnel is off — it will be started automatically for image push and restored afterward.',
+        );
     }
     if (pushOptions.value.quantities && data.location_gid === '') {
         warnings.push('No Shopify inventory location configured.');
@@ -86,14 +90,7 @@ watch(
             previewError.value = null;
             return;
         }
-        pushOptions.value = {
-            info: true,
-            images: true,
-            quantities: true,
-            price: true,
-            publish_status: true,
-            sales_channels: true,
-        };
+        pushOptions.value = defaultPushOptions();
         void loadPreviewBase();
     },
 );

@@ -120,6 +120,8 @@ services:
         condition: service_healthy
     volumes:
       - .:/var/www/html
+      # Same as php: queue jobs may start/stop the cloudflared container for Shopify image push.
+      - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /var/www/html
     user: "0:0"
     networks:
@@ -130,7 +132,7 @@ services:
         "php",
         "artisan",
         "queue:work",
-        "--queue=price_research,pdp_sync,plamod_sync,default",
+        "--queue=shopify,default,price_research,pdp_sync,plamod_sync",
         "--sleep=1",
         "--tries=1",
         "--timeout=21600",

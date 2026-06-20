@@ -347,16 +347,11 @@ final class ShopifyContentExportService
     private function imagesForProduct(Product $product): array
     {
         $imgs = $product->shopifyImageAssets?->all() ?? [];
-        /** @var FilesystemAdapter $disk */
-        $disk = Storage::disk('local');
 
         /** @var array<int, ProductExternalAsset> $out */
         $out = [];
         foreach ($imgs as $a) {
-            if ($a instanceof ProductExternalAsset) {
-                if (! $this->isServableImage($disk, $a)) {
-                    continue;
-                }
+            if ($a instanceof ProductExternalAsset && $this->isServableImage($a)) {
                 $out[] = $a;
             }
         }
@@ -364,15 +359,16 @@ final class ShopifyContentExportService
         return $out;
     }
 
-    private function isServableImage(FilesystemAdapter $disk, ProductExternalAsset $asset): bool
+    private function isServableImage(ProductExternalAsset $asset): bool
     {
-        $path = is_string($asset->storage_path) ? trim($asset->storage_path) : '';
-        if ($path === '') {
+        $resolved = $this->imageServe->resolve((int) $asset->id);
+        if ($resolved === null) {
             return false;
         }
 
-        // Auto-repair restrictive permissions before export so valid assets are not silently skipped.
-        $this->imageServe->repairStoragePath($path);
+        /** @var FilesystemAdapter $disk */
+        $disk = Storage::disk('local');
+        $path = $resolved['storage_path'];
 
         try {
             if (! $disk->exists($path)) {
@@ -382,7 +378,6 @@ final class ShopifyContentExportService
             return false;
         }
 
-        // Defensive: don't export URLs to unreadable files (prevents Shopify/CSV consumers from hitting 500s).
         try {
             $abs = $disk->path($path);
 

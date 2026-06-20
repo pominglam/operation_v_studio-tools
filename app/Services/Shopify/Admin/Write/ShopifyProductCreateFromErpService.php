@@ -10,8 +10,8 @@ use App\Exceptions\Shopify\ShopifyGraphQlException;
 use App\Models\Product;
 use App\Services\Products\ProductExportService;
 use App\Services\Products\ShopifyContentExportService;
-use App\Support\Products\ProductHoldQty;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlMutations;
+use App\Support\Products\ProductHoldQty;
 use Illuminate\Support\Facades\Log;
 
 final class ShopifyProductCreateFromErpService
@@ -23,6 +23,8 @@ final class ShopifyProductCreateFromErpService
         private readonly ShopifyContentExportService $contentExport,
         private readonly ProductRepository $products,
         private readonly ShopifyPublishProductToAllChannelsService $publishAllChannels,
+        private readonly ShopifyPushImageSourceVerifier $imageSourceVerifier,
+        private readonly ShopifyProductMediaProcessingWaiter $mediaWaiter,
     ) {}
 
     /**
@@ -116,6 +118,10 @@ final class ShopifyProductCreateFromErpService
             $productSet['files'] = $files;
         }
 
+        if ($files !== []) {
+            $this->imageSourceVerifier->assertReachable($files);
+        }
+
         $startedAt = microtime(true);
         Log::channel('shopify')->info('shopify.write.product_set.start', [
             'sku' => (string) $product->sku,
@@ -165,6 +171,10 @@ final class ShopifyProductCreateFromErpService
         $this->products->save($product);
 
         $this->publishAllChannels->publishWhenEligible($product, $shopifyGid);
+
+        if ($files !== []) {
+            $this->mediaWaiter->waitForReady($shopifyGid, count($files));
+        }
 
         return [
             'product_uuid' => (string) $product->uuid,

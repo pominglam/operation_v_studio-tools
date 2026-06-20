@@ -9,7 +9,7 @@ use App\DTOs\Shopify\ShopifyProductPushOptionsDTO;
 use App\Services\Jobs\JobBatchItemService;
 use App\Services\Shopify\Admin\Write\ShopifyInventoryLocationResolver;
 use App\Services\Shopify\Admin\Write\ShopifyProductUpsertFromErpService;
-use App\Services\Shopify\CloudflaredTunnel;
+use App\Services\Shopify\ShopifyImageTunnelLeaseService;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -27,6 +27,8 @@ final class PushSelectedProductToShopifyJob implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    public const string QUEUE = 'shopify';
+
     /**
      * @return array<int, object>
      */
@@ -42,13 +44,15 @@ final class PushSelectedProductToShopifyJob implements ShouldQueue
         public string $syncUuid,
         public string $productUuid,
         public array $pushOptions,
-    ) {}
+    ) {
+        $this->onQueue(self::QUEUE);
+    }
 
     public function handle(
         ProductRepository $products,
         ShopifyProductUpsertFromErpService $shopifyUpsert,
         ShopifyInventoryLocationResolver $locationResolver,
-        CloudflaredTunnel $tunnel,
+        ShopifyImageTunnelLeaseService $tunnelLease,
         JobBatchItemService $batchItems,
     ): void {
         $batchId = $this->batch()?->id;
@@ -67,16 +71,18 @@ final class PushSelectedProductToShopifyJob implements ShouldQueue
             $batchItems->appendDebugLog($batchId, $this->productUuid, '[job] shopify_push start');
         }
 
+        $tunnelLeaseHandle = null;
         try {
             $product = $products->listForShopifyContentExportByUuids([$this->productUuid])->first();
             if ($product === null) {
                 throw new \RuntimeException('Product not found.');
             }
 
-            $tunnelStatus = $tunnel->status();
-            $tunnelUrl = is_string($tunnelStatus['tunnel_url'] ?? null) ? trim($tunnelStatus['tunnel_url']) : '';
-            $imagesEnabled = ($tunnelStatus['running'] ?? false) === true && $tunnelUrl !== '';
-            $tunnelBaseUrl = $options->images && $imagesEnabled ? $tunnelUrl : null;
+            $tunnelBaseUrl = null;
+            if ($options->images) {
+                $tunnelLeaseHandle = $tunnelLease->acquire();
+                $tunnelBaseUrl = $tunnelLeaseHandle->tunnelUrl;
+            }
             $locationGid = $options->quantities ? $locationResolver->resolveLocationGid() : '';
 
             $usedHandles = [];
@@ -93,7 +99,7 @@ final class PushSelectedProductToShopifyJob implements ShouldQueue
                     '[job] shopify_push done action=%s gid=%s images=%s',
                     $result['action'],
                     $result['shopify_gid'],
-                    ($options->images && $imagesEnabled) ? 'enabled' : 'skipped',
+                    $options->images ? 'enabled' : 'skipped',
                 ));
                 $batchItems->markSucceeded($batchId, $this->productUuid);
             }
@@ -103,6 +109,7 @@ final class PushSelectedProductToShopifyJob implements ShouldQueue
                 'product_uuid' => $this->productUuid,
                 'action' => $result['action'],
                 'shopify_gid' => $result['shopify_gid'],
+                'images' => $options->images,
             ]);
         } catch (\Throwable $e) {
             if (is_string($batchId) && $batchId !== '') {
@@ -117,6 +124,8 @@ final class PushSelectedProductToShopifyJob implements ShouldQueue
             ]);
 
             throw $e;
+        } finally {
+            $tunnelLeaseHandle?->release();
         }
     }
 }

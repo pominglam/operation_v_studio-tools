@@ -10,6 +10,7 @@ use App\Services\Shopify\Admin\Write\ShopifyInventoryLocationResolver;
 use App\Services\Shopify\Admin\Write\ShopifyProductCreateFromErpService;
 use App\Services\Shopify\Admin\Write\ShopifyWriteScopeGuard;
 use App\Services\Shopify\CloudflaredTunnel;
+use App\Services\Shopify\ShopifyImageTunnelLeaseService;
 
 final class PurchaseOrderWorkflowExportShopifyContentService
 {
@@ -24,6 +25,7 @@ final class PurchaseOrderWorkflowExportShopifyContentService
         private readonly ShopifyWriteScopeGuard $scopeGuard,
         private readonly ShopifyInventoryLocationResolver $locationResolver,
         private readonly CloudflaredTunnel $tunnel,
+        private readonly ShopifyImageTunnelLeaseService $tunnelLease,
     ) {}
 
     /**
@@ -119,7 +121,9 @@ final class PurchaseOrderWorkflowExportShopifyContentService
 
         /** @var \Illuminate\Support\Collection<int, Product> $products */
         $products = $this->products->listForShopifyContentExportByUuids($uuids);
-        $tunnelUrl = is_string($preview['tunnel_url'] ?? null) ? $preview['tunnel_url'] : null;
+
+        $tunnelLeaseHandle = $this->tunnelLease->acquire();
+        $tunnelUrl = $tunnelLeaseHandle->tunnelUrl;
 
         $usedHandles = [];
         $results = [];
@@ -127,23 +131,27 @@ final class PurchaseOrderWorkflowExportShopifyContentService
         $created = 0;
         $failed = 0;
 
-        foreach ($products as $product) {
-            try {
-                $results[] = $this->shopifyCreate->createFromProduct(
-                    $product,
-                    $tunnelUrl,
-                    $usedHandles,
-                    includeInventory: true,
-                    locationGid: $locationGid,
-                );
-                $created++;
-            } catch (\Throwable $e) {
-                $failed++;
-                $errors[] = [
-                    'sku' => (string) $product->sku,
-                    'message' => $e->getMessage(),
-                ];
+        try {
+            foreach ($products as $product) {
+                try {
+                    $results[] = $this->shopifyCreate->createFromProduct(
+                        $product,
+                        $tunnelUrl,
+                        $usedHandles,
+                        includeInventory: true,
+                        locationGid: $locationGid,
+                    );
+                    $created++;
+                } catch (\Throwable $e) {
+                    $failed++;
+                    $errors[] = [
+                        'sku' => (string) $product->sku,
+                        'message' => $e->getMessage(),
+                    ];
+                }
             }
+        } finally {
+            $tunnelLeaseHandle->release();
         }
 
         return [

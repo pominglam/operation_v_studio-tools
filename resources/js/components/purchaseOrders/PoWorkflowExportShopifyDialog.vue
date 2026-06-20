@@ -99,9 +99,8 @@ function formatHandle(value: string | null | undefined): string {
                             v-else-if="!preview.images_enabled"
                             class="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
                         >
-                            Image tunnel is not running — products will be created without images.
-                            Start the tunnel from Products → Shopify content export if you need
-                            images on first push.
+                            Image tunnel is off — it will be started automatically for this export
+                            and restored afterward.
                         </p>
 
                         <p v-else class="mb-3 text-xs text-slate-600">

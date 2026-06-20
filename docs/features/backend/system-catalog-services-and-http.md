@@ -399,7 +399,7 @@ Two **different orchestrations** deliberately exist:
 | POST | `/preorders/search-lines` | Multi-line match; optional `phase` (`snapshot` \| `live` \| `all`). Live fallback returns `plamod_only`. |
 | GET | `/preorders/{sku}/image` | Serve cached image from `storage/app/private/plamod/preorder-images/`. |
 
-Scheduled: `plamod:preorders-sync` daily 06:00 America/Toronto.
+Scheduled: `plamod:preorders-sync` daily 06:00 America/Toronto — **temporarily disabled** in `routes/console.php` (2026-06-18); manual `POST /preorders/sync` only.
 
 ---
 

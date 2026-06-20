@@ -1,0 +1,39 @@
+---
+description: ERP-first product updates that sync to Shopify
+globs:
+  - app/Models/Product.php
+  - app/Services/Products/**
+  - app/DAL/Products/**
+  - app/Services/Shopify/Admin/Write/**
+  - app/Console/Commands/Products*
+  - app/Jobs/PushSelectedProductToShopifyJob.php
+  - tests/**/Product*
+  - tests/**/Shopify*Product*
+alwaysApply: true
+---
+
+# Product update workflow (ERP → Shopify)
+
+When changing product data that appears on the storefront (title/name, description, tags, price, inventory, publish status, handles, images, etc.):
+
+1. **Update the local ERP database first** (`products` and related tables).
+2. **Then push to Shopify** from the updated ERP row (`ShopifyProductUpsertFromErpService`, bulk push job, or `ShopifyProductPushBySkusService`).
+
+Shopify is a mirror of ERP. Pushing without saving ERP first means the next bulk/department push will **overwrite** Shopify with stale ERP data.
+
+## Default agent behavior
+
+Unless the user explicitly says otherwise (e.g. “Shopify only”, “skip ERP”, “temporary Shopify hotfix”):
+
+- Persist ERP changes before any Shopify write.
+- After ERP apply, push affected SKUs to Shopify in the same task when storefront-visible fields changed.
+- Report both steps: ERP rows updated + Shopify push result.
+
+## Exceptions (user must be explicit)
+
+- **Shopify-only hotfix** with no ERP change.
+- **ERP-only** backfill with no storefront push yet.
+
+## Naming conventions
+
+Prefer canonical title maps + rename commands (see `StediTweezerTitleResolver`, `StediAntiStaticBrushTitleResolver`) over one-off Shopify Admin edits.

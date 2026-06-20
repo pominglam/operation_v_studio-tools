@@ -212,8 +212,8 @@ async function copyProductNames(): Promise<void> {
                             v-else-if="!preview.images_enabled"
                             class="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
                         >
-                            Image tunnel is off — products push without new images. Start the
-                            tunnel for signed image URLs.
+                            Image tunnel is off — it will be started automatically for this push
+                            and restored afterward.
                         </p>
 
                         <div class="mb-2 flex items-center justify-end">
