@@ -184,6 +184,13 @@ final class StorefrontTag
     public static function deptTagForDepartment(string $department): ?string
     {
         return match ($department) {
+            StorefrontDepartment::TAPES => self::DEPT_TAPES,
+            StorefrontDepartment::DECALS => self::DEPT_DECALS,
+            StorefrontDepartment::SANDING => self::DEPT_SANDING,
+            StorefrontDepartment::CUTTING => self::DEPT_CUTTING,
+            StorefrontDepartment::PAINTS => self::DEPT_PAINTS,
+            StorefrontDepartment::PANEL_LINERS => self::DEPT_PANEL_LINERS,
+            StorefrontDepartment::MARKERS => self::DEPT_MARKERS,
             StorefrontDepartment::BRUSHES => self::DEPT_BRUSHES,
             StorefrontDepartment::DRILLS => self::DEPT_DRILLS,
             StorefrontDepartment::TWEEZERS => self::DEPT_TWEEZERS,
@@ -196,28 +203,83 @@ final class StorefrontTag
     }
 
     /**
-     * Department slugs + Shopify tags for the tools-and-supplies hub (§2 nav order).
+     * Tools & Supplies main-menu children: A–Z shelves, then All + Other (footer).
+     *
+     * @return list<array{handle: string, title: string, footer: bool}>
+     */
+    public static function toolsAndSuppliesNavMenuChildren(): array
+    {
+        return [
+            ['handle' => 'adhesives', 'title' => 'Adhesives', 'footer' => false],
+            ['handle' => 'airbrush', 'title' => 'Airbrush', 'footer' => false],
+            ['handle' => 'brushes', 'title' => 'Brushes', 'footer' => false],
+            ['handle' => 'decals', 'title' => 'Decals', 'footer' => false],
+            ['handle' => 'drills', 'title' => 'Drills & bits', 'footer' => false],
+            ['handle' => 'markers', 'title' => 'Markers', 'footer' => false],
+            ['handle' => 'nippers-and-knives', 'title' => 'Nippers & knives', 'footer' => false],
+            ['handle' => 'panel-liners', 'title' => 'Panel liners', 'footer' => false],
+            ['handle' => 'paints', 'title' => 'Paints', 'footer' => false],
+            ['handle' => 'sanding', 'title' => 'Sanding', 'footer' => false],
+            ['handle' => 'scribing-tools', 'title' => 'Scribing tools', 'footer' => false],
+            ['handle' => 'tapes', 'title' => 'Tapes', 'footer' => false],
+            ['handle' => 'tweezers', 'title' => 'Tweezers', 'footer' => false],
+            ['handle' => 'tools-and-supplies', 'title' => 'All tools & supplies', 'footer' => true],
+            ['handle' => 'workshop-misc', 'title' => 'Other', 'footer' => true],
+        ];
+    }
+
+    /**
+     * Hub sidebar / department filter shelves (A–Z, Other last; excludes hub row).
      *
      * @return list<array{slug: string, tag: string, label: string}>
      */
     public static function toolsAndSuppliesHubDepartments(): array
     {
-        return [
-            ['slug' => StorefrontDepartment::BRUSHES, 'tag' => self::DEPT_BRUSHES, 'label' => 'Brushes'],
-            ['slug' => StorefrontDepartment::DRILLS, 'tag' => self::DEPT_DRILLS, 'label' => 'Drills & bits'],
-            ['slug' => StorefrontDepartment::TWEEZERS, 'tag' => self::DEPT_TWEEZERS, 'label' => 'Tweezers'],
-            ['slug' => StorefrontDepartment::SCRIBING, 'tag' => self::DEPT_SCRIBING, 'label' => 'Scribing tools'],
-            ['slug' => StorefrontDepartment::ADHESIVES, 'tag' => self::DEPT_ADHESIVES, 'label' => 'Adhesives'],
-            ['slug' => StorefrontDepartment::CUTTING, 'tag' => self::DEPT_CUTTING, 'label' => 'Nippers & knives'],
-            ['slug' => StorefrontDepartment::SANDING, 'tag' => self::DEPT_SANDING, 'label' => 'Sanding'],
-            ['slug' => StorefrontDepartment::TAPES, 'tag' => self::DEPT_TAPES, 'label' => 'Tapes'],
-            ['slug' => StorefrontDepartment::MARKERS, 'tag' => self::DEPT_MARKERS, 'label' => 'Markers'],
-            ['slug' => StorefrontDepartment::PAINTS, 'tag' => self::DEPT_PAINTS, 'label' => 'Paints'],
-            ['slug' => StorefrontDepartment::PANEL_LINERS, 'tag' => self::DEPT_PANEL_LINERS, 'label' => 'Panel liners'],
-            ['slug' => StorefrontDepartment::DECALS, 'tag' => self::DEPT_DECALS, 'label' => 'Decals'],
-            ['slug' => StorefrontDepartment::AIRBRUSH, 'tag' => self::DEPT_AIRBRUSH, 'label' => 'Airbrush'],
-            ['slug' => StorefrontDepartment::WORKSHOP_MISC, 'tag' => self::DEPT_WORKSHOP_MISC, 'label' => 'Other'],
-        ];
+        $rows = [];
+        foreach (self::toolsAndSuppliesNavMenuChildren() as $child) {
+            if ($child['footer'] && $child['handle'] === 'tools-and-supplies') {
+                continue;
+            }
+
+            $slug = self::departmentSlugForCollectionHandle($child['handle']);
+            $tag = self::deptTagForDepartment($slug);
+            if ($tag === null) {
+                continue;
+            }
+
+            $rows[] = [
+                'slug' => $slug,
+                'tag' => $tag,
+                'label' => $child['title'],
+            ];
+        }
+
+        return $rows;
+    }
+
+    private static function departmentSlugForCollectionHandle(string $handle): string
+    {
+        return match ($handle) {
+            'scribing-tools' => StorefrontDepartment::SCRIBING,
+            'nippers-and-knives' => StorefrontDepartment::CUTTING,
+            default => $handle,
+        };
+    }
+
+    /**
+     * @deprecated Use toolsAndSuppliesNavMenuChildren() — kept for callers expecting handle/title only.
+     *
+     * @return list<array{handle: string, title: string}>
+     */
+    public static function toolsAndSuppliesNavMenuChildrenLegacyShape(): array
+    {
+        return array_map(
+            static fn (array $child): array => [
+                'handle' => $child['handle'],
+                'title' => $child['title'],
+            ],
+            self::toolsAndSuppliesNavMenuChildren(),
+        );
     }
 
     /**

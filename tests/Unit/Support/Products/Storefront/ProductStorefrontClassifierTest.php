@@ -36,8 +36,6 @@ it('classifies masking tape SKUs with department and width tags', function (): v
             'ts:tape:width:10',
         ])
         ->and($result->shopifyTags)->toBe([
-            'supplies',
-            'Others',
             'ts:dept:tapes',
             'ts:tape:masking',
             'ts:tape:width:10',
@@ -293,7 +291,11 @@ it('exports no shopify tags when main_type is empty even for pilot SKUs', functi
     expect($result->department)->toBe(StorefrontDepartment::TAPES)
         ->and($result->legacyTags)->toBe([])
         ->and($result->storefrontTags)->not->toBeEmpty()
-        ->and($result->shopifyTags)->toBe([])
+        ->and($result->shopifyTags)->toBe([
+            'ts:dept:tapes',
+            'ts:tape:masking',
+            'ts:tape:width:5',
+        ])
         ->and($result->warnings)->toContain('empty_main_type');
 });
 
@@ -306,7 +308,12 @@ it('includes latest arrival in merged shopify tags for pilot products', function
         'latest_arrival' => true,
     ]));
 
-    expect($result->shopifyTags)->toContain('latest arrival', 'ts:tape:width:2');
+    expect($result->shopifyTags)->toBe([
+        'ts:dept:tapes',
+        'ts:tape:masking',
+        'ts:tape:width:2',
+        'latest arrival',
+    ]);
 });
 
 it('skips storefront tags when department is not enabled', function (): void {
@@ -321,7 +328,7 @@ it('skips storefront tags when department is not enabled', function (): void {
 
     expect($result->department)->toBe(StorefrontDepartment::TAPES)
         ->and($result->storefrontTags)->toBe([])
-        ->and($result->shopifyTags)->toBe(['supplies', 'Others'])
+        ->and($result->shopifyTags)->toBe([])
         ->and($result->warnings)->toContain('department_not_enabled');
 });
 

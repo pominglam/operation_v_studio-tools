@@ -30,9 +30,7 @@ final class ProductStorefrontClassifier
             ? $this->storefrontTagsForDepartment($product, $department)
             : [];
 
-        $shopifyTags = $legacyTags === []
-            ? []
-            : $this->mergeTags($legacyTags, $storefrontTags);
+        $shopifyTags = $this->shopifyTagsForPush($product, $storefrontTags);
 
         return new StorefrontClassification(
             department: $department,
@@ -106,6 +104,10 @@ final class ProductStorefrontClassifier
         }
 
         if (in_array($sku, ['MS-D2', 'MS-D4', 'MS-D15', 'MS-D20', 'MS-E2'], true)) {
+            return true;
+        }
+
+        if (preg_match('/^MS-JD/', $sku) === 1) {
             return true;
         }
 
@@ -380,12 +382,25 @@ final class ProductStorefrontClassifier
     /**
      * @return array<int, string>
      */
-    private function legacyTags(Product $product): array
+    /**
+     * Shopify push tags: ts:* storefront tags only (never legacy main_type/type).
+     *
+     * @param  array<int, string>  $storefrontTags
+     * @return array<int, string>
+     */
+    private function shopifyTagsForPush(Product $product, array $storefrontTags): array
     {
-        if (! config('storefront_classification.dual_write_legacy_tags', true)) {
-            return [];
+        $tags = $this->mergeTags([], $storefrontTags);
+
+        if ($product->latest_arrival) {
+            $tags = $this->mergeTags($tags, [ProductExportService::LATEST_ARRIVAL_TAG]);
         }
 
+        return $tags;
+    }
+
+    private function legacyTags(Product $product): array
+    {
         $mainType = trim((string) $product->main_type);
         if ($mainType === '') {
             return [];

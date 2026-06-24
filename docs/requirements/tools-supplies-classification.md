@@ -27,29 +27,17 @@ Use this doc to resume taxonomy, nav, tags, and per-collection filters. **Gettin
 
 **Design principle — clarity over brevity:** Each menu line should match one thing a shopper is looking for (e.g. “Brushes”, not “Tools → filter to brushes”). Prefer an extra nav item over hiding unlike products behind filters. The **All tools & supplies** hub is for browsers; the dropdown is for intent.
 
-Order matches workflow: hand tools → cutting & surface prep → consumables → coloring → decals → airbrush → catch-all.
-
 ```text
 TOOLS & SUPPLIES ▾
 ┌─────────────────────────────┐
-│  All tools & supplies       │  → /collections/tools-and-supplies
+│  Adhesives … Tweezers       │  A–Z (13 named shelves)
 │  ─────────────────────────  │
-│  Brushes                    │  → /collections/brushes
-│  Drills & bits              │  → /collections/drills
-│  Tweezers                   │  → /collections/tweezers
-│  Scribing tools             │  → /collections/scribing-tools
-│  Adhesives                  │  → /collections/adhesives
-│  Nippers & knives           │  → /collections/nippers-and-knives
-│  Sanding                    │  → /collections/sanding
-│  Tapes                      │  → /collections/tapes
-│  Markers                    │  → /collections/markers
-│  Paints                     │  → /collections/paints
-│  Panel liners               │  → /collections/panel-liners
-│  Decals                     │  → /collections/decals
-│  Airbrush                   │  → /collections/airbrush
-│  Other tools & supplies     │  → /collections/workshop-misc
+│  All tools & supplies       │  → /collections/tools-and-supplies
+│  Other                      │  → /collections/workshop-misc
 └─────────────────────────────┘
 ```
+
+Named shelves (A–Z): Adhesives, Airbrush, Brushes, Decals, Drills & bits, Markers, Nippers & knives, Panel liners, Paints, Sanding, Scribing tools, Tapes, Tweezers. **All** and **Other** are pinned at the bottom of the dropdown (slightly muted + divider in theme).
 
 > **Not the same as top-level Miscellaneous** — action bases, keychains, and kit accessories stay under site **Miscellaneous** (§4.5). **Other tools & supplies** is workshop oddments only (mis-tags, low-volume tools, items that do not fit a named shelf yet).
 
@@ -160,7 +148,7 @@ Collection: `scribing-tools`. Scriber handles, pushers, guides, scribing **consu
 
 **Tag examples:** `ts:dept:scribing`, `ts:scribing:type:scriber` (grid maps scriber/pusher → filter group `scriber-pusher`; needle/scraper → `others`)
 
-**Storefront filter URL:** `?ovs_scribing_type=scriber-pusher,handle` (comma-separated multiselect). Knife SKUs (`MS-23`, `MS-27`) are excluded from this collection.
+**Storefront filter URL:** `?ovs_scribing_type=scriber-pusher,handle` (comma-separated multiselect). Scribing tape (`MS-03`, `MS-06`) lives under **Tapes**, not this collection. Needle scribers (`MS-23`) belong here under **Others**. Push knives (`MS-27`) belong under **Nippers & knives**.
 
 ---
 

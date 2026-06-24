@@ -607,3 +607,68 @@ it('throws when Shopify media processing fails after productSet', function (): v
         ),
     ))->toThrow(\App\Exceptions\Shopify\ShopifyGraphQlException::class, 'Tunnel closed before Shopify could fetch');
 });
+
+it('includes storefront ts tags on images-only updates when product is classified', function (): void {
+    config(['shopify.oauth_scopes' => 'read_products,write_products']);
+
+    $productGid = 'gid://shopify/Product/9901';
+    $product = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000140099',
+        'sku' => 'MT-02',
+        'description' => 'Madworks Masking Tape 2mm',
+        'handle' => 'mt-02',
+        'main_type' => 'supplies',
+        'type' => 'Others',
+        'published_on_shopify' => true,
+        'available_qty' => 2,
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $product->id,
+        'product_uuid' => $product->uuid,
+        'selling_price' => '3.99',
+        'currency' => 'CAD',
+    ]);
+    ShopifyProduct::query()->create([
+        'gid' => $productGid,
+        'handle' => 'mt-02',
+        'title' => 'Madworks Masking Tape 2mm',
+        'status' => 'ACTIVE',
+        'payload_json' => ['tags' => ['supplies', 'Others']],
+    ]);
+    ShopifyProductVariant::query()->create([
+        'gid' => 'gid://shopify/ProductVariant/9902',
+        'product_gid' => $productGid,
+        'sku' => 'MT-02',
+    ]);
+
+    $fake = upsertTestRecordingClient($productGid, 'mt-02');
+    app()->instance(ShopifyAdminGraphQlClientInterface::class, $fake);
+
+    $service = app()->make(ShopifyProductUpsertFromErpService::class);
+    $usedHandles = [];
+    $service->upsertFromProduct(
+        $product,
+        null,
+        '',
+        $usedHandles,
+        new ShopifyProductPushOptionsDTO(
+            info: false,
+            images: false,
+            quantities: false,
+            price: false,
+            publishStatus: false,
+            salesChannels: false,
+        ),
+    );
+
+    $productSetCall = collect($fake->variableCalls)->first(
+        static fn (array $call): bool => is_array($call['productSet'] ?? null),
+    );
+
+    expect($productSetCall)->not->toBeNull();
+    expect($productSetCall['productSet']['tags'] ?? null)->toBe([
+        'ts:dept:tapes',
+        'ts:tape:masking',
+        'ts:tape:width:2',
+    ]);
+});

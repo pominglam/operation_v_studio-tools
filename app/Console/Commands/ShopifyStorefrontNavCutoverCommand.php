@@ -80,7 +80,7 @@ final class ShopifyStorefrontNavCutoverCommand extends Command
         $this->info('main-menu updated: Tools & Supplies dropdown live.');
 
         $failed = false;
-        foreach (ShopifyStorefrontNavCutoverService::TOOLS_SUPPLIES_CHILDREN as $child) {
+        foreach (ShopifyStorefrontNavCutoverService::toolsSuppliesNavChildren() as $child) {
             $url = rtrim((string) config('storefront_classification.storefront_base_url', 'https://operationvstudio.com'), '/')
                 .'/collections/'.$child['handle'];
             $status = $this->verifyUrl($url);

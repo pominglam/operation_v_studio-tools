@@ -26,6 +26,7 @@ it('classifies cutting categories from SKU patterns', function (): void {
         ->and($resolver->resolveCategory(cuttingTestProduct(['sku' => 'AK-1/5B', 'type' => 'TOOLS', 'description' => 'OLFA Knife'])))->toBe('knife')
         ->and($resolver->resolveCategory(cuttingTestProduct(['sku' => 'MS-22', 'type' => 'TOOLS', 'description' => 'Model 6mm pen knife set with carbon steel blades'])))->toBe('knife')
         ->and($resolver->resolveCategory(cuttingTestProduct(['sku' => 'MS-28', 'type' => 'TOOLS', 'description' => '4mm笔刀替换刀片'])))->toBe('blade')
+        ->and($resolver->resolveCategory(cuttingTestProduct(['sku' => 'MS-27', 'type' => 'Scribing', 'description' => 'Stedi Tungsten Steel Push Knife 1.5 mm'])))->toBe('knife')
         ->and($resolver->resolveCategory(cuttingTestProduct(['sku' => 'MS-23', 'type' => 'Scribing', 'description' => 'Needle'])))->toBeNull();
 });
 

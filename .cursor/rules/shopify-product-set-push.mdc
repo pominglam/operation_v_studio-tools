@@ -50,6 +50,14 @@ docker exec pricing-tool-php php artisan queue:restart
 
 Long-running `queue:work` may serve stale OPcache until restarted — code on disk is not enough.
 
+## Tag sync on every push
+
+Classified products (`ts:*` storefront tags from `ProductStorefrontClassifier`) **always** include merged tags in `productSet`, even when **Info is unchecked** (images-only / quantities-only bulk push).
+
+- Resolver: `ShopifyProductPushTagsResolver` — merges mirror tags, strips legacy `main_type`/`type`, never sends legacy-only tags.
+- Unclassified products: omit `tags` from payload (Shopify tags unchanged).
+- Audit: `php artisan products:storefront-audit` (orphans + mirror tag gaps, excludes model kits).
+
 ## Related files
 
 - Builder: `ShopifyProductUpsertFromErpService::buildProductSet()`

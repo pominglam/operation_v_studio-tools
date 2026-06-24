@@ -30,6 +30,7 @@ final class ShopifyProductUpsertFromErpService
         private readonly ShopifyProductMediaService $productMedia,
         private readonly ShopifyPushImageSourceVerifier $imageSourceVerifier,
         private readonly ShopifyProductMediaProcessingWaiter $mediaWaiter,
+        private readonly ShopifyProductPushTagsResolver $pushTags,
     ) {}
 
     /**
@@ -106,7 +107,7 @@ final class ShopifyProductUpsertFromErpService
             ? trim($product->handle)
             : (string) ($mirror['shopify_handle'] ?? '');
 
-        $productSet = $this->buildProductSet($product, $handle, $tunnelBaseUrl, $locationGid, $options, true);
+        $productSet = $this->buildProductSet($product, $handle, $tunnelBaseUrl, $locationGid, $options, true, (string) $mirror['product_gid']);
         $productSet['id'] = $mirror['product_gid'];
         $productSet['variants'][0]['id'] = $mirror['variant_gid'];
 
@@ -145,7 +146,7 @@ final class ShopifyProductUpsertFromErpService
         $handle = $this->exports->shopifyHandleForProduct($product, $usedHandles);
         $usedHandles[$handle] = true;
 
-        $productSet = $this->buildProductSet($product, $handle, $tunnelBaseUrl, $locationGid, $options, false);
+        $productSet = $this->buildProductSet($product, $handle, $tunnelBaseUrl, $locationGid, $options, false, null);
         $payload = $this->executeProductSet($product, $handle, $productSet, 'create', $options);
 
         $product->handle = $payload['handle'];
@@ -248,6 +249,7 @@ final class ShopifyProductUpsertFromErpService
         string $locationGid,
         ShopifyProductPushOptionsDTO $options,
         bool $isUpdate,
+        ?string $existingProductGid,
     ): array {
         $files = $options->images
             ? $this->contentExport->productSetFilesForProduct($product, $tunnelBaseUrl)
@@ -315,10 +317,16 @@ final class ShopifyProductUpsertFromErpService
             if ($productType !== '') {
                 $productSet['productType'] = $productType;
             }
-            $tags = $this->exports->shopifyTagsListForProduct($product);
-            if ($tags !== []) {
-                $productSet['tags'] = $tags;
-            }
+        }
+
+        $pushTags = $this->pushTags->tagsForProductSet(
+            $product,
+            $existingProductGid,
+            $isUpdate,
+            $options->info,
+        );
+        if ($pushTags !== null) {
+            $productSet['tags'] = $pushTags;
         }
 
         if ($options->publishStatus || ! $isUpdate) {

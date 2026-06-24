@@ -156,7 +156,11 @@ final class ToolFamilyProductResolver
             return 'pusher';
         }
 
-        if (in_array($sku, ['MS-23', 'MS-27'], true) || str_contains($description, 'needle') || str_contains($description, 'push knife')) {
+        if (in_array($sku, ['MS-27'], true) || str_contains($description, 'push knife')) {
+            return 'pusher';
+        }
+
+        if (in_array($sku, ['MS-23'], true) || str_contains($description, 'needle')) {
             return 'needle';
         }
 
@@ -259,7 +263,7 @@ final class ToolFamilyProductResolver
 
     private function isScribingTool(Product $product, string $sku): bool
     {
-        if (in_array($sku, ['MS-03', 'MS-06', 'MS-23', 'MS-27'], true)) {
+        if (in_array($sku, ['MS-03', 'MS-06', 'MS-27'], true)) {
             return false;
         }
 

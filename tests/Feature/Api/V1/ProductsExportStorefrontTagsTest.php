@@ -36,8 +36,8 @@ it('exports pilot storefront tags for masking tape in shopify CSV', function ():
 
     expect($row)->not->toBeNull();
     /** @var array<int, string> $row */
-    expect($row[6])->toContain('supplies')
-        ->and($row[6])->toContain('Others')
+    expect($row[6])->not->toContain('supplies')
+        ->and($row[6])->not->toContain('Others')
         ->and($row[6])->toContain('ts:dept:tapes')
         ->and($row[6])->toContain('ts:tape:masking')
         ->and($row[6])->toContain('ts:tape:width:10');

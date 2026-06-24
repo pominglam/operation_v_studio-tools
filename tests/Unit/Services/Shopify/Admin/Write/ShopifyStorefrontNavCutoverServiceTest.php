@@ -71,7 +71,9 @@ final class ShopifyStorefrontNavCutoverServiceTest extends TestCase
         $this->assertSame('Tools & Supplies', $items[1]['title']);
         $this->assertSame('Miscellaneous', $items[2]['title']);
         $this->assertCount(15, $items[1]['items']);
-        $this->assertSame('All tools & supplies', $items[1]['items'][0]['title']);
-        $this->assertSame('gid://shopify/Collection/2', $items[1]['items'][1]['resourceId']);
+        $this->assertSame('Adhesives', $items[1]['items'][0]['title']);
+        $this->assertSame('All tools & supplies', $items[1]['items'][13]['title']);
+        $this->assertSame('Other', $items[1]['items'][14]['title']);
+        $this->assertSame('gid://shopify/Collection/6', $items[1]['items'][0]['resourceId']);
     }
 }

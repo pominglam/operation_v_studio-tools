@@ -30,11 +30,15 @@ Any change that affects what customers **see**, **click**, **filter**, **sort**,
 For every new or changed filter (facets, checkboxes, chips, dropdowns):
 
 - [ ] Select **one** value → only matching items remain; **count matches** what the dedicated shelf/collection shows when comparable.
+- [ ] The checkbox/chip **stays checked** after tap — no flash refresh, no section reload, no spontaneous uncheck.
 - [ ] Clear or deselect → full list returns.
 - [ ] **Multiselect** (if supported) → union behaves correctly.
 - [ ] **Pagination** → filtering includes products on later pages (or document/limit if server-side only). Never sign off when filter only affects page 1.
 - [ ] **Desktop and mobile** panel if both exist (sync, no duplicate-panel desync).
+- [ ] **Mobile drawer**: open → tap filter(s) → close → reopen → selections and layout still correct.
 - [ ] Changing **Availability** or native facets does not break custom filters (re-test after).
+
+**Stop condition:** If a filter tap causes Dawn `facets.js` to re-fetch the section, checkboxes reset, or the drawer “feels like a refresh”, the task is **not done** — fix and re-click in the browser before replying.
 
 ## Clickables (mandatory checks)
 

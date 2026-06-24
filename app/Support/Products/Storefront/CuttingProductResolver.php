@@ -83,7 +83,7 @@ final class CuttingProductResolver
             return true;
         }
 
-        return in_array($sku, ['MS-23', 'MS-25', 'MS-25B', 'MS-27'], true);
+        return in_array($sku, ['MS-25', 'MS-25B'], true);
     }
 
     private function isBladeSku(string $sku, string $description): bool
@@ -107,11 +107,12 @@ final class CuttingProductResolver
             return true;
         }
 
-        if (in_array($sku, ['MS-21', 'MS-21B', 'MS-22', 'MS-24'], true)) {
+        if (in_array($sku, ['MS-21', 'MS-21B', 'MS-22', 'MS-24', 'MS-27'], true)) {
             return true;
         }
 
         return str_contains($description, 'pen knife')
+            || str_contains($description, 'push knife')
             || str_contains($description, '笔刀');
     }
 

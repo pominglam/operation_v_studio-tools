@@ -8,6 +8,7 @@ use App\Contracts\Shopify\ShopifyAdminGraphQlClientInterface;
 use App\Exceptions\Shopify\ShopifyGraphQlException;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlMutations;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlQueries;
+use App\Support\Products\Storefront\StorefrontTag;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 
@@ -16,25 +17,12 @@ final class ShopifyStorefrontNavCutoverService
     public const string MENU_HANDLE = 'main-menu';
 
     /**
-     * @var list<array{handle: string, title: string}>
+     * @return list<array{handle: string, title: string, footer: bool}>
      */
-    public const TOOLS_SUPPLIES_CHILDREN = [
-        ['handle' => 'tools-and-supplies', 'title' => 'All tools & supplies'],
-        ['handle' => 'brushes', 'title' => 'Brushes'],
-        ['handle' => 'drills', 'title' => 'Drills & bits'],
-        ['handle' => 'tweezers', 'title' => 'Tweezers'],
-        ['handle' => 'scribing-tools', 'title' => 'Scribing tools'],
-        ['handle' => 'adhesives', 'title' => 'Adhesives'],
-        ['handle' => 'nippers-and-knives', 'title' => 'Nippers & knives'],
-        ['handle' => 'sanding', 'title' => 'Sanding'],
-        ['handle' => 'tapes', 'title' => 'Tapes'],
-        ['handle' => 'markers', 'title' => 'Markers'],
-        ['handle' => 'paints', 'title' => 'Paints'],
-        ['handle' => 'panel-liners', 'title' => 'Panel liners'],
-        ['handle' => 'decals', 'title' => 'Decals'],
-        ['handle' => 'airbrush', 'title' => 'Airbrush'],
-        ['handle' => 'workshop-misc', 'title' => 'Other'],
-    ];
+    public static function toolsSuppliesNavChildren(): array
+    {
+        return StorefrontTag::toolsAndSuppliesNavMenuChildren();
+    }
 
     /**
      * @var list<string>
@@ -149,7 +137,7 @@ final class ShopifyStorefrontNavCutoverService
     public function buildToolsSuppliesTopLevelItem(array $collectionGidsByHandle): array
     {
         $children = [];
-        foreach (self::TOOLS_SUPPLIES_CHILDREN as $child) {
+        foreach (self::toolsSuppliesNavChildren() as $child) {
             $handle = $child['handle'];
             $gid = $collectionGidsByHandle[$handle] ?? '';
             if ($gid === '') {
@@ -229,7 +217,7 @@ final class ShopifyStorefrontNavCutoverService
 
         $handles = array_map(
             static fn (array $child): string => $child['handle'],
-            self::TOOLS_SUPPLIES_CHILDREN,
+            self::toolsSuppliesNavChildren(),
         );
 
         $gids = [];

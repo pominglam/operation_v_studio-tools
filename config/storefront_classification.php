@@ -34,11 +34,11 @@ return [
     | Dual-write legacy ERP tags
     |--------------------------------------------------------------------------
     |
-    | When true, Shopify tags include main_type, type, and latest arrival
-    | alongside ts:* storefront tags.
+    | When true, legacy tags are included in classification output for staff review.
+    | Shopify push always emits ts:* storefront tags only (never legacy main_type/type).
     |
     */
-    'dual_write_legacy_tags' => true,
+    'dual_write_legacy_tags' => false,
 
     /*
     |--------------------------------------------------------------------------

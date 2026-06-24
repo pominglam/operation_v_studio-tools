@@ -40,22 +40,25 @@ CLI: `php artisan shopify:oauth:url`
 
 **Tools & Supplies** replaces **Paints & Markers** + **Tools**. **Model kits** and **Miscellaneous** unchanged.
 
-Children (in order):
+Children (A–Z, then footer):
 
-1. All tools & supplies → `/collections/tools-and-supplies`
-2. Brushes → `/collections/brushes`
-3. Drills & bits → `/collections/drills`
-4. Tweezers → `/collections/tweezers`
-5. Scribing tools → `/collections/scribing-tools`
-6. Adhesives → `/collections/adhesives`
+1. Adhesives → `/collections/adhesives`
+2. Airbrush → `/collections/airbrush`
+3. Brushes → `/collections/brushes`
+4. Decals → `/collections/decals`
+5. Drills & bits → `/collections/drills`
+6. Markers → `/collections/markers`
 7. Nippers & knives → `/collections/nippers-and-knives`
-8. Sanding → `/collections/sanding`
-9. Tapes → `/collections/tapes`
-10. Markers → `/collections/markers`
-11. Paints → `/collections/paints`
-12. Decals → `/collections/decals`
-13. Airbrush → `/collections/airbrush`
-14. Other tools & supplies → `/collections/workshop-misc`
+8. Panel liners → `/collections/panel-liners`
+9. Paints → `/collections/paints`
+10. Sanding → `/collections/sanding`
+11. Scribing tools → `/collections/scribing-tools`
+12. Tapes → `/collections/tapes`
+13. Tweezers → `/collections/tweezers`
+14. **All tools & supplies** → `/collections/tools-and-supplies` (footer row)
+15. **Other** → `/collections/workshop-misc` (footer row)
+
+Canonical order: `StorefrontTag::toolsAndSuppliesNavMenuChildren()`.
 
 ## Rollback
 
