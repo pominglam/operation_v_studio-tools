@@ -34,6 +34,8 @@ const props = defineProps<{
     preview: PoExportShopifyPreview | null;
     pushSummary: PoExportShopifyPushSummary | null;
     error: string | null;
+    progressPercent?: number;
+    phaseLabel?: string;
 }>();
 
 const emit = defineEmits<{
@@ -74,6 +76,22 @@ function formatHandle(value: string | null | undefined): string {
 
                 <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
                     <p v-if="error" class="mb-3 text-sm text-rose-700">{{ error }}</p>
+
+                    <div
+                        v-if="busy && !pushSummary && (phaseLabel || (progressPercent ?? 0) > 0)"
+                        class="mb-3"
+                    >
+                        <div class="mb-1 flex items-center justify-between text-xs text-slate-600">
+                            <span>{{ phaseLabel || 'Working…' }}</span>
+                            <span>{{ progressPercent ?? 0 }}%</span>
+                        </div>
+                        <div class="h-2 overflow-hidden rounded-full bg-slate-200">
+                            <div
+                                class="h-full rounded-full bg-slate-900 transition-all duration-300"
+                                :style="{ width: `${Math.max(0, Math.min(100, progressPercent ?? 0))}%` }"
+                            />
+                        </div>
+                    </div>
 
                     <div
                         v-if="pushSummary"
@@ -195,7 +213,7 @@ function formatHandle(value: string | null | undefined): string {
                         "
                         @click="emit('confirm')"
                     >
-                        {{ busy ? 'Pushing…' : 'Push to Shopify' }}
+                        {{ busy ? (phaseLabel || 'Pushing…') : 'Push to Shopify' }}
                     </button>
                 </div>
             </div>

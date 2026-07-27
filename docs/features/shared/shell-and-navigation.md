@@ -25,7 +25,8 @@ When `currentAccessRole() !== 'employee'`, links appear in this order:
 4. **Pricing** → `/price-research` (label “Pricing”; path is still `price-research`)
 5. **Preorders** → `/preorders`
 6. **TCG Events** → `/tcg-events`
-7. **Maintenance** → `/maintenance`
+7. **Reports** → `/reports/staff-orders` (active for any `/reports/*`)
+8. **Maintenance** → `/maintenance`
 
 ## Top navigation (employee)
 

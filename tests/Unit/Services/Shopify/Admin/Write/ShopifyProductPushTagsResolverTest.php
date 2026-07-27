@@ -67,6 +67,39 @@ it('returns null for unclassified updates so Shopify tags stay unchanged', funct
     expect($tags)->toBeNull();
 });
 
+it('merges latest arrival tag on unclassified info updates', function (): void {
+    $productGid = 'gid://shopify/Product/88004';
+    ShopifyProduct::query()->create([
+        'gid' => $productGid,
+        'handle' => 'pg-unleashed',
+        'title' => 'PG Unleashed',
+        'status' => 'ACTIVE',
+        'payload_json' => [
+            'tags' => ['PG', 'model kit'],
+        ],
+    ]);
+    ShopifyProductVariant::query()->create([
+        'gid' => 'gid://shopify/ProductVariant/88005',
+        'product_gid' => $productGid,
+        'sku' => '5069191',
+    ]);
+
+    $resolver = app(ShopifyProductPushTagsResolver::class);
+    $tags = $resolver->tagsForProductSet(
+        pushTagsTestProduct([
+            'sku' => '5069191',
+            'main_type' => 'PG',
+            'type' => 'model kit',
+            'latest_arrival' => true,
+        ]),
+        $productGid,
+        true,
+        true,
+    );
+
+    expect($tags)->toContain('PG', 'model kit', 'latest arrival');
+});
+
 it('classifies MS-23 as scribing and MS-27 as cutting knife', function (): void {
     $classifier = app(ProductStorefrontClassifier::class);
 

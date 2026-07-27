@@ -219,7 +219,7 @@ final class PurchaseOrderImportService
                             ['cost' => $r['unit_cost'], 'weight' => max(1, (int) ($r['qty_ordered'] ?? $r['qty_received'] ?? 1))],
                         ]);
                         $item->unit_cost = $item->vendor_unit_cost !== null && $fxRateForLines !== null
-                            ? $this->mulDecimalRounded((string) $item->vendor_unit_cost, $fxRateForLines, 4)
+                            ? $this->mulDecimalRounded((string) $item->vendor_unit_cost, $fxRateForLines, 2)
                             : null;
                     }
 
@@ -241,7 +241,7 @@ final class PurchaseOrderImportService
                 $item->vendor = (string) ($product->vendor ?? $vendor);
                 $item->vendor_unit_cost = $po->vendor_currency_code !== 'CAD' ? $r['unit_cost'] : null;
                 $item->unit_cost = $po->vendor_currency_code !== 'CAD'
-                    ? ($item->vendor_unit_cost !== null && $fxRateForLines !== null ? $this->mulDecimalRounded((string) $item->vendor_unit_cost, $fxRateForLines, 4) : null)
+                    ? ($item->vendor_unit_cost !== null && $fxRateForLines !== null ? $this->mulDecimalRounded((string) $item->vendor_unit_cost, $fxRateForLines, 2) : null)
                     : $r['unit_cost'];
                 $item->qty_ordered = $r['qty_ordered'];
                 $item->qty_shipped = $r['qty_shipped'];

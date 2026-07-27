@@ -95,6 +95,91 @@ describe('ProductsTable', () => {
         expect(onOpenPlamod).toHaveBeenCalledWith('p-1');
     });
 
+    it('hides classification columns by default and shows them when toggled', async () => {
+        const wrapper = mount(ProductsTable, {
+            props: {
+                loading: false,
+                products: [
+                    {
+                        id: 'p-1',
+                        sku: 'SKU-1',
+                        barcode: null,
+                        description: 'Test',
+                        handle: 'test',
+                        main_type: 'supplies',
+                        type: 'Panel liner',
+                        grade: null,
+                        scale: null,
+                        series: null,
+                        vendor: 'Stedi',
+                        published_on_shopify: true,
+                        is_ready: false,
+                        available: null,
+                        maintain: null,
+                        pdp: { has_description: true, plamod_image_count: 1 },
+                    },
+                ],
+                totalMatching: 1,
+                selectionScopeKey: 'scope-1',
+                sortBy: 'sku',
+                sortDir: 'asc',
+                onSortChange: () => undefined,
+                onRefresh: async () => undefined,
+                onBulkDelete: async () => 0,
+                onBulkArchive: async () => 0,
+                onBulkUpdate: async () => 0,
+                onBulkRenamePlamodAssets: async () => ({ queued: 0, batchId: '' }),
+                onBulkExportSelected: async () => undefined,
+                onBulkRecrawlSelected: async () => undefined,
+                onBulkPushShopifySelected: async () => undefined,
+                onUpdate: async () => undefined,
+                onUpdateAvailable: async () => undefined,
+                onUpdateHold: async () => undefined,
+                onUpdateMaintain: async () => undefined,
+                onToggleReady: async () => undefined,
+                onToggleLatestArrival: async () => undefined,
+                onToggleCritical: async () => undefined,
+                onToggleDiscontinue: async () => undefined,
+                onToggleHazardousShipment: async () => undefined,
+                onUpdateShipmentMethod: async () => undefined,
+                onSelectAllMatching: async () => ['p-1'],
+                onOpenPlamod: () => undefined,
+                onOpenPoLines: () => undefined,
+            },
+            global: {
+                stubs: {
+                    ConfirmDialog: true,
+                    BulkUpdateDialog: true,
+                    BulkExportDialog: true,
+                    BulkRecrawlDialog: true,
+                    BulkPushShopifyDialog: true,
+                },
+            },
+        });
+
+        const headerTexts = () => wrapper.findAll('thead th').map((th) => th.text().trim());
+
+        expect(wrapper.find('[data-testid="toggle-classification-visibility"]').text()).toBe(
+            'Show type/grade/scale',
+        );
+        expect(headerTexts()).not.toContain('Main type');
+        expect(headerTexts()).not.toContain('Type');
+        expect(headerTexts()).not.toContain('Grade');
+        expect(headerTexts()).not.toContain('Scale');
+        expect(headerTexts()).not.toContain('Series');
+
+        await wrapper.find('[data-testid="toggle-classification-visibility"]').trigger('click');
+
+        expect(wrapper.find('[data-testid="toggle-classification-visibility"]').text()).toBe(
+            'Hide type/grade/scale',
+        );
+        expect(headerTexts()).toContain('Main type');
+        expect(headerTexts()).toContain('Type');
+        expect(headerTexts()).toContain('Grade');
+        expect(headerTexts()).toContain('Scale');
+        expect(headerTexts()).toContain('Series');
+    });
+
     it('includes Stedi in vendor select options while editing', async () => {
         const onSelectAllMatching = vi.fn(async () => ['p-1']);
         const onToggleLatestArrival = vi.fn(async () => undefined);
@@ -753,5 +838,75 @@ describe('ProductsTable', () => {
         expect(wrapper.find('table').exists()).toBe(true);
         expect(wrapper.text()).toContain('Refreshing…');
         expect(wrapper.text()).toContain('SKU-1');
+    });
+
+    it('shows Shopify order count beside total sold and opens demand dialog from the count', async () => {
+        const onOpenDemand = vi.fn();
+
+        const wrapper = mount(ProductsTable, {
+            props: {
+                loading: false,
+                products: [
+                    {
+                        id: 'p-orders',
+                        sku: 'SKU-ORDERS',
+                        barcode: null,
+                        description: 'Order count product',
+                        type: null,
+                        vendor: null,
+                        published_on_shopify: true,
+                        is_ready: true,
+                        total_ordered: 16,
+                        available: 4,
+                        shopify_orders_count: 3,
+                        maintain: null,
+                        pdp: { has_description: false, plamod_image_count: 0 },
+                    },
+                ],
+                totalMatching: 1,
+                selectionScopeKey: 'scope-orders',
+                sortBy: 'sku',
+                sortDir: 'asc',
+                onSortChange: () => undefined,
+                onRefresh: async () => undefined,
+                onBulkDelete: async () => 0,
+                onBulkUpdate: async () => 0,
+                onBulkRenamePlamodAssets: async () => ({ queued: 0, batchId: '' }),
+                onBulkExportSelected: async () => undefined,
+                onBulkRecrawlSelected: async () => undefined,
+                onBulkPushShopifySelected: async () => undefined,
+                onUpdate: async () => undefined,
+                onUpdateAvailable: async () => undefined,
+                onUpdateHold: async () => undefined,
+                onUpdateMaintain: async () => undefined,
+                onToggleReady: async () => undefined,
+                onToggleLatestArrival: async () => undefined,
+                onToggleCritical: async () => undefined,
+                onToggleDiscontinue: async () => undefined,
+                onToggleHazardousShipment: async () => undefined,
+                onUpdateShipmentMethod: async () => undefined,
+                onSelectAllMatching: async () => ['p-orders'],
+                onOpenPlamod: () => undefined,
+                onOpenPoLines: () => undefined,
+                onOpenDemand,
+            },
+            global: {
+                stubs: {
+                    ConfirmDialog: true,
+                    BulkUpdateDialog: true,
+                    BulkExportDialog: true,
+                    BulkRecrawlDialog: true,
+                    BulkPushShopifyDialog: true,
+                },
+            },
+        });
+
+        expect(wrapper.text()).toContain('(3)');
+
+        const count = wrapper.find('[data-testid="product-shopify-orders-count:p-orders"]');
+        expect(count.exists()).toBe(true);
+        await count.trigger('click');
+
+        expect(onOpenDemand).toHaveBeenCalledWith('p-orders');
     });
 });

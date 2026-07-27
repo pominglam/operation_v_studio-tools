@@ -37,6 +37,9 @@ A task is **not complete** until behavior is verified the way a real user/system
 - Backend: `php artisan test --filter=<Name>`
 - Frontend: `npm run test -- --run <spec-path>`
 - Frontend bundle after UI edits: `npm run build`
+- **OVS T&S collection filters (theme + manifest):**
+  - `php artisan shopify:storefront-collection-filters-manifest-verify` (no network; catches missing collections)
+  - `npm run test:e2e:storefront-filters` (live storefront check→uncheck + mobile sync + **combinationCases** from manifest)
 
 ## Final reply must include
 

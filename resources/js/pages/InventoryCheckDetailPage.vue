@@ -7,10 +7,14 @@ import { formatMoney2OrEmpty } from '../lib/money';
 import BulkExportDialog, {
     type ProductsBulkExportType,
 } from '../components/products/BulkExportDialog.vue';
+import InventoryCheckResolveProductDialog, {
+    type InventoryCheckResolveItem,
+} from '../components/inventory/InventoryCheckResolveProductDialog.vue';
 
 type InventoryCheckItem = {
     id: number;
     product_id: string | null;
+    barcode_scanned: string | null;
     handle: string | null;
     vendor: string | null;
     sku: string;
@@ -31,6 +35,7 @@ type InventoryCheckItem = {
 type InventoryCheck = {
     id: string;
     name: string | null;
+    notes: string | null;
     source: string | null;
     uploaded_file_path: string | null;
     workflow_state?: string | null;
@@ -64,6 +69,13 @@ const nameDrafts = ref<Record<number, string>>({});
 const exportOpen = ref(false);
 const exportBusy = ref(false);
 const exportError = ref<string | null>(null);
+const resolveItem = ref<InventoryCheckResolveItem | null>(null);
+const resolveIntent = ref<'resolve' | 'reassign'>('resolve');
+const sessionNoteDraft = ref<string | null>(null);
+const savingSessionNote = ref(false);
+const vendorOptions = ref<string[]>([]);
+const mainTypeOptions = ref<string[]>([]);
+const typeOptions = ref<string[]>([]);
 
 const filter = ref<'all' | 'applied' | 'unapplied' | 'unmatched' | 'ambiguous'>('all');
 const search = ref('');
@@ -99,6 +111,7 @@ async function load(): Promise<void> {
     try {
         const res = await api.get<{ data: InventoryCheck }>(`/api/v1/inventory-check/${id.value}`);
         check.value = res.data.data;
+        sessionNoteDraft.value = null;
     } catch {
         error.value = 'Failed to load inventory check session.';
     } finally {
@@ -137,10 +150,51 @@ function isSavingLine(itemId: number): boolean {
     return savingLine.value[itemId] === true;
 }
 
+const sessionEditable = computed<boolean>(() => {
+    const state = (check.value?.workflow_state ?? 'draft').trim().toLowerCase();
+
+    return state !== 'applied';
+});
+
 function isBarcodeNotFoundRow(item: InventoryCheckItem): boolean {
     const err = item.match_error ?? '';
 
     return item.match_status === 'unmatched' && err.includes('No active product found');
+}
+
+function openResolveDialog(item: InventoryCheckItem): void {
+    resolveIntent.value = isBarcodeNotFoundRow(item) ? 'resolve' : 'reassign';
+    resolveItem.value = {
+        id: item.id,
+        barcode_scanned: item.barcode_scanned,
+        sku: item.sku,
+        vendor: item.vendor,
+        type: item.type,
+        product_name: nameValueFor(item),
+        quantity_in_store: item.quantity_in_store,
+        match_error: item.match_error,
+    };
+}
+
+async function onResolveCompleted(): Promise<void> {
+    resolveItem.value = null;
+    await load();
+    await loadProductFilterOptions();
+}
+
+async function loadProductFilterOptions(): Promise<void> {
+    try {
+        const res = await api.get<{
+            data: { vendors?: string[]; main_types?: string[]; types?: string[] };
+        }>('/api/v1/products/filter-options');
+        vendorOptions.value = res.data.data.vendors ?? [];
+        mainTypeOptions.value = res.data.data.main_types ?? [];
+        typeOptions.value = res.data.data.types ?? [];
+    } catch {
+        vendorOptions.value = [];
+        mainTypeOptions.value = [];
+        typeOptions.value = [];
+    }
 }
 
 function qtyValueFor(item: InventoryCheckItem): string {
@@ -291,11 +345,43 @@ async function exportAllProducts(payload: { exportType: ProductsBulkExportType }
     }
 }
 
+function sessionNoteValue(): string {
+    if (sessionNoteDraft.value !== null) return sessionNoteDraft.value;
+
+    return check.value?.notes ?? '';
+}
+
+function isSessionNoteDirty(): boolean {
+    return sessionNoteValue().trim() !== (check.value?.notes ?? '').trim();
+}
+
+async function saveSessionNote(): Promise<void> {
+    if (!check.value || savingSessionNote.value) return;
+    if (!isSessionNoteDirty()) return;
+
+    savingSessionNote.value = true;
+    error.value = null;
+    const trimmed = sessionNoteValue().trim();
+    try {
+        const res = await api.patch<{ data: InventoryCheck }>(
+            `/api/v1/inventory-check/${id.value}`,
+            { notes: trimmed === '' ? '' : trimmed },
+        );
+        check.value = { ...check.value, notes: res.data.data.notes };
+        sessionNoteDraft.value = null;
+    } catch {
+        error.value = 'Failed to save session note.';
+    } finally {
+        savingSessionNote.value = false;
+    }
+}
+
 watch(id, () => {
     void load();
 });
 
 onMounted(() => {
+    void loadProductFilterOptions();
     void load();
 });
 </script>
@@ -310,6 +396,28 @@ onMounted(() => {
                         >Back to history</a
                     >
                 </p>
+                <div class="mt-3 flex max-w-6xl flex-col gap-2 sm:flex-row sm:items-end">
+                    <div class="flex-1">
+                        <label class="text-xs font-medium text-slate-700">Session note</label>
+                        <input
+                            :value="sessionNoteValue()"
+                            type="text"
+                            maxlength="2000"
+                            placeholder="e.g. Back wall, markers aisle"
+                            class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                            @input="sessionNoteDraft = ($event.target as HTMLInputElement).value"
+                        />
+                    </div>
+                    <button
+                        v-if="isSessionNoteDirty()"
+                        type="button"
+                        class="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                        :disabled="savingSessionNote"
+                        @click="saveSessionNote"
+                    >
+                        {{ savingSessionNote ? 'Saving…' : 'Save note' }}
+                    </button>
+                </div>
             </div>
             <div class="flex items-center gap-2">
                 <label class="inline-flex items-center gap-2 text-xs text-slate-700">
@@ -448,8 +556,9 @@ onMounted(() => {
                                 <th class="px-2 py-1 text-right">Selling price</th>
                                 <th class="px-2 py-1 text-right">Qty in store</th>
                                 <th class="px-2 py-1 text-right">Difference</th>
-                                <th class="px-2 py-1">Notes</th>
+                                <th class="px-2 py-1">Row notes (CSV)</th>
                                 <th class="px-2 py-1">Error</th>
+                                <th class="px-2 py-1 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody class="text-slate-800">
@@ -507,6 +616,21 @@ onMounted(() => {
                                 <td class="px-2 py-1 text-right">{{ it.difference ?? '' }}</td>
                                 <td class="px-2 py-1">{{ it.notes ?? '' }}</td>
                                 <td class="px-2 py-1 text-slate-600">{{ it.match_error ?? '' }}</td>
+                                <td class="px-2 py-1 text-right">
+                                    <button
+                                        v-if="sessionEditable"
+                                        type="button"
+                                        class="rounded-md border px-3 py-1.5 text-xs font-medium"
+                                        :class="
+                                            isBarcodeNotFoundRow(it)
+                                                ? 'border-red-200 bg-white text-red-700 hover:bg-red-50'
+                                                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                                        "
+                                        @click="openResolveDialog(it)"
+                                    >
+                                        {{ isBarcodeNotFoundRow(it) ? 'Resolve' : 'Reassign' }}
+                                    </button>
+                                </td>
                             </tr>
                         </tbody>
                     </table>
@@ -524,6 +648,17 @@ onMounted(() => {
             :selected-count="exportProductIds.length"
             @cancel="exportOpen = false"
             @confirm="exportAllProducts"
+        />
+        <InventoryCheckResolveProductDialog
+            :open="resolveItem !== null"
+            :session-id="id"
+            :item="resolveItem"
+            :intent="resolveIntent"
+            :vendor-options="vendorOptions"
+            :main-type-options="mainTypeOptions"
+            :type-options="typeOptions"
+            @close="resolveItem = null"
+            @resolved="onResolveCompleted"
         />
     </main>
 </template>

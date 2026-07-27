@@ -9,6 +9,7 @@ This folder is the **navigation hub** for **what each screen does**, how users m
 | **Purchase orders** | [screens/purchase-orders.md](screens/purchase-orders.md) |
 | **Admin inventory CSV + sessions + employee count** | [screens/inventory-and-counting.md](screens/inventory-and-counting.md) |
 | **Competitor pricing** | [screens/price-research.md](screens/price-research.md) |
+| **Staff orders (POS / channels)** | [screens/staff-orders-report.md](screens/staff-orders-report.md) |
 | **PDP / Plamod rename batch progress** | [screens/sync-progress.md](screens/sync-progress.md) |
 | **Bandai TCG+ events** | [screens/tcg-events.md](screens/tcg-events.md) |
 | **Plamod preorders** | [screens/preorders.md](screens/preorders.md) |
@@ -30,6 +31,7 @@ Shopify **Online Store theme** workflows (draft theme, static About page handoff
 | Job batches / PDP sync progress | [screens/sync-progress.md](screens/sync-progress.md) |
 | Navbar & layout | [shared/shell-and-navigation.md](shared/shell-and-navigation.md) |
 | Price research & reports | [screens/price-research.md](screens/price-research.md) |
+| Staff orders report | [screens/staff-orders-report.md](screens/staff-orders-report.md) |
 | Products catalog (table, bulk, tabs) | [screens/products.md](screens/products.md) |
 | Purchase orders | [screens/purchase-orders.md](screens/purchase-orders.md) |
 | Shopify / exports / tunnel (UI, internal catalog) | [screens/products.md](screens/products.md), [screens/sync-progress.md](screens/sync-progress.md) |
@@ -51,6 +53,7 @@ Shopify **Online Store theme** workflows (draft theme, static About page handoff
 | `/price-research` | `PriceResearchPage.vue` |
 | `/price-research/reports` | `PriceResearchReportsPage.vue` |
 | `/price-research/runs/:id/logs` | `PriceResearchRunLogsPage.vue` |
+| `/reports/staff-orders` | `StaffOrdersReportPage.vue` |
 | `/sync-progress` | `SyncProgressPage.vue` |
 | `/tcg-events` | `TcgEventsPage.vue` |
 | `/preorders` | `PreordersPage.vue` |

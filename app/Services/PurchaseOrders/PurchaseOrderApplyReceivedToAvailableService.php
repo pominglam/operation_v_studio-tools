@@ -12,6 +12,7 @@ final class PurchaseOrderApplyReceivedToAvailableService
 {
     public function __construct(
         private readonly PurchaseOrderRepository $purchaseOrders,
+        private readonly PurchaseOrderWorkflowPrepareInventoryService $prepareInventory,
     ) {}
 
     /**
@@ -25,22 +26,17 @@ final class PurchaseOrderApplyReceivedToAvailableService
      */
     public function apply(string $purchaseOrderUuid): array
     {
+        $this->prepareInventory->validateReceivedQuantities($purchaseOrderUuid);
+
         return DB::transaction(function () use ($purchaseOrderUuid): array {
             $po = $this->purchaseOrders->findByUuidOrFail($purchaseOrderUuid);
             $items = $this->purchaseOrders->itemsForPurchaseOrderId((int) $po->id);
 
             $byProductId = [];
             $skippedMissingProductId = 0;
-            $skippedNonPositiveQty = 0;
 
             foreach ($items as $item) {
                 $qty = (int) ($item->qty_received ?? 0);
-                if ($qty <= 0) {
-                    $skippedNonPositiveQty++;
-
-                    continue;
-                }
-
                 $productId = (int) ($item->product_id ?? 0);
                 if ($productId <= 0) {
                     $skippedMissingProductId++;
@@ -73,7 +69,7 @@ final class PurchaseOrderApplyReceivedToAvailableService
                 'total_added' => $totalAdded,
                 'lines_considered' => count($items),
                 'skipped_missing_product_id' => $skippedMissingProductId,
-                'skipped_non_positive_qty' => $skippedNonPositiveQty,
+                'skipped_non_positive_qty' => 0,
             ];
         });
     }

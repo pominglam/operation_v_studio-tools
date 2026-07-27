@@ -86,7 +86,13 @@ const DEFAULT_VENDOR_OPTIONS = [
     'PM',
     'JS',
 ] as const;
-const STATE_KEY = 'purchase-orders:history-filters:v1';
+const DEFAULT_SELECTED_STATUSES: PurchaseOrderListRow['status'][] = [
+    'draft',
+    'ordered',
+    'shipped',
+    'received',
+];
+const STATE_KEY = 'purchase-orders:history-filters:v2';
 
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -95,10 +101,12 @@ const meta = ref<Paginated<PurchaseOrderListRow>['meta'] | null>(null);
 const hydrating = ref(true);
 
 type PurchaseOrderSortBy = 'created' | 'ordered' | 'received';
-const sortBy = ref<PurchaseOrderSortBy>('created');
+const sortBy = ref<PurchaseOrderSortBy>('ordered');
 const sortDir = ref<'asc' | 'desc'>('desc');
 const selectedVendors = ref<string[]>([]);
-const selectedStatuses = ref<PurchaseOrderListRow['status'][]>([]);
+const selectedStatuses = ref<PurchaseOrderListRow['status'][]>([
+    ...DEFAULT_SELECTED_STATUSES,
+]);
 
 const file = ref<File | null>(null);
 const importing = ref(false);
@@ -437,7 +445,9 @@ async function confirmImportPreview(): Promise<void> {
 function resetHistoryFilters(): void {
     clearPageState(STATE_KEY);
     selectedVendors.value = [];
-    selectedStatuses.value = [];
+    selectedStatuses.value = [...DEFAULT_SELECTED_STATUSES];
+    sortBy.value = 'ordered';
+    sortDir.value = 'desc';
     void loadHistory();
 }
 

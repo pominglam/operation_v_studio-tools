@@ -20,21 +20,32 @@ const props = defineProps<{
     message: string | null;
     onCreate: (payload: CreateProductPayload) => Promise<void>;
     vendorOptions?: string[];
+    mainTypeOptions?: string[];
+    typeOptions?: string[];
     embedded?: boolean;
+    initialValues?: Partial<CreateProductPayload>;
+    resetKey?: string | number;
 }>();
 
-const form = ref<CreateProductPayload>({
-    sku: '',
-    barcode: null,
-    description: '',
-    handle: null,
-    main_type: 'model kit',
-    type: null,
-    vendor: 'Plamod',
-    available: null,
-    maintain: null,
-    extended: null,
-});
+const datalistId = `add-product-${Math.random().toString(36).slice(2)}`;
+
+function defaultForm(): CreateProductPayload {
+    return {
+        sku: '',
+        barcode: null,
+        description: '',
+        handle: null,
+        main_type: 'model kit',
+        type: null,
+        vendor: 'Plamod',
+        available: null,
+        maintain: null,
+        extended: null,
+        ...props.initialValues,
+    };
+}
+
+const form = ref<CreateProductPayload>(defaultForm());
 
 const localError = ref<string | null>(null);
 
@@ -49,6 +60,14 @@ watch(
         form.value.vendor = opts.includes('Plamod') ? 'Plamod' : (opts[0] ?? null);
     },
     { immediate: true },
+);
+
+watch(
+    () => props.resetKey,
+    () => {
+        localError.value = null;
+        form.value = defaultForm();
+    },
 );
 
 async function submit(): Promise<void> {
@@ -71,18 +90,7 @@ async function submit(): Promise<void> {
         extended: form.value.extended?.trim() || null,
     });
 
-    form.value = {
-        sku: '',
-        barcode: null,
-        description: '',
-        handle: null,
-        main_type: 'model kit',
-        type: null,
-        vendor: 'Plamod',
-        available: null,
-        maintain: null,
-        extended: null,
-    };
+    form.value = defaultForm();
 }
 </script>
 
@@ -162,8 +170,12 @@ async function submit(): Promise<void> {
                     v-model="form.main_type"
                     class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                     type="text"
+                    :list="`${datalistId}-main-types`"
                     placeholder="model kit"
                 />
+                <datalist :id="`${datalistId}-main-types`">
+                    <option v-for="t in mainTypeOptions ?? []" :key="t" :value="t" />
+                </datalist>
             </div>
             <div class="md:col-span-3">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
@@ -173,7 +185,11 @@ async function submit(): Promise<void> {
                     v-model="form.type"
                     class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                     type="text"
+                    :list="`${datalistId}-types`"
                 />
+                <datalist :id="`${datalistId}-types`">
+                    <option v-for="t in typeOptions ?? []" :key="t" :value="t" />
+                </datalist>
             </div>
 
             <div class="md:col-span-2">

@@ -31,7 +31,7 @@ interface PurchaseOrderRepository
      * @param  array<int, string>  $statuses  When non-empty, only rows whose derived status is in this list.
      * @return LengthAwarePaginator<PurchaseOrder>
      */
-    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created', array $vendors = [], array $statuses = []): LengthAwarePaginator;
+    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'ordered', array $vendors = [], array $statuses = []): LengthAwarePaginator;
 
     /**
      * @return array<int, string>

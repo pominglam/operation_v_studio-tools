@@ -182,6 +182,68 @@ final class FakeShopifyAdminGraphQlClient implements ShopifyAdminGraphQlClientIn
     }
 
     /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    public static function wrapProductMirrorNode(string $productGid, string $handle, string $sku, array $overrides = []): array
+    {
+        $variantGid = is_string($overrides['variant_gid'] ?? null)
+            ? $overrides['variant_gid']
+            : 'gid://shopify/ProductVariant/'.substr(md5($sku), 0, 8);
+        $inventoryItemGid = is_string($overrides['inventory_item_gid'] ?? null)
+            ? $overrides['inventory_item_gid']
+            : 'gid://shopify/InventoryItem/'.substr(md5($sku.'inv'), 0, 8);
+
+        return [
+            'data' => [
+                'product' => [
+                    'id' => $productGid,
+                    'legacyResourceId' => '1234567890',
+                    'handle' => $handle,
+                    'title' => is_string($overrides['title'] ?? null) ? $overrides['title'] : 'Mirror product',
+                    'status' => is_string($overrides['status'] ?? null) ? $overrides['status'] : 'ACTIVE',
+                    'vendor' => 'Vendor',
+                    'updatedAt' => '2026-01-01T00:00:00Z',
+                    'variants' => [
+                        'nodes' => [
+                            [
+                                'id' => $variantGid,
+                                'legacyResourceId' => '9876543210',
+                                'sku' => $sku,
+                                'barcode' => null,
+                                'inventoryQuantity' => 0,
+                                'updatedAt' => '2026-01-01T00:00:00Z',
+                                'inventoryItem' => [
+                                    'id' => $inventoryItemGid,
+                                    'legacyResourceId' => '5555555555',
+                                    'sku' => $sku,
+                                    'tracked' => true,
+                                    'requiresShipping' => true,
+                                    'updatedAt' => '2026-01-01T00:00:00Z',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function wrapProductMirrorSearch(array $nodes): array
+    {
+        return [
+            'data' => [
+                'products' => [
+                    'nodes' => $nodes,
+                ],
+            ],
+        ];
+    }
+
+    /**
      * @param  array<int, string>  $mediaIds
      * @return array<string, mixed>
      */

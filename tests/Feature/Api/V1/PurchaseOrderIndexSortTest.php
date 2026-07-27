@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Models\PurchaseOrder;
 use Carbon\CarbonImmutable;
 
-it('sorts purchase orders index by created_at via sort_dir', function (): void {
+it('sorts purchase orders index by created_at when sort_by=created', function (): void {
     $old = null;
     $new = null;
 
@@ -26,7 +26,7 @@ it('sorts purchase orders index by created_at via sort_dir', function (): void {
     expect($old)->not->toBeNull();
     expect($new)->not->toBeNull();
 
-    $desc = $this->getJson('/api/v1/purchase-orders?per_page=50&sort_dir=desc');
+    $desc = $this->getJson('/api/v1/purchase-orders?per_page=50&sort_by=created&sort_dir=desc');
     $desc->assertOk();
     $descIds = array_map(static fn (array $row): string => (string) $row['id'], $desc->json('data') ?? []);
     $newIdx = array_search((string) $new?->uuid, $descIds, true);
@@ -35,7 +35,7 @@ it('sorts purchase orders index by created_at via sort_dir', function (): void {
     expect($oldIdx)->not->toBeFalse();
     expect((int) $newIdx)->toBeLessThan((int) $oldIdx);
 
-    $asc = $this->getJson('/api/v1/purchase-orders?per_page=50&sort_dir=asc');
+    $asc = $this->getJson('/api/v1/purchase-orders?per_page=50&sort_by=created&sort_dir=asc');
     $asc->assertOk();
     $ascIds = array_map(static fn (array $row): string => (string) $row['id'], $asc->json('data') ?? []);
     $newIdxAsc = array_search((string) $new?->uuid, $ascIds, true);
@@ -43,6 +43,37 @@ it('sorts purchase orders index by created_at via sort_dir', function (): void {
     expect($newIdxAsc)->not->toBeFalse();
     expect($oldIdxAsc)->not->toBeFalse();
     expect((int) $oldIdxAsc)->toBeLessThan((int) $newIdxAsc);
+});
+
+it('defaults purchase orders index sort to ordered_date desc', function (): void {
+    $olderOrdered = PurchaseOrder::query()->create([
+        'vendor' => 'DefaultOrderedOld',
+        'ordered_date' => '2026-07-08',
+    ]);
+    $newerOrdered = PurchaseOrder::query()->create([
+        'vendor' => 'DefaultOrderedNew',
+        'ordered_date' => '2026-07-19',
+    ]);
+
+    PurchaseOrder::withoutTimestamps(function () use ($olderOrdered, $newerOrdered): void {
+        $olderOrdered->forceFill([
+            'created_at' => CarbonImmutable::parse('2026-07-23 00:00:00'),
+            'updated_at' => CarbonImmutable::parse('2026-07-23 00:00:00'),
+        ])->save();
+        $newerOrdered->forceFill([
+            'created_at' => CarbonImmutable::parse('2026-07-14 00:00:00'),
+            'updated_at' => CarbonImmutable::parse('2026-07-14 00:00:00'),
+        ])->save();
+    });
+
+    $res = $this->getJson('/api/v1/purchase-orders?per_page=200&sort_dir=desc');
+    $res->assertOk();
+    $ids = array_map(static fn (array $row): string => (string) $row['id'], $res->json('data') ?? []);
+    $newIdx = array_search((string) $newerOrdered->uuid, $ids, true);
+    $oldIdx = array_search((string) $olderOrdered->uuid, $ids, true);
+    expect($newIdx)->not->toBeFalse();
+    expect($oldIdx)->not->toBeFalse();
+    expect((int) $newIdx)->toBeLessThan((int) $oldIdx);
 });
 
 it('sorts purchase orders index by ordered_date via sort_by', function (): void {

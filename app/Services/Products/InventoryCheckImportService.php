@@ -57,14 +57,16 @@ final class InventoryCheckImportService
      *   not_applied_rows: array<int, array{handle:string, vendor:string, sku:string, reason:string}>,
      * }
      */
-    public function import(UploadedFile $file): array
+    public function import(UploadedFile $file, ?string $notes = null): array
     {
         $uploadedFilePath = $this->storeUploadedFile($file);
+        $sessionNotes = is_string($notes) ? trim($notes) : '';
 
-        return DB::transaction(function () use ($file, $uploadedFilePath): array {
+        return DB::transaction(function () use ($file, $uploadedFilePath, $sessionNotes): array {
             $check = new InventoryCheck([
                 'source' => 'inventory_export_barcoded',
                 'uploaded_file_path' => $uploadedFilePath,
+                'notes' => $sessionNotes !== '' ? $sessionNotes : null,
             ]);
             $this->inventoryChecks->create($check);
 

@@ -234,6 +234,60 @@ it('prefers the newest received PO over an older received PO for the same produc
     ]);
 });
 
+it('ignores POs flagged exclude_from_latest_arrivals_ordering when grouping and ranking', function (): void {
+    $service = new LatestArrivalCatalogOrderService(
+        new LatestArrivalPushProductSortService(new ProductTypeDerivationService),
+    );
+
+    $includedPo = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000120301',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+        'received_date' => '2026-07-15',
+    ]);
+    $excludedPo = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000120302',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+        'received_date' => '2026-07-16',
+        'exclude_from_latest_arrivals_ordering' => true,
+    ]);
+
+    $sharedHg = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000120311',
+        'sku' => 'CAT-SHARED-HG',
+        'description' => 'HG shared across POs',
+        'type' => 'HG',
+        'vendor' => 'Plamod',
+        'latest_arrival' => true,
+    ]);
+    $includedMgex = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000120312',
+        'sku' => 'CAT-INCLUDED-MGEX',
+        'description' => 'MGEX on included PO only',
+        'type' => 'MGEX',
+        'vendor' => 'Plamod',
+        'latest_arrival' => true,
+    ]);
+
+    foreach ([[$includedPo, $sharedHg], [$includedPo, $includedMgex], [$excludedPo, $sharedHg]] as [$po, $product]) {
+        PurchaseOrderItem::query()->create([
+            'purchase_order_id' => $po->id,
+            'product_id' => $product->id,
+            'sku' => $product->sku,
+            'vendor' => 'Plamod',
+            'qty_ordered' => 1,
+        ]);
+    }
+
+    $ordered = $service->orderedLatestArrivalProducts();
+
+    expect(array_map(static fn (Product $p): string => (string) $p->sku, $ordered))->toBe([
+        'CAT-INCLUDED-MGEX',
+        'CAT-SHARED-HG',
+    ]);
+});
+
 it('sorts within a PO using the full grade order sequence', function (): void {
     $service = new LatestArrivalCatalogOrderService(
         new LatestArrivalPushProductSortService(new ProductTypeDerivationService),

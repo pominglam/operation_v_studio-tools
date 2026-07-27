@@ -37,6 +37,7 @@ final class PurchaseOrderUpdateService
      *   vendor_product_total?:string|null,
      *   notes?:string|null,
      *   is_done?:bool,
+     *   exclude_from_latest_arrivals_ordering?:bool,
      *   shipment_method?:string|null
      * } $changes
      */
@@ -92,6 +93,9 @@ final class PurchaseOrderUpdateService
             }
             if (array_key_exists('is_done', $changes)) {
                 $po->is_done = (bool) $changes['is_done'];
+            }
+            if (array_key_exists('exclude_from_latest_arrivals_ordering', $changes)) {
+                $po->exclude_from_latest_arrivals_ordering = (bool) $changes['exclude_from_latest_arrivals_ordering'];
             }
             if (array_key_exists('shipment_method', $changes)) {
                 $po->shipment_method = $this->shipmentMethods->normalize(
@@ -253,8 +257,8 @@ final class PurchaseOrderUpdateService
                 continue;
             }
 
-            // Keep 4dp to match existing unit_cost storage.
-            $item->unit_cost = $this->mulDecimalRounded($vendor, $fx, 4);
+            // Keep 2dp to match PO line display and manual edits.
+            $item->unit_cost = $this->mulDecimalRounded($vendor, $fx, 2);
             $item->save();
         }
     }

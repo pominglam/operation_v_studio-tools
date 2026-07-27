@@ -11,6 +11,8 @@ use App\Models\Shopify\ShopifyInventoryLevel;
 use App\Models\Shopify\ShopifyLocation;
 use App\Models\Shopify\ShopifyProduct;
 use App\Models\Shopify\ShopifyProductVariant;
+use App\Services\PurchaseOrders\PurchaseOrderWorkflowPushInventoryFinalizeService;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
 use Tests\Fakes\FakeShopifyAdminGraphQlClient;
 
@@ -149,7 +151,140 @@ it('previews push inventory with hold subtracted from shopify push qty', functio
         ->assertJsonPath('data.products.0.shopify_push_qty', 8);
 });
 
+it('queues PO push inventory batch and completes via status poll', function (): void {
+    Bus::fake();
+
+    config(['shopify.oauth_scopes' => 'read_products,write_products,write_inventory,read_publications,write_publications']);
+
+    ShopifyLocation::query()->create([
+        'gid' => 'gid://shopify/Location/9101',
+        'name' => 'Warehouse',
+        'is_active' => true,
+        'fulfills_online_orders' => true,
+    ]);
+
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000114021',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+        'received_date' => '2026-07-20',
+    ]);
+
+    $product = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000114022',
+        'sku' => 'PUSH-QTY-2',
+        'description' => 'Push qty run',
+        'vendor' => 'Plamod',
+        'handle' => 'push-qty-2',
+        'published_on_shopify' => true,
+        'available_qty' => 7,
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $product->id,
+        'product_uuid' => $product->uuid,
+        'selling_price' => '9.99',
+        'currency' => 'CAD',
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => 'PUSH-QTY-2',
+        'vendor' => 'Plamod',
+        'qty_ordered' => 1,
+    ]);
+
+    $productGid = 'gid://shopify/Product/9103';
+    ShopifyProduct::query()->create([
+        'gid' => $productGid,
+        'handle' => 'push-qty-2',
+        'status' => 'ACTIVE',
+    ]);
+    ShopifyProductVariant::query()->create([
+        'gid' => 'gid://shopify/ProductVariant/9104',
+        'product_gid' => $productGid,
+        'sku' => 'PUSH-QTY-2',
+        'inventory_item_gid' => 'gid://shopify/InventoryItem/9102',
+    ]);
+
+    $response = $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/push-inventory");
+
+    $response->assertAccepted()
+        ->assertJsonPath('queued', 1);
+
+    Bus::assertBatched(function ($batch): bool {
+        return $batch->name === 'po_workflow_push_inventory'
+            && count($batch->jobs) === 1
+            && $batch->jobs[0] instanceof \App\Jobs\PushSelectedProductToShopifyJob;
+    });
+});
+
+it('rejects push inventory when PO has no received date', function (): void {
+    Bus::fake();
+
+    config(['shopify.oauth_scopes' => 'read_products,write_products,write_inventory,read_publications,write_publications']);
+
+    ShopifyLocation::query()->create([
+        'gid' => 'gid://shopify/Location/9101',
+        'name' => 'Warehouse',
+        'is_active' => true,
+        'fulfills_online_orders' => true,
+    ]);
+
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000114099',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+    ]);
+
+    $product = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000114099',
+        'sku' => 'PUSH-NO-RECV',
+        'description' => 'No received date',
+        'vendor' => 'Plamod',
+        'handle' => 'push-no-recv',
+        'published_on_shopify' => true,
+        'available_qty' => 3,
+    ]);
+    ProductSellingPrice::query()->create([
+        'product_id' => $product->id,
+        'product_uuid' => $product->uuid,
+        'selling_price' => '9.99',
+        'currency' => 'CAD',
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => 'PUSH-NO-RECV',
+        'vendor' => 'Plamod',
+        'qty_ordered' => 1,
+    ]);
+
+    ShopifyProduct::query()->create([
+        'gid' => 'gid://shopify/Product/9199',
+        'handle' => 'push-no-recv',
+        'status' => 'ACTIVE',
+    ]);
+    ShopifyProductVariant::query()->create([
+        'gid' => 'gid://shopify/ProductVariant/9198',
+        'product_gid' => 'gid://shopify/Product/9199',
+        'sku' => 'PUSH-NO-RECV',
+        'inventory_item_gid' => 'gid://shopify/InventoryItem/9197',
+    ]);
+
+    $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/push-inventory")
+        ->assertUnprocessable()
+        ->assertJsonPath('ok', false)
+        ->assertJsonFragment([
+            'message' => 'Set a received date on this purchase order before pushing to Shopify. Unreceived POs are ignored for Latest Arrivals storefront ordering.',
+        ]);
+
+    Bus::assertNothingBatched();
+});
+
 it('pushes full product via productSet for PO products', function (): void {
+    config(['queue.default' => 'sync']);
     config(['shopify.oauth_scopes' => 'read_products,write_products,write_inventory,read_publications,write_publications']);
     Cache::forget('shopify.publication_ids');
 
@@ -165,6 +300,7 @@ it('pushes full product via productSet for PO products', function (): void {
         'uuid' => '00000000-0000-0000-0000-000000114021',
         'vendor' => 'Plamod',
         'vendor_currency_code' => 'CAD',
+        'received_date' => '2026-07-20',
     ]);
 
     $product = Product::query()->create([
@@ -212,10 +348,41 @@ it('pushes full product via productSet for PO products', function (): void {
         'gid://shopify/Publication/3',
     ]));
     $fake->queueResponse(FakeShopifyAdminGraphQlClient::wrapPublishablePublish());
+    $fake->queueResponse(FakeShopifyAdminGraphQlClient::wrapProductMirrorNode(
+        $productGid,
+        'push-qty-2',
+        'PUSH-QTY-2',
+        [
+            'variant_gid' => 'gid://shopify/ProductVariant/9104',
+            'inventory_item_gid' => 'gid://shopify/InventoryItem/9102',
+        ],
+    ));
+    $fake->queueResponse(FakeShopifyAdminGraphQlClient::wrapInventoryItem(
+        'gid://shopify/InventoryItem/9102',
+        [
+            'pageInfo' => ['hasNextPage' => false, 'endCursor' => null],
+            'nodes' => [],
+        ],
+    ));
     $this->app->instance(ShopifyAdminGraphQlClientInterface::class, $fake);
 
-    $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/push-inventory")
+    $queued = $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/push-inventory")
+        ->assertAccepted()
+        ->assertJsonPath('queued', 1);
+
+    $batchId = (string) $queued->json('batch_id');
+    expect($batchId)->not->toBe('');
+
+    $statusRes = $this->getJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/push-inventory/status?batch_id={$batchId}")
+        ->assertOk();
+
+    if ($statusRes->json('data.phase') === 'finalizing') {
+        app(PurchaseOrderWorkflowPushInventoryFinalizeService::class)->finalize($po->uuid, $batchId);
+    }
+
+    $this->getJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/push-inventory/status?batch_id={$batchId}")
         ->assertOk()
+        ->assertJsonPath('data.phase', 'complete')
         ->assertJsonPath('data.summary.updated', 1)
         ->assertJsonPath('data.summary.failed', 0);
 });

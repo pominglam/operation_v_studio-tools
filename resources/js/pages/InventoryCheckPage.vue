@@ -7,6 +7,7 @@ import { formatTorontoDateTime } from '../lib/datetime';
 type InventoryCheckListRow = {
     id: string;
     name: string | null;
+    notes: string | null;
     source: string | null;
     workflow_state?: string | null;
     created_by_role?: string | null;
@@ -54,9 +55,12 @@ const checks = ref<InventoryCheckListRow[]>([]);
 const meta = ref<Paginated<InventoryCheckListRow>['meta'] | null>(null);
 
 const file = ref<File | null>(null);
+const importNotes = ref('');
 const importing = ref(false);
 const importError = ref<string | null>(null);
 const importResult = ref<ImportResult | null>(null);
+const noteDrafts = ref<Record<string, string>>({});
+const savingNoteId = ref<string | null>(null);
 
 const hasImportResult = computed(() => importResult.value !== null);
 
@@ -136,15 +140,61 @@ async function runImport(): Promise<void> {
     try {
         const fd = new FormData();
         fd.append('file', file.value);
+        const trimmedNotes = importNotes.value.trim();
+        if (trimmedNotes !== '') {
+            fd.append('notes', trimmedNotes);
+        }
         const res = await api.post<ImportResult>('/api/v1/products/import-inventory-check', fd, {
             headers: { 'Content-Type': 'multipart/form-data' },
         });
         importResult.value = res.data;
+        importNotes.value = '';
         await loadHistory();
     } catch (e: unknown) {
         importError.value = 'Import failed. Please check the CSV format and try again.';
     } finally {
         importing.value = false;
+    }
+}
+
+function noteValueFor(c: InventoryCheckListRow): string {
+    const draft = noteDrafts.value[c.id];
+    if (draft !== undefined) {
+        return draft;
+    }
+
+    return c.notes ?? '';
+}
+
+function onNoteInput(c: InventoryCheckListRow, event: Event): void {
+    const value = (event.target as HTMLInputElement).value;
+    noteDrafts.value = { ...noteDrafts.value, [c.id]: value };
+}
+
+function isNoteDirty(c: InventoryCheckListRow): boolean {
+    return noteValueFor(c).trim() !== (c.notes ?? '').trim();
+}
+
+async function saveNote(c: InventoryCheckListRow): Promise<void> {
+    if (savingNoteId.value !== null) return;
+    if (!isNoteDirty(c)) return;
+
+    savingNoteId.value = c.id;
+    error.value = null;
+    const trimmed = noteValueFor(c).trim();
+    try {
+        const res = await api.patch<{ data: InventoryCheckListRow }>(
+            `/api/v1/inventory-check/${c.id}`,
+            { notes: trimmed === '' ? '' : trimmed },
+        );
+        const updated = res.data.data;
+        checks.value = checks.value.map((row) => (row.id === c.id ? { ...row, ...updated } : row));
+        const { [c.id]: _omit, ...rest } = noteDrafts.value;
+        noteDrafts.value = rest;
+    } catch {
+        error.value = 'Failed to save session note.';
+    } finally {
+        savingNoteId.value = null;
     }
 }
 
@@ -159,7 +209,8 @@ onMounted(() => {
             <h1 class="text-xl font-semibold text-slate-900">Inventory Check</h1>
             <p class="mt-1 text-sm text-slate-600">
                 Import a counted CSV to update <span class="font-medium">Available Qty</span> and
-                store differences/notes as a historical session.
+                store differences as a historical session. Add an optional
+                <span class="font-medium">session note</span> so you can remember what was scanned.
             </p>
         </div>
 
@@ -173,6 +224,16 @@ onMounted(() => {
                         accept=".csv,text/csv"
                         class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                         @change="onFileChange"
+                    />
+                </div>
+                <div class="flex-1">
+                    <label class="text-xs font-medium text-slate-700">Session note</label>
+                    <input
+                        v-model="importNotes"
+                        type="text"
+                        maxlength="2000"
+                        placeholder="e.g. Back wall, markers aisle"
+                        class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                     />
                 </div>
                 <button
@@ -336,7 +397,7 @@ onMounted(() => {
                         <tr>
                             <th class="px-2 py-2">Created</th>
                             <th class="px-2 py-2">Last updated</th>
-                            <th class="px-2 py-2">ID</th>
+                            <th class="px-2 py-2 min-w-[20rem]">ID</th>
                             <th class="px-2 py-2">Source</th>
                             <th class="px-2 py-2">Role</th>
                             <th class="px-2 py-2">State</th>
@@ -361,10 +422,29 @@ onMounted(() => {
                             </td>
                             <td class="px-2 py-2">
                                 <a
-                                    class="underline underline-offset-2"
+                                    class="break-all underline underline-offset-2"
                                     :href="`/inventory-check/${c.id}`"
                                     >{{ c.id }}</a
                                 >
+                                <div class="mt-1.5 flex min-w-[20rem] items-center gap-1">
+                                    <input
+                                        :value="noteValueFor(c)"
+                                        type="text"
+                                        maxlength="2000"
+                                        placeholder="Session note…"
+                                        class="w-full min-w-0 rounded border border-slate-200 px-2 py-1 text-xs"
+                                        @input="onNoteInput(c, $event)"
+                                    />
+                                    <button
+                                        v-if="isNoteDirty(c)"
+                                        type="button"
+                                        class="shrink-0 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                                        :disabled="savingNoteId !== null"
+                                        @click="saveNote(c)"
+                                    >
+                                        {{ savingNoteId === c.id ? '…' : 'Save' }}
+                                    </button>
+                                </div>
                             </td>
                             <td class="px-2 py-2">{{ c.source ?? '—' }}</td>
                             <td class="px-2 py-2">{{ c.created_by_role ?? '—' }}</td>

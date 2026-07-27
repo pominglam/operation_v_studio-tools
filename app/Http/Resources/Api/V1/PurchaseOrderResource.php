@@ -114,6 +114,7 @@ final class PurchaseOrderResource extends JsonResource
             'fx_rate_cad_to_vendor' => $this->invertDecimal6($this->decimal6($po->fx_rate_to_cad)),
             'notes' => $po->notes,
             'is_done' => (bool) $po->is_done,
+            'exclude_from_latest_arrivals_ordering' => (bool) $po->exclude_from_latest_arrivals_ordering,
             'workflow_checklist' => app(\App\Services\PurchaseOrders\PurchaseOrderWorkflowChecklistNormalizer::class)
                 ->normalize(is_array($po->workflow_checklist_json) ? $po->workflow_checklist_json : null),
             'status' => $this->statusFor($po),

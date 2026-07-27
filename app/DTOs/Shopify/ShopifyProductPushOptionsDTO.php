@@ -42,6 +42,18 @@ final readonly class ShopifyProductPushOptionsDTO
         );
     }
 
+    public static function contentExport(): self
+    {
+        return new self(
+            info: true,
+            images: true,
+            quantities: true,
+            price: true,
+            publishStatus: true,
+            salesChannels: true,
+        );
+    }
+
     public function hasAny(): bool
     {
         return $this->info

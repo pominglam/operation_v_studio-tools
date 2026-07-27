@@ -1,0 +1,29 @@
+---
+description: Treat /teams-notify as an explicit request to mirror the assistant reply to Microsoft Teams
+alwaysApply: true
+---
+
+# Teams Notify Trigger
+
+When the user includes `/teams-notify`, says "notify Teams", "post to Teams",
+"Teams ping", or asks to "send this to Teams", treat it as an explicit request
+to run the Teams notification script.
+
+Required behavior:
+
+- Read and follow `.cursor/skills/teams-notify/SKILL.md`.
+- Do not only acknowledge the request in chat; run
+  `.cursor/skills/teams-notify/scripts/Send-TeamsNotify.ps1` from the repo root.
+- Send the same substantive answer the user should read in Cursor, not skill
+  documentation, placeholder text, or a generic "done" unless the user clearly
+  asked only for a connectivity test.
+- If the user provides `Teams chat title: <title>`, pass that value as
+  `-ChatName`.
+- If the user asks for the Cursor tab title to appear in Teams but no title is
+  provided and `TEAMS_NOTIFY_CHAT_NAME` is unavailable, ask once for the exact
+  tab title before sending.
+- Never print, log, commit, or include the webhook URL. The script must resolve
+  it from `TEAMS_NOTIFY_WEBHOOK_URL`.
+
+`/teams-notify` is an agent instruction, not a native Cursor command. The agent
+must invoke the PowerShell script for a Teams message to be sent.

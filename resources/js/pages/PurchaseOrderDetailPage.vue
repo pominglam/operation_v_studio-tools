@@ -8,6 +8,7 @@ import BulkUpdatePoItemsDialog, {
     type PoItemsBulkChanges,
 } from '../components/purchaseOrders/BulkUpdatePoItemsDialog.vue';
 import PoWorkflowSetPricesDialog, {
+    type PoSetPriceOverride,
     type PoSetPricePreview,
 } from '../components/purchaseOrders/PoWorkflowSetPricesDialog.vue';
 import PoWorkflowExportShopifyDialog, {
@@ -98,6 +99,7 @@ type PurchaseOrder = {
     fx_rate_to_cad: string | null;
     fx_rate_cad_to_vendor: string | null;
     notes: string | null;
+    exclude_from_latest_arrivals_ordering: boolean;
     workflow_checklist: Record<string, boolean> | null;
     status: 'draft' | 'ordered' | 'shipped' | 'received' | 'on_shelves';
     shipment_method: 'air' | 'sea' | null;
@@ -158,6 +160,8 @@ const editingUnitCostId = ref<number | null>(null);
 const unitCostDrafts = reactive<Record<number, string>>({});
 
 const itemQtyError = ref<string | null>(null);
+
+const itemsSearch = ref('');
 
 const selectedItemIds = ref<Set<number>>(new Set());
 const bulkUpdateOpen = ref(false);
@@ -222,6 +226,9 @@ const exportShopifyPreviewLoading = ref(false);
 const exportShopifyPrepareBusy = ref(false);
 const exportShopifyPreviewError = ref<string | null>(null);
 const exportShopifyPushSummary = ref<PoExportShopifyPushSummary | null>(null);
+const exportShopifyProgressPercent = ref(0);
+const exportShopifyPhaseLabel = ref('');
+let exportShopifyPollTimer: ReturnType<typeof setInterval> | null = null;
 const pullHandlesDialogOpen = ref(false);
 const pullHandlesPreview = ref<PoPullHandlesPreview | null>(null);
 const pullHandlesPreviewLoading = ref(false);
@@ -234,6 +241,9 @@ const pushInventoryPreviewLoading = ref(false);
 const pushInventoryPushBusy = ref(false);
 const pushInventoryPreviewError = ref<string | null>(null);
 const pushInventoryPushSummary = ref<PoPushInventorySummary | null>(null);
+const pushInventoryProgressPercent = ref(0);
+const pushInventoryPhaseLabel = ref('');
+let pushInventoryPollTimer: ReturnType<typeof setInterval> | null = null;
 const draftAddSkus = ref('');
 const addingDraftProducts = ref(false);
 const addDraftProductsError = ref<string | null>(null);
@@ -638,10 +648,104 @@ async function openExportShopifyPreview(): Promise<void> {
 
 function closeExportShopifyDialog(): void {
     if (exportShopifyPrepareBusy.value) return;
+    clearExportShopifyPoll();
     exportShopifyDialogOpen.value = false;
     exportShopifyPreview.value = null;
     exportShopifyPushSummary.value = null;
     exportShopifyPreviewError.value = null;
+    exportShopifyProgressPercent.value = 0;
+    exportShopifyPhaseLabel.value = '';
+}
+
+function clearExportShopifyPoll(): void {
+    if (exportShopifyPollTimer !== null) {
+        clearInterval(exportShopifyPollTimer);
+        exportShopifyPollTimer = null;
+    }
+}
+
+type PoExportShopifyStatusResponse = {
+    phase: 'pushing' | 'finalizing' | 'complete' | 'failed';
+    batch?: {
+        progress_percent: number;
+        processed_jobs: number;
+        total_jobs: number;
+        failed_jobs: number;
+    };
+    summary?: PoExportShopifyPushSummary;
+    steps?: Record<string, unknown>;
+    purchase_order?: PurchaseOrder;
+    message?: string;
+};
+
+async function pollExportShopifyStatus(batchId: string): Promise<void> {
+    if (!po.value) return;
+
+    const pollOnce = async (): Promise<boolean> => {
+        const res = await api.get<{ ok: boolean; data: PoExportShopifyStatusResponse }>(
+            `/api/v1/purchase-orders/${po.value!.id}/workflow-actions/export-shopify-content/status`,
+            { params: { batch_id: batchId }, validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as { message?: string })?.message;
+            throw new Error(msg ?? `Export status failed (HTTP ${res.status}).`);
+        }
+
+        const data = res.data.data;
+        const percent = data.batch?.progress_percent ?? 0;
+        exportShopifyProgressPercent.value = percent;
+
+        if (data.phase === 'pushing') {
+            exportShopifyPhaseLabel.value = `Pushing to Shopify… ${percent}%`;
+            return false;
+        }
+        if (data.phase === 'finalizing') {
+            exportShopifyPhaseLabel.value = 'Finalizing (checklist)…';
+            exportShopifyProgressPercent.value = 100;
+            return false;
+        }
+        if (data.phase === 'failed') {
+            throw new Error(
+                data.message ??
+                    'Export failed while finalizing. Check Sync Progress for batch details.',
+            );
+        }
+
+        exportShopifyPhaseLabel.value = '';
+        exportShopifyProgressPercent.value = 100;
+        if (data.summary) {
+            exportShopifyPushSummary.value = data.summary;
+        }
+        if ((data.summary?.failed ?? 0) === 0) {
+            applyWorkflowPoResponse({
+                steps: data.steps,
+                purchase_order: data.purchase_order,
+            });
+            await load();
+        }
+
+        return true;
+    };
+
+    if (await pollOnce()) {
+        return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+        exportShopifyPollTimer = setInterval(() => {
+            void (async () => {
+                try {
+                    if (await pollOnce()) {
+                        clearExportShopifyPoll();
+                        resolve();
+                    }
+                } catch (e: unknown) {
+                    clearExportShopifyPoll();
+                    reject(e);
+                }
+            })();
+        }, 3000);
+    });
 }
 
 async function openPushInventoryPreview(): Promise<void> {
@@ -671,44 +775,146 @@ async function openPushInventoryPreview(): Promise<void> {
 
 function closePushInventoryDialog(): void {
     if (pushInventoryPushBusy.value) return;
+    clearPushInventoryPoll();
     pushInventoryDialogOpen.value = false;
     pushInventoryPreview.value = null;
     pushInventoryPushSummary.value = null;
     pushInventoryPreviewError.value = null;
+    pushInventoryProgressPercent.value = 0;
+    pushInventoryPhaseLabel.value = '';
+}
+
+function clearPushInventoryPoll(): void {
+    if (pushInventoryPollTimer !== null) {
+        clearInterval(pushInventoryPollTimer);
+        pushInventoryPollTimer = null;
+    }
+}
+
+type PoPushInventoryStatusResponse = {
+    phase: 'pushing' | 'finalizing' | 'complete' | 'failed';
+    batch?: {
+        progress_percent: number;
+        processed_jobs: number;
+        total_jobs: number;
+        failed_jobs: number;
+    };
+    summary?: PoPushInventorySummary;
+    steps?: Record<string, unknown>;
+    purchase_order?: PurchaseOrder;
+    message?: string;
+};
+
+async function pollPushInventoryStatus(batchId: string): Promise<void> {
+    if (!po.value) return;
+
+    const pollOnce = async (): Promise<boolean> => {
+        const res = await api.get<{ ok: boolean; data: PoPushInventoryStatusResponse }>(
+            `/api/v1/purchase-orders/${po.value!.id}/workflow-actions/push-inventory/status`,
+            { params: { batch_id: batchId }, validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const msg = (res.data as { message?: string })?.message;
+            throw new Error(msg ?? `Push status failed (HTTP ${res.status}).`);
+        }
+
+        const data = res.data.data;
+        const percent = data.batch?.progress_percent ?? 0;
+        pushInventoryProgressPercent.value = percent;
+
+        if (data.phase === 'pushing') {
+            pushInventoryPhaseLabel.value = `Pushing to Shopify… ${percent}%`;
+            return false;
+        }
+        if (data.phase === 'finalizing') {
+            pushInventoryPhaseLabel.value = 'Finalizing (collection order + checklist)…';
+            pushInventoryProgressPercent.value = 100;
+            return false;
+        }
+        if (data.phase === 'failed') {
+            throw new Error(
+                data.message ??
+                    'Push failed while finalizing. Check Sync Progress for batch details.',
+            );
+        }
+
+        pushInventoryPhaseLabel.value = '';
+        pushInventoryProgressPercent.value = 100;
+        if (data.summary) {
+            pushInventoryPushSummary.value = data.summary;
+        }
+        if ((data.summary?.failed ?? 0) === 0) {
+            applyWorkflowPoResponse({
+                steps: data.steps,
+                purchase_order: data.purchase_order,
+            });
+            await load();
+        }
+
+        return true;
+    };
+
+    if (await pollOnce()) {
+        return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+        pushInventoryPollTimer = setInterval(() => {
+            void (async () => {
+                try {
+                    if (await pollOnce()) {
+                        clearPushInventoryPoll();
+                        resolve();
+                    }
+                } catch (e: unknown) {
+                    clearPushInventoryPoll();
+                    reject(e);
+                }
+            })();
+        }, 3000);
+    });
 }
 
 async function confirmPushInventory(): Promise<void> {
     if (!po.value || !pushInventoryPreview.value || pushInventoryPreview.value.push_count === 0) {
         return;
     }
+    if (!po.value.received_date) {
+        pushInventoryPreviewError.value =
+            'Set Received date on this PO before pushing to Shopify. Unreceived POs are ignored for Latest Arrivals storefront ordering.';
+        return;
+    }
     pushInventoryPushBusy.value = true;
     pushInventoryPreviewError.value = null;
+    pushInventoryPushSummary.value = null;
+    pushInventoryProgressPercent.value = 0;
+    pushInventoryPhaseLabel.value = 'Queuing push…';
+    clearPushInventoryPoll();
     try {
         const res = await api.post<{
             ok: boolean;
-            data: {
-                summary: PoPushInventorySummary;
-                purchase_order?: PurchaseOrder;
-            };
+            batch_id: string;
+            queued: number;
         }>(
             `/api/v1/purchase-orders/${po.value.id}/workflow-actions/push-inventory`,
             {},
-            { validateStatus: () => true, timeout: 0 },
+            { validateStatus: () => true },
         );
-        if (res.status !== 200) {
+        if (res.status !== 202) {
             const msg = (res.data as { message?: string })?.message;
             throw new Error(msg ?? `Push failed (HTTP ${res.status}).`);
         }
-        pushInventoryPushSummary.value = res.data.data.summary ?? res.data.data;
-        if ((pushInventoryPushSummary.value?.failed ?? 0) === 0) {
-            applyWorkflowPoResponse(res.data.data ?? {});
-            await load();
+        const batchId = String(res.data.batch_id ?? '').trim();
+        if (batchId === '') {
+            throw new Error('Push failed: missing batch id.');
         }
+        await pollPushInventoryStatus(batchId);
     } catch (e: unknown) {
         pushInventoryPreviewError.value =
             e instanceof Error ? e.message : 'Failed to push inventory to Shopify.';
     } finally {
         pushInventoryPushBusy.value = false;
+        pushInventoryPhaseLabel.value = '';
     }
 }
 
@@ -784,37 +990,46 @@ async function confirmExportShopifyPush(): Promise<void> {
     }
     exportShopifyPrepareBusy.value = true;
     exportShopifyPreviewError.value = null;
+    exportShopifyPushSummary.value = null;
+    exportShopifyProgressPercent.value = 0;
+    exportShopifyPhaseLabel.value = 'Queuing export…';
+    clearExportShopifyPoll();
     try {
         const res = await api.post<{
             ok: boolean;
-            data: {
-                summary: PoExportShopifyPushSummary;
-                purchase_order?: PurchaseOrder;
-            };
+            batch_id: string;
+            queued: number;
         }>(
             `/api/v1/purchase-orders/${po.value.id}/workflow-actions/export-shopify-content/push`,
             {},
             { validateStatus: () => true },
         );
-        if (res.status !== 200) {
+        if (res.status !== 202) {
             const msg = (res.data as { message?: string })?.message;
             throw new Error(msg ?? `Push failed (HTTP ${res.status}).`);
         }
-        exportShopifyPushSummary.value = res.data.data.summary ?? res.data.data;
-        if ((exportShopifyPushSummary.value?.failed ?? 0) === 0) {
-            applyWorkflowPoResponse(res.data.data ?? {});
-            await load();
+        const batchId = String(res.data.batch_id ?? '').trim();
+        if (batchId === '') {
+            throw new Error('Push failed: missing batch id.');
         }
+        await pollExportShopifyStatus(batchId);
     } catch (e: unknown) {
         exportShopifyPreviewError.value =
             e instanceof Error ? e.message : 'Failed to push products to Shopify.';
     } finally {
         exportShopifyPrepareBusy.value = false;
+        exportShopifyPhaseLabel.value = '';
     }
 }
 
-async function confirmSetPricesApply(): Promise<void> {
-    if (!po.value || !setPricesPreview.value || setPricesPreview.value.apply_count === 0) return;
+async function confirmSetPricesApply(payload: { overrides: PoSetPriceOverride[] }): Promise<void> {
+    if (
+        !po.value ||
+        !setPricesPreview.value ||
+        (setPricesPreview.value.apply_count === 0 && payload.overrides.length === 0)
+    ) {
+        return;
+    }
     setPricesApplyBusy.value = true;
     setPricesPreviewError.value = null;
     try {
@@ -823,7 +1038,7 @@ async function confirmSetPricesApply(): Promise<void> {
             data: { purchase_order?: PurchaseOrder };
         }>(
             `/api/v1/purchase-orders/${po.value.id}/workflow-actions/set-prices`,
-            {},
+            { overrides: payload.overrides },
             { validateStatus: () => true },
         );
         if (res.status !== 200) {
@@ -1500,6 +1715,7 @@ const draft = reactive<{
     product_total: string;
     vendor_product_total: string;
     notes: string;
+    exclude_from_latest_arrivals_ordering: boolean;
 }>({
     vendor: '',
     supplier_order_id: '',
@@ -1515,6 +1731,7 @@ const draft = reactive<{
     product_total: '',
     vendor_product_total: '',
     notes: '',
+    exclude_from_latest_arrivals_ordering: false,
 });
 
 const totalUnitsReceived = computed<number>(() => {
@@ -1760,6 +1977,8 @@ async function load(): Promise<void> {
             draft.product_total = po.value.product_total ?? '';
             draft.vendor_product_total = po.value.vendor_product_total ?? '';
             draft.notes = po.value.notes ?? '';
+            draft.exclude_from_latest_arrivals_ordering =
+                po.value.exclude_from_latest_arrivals_ordering ?? false;
             draft.shipment_method = po.value.shipment_method ?? '';
         }
     } catch {
@@ -1788,6 +2007,8 @@ function startEdit(): void {
     draft.product_total = po.value.product_total ?? '';
     draft.vendor_product_total = po.value.vendor_product_total ?? '';
     draft.notes = po.value.notes ?? '';
+    draft.exclude_from_latest_arrivals_ordering =
+        po.value.exclude_from_latest_arrivals_ordering ?? false;
     draft.shipment_method = po.value.shipment_method ?? '';
 }
 
@@ -1818,6 +2039,7 @@ async function save(): Promise<void> {
             vendor_product_total:
                 draft.vendor_product_total.trim() === '' ? null : draft.vendor_product_total.trim(),
             notes: draft.notes.trim() === '' ? null : draft.notes.trim(),
+            exclude_from_latest_arrivals_ordering: draft.exclude_from_latest_arrivals_ordering,
             shipment_method: draft.shipment_method === '' ? null : draft.shipment_method,
         };
 
@@ -2064,6 +2286,27 @@ function parseQtyOrNull(value: string): number | null {
     return n;
 }
 
+function effectiveQtyOrdered(item: PurchaseOrderItem): number | null {
+    if (qtyOrderedDrafts[item.id] !== undefined) {
+        return parseQtyOrNull(qtyOrderedDrafts[item.id] ?? '');
+    }
+    return item.qty_ordered;
+}
+
+function effectiveQtyReceived(item: PurchaseOrderItem): number | null {
+    if (qtyReceivedDrafts[item.id] !== undefined) {
+        return parseQtyOrNull(qtyReceivedDrafts[item.id] ?? '');
+    }
+    return item.qty_received;
+}
+
+function isQtyReceivedMismatch(item: PurchaseOrderItem): boolean {
+    const ordered = effectiveQtyOrdered(item);
+    const received = effectiveQtyReceived(item);
+    if (ordered === null || received === null) return false;
+    return ordered !== received;
+}
+
 async function saveQtyOrdered(itemId: number, value: string): Promise<void> {
     if (!po.value) return;
     itemQtyError.value = null;
@@ -2136,13 +2379,49 @@ async function saveQtyShipped(itemId: number, value: string): Promise<void> {
     }
 }
 
+function purchaseOrderItemSearchHaystack(item: PurchaseOrderItem): string {
+    return [
+        item.sku,
+        item.product_name ?? '',
+        item.product_barcode ?? '',
+        item.product_handle ?? '',
+        item.vendor,
+    ]
+        .join(' ')
+        .toLowerCase();
+}
+
+function purchaseOrderItemMatchesSearch(item: PurchaseOrderItem, query: string): boolean {
+    const q = query.trim().toLowerCase();
+    if (q === '') return true;
+    const haystack = purchaseOrderItemSearchHaystack(item);
+    const terms = q.split(/\s+/).filter((term) => term !== '');
+    return terms.every((term) => haystack.includes(term));
+}
+
+const filteredPoItems = computed<PurchaseOrderItem[]>(() => {
+    const items = po.value?.items ?? [];
+    const query = itemsSearch.value;
+    if (query.trim() === '') return items;
+    return items.filter((item) => purchaseOrderItemMatchesSearch(item, query));
+});
+
 function toggleAllItems(checked: boolean): void {
     if (!po.value) return;
+    const visible = filteredPoItems.value;
     if (!checked) {
-        selectedItemIds.value = new Set();
+        const next = new Set(selectedItemIds.value);
+        for (const it of visible) {
+            next.delete(it.id);
+        }
+        selectedItemIds.value = next;
         return;
     }
-    selectedItemIds.value = new Set(po.value.items.map((x) => x.id));
+    const next = new Set(selectedItemIds.value);
+    for (const it of visible) {
+        next.add(it.id);
+    }
+    selectedItemIds.value = next;
 }
 
 function toggleItemSelection(itemId: number, checked: boolean): void {
@@ -2153,8 +2432,9 @@ function toggleItemSelection(itemId: number, checked: boolean): void {
 }
 
 const allItemsSelected = computed<boolean>(() => {
-    if (!po.value || po.value.items.length === 0) return false;
-    return selectedItemIds.value.size === po.value.items.length;
+    const visible = filteredPoItems.value;
+    if (visible.length === 0) return false;
+    return visible.every((it) => selectedItemIds.value.has(it.id));
 });
 
 async function confirmBulkUpdate(payload: { changes: PoItemsBulkChanges }): Promise<void> {
@@ -2412,7 +2692,7 @@ onMounted(() => {
 </script>
 
 <template>
-    <main class="mx-auto w-full max-w-screen-2xl px-4 py-6">
+    <div class="w-full">
         <div class="mb-4">
             <h1 class="text-xl font-semibold text-slate-900">Purchase Order Detail</h1>
             <p class="mt-1 text-sm text-slate-600">
@@ -3045,6 +3325,29 @@ onMounted(() => {
                     </div>
 
                     <div
+                        class="mt-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-3"
+                        data-testid="po-exclude-latest-arrivals-ordering"
+                    >
+                        <label class="flex items-start gap-2 text-sm text-slate-800">
+                            <input
+                                v-model="draft.exclude_from_latest_arrivals_ordering"
+                                type="checkbox"
+                                class="mt-0.5 rounded border-slate-300"
+                            />
+                            <span>
+                                <span class="font-medium"
+                                    >Exclude from Latest Arrivals storefront ordering</span
+                                >
+                                <span class="mt-1 block text-xs text-slate-600">
+                                    Keeps the received date for inventory. Products on this PO will
+                                    not rank using this invoice in the homepage Latest Arrivals
+                                    collection. Re-push a received PO to refresh collection order.
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+
+                    <div
                         class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6 lg:items-end"
                     >
                         <div>
@@ -3230,6 +3533,14 @@ onMounted(() => {
                             {{ po.fully_on_shelves_date ?? '—' }}
                         </div>
                     </div>
+                    <div
+                        v-if="po.exclude_from_latest_arrivals_ordering"
+                        class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+                        data-testid="po-exclude-latest-arrivals-ordering-badge"
+                    >
+                        Excluded from Latest Arrivals storefront ordering. Received date is kept for
+                        inventory; re-push another PO to refresh homepage collection order.
+                    </div>
                     <div v-if="po.notes" class="mt-2">
                         <span class="font-medium">Notes:</span> {{ po.notes }}
                     </div>
@@ -3237,7 +3548,29 @@ onMounted(() => {
             </section>
 
             <section class="rounded-lg border border-slate-200 bg-white p-4">
-                <h2 class="text-sm font-semibold text-slate-900">Items</h2>
+                <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                    <h2 class="text-sm font-semibold text-slate-900">Items</h2>
+                    <div class="w-full sm:max-w-md">
+                        <label for="po-items-search" class="text-xs font-medium text-slate-600"
+                            >Search</label
+                        >
+                        <input
+                            id="po-items-search"
+                            v-model="itemsSearch"
+                            type="search"
+                            placeholder="SKU, barcode, name, handle…"
+                            class="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-900"
+                            data-testid="po-items-search"
+                        />
+                    </div>
+                </div>
+                <p
+                    v-if="itemsSearch.trim() !== '' && po.items.length > 0"
+                    class="mt-2 text-xs text-slate-600"
+                    data-testid="po-items-search-summary"
+                >
+                    Showing {{ filteredPoItems.length }} of {{ po.items.length }} items
+                </p>
 
                 <div
                     v-if="selectedItemIds.size > 0"
@@ -3284,7 +3617,7 @@ onMounted(() => {
                                         class="h-4 w-4 rounded border-slate-300"
                                         type="checkbox"
                                         :checked="allItemsSelected"
-                                        :disabled="po.items.length === 0"
+                                        :disabled="filteredPoItems.length === 0"
                                         @change="
                                             toggleAllItems(
                                                 ($event.target as HTMLInputElement).checked,
@@ -3315,8 +3648,17 @@ onMounted(() => {
                             </tr>
                         </thead>
                         <tbody class="text-slate-800">
+                            <tr v-if="filteredPoItems.length === 0">
+                                <td
+                                    colspan="21"
+                                    class="px-2 py-4 text-center text-sm text-slate-500"
+                                    data-testid="po-items-search-empty"
+                                >
+                                    No items match your search.
+                                </td>
+                            </tr>
                             <tr
-                                v-for="it in po.items"
+                                v-for="it in filteredPoItems"
                                 :key="it.id"
                                 class="border-t border-slate-200"
                             >
@@ -3519,9 +3861,15 @@ onMounted(() => {
                                 </td>
                                 <td class="px-2 py-1 text-right">
                                     <input
-                                        class="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-xs tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                                        :class="[
+                                            'w-20 rounded-md border px-2 py-1 text-right text-xs tabular-nums text-slate-900',
+                                            isQtyReceivedMismatch(it)
+                                                ? 'border-yellow-300 bg-yellow-100 disabled:bg-yellow-50 disabled:text-slate-400'
+                                                : 'border-slate-200 bg-white disabled:bg-slate-50 disabled:text-slate-400',
+                                        ]"
                                         type="text"
                                         inputmode="numeric"
+                                        :data-testid="`qty-received-input-${it.id}`"
                                         :value="
                                             qtyReceivedDrafts[it.id] ??
                                             (it.qty_received === null
@@ -3585,7 +3933,7 @@ onMounted(() => {
                 </div>
             </section>
         </div>
-    </main>
+    </div>
 
     <BulkUpdatePoItemsDialog
         :open="bulkUpdateOpen"
@@ -3623,6 +3971,8 @@ onMounted(() => {
         :preview="exportShopifyPreview"
         :push-summary="exportShopifyPushSummary"
         :error="exportShopifyPreviewError"
+        :progress-percent="exportShopifyProgressPercent"
+        :phase-label="exportShopifyPhaseLabel"
         @cancel="closeExportShopifyDialog"
         @confirm="confirmExportShopifyPush"
     />
@@ -3641,6 +3991,9 @@ onMounted(() => {
         :preview="pushInventoryPreview"
         :push-summary="pushInventoryPushSummary"
         :error="pushInventoryPreviewError"
+        :received-date="po?.received_date ?? null"
+        :progress-percent="pushInventoryProgressPercent"
+        :phase-label="pushInventoryPhaseLabel"
         @cancel="closePushInventoryDialog"
         @confirm="confirmPushInventory"
     />

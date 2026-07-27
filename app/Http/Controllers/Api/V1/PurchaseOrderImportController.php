@@ -39,6 +39,9 @@ final class PurchaseOrderImportController extends Controller
             if (array_key_exists('import_mode', $v)) {
                 $meta['import_mode'] = (string) $v['import_mode'];
             }
+            if (array_key_exists('supplier_order_id', $v)) {
+                $meta['supplier_order_id'] = $v['supplier_order_id'] !== null ? (string) $v['supplier_order_id'] : null;
+            }
             if (array_key_exists('ordered_date', $v)) {
                 $meta['ordered_date'] = $v['ordered_date'] !== null ? (string) $v['ordered_date'] : null;
             }
@@ -83,6 +86,7 @@ final class PurchaseOrderImportController extends Controller
              *   vendor:string,
              *   purchase_order_uuid?:string,
              *   import_mode?:string,
+             *   supplier_order_id?:string|null,
              *   ordered_date?:string|null,
              *   shipped_date?:string|null,
              *   estimated_arrival_date?:string|null,

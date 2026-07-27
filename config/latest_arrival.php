@@ -11,7 +11,7 @@ declare(strict_types=1);
  *
  * CCS toys → Sazabi bust (before all Gundams) → PG → Mega → MG … → HG
  * → SD/BB/EX-Standard → Kun DX → Macross (end of Gundam block)
- * → 30MM (Armored Core first) → 30MF → 30MS → 30MP → Figure-rise → Entry Grade → Pokemon → Keroro
+ * → 30MM (Armored Core kits first, then other 30MM kits, then all 30MM option parts) → 30MF → 30MS → 30MP → Figure-rise → Entry Grade → Pokemon → Keroro
  * → Action base → System base → LED → Option parts set Gunpla (last)
  */
 return [
@@ -143,5 +143,10 @@ return [
 
     /** Max moves per collectionReorderProducts call (Shopify limit 250). */
     'collection_reorder_moves_limit' => 250,
+
+    /** Wait for Shopify async collection reorder job before PO push finalize completes. */
+    'collection_reorder_job_max_wait_seconds' => (int) env('SHOPIFY_LATEST_ARRIVALS_REORDER_JOB_WAIT_SECONDS', 120),
+
+    'collection_reorder_job_poll_ms' => 1000,
 
 ];

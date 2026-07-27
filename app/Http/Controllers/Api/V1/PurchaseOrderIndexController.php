@@ -22,10 +22,10 @@ final class PurchaseOrderIndexController extends Controller
         $perPage = max(1, min($perPage, 200));
 
         /** @var string $sortBy */
-        $sortBy = (string) ($request->query('sort_by') ?? 'created');
+        $sortBy = (string) ($request->query('sort_by') ?? 'ordered');
         $sortBy = strtolower(trim($sortBy));
         if (! in_array($sortBy, ['created', 'ordered', 'received', 'filter'], true)) {
-            $sortBy = 'created';
+            $sortBy = 'ordered';
         }
 
         /** @var string $sortDir */

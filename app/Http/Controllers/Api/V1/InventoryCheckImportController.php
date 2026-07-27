@@ -27,7 +27,9 @@ final class InventoryCheckImportController extends Controller
         }
 
         try {
-            $result = $this->importer->import($file);
+            $notes = $request->validated('notes');
+            $notes = is_string($notes) || $notes === null ? $notes : null;
+            $result = $this->importer->import($file, $notes);
 
             return response()->json($result);
         } catch (InvalidProductImportFileException $e) {

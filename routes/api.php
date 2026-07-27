@@ -17,8 +17,10 @@ use App\Http\Controllers\Api\V1\InventoryCheckDeleteController;
 use App\Http\Controllers\Api\V1\InventoryCheckDownloadController;
 use App\Http\Controllers\Api\V1\InventoryCheckImportController;
 use App\Http\Controllers\Api\V1\InventoryCheckIndexController;
+use App\Http\Controllers\Api\V1\InventoryCheckItemAssignProductController;
 use App\Http\Controllers\Api\V1\InventoryCheckItemUpdateController;
 use App\Http\Controllers\Api\V1\InventoryCheckShowController;
+use App\Http\Controllers\Api\V1\InventoryCheckUpdateController;
 use App\Http\Controllers\Api\V1\JobBatchCancelController;
 use App\Http\Controllers\Api\V1\JobBatchIndexController;
 use App\Http\Controllers\Api\V1\JobBatchItemsController;
@@ -127,6 +129,7 @@ use App\Http\Controllers\Api\V1\ShopifySettingsShowController;
 use App\Http\Controllers\Api\V1\ShopifySettingsUpdateController;
 use App\Http\Controllers\Api\V1\ShopifyWebhookLogIndexController;
 use App\Http\Controllers\Api\V1\ShopifyWebhookLogShowController;
+use App\Http\Controllers\Api\V1\StaffOrdersReportShowController;
 use App\Http\Controllers\Api\V1\TcgEventsIndexController;
 use App\Http\Controllers\Api\V1\TcgEventsRefreshController;
 use App\Http\Controllers\Api\Webhooks\ShopifyWebhookController;
@@ -201,6 +204,7 @@ Route::prefix('v1')
         Route::post('/purchase-orders/{id}/workflow-verify', PurchaseOrderWorkflowVerifyController::class)->whereUuid('id');
         Route::get('/purchase-orders/{id}/workflow-actions/export-shopify-content/preview', [PurchaseOrderWorkflowActionController::class, 'previewExportShopifyContent'])->whereUuid('id');
         Route::post('/purchase-orders/{id}/workflow-actions/export-shopify-content/push', [PurchaseOrderWorkflowActionController::class, 'pushExportShopifyContent'])->whereUuid('id');
+        Route::get('/purchase-orders/{id}/workflow-actions/export-shopify-content/status', [PurchaseOrderWorkflowActionController::class, 'pushExportShopifyContentStatus'])->whereUuid('id');
         Route::get('/purchase-orders/{id}/workflow-actions/set-prices/preview', [PurchaseOrderWorkflowActionController::class, 'previewSetPrices'])->whereUuid('id');
         Route::post('/purchase-orders/{id}/workflow-actions/set-prices', [PurchaseOrderWorkflowActionController::class, 'setPrices'])->whereUuid('id');
         Route::get('/purchase-orders/{id}/workflow-actions/pull-handles/preview', [PurchaseOrderWorkflowActionController::class, 'previewPullHandles'])->whereUuid('id');
@@ -208,6 +212,7 @@ Route::prefix('v1')
         Route::post('/purchase-orders/{id}/workflow-actions/prepare-inventory', [PurchaseOrderWorkflowActionController::class, 'prepareInventory'])->whereUuid('id');
         Route::get('/purchase-orders/{id}/workflow-actions/push-inventory/preview', [PurchaseOrderWorkflowActionController::class, 'previewPushInventory'])->whereUuid('id');
         Route::post('/purchase-orders/{id}/workflow-actions/push-inventory', [PurchaseOrderWorkflowActionController::class, 'pushInventory'])->whereUuid('id');
+        Route::get('/purchase-orders/{id}/workflow-actions/push-inventory/status', [PurchaseOrderWorkflowActionController::class, 'pushInventoryStatus'])->whereUuid('id');
         Route::post('/purchase-orders/{id}/workflow-actions/mark-published-on-shopify', [PurchaseOrderWorkflowActionController::class, 'markPublishedOnShopify'])->whereUuid('id');
         Route::post('/purchase-orders/{id}/workflow-actions/mark-latest-arrival', [PurchaseOrderWorkflowActionController::class, 'markLatestArrival'])->whereUuid('id');
         Route::post('/purchase-orders/{id}/workflow-actions/mark-latest-arrival-published', [PurchaseOrderWorkflowActionController::class, 'markLatestArrivalPublished'])->whereUuid('id');
@@ -218,11 +223,15 @@ Route::prefix('v1')
         Route::delete('/purchase-orders/{id}', PurchaseOrderDeleteController::class)->whereUuid('id');
         Route::patch('/purchase-order-items/{id}', PurchaseOrderItemUpdateController::class)->whereNumber('id');
         Route::get('/inventory-check', InventoryCheckIndexController::class);
+        Route::patch('/inventory-check/{id}', InventoryCheckUpdateController::class)->whereUuid('id');
         Route::delete('/inventory-check/{id}', InventoryCheckDeleteController::class)->whereUuid('id');
         Route::get('/inventory-check/{id}', InventoryCheckShowController::class)->whereUuid('id');
         Route::get('/inventory-check/{id}/download', InventoryCheckDownloadController::class)->whereUuid('id');
         Route::post('/inventory-check/{id}/apply', InventoryCheckApplyController::class)->whereUuid('id');
         Route::patch('/inventory-check/{id}/items/{lineId}', InventoryCheckItemUpdateController::class)
+            ->whereUuid('id')
+            ->whereNumber('lineId');
+        Route::post('/inventory-check/{id}/items/{lineId}/assign-product', InventoryCheckItemAssignProductController::class)
             ->whereUuid('id')
             ->whereNumber('lineId');
         Route::post('/inventory-check/employee/sessions', [EmployeeInventoryCountController::class, 'createSession']);
@@ -272,6 +281,8 @@ Route::prefix('v1')
         Route::put('/maintenance/external-rate-limit', ExternalRateLimitUpdateController::class);
         Route::get('/maintenance/external-access', ExternalAccessShowController::class);
         Route::put('/maintenance/external-access', ExternalAccessUpdateController::class);
+
+        Route::get('/reports/staff-orders', StaffOrdersReportShowController::class);
 
         Route::get('/price-research/filter-options', PriceResearchFilterOptionsController::class);
         Route::get('/price-research/products', PriceResearchProductsController::class);

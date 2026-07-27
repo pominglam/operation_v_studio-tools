@@ -37,7 +37,7 @@ TOOLS & SUPPLIES ▾
 └─────────────────────────────┘
 ```
 
-Named shelves (A–Z): Adhesives, Airbrush, Brushes, Decals, Drills & bits, Markers, Nippers & knives, Panel liners, Paints, Sanding, Scribing tools, Tapes, Tweezers. **All** and **Other** are pinned at the bottom of the dropdown (slightly muted + divider in theme).
+Named shelves (A–Z): Adhesives, Airbrush, Brushes, Decals, Drills & bits, Markers, Nippers & knives, Panel liners, Paints, Sanding, Scribing tools, Tapes, Tweezers, Weathering. **All** and **Other** are pinned at the bottom of the dropdown (slightly muted + divider in theme).
 
 > **Not the same as top-level Miscellaneous** — action bases, keychains, and kit accessories stay under site **Miscellaneous** (§4.5). **Other tools & supplies** is workshop oddments only (mis-tags, low-volume tools, items that do not fit a named shelf yet).
 
@@ -60,6 +60,7 @@ Named shelves (A–Z): Adhesives, Airbrush, Brushes, Decals, Drills & bits, Mark
 | **Panel liners**          | `panel-liners`         | Accent pens, wiper tools + liquid panel liners (dual) | ~20                             |
 | **Decals**                | `decals`               | Decal softeners now; sheets later                 | ~2 now; growing                 |
 | **Airbrush**              | `airbrush`             | Airbrush units, needles, airbrush-only supplies   | Small today                     |
+| **Weathering**            | `weathering`           | `type` WEATHERING (Stedi MP-5x weathering liquids) | 4 (Stedi pilot)                |
 | **Other tools & supplies**| `workshop-misc`        | Orphans, mis-tags, unclassified workshop SKUs     | Very small (grows slowly)       |
 
 
@@ -243,11 +244,12 @@ Six masking widths plus 6 mm scribing; 3 mm appears on both families.
 | --------------- | ------------------------------------------------------------ |
 | **Marker type** | Solid colors · Metallic · Fluorescent · Clear *(clear hidden until SKUs exist)* |
 | **Tip**         | Soft tip · Hard tip                                                           |
+| **Brand**       | Dspiae · Stedi                                                                |
 
 
-Optional: **Brand** (collapsed).
+**Tag examples:** `ts:marker:type:solid`, `ts:marker:tip:soft`, `ts:marker:brand:dspiae`
 
-**Tag examples:** `ts:marker:type:solid`, `ts:marker:tip:soft`
+**Storefront filter URLs (theme):** `?ovs_marker_brand=dspiae,stedi`, `?ovs_marker_type=`, `?ovs_marker_tip=` (comma-separated multiselect; AND across groups)
 
 ---
 
@@ -276,10 +278,11 @@ Dedicated shelf for panel-lining workflow — pens, wipers, and liquid panel-lin
 | Filter      | Values                          |
 | ----------- | ------------------------------- |
 | **Product** | Tools · Panel liner paints      |
+| **Type**    | Normal · Fluorescent            |
 
 **Tools:** seepage line wiper pens (`MP-02*`, `MP-03*`). **Panel liner paints:** accent pens (`MP-01*`) and liquid panel-liner bottles (`MP-10+`, `type` Panel liner).
 
-**Tag examples:** `ts:dept:panel-liners`, `ts:panel-liner:kind:tool`, `ts:panel-liner:kind:paint`, `ts:paint:product:panel-line` (liquids on Paints dept)
+**Tag examples:** `ts:dept:panel-liners`, `ts:panel-liner:kind:tool`, `ts:panel-liner:kind:paint`, `ts:panel-liner:type:normal`, `ts:panel-liner:type:fluorescent`, `ts:paint:product:panel-line` (liquids on Paints dept)
 
 Smart collection rule (OR): `ts:dept:panel-liners` **or** `ts:paint:product:panel-line`.
 
@@ -287,19 +290,16 @@ Smart collection rule (OR): `ts:dept:panel-liners` **or** `ts:paint:product:pane
 
 ### 3.14 Decals
 
-Today: decal softeners. Future: water-slide decal sheets per kit line.
+Decal softeners (Dspiae) and water-slide decal sheets. Generic kit-line sheets without a known manufacturer brand use **Unclassified** in the Brand filter.
 
-> **Deferred:** Storefront Product-type filters for decals are **not implemented** in the Phase 2 pilot. Filter options will be provided separately before theme work resumes on this collection.
+| Filter      | Values                                                                 |
+| ----------- | ---------------------------------------------------------------------- |
+| **Product** | Water decal · Softener / setter                                        |
+| **Brand**   | Dspiae (softeners; water decals only when **Dspiae** appears in the product title) · **Unclassified** (generic kit-line water decals) |
 
-| Filter      | Values                                                        |
-| ----------- | ------------------------------------------------------------- |
-| **Product** | Setting / softener · Mark softer · **Decal sheet** *(future)* |
-| **Use**     | Application aid *(solutions)* · Sheet *(future)*              |
+**Tag examples:** `ts:decal:softener`, `ts:decal:sheet`, `ts:decal:brand:dspiae`, `ts:decal:brand:unclassified`
 
-
-**Defer until sheets arrive:** Scale, franchise/series (too noisy for beginners).
-
-**Tag examples:** `ts:decal:softener`, `ts:decal:sheet` (future)
+**Storefront filter URLs:** `?ovs_decal_product=sheet,softener` and `?ovs_decal_brand=dspiae,unclassified` (comma-separated multiselect; AND across groups)
 
 ---
 
@@ -428,6 +428,17 @@ Some ERP rows are mis-tagged (`type=MARKERS` for glue, `type=PAINT` for airbrush
 When a misc SKU grows a family (e.g. several reinforcement glues), reclassify to **Adhesives** and remove from misc.
 
 Phase 6 excludes MS-58 from markers; misc collection is created in Phase 7.
+
+### 4.8 Filter regression manifest & e2e
+
+**Source of truth:** `ovs-shopify-theme/docs/storefront-ts-collection-filters.manifest.json` — every `ovs-*-collection-filters` snippet must be registered with `toggleCases` (desktop check→uncheck) and `mobileSmoke` (drawer sync).
+
+**Verify (from `pricing-tool`):**
+
+- `php artisan shopify:storefront-collection-filters-manifest-verify` — fails if a new snippet/handle is missing from the manifest
+- `npm run test:e2e:storefront-filters` — Playwright reads the manifest (no hardcoded case list in the spec)
+
+When adding a new collection shelf with OVS checkbox filters, update the manifest in the same change set as the theme snippets.
 
 ---
 
@@ -790,7 +801,7 @@ Phases 2–8 can be **one phase per deploy** or batched (e.g. 2+3 together) if p
 - [x] Phase 5: paints classifier + `ts:paint:*` tags + unlisted `/collections/paints`
 - [x] Phase 5: theme Product + Application + Paint type multiselect filters
 - [x] Phase 6: markers classifier + `ts:marker:*` tags + unlisted `/collections/markers`
-- [x] Phase 6: theme Type + Tip multiselect filters (`?ovs_marker_type=` / `?ovs_marker_tip=`)
+- [x] Phase 6: theme Brand + Type + Tip multiselect filters (`?ovs_marker_brand=` / `?ovs_marker_type=` / `?ovs_marker_tip=`)
 - [x] Phase 6: **MS-58** excluded from markers → **`workshop-misc`** in Phase 7 (§4.7)
 - [x] Phase 7: tool-family classifiers + `workshop-misc` + `airbrush` + unlisted collections (§2, §3.2–3.7, §3.14)
 - [x] Phase 7: theme filters on brushes / drills / tweezers / scribing-tools / airbrush; misc + adhesives availability-only

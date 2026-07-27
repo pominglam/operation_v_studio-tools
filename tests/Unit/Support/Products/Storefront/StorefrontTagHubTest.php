@@ -8,7 +8,7 @@ use App\Support\Products\Storefront\StorefrontTag;
 it('lists hub departments A–Z with Other last', function (): void {
     $rows = StorefrontTag::toolsAndSuppliesHubDepartments();
 
-    expect($rows)->toHaveCount(14);
+    expect($rows)->toHaveCount(15);
 
     $slugs = array_column($rows, 'slug');
     $tags = array_column($rows, 'tag');
@@ -28,6 +28,7 @@ it('lists hub departments A–Z with Other last', function (): void {
         StorefrontDepartment::SCRIBING,
         StorefrontDepartment::TAPES,
         StorefrontDepartment::TWEEZERS,
+        StorefrontDepartment::WEATHERING,
         StorefrontDepartment::WORKSHOP_MISC,
     ]);
 
@@ -45,6 +46,7 @@ it('lists hub departments A–Z with Other last', function (): void {
         'Scribing tools',
         'Tapes',
         'Tweezers',
+        'Weathering',
         'Other',
     ]);
 
@@ -55,11 +57,11 @@ it('lists hub departments A–Z with Other last', function (): void {
 it('lists nav menu children A–Z with All and Other footer rows', function (): void {
     $rows = StorefrontTag::toolsAndSuppliesNavMenuChildren();
 
-    expect($rows)->toHaveCount(15);
+    expect($rows)->toHaveCount(16);
     expect($rows[0]['handle'])->toBe('adhesives');
-    expect($rows[12]['handle'])->toBe('tweezers');
-    expect($rows[13])->toMatchArray(['handle' => 'tools-and-supplies', 'title' => 'All tools & supplies', 'footer' => true]);
-    expect($rows[14])->toMatchArray(['handle' => 'workshop-misc', 'title' => 'Other', 'footer' => true]);
+    expect($rows[13]['handle'])->toBe('weathering');
+    expect($rows[14])->toMatchArray(['handle' => 'tools-and-supplies', 'title' => 'All tools & supplies', 'footer' => true]);
+    expect($rows[15])->toMatchArray(['handle' => 'workshop-misc', 'title' => 'Other', 'footer' => true]);
 });
 
 it('maps hub department tags from helper', function (): void {
@@ -67,5 +69,5 @@ it('maps hub department tags from helper', function (): void {
 
     expect($tags)->toContain(StorefrontTag::DEPT_BRUSHES)
         ->and($tags)->toContain(StorefrontTag::DEPT_AIRBRUSH)
-        ->and($tags)->toHaveCount(14);
+        ->and($tags)->toHaveCount(15);
 });

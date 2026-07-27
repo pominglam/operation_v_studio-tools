@@ -44,8 +44,11 @@ final class ShopifyErpServiceProvider extends ServiceProvider
         $this->app->singleton(ShopifyLocationSyncRunner::class, function () use ($pageSize): ShopifyLocationSyncRunner {
             return new ShopifyLocationSyncRunner($pageSize);
         });
-        $this->app->singleton(ShopifyProductCatalogSyncRunner::class, function () use ($pageSize): ShopifyProductCatalogSyncRunner {
-            return new ShopifyProductCatalogSyncRunner($pageSize);
+        $this->app->singleton(ShopifyProductCatalogSyncRunner::class, function ($app) use ($pageSize): ShopifyProductCatalogSyncRunner {
+            return new ShopifyProductCatalogSyncRunner(
+                $pageSize,
+                $app->make(\App\Services\Shopify\Admin\Sync\ShopifyProductCatalogMirrorUpsertService::class),
+            );
         });
         $this->app->singleton(ShopifyInventoryLevelSyncRunner::class, function () use ($pageSize): ShopifyInventoryLevelSyncRunner {
             return new ShopifyInventoryLevelSyncRunner($pageSize);

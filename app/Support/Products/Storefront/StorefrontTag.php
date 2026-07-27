@@ -18,6 +18,10 @@ final class StorefrontTag
 
     public const string DECAL_SOFTENER = 'ts:decal:softener';
 
+    public const string DECAL_SHEET = 'ts:decal:sheet';
+
+    public const string DECAL_BRAND_PREFIX = 'ts:decal:brand:';
+
     public const string DEPT_SANDING = 'ts:dept:sanding';
 
     public const string DEPT_CUTTING = 'ts:dept:cutting';
@@ -27,6 +31,8 @@ final class StorefrontTag
     public const string DEPT_PANEL_LINERS = 'ts:dept:panel-liners';
 
     public const string PANEL_LINER_KIND_PREFIX = 'ts:panel-liner:kind:';
+
+    public const string PANEL_LINER_TYPE_PREFIX = 'ts:panel-liner:type:';
 
     public const string PAINT_PRODUCT_PREFIX = 'ts:paint:product:';
 
@@ -50,6 +56,8 @@ final class StorefrontTag
 
     public const string DEPT_AIRBRUSH = 'ts:dept:airbrush';
 
+    public const string DEPT_WEATHERING = 'ts:dept:weathering';
+
     public const string BRUSH_TYPE_PREFIX = 'ts:brush:type:';
 
     public const string DRILL_TYPE_PREFIX = 'ts:drill:type:';
@@ -67,6 +75,8 @@ final class StorefrontTag
     public const string MARKER_TYPE_PREFIX = 'ts:marker:type:';
 
     public const string MARKER_TIP_PREFIX = 'ts:marker:tip:';
+
+    public const string MARKER_BRAND_PREFIX = 'ts:marker:brand:';
 
     public const string CUT_NIPPER = 'ts:cut:nipper';
 
@@ -136,6 +146,11 @@ final class StorefrontTag
         return self::PANEL_LINER_KIND_PREFIX.$kind;
     }
 
+    public static function panelLinerType(string $type): string
+    {
+        return self::PANEL_LINER_TYPE_PREFIX.$type;
+    }
+
     public static function markerType(string $type): string
     {
         return self::MARKER_TYPE_PREFIX.$type;
@@ -144,6 +159,16 @@ final class StorefrontTag
     public static function markerTip(string $tip): string
     {
         return self::MARKER_TIP_PREFIX.$tip;
+    }
+
+    public static function markerBrand(string $brand): string
+    {
+        return self::MARKER_BRAND_PREFIX.$brand;
+    }
+
+    public static function decalBrand(string $brand): string
+    {
+        return self::DECAL_BRAND_PREFIX.$brand;
     }
 
     public static function brushType(string $type): string
@@ -198,6 +223,7 @@ final class StorefrontTag
             StorefrontDepartment::ADHESIVES => self::DEPT_ADHESIVES,
             StorefrontDepartment::WORKSHOP_MISC => self::DEPT_WORKSHOP_MISC,
             StorefrontDepartment::AIRBRUSH => self::DEPT_AIRBRUSH,
+            StorefrontDepartment::WEATHERING => self::DEPT_WEATHERING,
             default => null,
         };
     }
@@ -223,6 +249,7 @@ final class StorefrontTag
             ['handle' => 'scribing-tools', 'title' => 'Scribing tools', 'footer' => false],
             ['handle' => 'tapes', 'title' => 'Tapes', 'footer' => false],
             ['handle' => 'tweezers', 'title' => 'Tweezers', 'footer' => false],
+            ['handle' => 'weathering', 'title' => 'Weathering', 'footer' => false],
             ['handle' => 'tools-and-supplies', 'title' => 'All tools & supplies', 'footer' => true],
             ['handle' => 'workshop-misc', 'title' => 'Other', 'footer' => true],
         ];

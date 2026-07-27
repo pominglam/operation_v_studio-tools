@@ -32,6 +32,6 @@ it('converts DSPIAE vendor unit costs to CAD at import time when product_total a
         ->firstOrFail();
 
     expect((string) $item->vendor_unit_cost)->toBe('64.6000');
-    // FX uses PO totals: 300 / 1292 = 0.232198...; 64.60 * (300/1292) = 15.0000 exactly.
-    expect((string) $item->unit_cost)->toBe('15.0000');
+    // FX uses PO totals: 300 / 1292 = 0.232198...; 64.60 * (300/1292) = 15.00 CAD.
+    expect((string) $item->unit_cost)->toBe('15.00');
 });

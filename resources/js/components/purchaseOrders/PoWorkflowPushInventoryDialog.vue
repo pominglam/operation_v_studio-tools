@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 export type PoPushInventoryPreviewRow = {
     product_uuid: string;
@@ -59,7 +59,24 @@ const props = defineProps<{
     preview: PoPushInventoryPreview | null;
     pushSummary: PoPushInventorySummary | null;
     error: string | null;
+    receivedDate: string | null;
+    progressPercent?: number;
+    phaseLabel?: string;
 }>();
+
+const hasReceivedDate = computed(() => (props.receivedDate?.trim() ?? '') !== '');
+
+const canConfirmPush = computed(() => {
+    if (!hasReceivedDate.value || !props.preview) {
+        return false;
+    }
+
+    return (
+        props.preview.write_products_scope_ok &&
+        props.preview.write_inventory_scope_ok &&
+        props.preview.push_count > 0
+    );
+});
 
 const emit = defineEmits<{
     (e: 'cancel'): void;
@@ -152,6 +169,32 @@ async function copyProductNames(): Promise<void> {
 
                 <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
                     <p v-if="error" class="mb-3 text-sm text-rose-700">{{ error }}</p>
+
+                    <p
+                        v-if="preview && !hasReceivedDate"
+                        class="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"
+                        data-testid="push-inventory-missing-received-date"
+                    >
+                        Set <span class="font-semibold">Received date</span> on this PO before
+                        pushing. Without it, products can sync to Shopify but stay at the bottom of
+                        Latest Arrivals — unreceived POs are ignored for storefront ordering.
+                    </p>
+
+                    <div
+                        v-if="busy && !pushSummary && (phaseLabel || (progressPercent ?? 0) > 0)"
+                        class="mb-3"
+                    >
+                        <div class="mb-1 flex items-center justify-between text-xs text-slate-600">
+                            <span>{{ phaseLabel || 'Working…' }}</span>
+                            <span>{{ progressPercent ?? 0 }}%</span>
+                        </div>
+                        <div class="h-2 overflow-hidden rounded-full bg-slate-200">
+                            <div
+                                class="h-full rounded-full bg-slate-900 transition-all duration-300"
+                                :style="{ width: `${Math.max(0, Math.min(100, progressPercent ?? 0))}%` }"
+                            />
+                        </div>
+                    </div>
 
                     <div
                         v-if="pushSummary"
@@ -300,16 +343,16 @@ async function copyProductNames(): Promise<void> {
                     <button
                         type="button"
                         class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-                        :disabled="
-                            busy ||
-                            !preview ||
-                            !preview.write_products_scope_ok ||
-                            !preview.write_inventory_scope_ok ||
-                            preview.push_count === 0
+                        :disabled="busy || !canConfirmPush"
+                        :title="
+                            !hasReceivedDate
+                                ? 'Set Received date on this PO before pushing to Shopify'
+                                : undefined
                         "
+                        data-testid="push-inventory-confirm"
                         @click="emit('confirm')"
                     >
-                        {{ busy ? 'Pushing…' : 'Push to Shopify' }}
+                        {{ busy ? (phaseLabel || 'Pushing…') : 'Push to Shopify' }}
                     </button>
                 </div>
             </div>

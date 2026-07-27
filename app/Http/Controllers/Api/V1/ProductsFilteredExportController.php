@@ -56,6 +56,9 @@ final class ProductsFilteredExportController extends Controller
         /** @var string|null $ready */
         $ready = $request->validated('ready');
 
+        /** @var string|null $published */
+        $published = $request->validated('published');
+
         $availableMin = $request->validated('available_min');
         $availableMin = is_numeric($availableMin) ? (int) $availableMin : null;
         $availableMax = $request->validated('available_max');
@@ -106,6 +109,7 @@ final class ProductsFilteredExportController extends Controller
                 $archivedFilter,
                 $poProductNovelty,
                 $ready,
+                $published,
                 $availableMin,
                 $availableMax,
                 $notArrivedFilter,

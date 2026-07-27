@@ -233,6 +233,7 @@ type PurchaseOrderOption = {
 };
 
 const purchaseOrderUuids = ref<string[]>([]);
+const poProductNovelty = ref<'all' | 'new' | 'existing'>('all');
 const purchaseOrders = ref<PurchaseOrderOption[]>([]);
 
 const purchaseOrderOptions = computed<MultiSelectOption[]>(() => {
@@ -410,6 +411,9 @@ function buildProductsUrl(): string {
 
     const pos = purchaseOrderUuids.value.map((v) => v.trim()).filter(Boolean);
     for (const po of pos) params.append('purchase_order_uuids[]', po);
+    if (pos.length > 0 && poProductNovelty.value !== 'all') {
+        params.set('po_product_novelty', poProductNovelty.value);
+    }
 
     if (sellingPrice.value !== 'any') {
         params.set('selling_price', sellingPrice.value);
@@ -851,6 +855,7 @@ onMounted(() => {
         sortDir?: 'asc' | 'desc';
         purchaseOrderUuid?: string; // legacy
         purchaseOrderUuids?: string[];
+        poProductNovelty?: 'all' | 'new' | 'existing';
         sellingPrice?: 'any' | 'set' | 'missing';
         shippingPerUnit?: 'any' | 'set' | 'missing';
         barcodeFilter?: 'any' | 'set' | 'missing';
@@ -875,6 +880,7 @@ onMounted(() => {
             saved.purchaseOrderUuid.trim() !== ''
         )
             purchaseOrderUuids.value = [saved.purchaseOrderUuid.trim()];
+        if (saved.poProductNovelty) poProductNovelty.value = saved.poProductNovelty;
         if (saved.sellingPrice) sellingPrice.value = saved.sellingPrice;
         if (saved.shippingPerUnit) shippingPerUnit.value = saved.shippingPerUnit;
         if (saved.barcodeFilter) barcodeFilter.value = saved.barcodeFilter;
@@ -926,6 +932,7 @@ watch(
         shippingPerUnit,
         barcodeFilter,
         purchaseOrderUuids,
+        poProductNovelty,
         vendors,
         types,
         freshness,
@@ -964,6 +971,7 @@ watch(
         sortBy,
         sortDir,
         purchaseOrderUuids,
+        poProductNovelty,
         sellingPrice,
         shippingPerUnit,
         barcodeFilter,
@@ -983,6 +991,7 @@ watch(
             sortBy: sortBy.value,
             sortDir: sortDir.value,
             purchaseOrderUuids: purchaseOrderUuids.value,
+            poProductNovelty: poProductNovelty.value,
             sellingPrice: sellingPrice.value,
             shippingPerUnit: shippingPerUnit.value,
             barcodeFilter: barcodeFilter.value,
@@ -1005,6 +1014,7 @@ function resetPageState(): void {
     sortBy.value = 'price_researched_at';
     sortDir.value = 'desc';
     purchaseOrderUuids.value = [];
+    poProductNovelty.value = 'all';
     sellingPrice.value = 'any';
     shippingPerUnit.value = 'any';
     barcodeFilter.value = 'any';
@@ -1175,6 +1185,23 @@ function resetPageState(): void {
                         :options="purchaseOrderOptions"
                         placeholder="All POs"
                     />
+                </div>
+
+                <div class="min-w-[180px] flex-[1_1_220px]">
+                    <label
+                        class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                        >PO products</label
+                    >
+                    <select
+                        v-model="poProductNovelty"
+                        class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                        :disabled="purchaseOrderUuids.length === 0"
+                        title="Choose one or more POs first"
+                    >
+                        <option value="all">All selected PO products</option>
+                        <option value="new">New in selected PO</option>
+                        <option value="existing">Existing before selected PO</option>
+                    </select>
                 </div>
 
                 <div class="min-w-[180px] flex-[1_1_220px]">

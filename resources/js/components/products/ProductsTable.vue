@@ -47,6 +47,7 @@ export type ProductRow = {
         plamod_image_count: number;
     };
     total_ordered?: number | null;
+    shopify_orders_count?: number | null;
     available: number | null;
     hold?: number | null;
     sold_4w?: number | null;
@@ -241,7 +242,7 @@ const bulkUpdating = ref(false);
 const bulkExporting = ref(false);
 const creatingDraftPo = ref(false);
 const showCost = ref(false);
-const showClassificationColumns = ref(true);
+const showClassificationColumns = ref(false);
 const bulkMessage = ref<string | null>(null);
 const bulkError = ref<string | null>(null);
 const confirmBulkDeleteOpen = ref(false);
@@ -621,6 +622,10 @@ const emptyRowColspan = computed(() => {
 
 function totalSold(p: ProductRow): number {
     return Number(p.total_ordered ?? 0) - Number(p.available ?? 0);
+}
+
+function shopifyOrdersCount(p: ProductRow): number {
+    return Math.max(0, Number(p.shopify_orders_count ?? 0));
 }
 
 function formatReceivedDate(iso: string | null | undefined): string {
@@ -1127,100 +1132,140 @@ onUnmounted(() => {
                 aria-live="polite"
                 aria-busy="true"
             >
-                <span class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 shadow-sm">
+                <span
+                    class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 shadow-sm"
+                >
                     Refreshing…
                 </span>
             </div>
 
             <div class="overflow-x-auto" :class="loading ? 'opacity-60' : ''">
-            <div
-                v-if="selected.size > 0"
-                class="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm"
-            >
-                <div class="text-slate-700">
-                    <span class="font-semibold">{{ selected.size }}</span> selected
-                    <span v-if="allMatchingSelected" class="text-slate-500"> · all pages</span>
+                <div
+                    v-if="selected.size > 0"
+                    class="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm"
+                >
+                    <div class="text-slate-700">
+                        <span class="font-semibold">{{ selected.size }}</span> selected
+                        <span v-if="allMatchingSelected" class="text-slate-500"> · all pages</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button
+                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                            type="button"
+                            :disabled="
+                                bulkDeleting || bulkArchiving || bulkUpdating || bulkExporting
+                            "
+                            @click="
+                                selected = new Set();
+                                allMatchingSelected = false;
+                            "
+                        >
+                            Clear
+                        </button>
+                        <button
+                            class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
+                            type="button"
+                            :disabled="
+                                bulkDeleting || bulkArchiving || bulkUpdating || bulkExporting
+                            "
+                            @click="requestBulkUpdate"
+                        >
+                            {{ bulkUpdating ? 'Updating…' : 'Update selected' }}
+                        </button>
+                        <button
+                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                            type="button"
+                            :disabled="
+                                bulkDeleting ||
+                                bulkArchiving ||
+                                bulkUpdating ||
+                                bulkExporting ||
+                                creatingDraftPo
+                            "
+                            @click="createDraftPurchaseOrder"
+                        >
+                            {{ creatingDraftPo ? 'Creating draft…' : 'Create draft PO' }}
+                        </button>
+                        <button
+                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                            type="button"
+                            :disabled="
+                                bulkDeleting || bulkArchiving || bulkUpdating || bulkExporting
+                            "
+                            @click="requestBulkExport"
+                        >
+                            {{ bulkExporting ? 'Exporting…' : 'Export selected' }}
+                        </button>
+                        <button
+                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                            type="button"
+                            :disabled="
+                                bulkDeleting ||
+                                bulkArchiving ||
+                                bulkUpdating ||
+                                bulkExporting ||
+                                bulkShopifyPushing
+                            "
+                            @click="requestBulkShopifyPush"
+                        >
+                            {{ bulkShopifyPushing ? 'Queuing push…' : 'Push to Shopify' }}
+                        </button>
+                        <button
+                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                            type="button"
+                            :disabled="
+                                bulkDeleting || bulkArchiving || bulkUpdating || bulkExporting
+                            "
+                            @click="requestBulkRecrawl"
+                        >
+                            Recrawl selected
+                        </button>
+                        <button
+                            class="rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-amber-700 disabled:opacity-50"
+                            type="button"
+                            :disabled="
+                                bulkDeleting || bulkArchiving || bulkUpdating || bulkExporting
+                            "
+                            @click="requestBulkArchive"
+                        >
+                            {{ bulkArchiving ? 'Archiving…' : 'Archive selected' }}
+                        </button>
+                        <button
+                            class="rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-rose-700 disabled:opacity-50"
+                            type="button"
+                            :disabled="
+                                bulkDeleting || bulkArchiving || bulkUpdating || bulkExporting
+                            "
+                            @click="requestBulkDelete"
+                        >
+                            {{ bulkDeleting ? 'Deleting…' : 'Delete selected' }}
+                        </button>
+                        <button
+                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+                            type="button"
+                            data-testid="toggle-cost-visibility"
+                            @click="showCost = !showCost"
+                        >
+                            {{ showCost ? 'Hide cost' : 'Show cost' }}
+                        </button>
+                        <button
+                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+                            type="button"
+                            data-testid="toggle-classification-visibility"
+                            @click="showClassificationColumns = !showClassificationColumns"
+                        >
+                            {{
+                                showClassificationColumns
+                                    ? 'Hide type/grade/scale'
+                                    : 'Show type/grade/scale'
+                            }}
+                        </button>
+                    </div>
                 </div>
-                <div class="flex items-center gap-2">
-                    <button
-                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
-                        type="button"
-                        :disabled="bulkDeleting || bulkArchiving || bulkUpdating || bulkExporting"
-                        @click="
-                            selected = new Set();
-                            allMatchingSelected = false;
-                        "
-                    >
-                        Clear
-                    </button>
-                    <button
-                        class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
-                        type="button"
-                        :disabled="bulkDeleting || bulkArchiving || bulkUpdating || bulkExporting"
-                        @click="requestBulkUpdate"
-                    >
-                        {{ bulkUpdating ? 'Updating…' : 'Update selected' }}
-                    </button>
-                    <button
-                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
-                        type="button"
-                        :disabled="
-                            bulkDeleting ||
-                            bulkArchiving ||
-                            bulkUpdating ||
-                            bulkExporting ||
-                            creatingDraftPo
-                        "
-                        @click="createDraftPurchaseOrder"
-                    >
-                        {{ creatingDraftPo ? 'Creating draft…' : 'Create draft PO' }}
-                    </button>
-                    <button
-                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
-                        type="button"
-                        :disabled="bulkDeleting || bulkArchiving || bulkUpdating || bulkExporting"
-                        @click="requestBulkExport"
-                    >
-                        {{ bulkExporting ? 'Exporting…' : 'Export selected' }}
-                    </button>
-                    <button
-                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
-                        type="button"
-                        :disabled="
-                            bulkDeleting ||
-                            bulkArchiving ||
-                            bulkUpdating ||
-                            bulkExporting ||
-                            bulkShopifyPushing
-                        "
-                        @click="requestBulkShopifyPush"
-                    >
-                        {{ bulkShopifyPushing ? 'Queuing push…' : 'Push to Shopify' }}
-                    </button>
-                    <button
-                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
-                        type="button"
-                        :disabled="bulkDeleting || bulkArchiving || bulkUpdating || bulkExporting"
-                        @click="requestBulkRecrawl"
-                    >
-                        Recrawl selected
-                    </button>
-                    <button
-                        class="rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-amber-700 disabled:opacity-50"
-                        type="button"
-                        :disabled="bulkDeleting || bulkArchiving || bulkUpdating || bulkExporting"
-                        @click="requestBulkArchive"
-                    >
-                        {{ bulkArchiving ? 'Archiving…' : 'Archive selected' }}
-                    </button>
-                    <button
-                        class="rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-rose-700 disabled:opacity-50"
-                        type="button"
-                        :disabled="bulkDeleting || bulkArchiving || bulkUpdating || bulkExporting"
-                        @click="requestBulkDelete"
-                    >
-                        {{ bulkDeleting ? 'Deleting…' : 'Delete selected' }}
-                    </button>
+                <div
+                    v-else
+                    class="flex items-center justify-end border-b border-slate-200 bg-white px-4 py-2"
+                >
                     <button
                         class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
                         type="button"
@@ -1230,7 +1275,7 @@ onUnmounted(() => {
                         {{ showCost ? 'Hide cost' : 'Show cost' }}
                     </button>
                     <button
-                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+                        class="ml-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
                         type="button"
                         data-testid="toggle-classification-visibility"
                         @click="showClassificationColumns = !showClassificationColumns"
@@ -1242,931 +1287,939 @@ onUnmounted(() => {
                         }}
                     </button>
                 </div>
-            </div>
-            <div
-                v-else
-                class="flex items-center justify-end border-b border-slate-200 bg-white px-4 py-2"
-            >
-                <button
-                    class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
-                    type="button"
-                    data-testid="toggle-cost-visibility"
-                    @click="showCost = !showCost"
+
+                <div
+                    v-if="
+                        allOnPageSelected && !allMatchingSelected && totalMatching > products.length
+                    "
+                    class="border-b border-slate-200 bg-white px-4 py-2 text-sm text-slate-700"
                 >
-                    {{ showCost ? 'Hide cost' : 'Show cost' }}
-                </button>
-                <button
-                    class="ml-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
-                    type="button"
-                    data-testid="toggle-classification-visibility"
-                    @click="showClassificationColumns = !showClassificationColumns"
-                >
-                    {{
-                        showClassificationColumns
-                            ? 'Hide type/grade/scale'
-                            : 'Show type/grade/scale'
-                    }}
-                </button>
-            </div>
-
-            <div
-                v-if="allOnPageSelected && !allMatchingSelected && totalMatching > products.length"
-                class="border-b border-slate-200 bg-white px-4 py-2 text-sm text-slate-700"
-            >
-                All <span class="font-semibold">{{ products.length }}</span> products on this page
-                are selected.
-                <button
-                    type="button"
-                    class="ml-2 font-semibold text-slate-900 underline underline-offset-2 disabled:opacity-50"
-                    :disabled="selectingAllMatching"
-                    @click="selectAllMatching"
-                >
-                    {{
-                        selectingAllMatching ? 'Selecting…' : `Select all ${totalMatching} products`
-                    }}
-                </button>
-            </div>
-
-            <div
-                v-if="bulkError"
-                class="m-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
-            >
-                {{ bulkError }}
-            </div>
-            <div
-                v-if="bulkMessage"
-                class="m-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
-            >
-                {{ bulkMessage }}
-            </div>
-            <div
-                v-if="rowError"
-                class="m-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
-            >
-                {{ rowError }}
-            </div>
-
-            <table class="min-w-full divide-y divide-slate-200 text-sm">
-                <thead class="bg-slate-50">
-                    <tr class="text-left text-xs font-semibold tracking-wide text-slate-600">
-                        <th class="w-12 px-4 py-3">
-                            <input
-                                class="h-4 w-4 rounded border-slate-300"
-                                type="checkbox"
-                                :checked="allSelected"
-                                :disabled="products.length === 0"
-                                @change="toggleAll(($event.target as HTMLInputElement).checked)"
-                            />
-                        </th>
-                        <th class="px-4 py-3">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('description')"
-                                @click="onSortChange('description')"
-                            >
-                                Product{{ sortIndicator('description') }}
-                            </button>
-                        </th>
-                        <th v-if="showClassificationColumns" class="px-4 py-3">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('main_type')"
-                                @click="onSortChange('main_type')"
-                            >
-                                {{ sortLabel('main_type') }}{{ sortIndicator('main_type') }}
-                            </button>
-                        </th>
-                        <th v-if="showClassificationColumns" class="px-4 py-3">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('type')"
-                                @click="onSortChange('type')"
-                            >
-                                {{ sortLabel('type') }}{{ sortIndicator('type') }}
-                            </button>
-                        </th>
-                        <th v-if="showClassificationColumns" class="px-4 py-3">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('grade')"
-                                @click="onSortChange('grade')"
-                            >
-                                {{ sortLabel('grade') }}{{ sortIndicator('grade') }}
-                            </button>
-                        </th>
-                        <th v-if="showClassificationColumns" class="px-4 py-3">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('scale')"
-                                @click="onSortChange('scale')"
-                            >
-                                {{ sortLabel('scale') }}{{ sortIndicator('scale') }}
-                            </button>
-                        </th>
-                        <th v-if="showClassificationColumns" class="px-4 py-3">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('series')"
-                                @click="onSortChange('series')"
-                            >
-                                {{ sortLabel('series') }}{{ sortIndicator('series') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('vendor')"
-                                @click="onSortChange('vendor')"
-                            >
-                                {{ sortLabel('vendor') }}{{ sortIndicator('vendor') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3 whitespace-nowrap">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('received_date')"
-                                @click="onSortChange('received_date')"
-                            >
-                                {{ sortLabel('received_date') }}{{ sortIndicator('received_date') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3 text-right">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('selling_price')"
-                                @click="onSortChange('selling_price')"
-                            >
-                                {{ sortLabel('selling_price') }}{{ sortIndicator('selling_price') }}
-                            </button>
-                        </th>
-                        <th v-if="showCost" class="px-4 py-3 text-right">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('latest_landed_unit_cost')"
-                                @click="onSortChange('latest_landed_unit_cost')"
-                            >
-                                {{ sortLabel('latest_landed_unit_cost')
-                                }}{{ sortIndicator('latest_landed_unit_cost') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3 text-right">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('total_ordered')"
-                                data-testid="products-sort-total-ordered"
-                                @click="onSortChange('total_ordered')"
-                            >
-                                {{ sortLabel('total_ordered') }}{{ sortIndicator('total_ordered') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3 text-right">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('total_sold')"
-                                data-testid="products-sort-total-sold"
-                                @click="onSortChange('total_sold')"
-                            >
-                                {{ sortLabel('total_sold') }}{{ sortIndicator('total_sold') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3 text-right">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('available')"
-                                @click="onSortChange('available')"
-                            >
-                                {{ sortLabel('available') }}{{ sortIndicator('available') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3 text-right">Hold</th>
-                        <th class="min-w-[5.5rem] px-4 py-3 text-right">
-                            <button
-                                type="button"
-                                class="whitespace-nowrap hover:underline"
-                                :class="sortHeaderClass('demand')"
-                                data-testid="products-sort-demand"
-                                @click="onSortChange('demand')"
-                            >
-                                {{ sortLabel('demand') }}{{ sortIndicator('demand') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3 text-right">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('maintain')"
-                                @click="onSortChange('maintain')"
-                            >
-                                {{ sortLabel('maintain') }}{{ sortIndicator('maintain') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3 text-right">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('not_arrived')"
-                                data-testid="products-sort-not-arrived"
-                                @click="onSortChange('not_arrived')"
-                            >
-                                {{ sortLabel('not_arrived') }}{{ sortIndicator('not_arrived') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3 text-right">
-                            <button
-                                type="button"
-                                class="hover:underline"
-                                :class="sortHeaderClass('reorder')"
-                                data-testid="products-sort-reorder"
-                                @click="onSortChange('reorder')"
-                            >
-                                {{ sortLabel('reorder') }}{{ sortIndicator('reorder') }}
-                            </button>
-                        </th>
-                        <th class="px-4 py-3">Info</th>
-                        <th class="px-4 py-3">Ready</th>
-                        <th class="px-4 py-3">Latest arrival</th>
-                        <th class="px-4 py-3">Published on Shopify</th>
-                        <th class="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-100">
-                    <tr v-if="products.length === 0">
-                        <td class="px-4 py-4 text-slate-600" :colspan="emptyRowColspan">
-                            No products yet. Import a CSV or add one manually above.
-                        </td>
-                    </tr>
-
-                    <tr
-                        v-for="p in products"
-                        :key="p.id"
-                        class="hover:bg-slate-50"
-                        :class="p.is_archived ? 'bg-slate-50/80' : ''"
+                    All <span class="font-semibold">{{ products.length }}</span> products on this
+                    page are selected.
+                    <button
+                        type="button"
+                        class="ml-2 font-semibold text-slate-900 underline underline-offset-2 disabled:opacity-50"
+                        :disabled="selectingAllMatching"
+                        @click="selectAllMatching"
                     >
-                        <td class="px-4 py-3">
-                            <input
-                                class="h-4 w-4 rounded border-slate-300"
-                                type="checkbox"
-                                :checked="selected.has(p.id)"
-                                @change="
-                                    toggleOne(p.id, ($event.target as HTMLInputElement).checked)
-                                "
-                            />
-                        </td>
+                        {{
+                            selectingAllMatching
+                                ? 'Selecting…'
+                                : `Select all ${totalMatching} products`
+                        }}
+                    </button>
+                </div>
 
-                        <td class="px-4 py-3">
-                            <template v-if="editingId === p.id">
-                                <div class="flex flex-col gap-2">
-                                    <input
-                                        v-model="draft!.description"
-                                        class="w-[28rem] max-w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
-                                        type="text"
-                                    />
-                                    <div class="flex flex-wrap gap-2">
-                                        <input
-                                            v-model="draft!.sku"
-                                            class="w-40 rounded-md border border-slate-200 px-2 py-1 font-mono text-xs"
-                                            type="text"
-                                        />
-                                        <input
-                                            v-model="draft!.barcode"
-                                            class="w-44 rounded-md border border-slate-200 px-2 py-1 font-mono text-xs"
-                                            type="text"
-                                        />
-                                    </div>
-                                    <div class="flex flex-wrap gap-2 pt-1">
-                                        <button
-                                            class="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-                                            type="button"
-                                            :disabled="saving"
-                                            @click="saveEdit"
-                                        >
-                                            {{ saving ? 'Saving…' : 'Save' }}
-                                        </button>
-                                        <button
-                                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50"
-                                            type="button"
-                                            :disabled="saving"
-                                            @click="cancelEdit"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <span class="self-center text-[11px] text-slate-500">
-                                            Esc cancel · Ctrl+Enter save
-                                        </span>
-                                    </div>
-                                </div>
-                            </template>
-                            <template v-else>
-                                <div
-                                    class="cursor-pointer rounded-md px-1 py-0.5 transition hover:bg-slate-100"
-                                    role="button"
-                                    tabindex="0"
-                                    title="Click to edit"
-                                    @click="startEdit(p)"
-                                    @keydown.enter.prevent="startEdit(p)"
-                                >
-                                    <div
-                                        class="max-w-[28rem] truncate font-medium text-slate-900"
-                                        :title="p.description"
-                                    >
-                                        {{ p.description }}
-                                        <span
-                                            v-if="p.is_archived"
-                                            class="ml-2 inline-flex rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700"
-                                            data-testid="product-archived-badge"
-                                        >
-                                            Archived
-                                        </span>
-                                    </div>
-                                    <div
-                                        class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-600"
-                                    >
-                                        <span class="font-mono">{{ p.sku }}</span>
-                                        <span class="font-mono">{{ p.barcode ?? '—' }}</span>
-                                    </div>
-                                    <div class="mt-0.5 text-xs text-slate-500">
-                                        <span
-                                            class="font-mono"
-                                            :class="
-                                                p.handle && p.handle.trim() !== ''
-                                                    ? 'text-slate-600'
-                                                    : 'text-slate-400'
-                                            "
-                                        >
-                                            {{
-                                                p.handle && p.handle.trim() !== '' ? p.handle : '—'
-                                            }}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div class="mt-1.5 flex flex-wrap gap-x-4 gap-y-1" @click.stop>
-                                    <label
-                                        class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
-                                    >
-                                        <input
-                                            class="h-3.5 w-3.5 rounded border-slate-300"
-                                            type="checkbox"
-                                            :checked="p.is_critical ?? false"
-                                            :disabled="
-                                                editingId === p.id || isTogglingCritical(p.id)
-                                            "
-                                            @change="
-                                                toggleCritical(
-                                                    p.id,
-                                                    ($event.target as HTMLInputElement).checked,
-                                                )
-                                            "
-                                            data-testid="product-critical-toggle"
-                                        />
-                                        <span class="select-none">Critical</span>
-                                    </label>
-                                    <label
-                                        class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
-                                    >
-                                        <input
-                                            class="h-3.5 w-3.5 rounded border-slate-300"
-                                            type="checkbox"
-                                            :checked="p.is_discontinued ?? false"
-                                            :disabled="
-                                                editingId === p.id || isTogglingDiscontinue(p.id)
-                                            "
-                                            @change="onDiscontinueChange(p, $event)"
-                                            data-testid="product-discontinue-toggle"
-                                        />
-                                        <span class="select-none">Discontinue</span>
-                                    </label>
-                                    <label
-                                        class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
-                                    >
-                                        <input
-                                            class="h-3.5 w-3.5 rounded border-slate-300"
-                                            type="checkbox"
-                                            :checked="p.is_hazardous_shipment ?? false"
-                                            :disabled="
-                                                editingId === p.id ||
-                                                isTogglingHazardousShipment(p.id)
-                                            "
-                                            @change="onHazardousShipmentChange(p, $event)"
-                                            data-testid="product-hazardous-shipment-toggle"
-                                        />
-                                        <span class="select-none">Hazardous shipment</span>
-                                    </label>
-                                    <label
-                                        class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
-                                    >
-                                        <span class="select-none">Shipment</span>
-                                        <select
-                                            class="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px] font-medium text-slate-700"
-                                            :value="p.shipment_method ?? ''"
-                                            :disabled="
-                                                editingId === p.id ||
-                                                isUpdatingShipmentMethod(p.id)
-                                            "
-                                            data-testid="product-shipment-method-select"
-                                            @change="onShipmentMethodChange(p, $event)"
-                                        >
-                                            <option value="">—</option>
-                                            <option value="air">Air</option>
-                                            <option value="sea">Sea</option>
-                                        </select>
-                                    </label>
-                                </div>
-                            </template>
-                        </td>
+                <div
+                    v-if="bulkError"
+                    class="m-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+                >
+                    {{ bulkError }}
+                </div>
+                <div
+                    v-if="bulkMessage"
+                    class="m-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+                >
+                    {{ bulkMessage }}
+                </div>
+                <div
+                    v-if="rowError"
+                    class="m-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+                >
+                    {{ rowError }}
+                </div>
 
-                        <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <select
-                                    v-model="draft!.main_type"
-                                    class="w-36 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
-                                >
-                                    <option
-                                        v-for="opt in mainTypeChoices"
-                                        :key="`main-type-${opt}`"
-                                        :value="opt"
-                                    >
-                                        {{ opt }}
-                                    </option>
-                                </select>
-                            </template>
-                            <template v-else>
-                                <div
-                                    class="max-w-[10rem] cursor-pointer truncate rounded-md px-1 py-0.5 transition hover:bg-slate-100"
-                                    title="Click to edit"
-                                    role="button"
-                                    tabindex="0"
-                                    @click="startEdit(p)"
-                                    @keydown.enter.prevent="startEdit(p)"
-                                >
-                                    {{ p.main_type }}
-                                </div>
-                            </template>
-                        </td>
-
-                        <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <select
-                                    class="max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
-                                    :class="typeChoices.length > 4 ? 'w-44' : 'w-28'"
-                                    :value="draft!.type ?? ''"
-                                    @change="setDraftTypeFromSelect"
-                                >
-                                    <option value="">—</option>
-                                    <option
-                                        v-for="opt in typeChoices"
-                                        :key="`type-${opt}`"
-                                        :value="opt"
-                                    >
-                                        {{ opt }}
-                                    </option>
-                                </select>
-                            </template>
-                            <template v-else>
-                                <span
-                                    class="inline-block cursor-pointer rounded-md px-1 py-0.5 transition hover:bg-slate-100"
-                                    title="Click to edit"
-                                    role="button"
-                                    tabindex="0"
-                                    @click="startEdit(p)"
-                                    @keydown.enter.prevent="startEdit(p)"
-                                    >{{ p.type ?? '—' }}</span
-                                >
-                            </template>
-                        </td>
-
-                        <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <select
-                                    v-model="draft!.grade"
-                                    class="w-24 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
-                                >
-                                    <option :value="null">—</option>
-                                    <option
-                                        v-for="opt in gradeChoices"
-                                        :key="`grade-${opt}`"
-                                        :value="opt"
-                                    >
-                                        {{ opt }}
-                                    </option>
-                                </select>
-                            </template>
-                            <template v-else>
-                                <span
-                                    class="inline-block cursor-pointer rounded-md px-1 py-0.5 font-semibold text-slate-900 transition hover:bg-slate-100"
-                                    title="Click to edit"
-                                    role="button"
-                                    tabindex="0"
-                                    @click="startEdit(p)"
-                                    @keydown.enter.prevent="startEdit(p)"
-                                    >{{ p.grade ?? '—' }}</span
-                                >
-                            </template>
-                        </td>
-
-                        <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <select
-                                    v-model="draft!.scale"
-                                    class="w-24 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 font-mono text-xs"
-                                >
-                                    <option :value="null">—</option>
-                                    <option
-                                        v-for="opt in scaleChoices"
-                                        :key="`scale-${opt}`"
-                                        :value="opt"
-                                    >
-                                        {{ opt }}
-                                    </option>
-                                </select>
-                            </template>
-                            <template v-else>
-                                <span
-                                    class="inline-block cursor-pointer rounded-md px-1 py-0.5 font-mono text-xs transition hover:bg-slate-100"
-                                    title="Click to edit"
-                                    role="button"
-                                    tabindex="0"
-                                    @click="startEdit(p)"
-                                    @keydown.enter.prevent="startEdit(p)"
-                                    >{{ p.scale ?? '—' }}</span
-                                >
-                            </template>
-                        </td>
-
-                        <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <select
-                                    v-model="draft!.series"
-                                    class="w-56 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
-                                >
-                                    <option :value="null">—</option>
-                                    <option
-                                        v-for="opt in seriesChoices"
-                                        :key="`series-${opt}`"
-                                        :value="opt"
-                                    >
-                                        {{ opt }}
-                                    </option>
-                                </select>
-                            </template>
-                            <template v-else>
-                                <div
-                                    class="max-w-[16rem] cursor-pointer truncate rounded-md px-1 py-0.5 transition hover:bg-slate-100"
-                                    :title="(p.series ?? '') || 'Click to edit'"
-                                    role="button"
-                                    tabindex="0"
-                                    @click="startEdit(p)"
-                                    @keydown.enter.prevent="startEdit(p)"
-                                >
-                                    {{ p.series ?? '—' }}
-                                </div>
-                            </template>
-                        </td>
-
-                        <td class="px-4 py-3 text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <select
-                                    v-model="draft!.vendor"
-                                    class="w-36 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
-                                >
-                                    <option :value="null">—</option>
-                                    <option v-for="v in vendorChoices" :key="v" :value="v">
-                                        {{ v }}
-                                    </option>
-                                </select>
-                            </template>
-                            <template v-else>
-                                <span
-                                    class="inline-block cursor-pointer rounded-md px-1 py-0.5 transition hover:bg-slate-100"
-                                    title="Click to edit"
-                                    role="button"
-                                    tabindex="0"
-                                    @click="startEdit(p)"
-                                    @keydown.enter.prevent="startEdit(p)"
-                                    >{{ p.vendor ?? '—' }}</span
-                                >
-                            </template>
-                        </td>
-
-                        <td class="px-4 py-3 whitespace-nowrap text-slate-700">
-                            {{ formatReceivedDate(p.received_date) }}
-                        </td>
-
-                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                            {{ p.selling_price ? formatMoney2(p.selling_price) : '—' }}
-                        </td>
-
-                        <td
-                            v-if="showCost"
-                            class="px-4 py-3 text-right tabular-nums text-slate-700"
-                        >
-                            {{
-                                p.latest_landed_unit_cost
-                                    ? formatMoney2(p.latest_landed_unit_cost)
-                                    : '—'
-                            }}
-                        </td>
-
-                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                            {{ Math.max(0, Number(p.total_ordered ?? 0)) }}
-                        </td>
-
-                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                            {{ totalSold(p) }}
-                        </td>
-
-                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <input
-                                    v-model.number="draft!.available"
-                                    class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
-                                    type="number"
-                                    min="0"
-                                />
-                            </template>
-                            <template v-else>
-                                <input
-                                    class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
-                                    type="number"
-                                    min="0"
-                                    inputmode="numeric"
-                                    :disabled="isSavingAvailable(p.id)"
-                                    :value="
-                                        availableDrafts[p.id] ??
-                                        (p.available === null ? '' : String(p.available))
-                                    "
-                                    :data-testid="`product-available-input:${p.id}`"
-                                    @focus="startAvailableInlineEdit(p.id, p.available)"
-                                    @input="
-                                        updateAvailableDraft(
-                                            p.id,
-                                            ($event.target as HTMLInputElement).value,
-                                        )
-                                    "
-                                    @keydown.enter.prevent="commitAvailableInlineEdit(p.id)"
-                                    @blur="commitAvailableInlineEdit(p.id)"
-                                />
-                            </template>
-                        </td>
-
-                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                            <input
-                                class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
-                                type="number"
-                                min="0"
-                                inputmode="numeric"
-                                :disabled="isSavingHold(p.id)"
-                                :value="
-                                    holdDrafts[p.id] ??
-                                    (p.hold === null || p.hold === 0 ? '' : String(p.hold))
-                                "
-                                :data-testid="`product-hold-input:${p.id}`"
-                                @focus="startHoldInlineEdit(p.id, p.hold ?? null)"
-                                @input="
-                                    updateHoldDraft(p.id, ($event.target as HTMLInputElement).value)
-                                "
-                                @keydown.enter.prevent="commitHoldInlineEdit(p.id)"
-                                @blur="commitHoldInlineEdit(p.id)"
-                            />
-                        </td>
-
-                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                            <button
-                                v-if="props.onOpenDemand"
-                                type="button"
-                                class="rounded-md px-1 py-0.5 text-sky-800 underline decoration-sky-300 hover:bg-sky-50"
-                                :data-testid="`product-demand-value:${p.id}`"
-                                @click="props.onOpenDemand?.(p.id)"
-                            >
-                                {{ Number(p.sold_4w ?? 0) }}
-                            </button>
-                            <span v-else>{{ Number(p.sold_4w ?? 0) }}</span>
-                        </td>
-
-                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                            <template v-if="editingId === p.id">
-                                <input
-                                    v-model.number="draft!.maintain"
-                                    class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
-                                    type="number"
-                                    min="0"
-                                />
-                            </template>
-                            <template v-else>
-                                <input
-                                    class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
-                                    type="number"
-                                    min="0"
-                                    inputmode="numeric"
-                                    :disabled="isSavingMaintain(p.id)"
-                                    :value="
-                                        maintainDrafts[p.id] ??
-                                        (p.maintain === null ? '' : String(p.maintain))
-                                    "
-                                    :data-testid="`product-maintain-input:${p.id}`"
-                                    @focus="startMaintainInlineEdit(p.id, p.maintain)"
-                                    @input="
-                                        updateMaintainDraft(
-                                            p.id,
-                                            ($event.target as HTMLInputElement).value,
-                                        )
-                                    "
-                                    @keydown.enter.prevent="commitMaintainInlineEdit(p.id)"
-                                    @blur="commitMaintainInlineEdit(p.id)"
-                                />
-                            </template>
-                        </td>
-
-                        <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                            {{ Math.max(0, Number(p.not_arrived ?? 0)) }}
-                        </td>
-
-                        <td class="px-4 py-3 text-right tabular-nums font-semibold text-slate-900">
-                            <span :data-testid="`product-reorder-value:${p.id}`">
-                                {{ reorderValue(p) }}
-                            </span>
-                        </td>
-
-                        <td class="px-4 py-3">
-                            <button
-                                v-if="editingId !== p.id"
-                                class="flex cursor-pointer flex-wrap gap-1 rounded-md text-left transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
-                                type="button"
-                                data-testid="product-info-open"
-                                :aria-label="`Open PDP info for ${p.sku}`"
-                                @click="props.onOpenPlamod(p.id)"
-                            >
-                                <span
-                                    v-if="isMissingPdpImages(p)"
-                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
-                                >
-                                    images
-                                </span>
-                                <span
-                                    v-if="isMissingPdpDescription(p)"
-                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
-                                >
-                                    desc
-                                </span>
-                                <span
-                                    v-if="isMissingSellingPrice(p)"
-                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
-                                >
-                                    selling
-                                </span>
-                                <span
-                                    v-if="isMissingBarcode(p)"
-                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
-                                >
-                                    barcode
-                                </span>
-
-                                <span
-                                    v-if="
-                                        !isMissingPdpImages(p) &&
-                                        !isMissingPdpDescription(p) &&
-                                        !isMissingSellingPrice(p) &&
-                                        !isMissingBarcode(p)
-                                    "
-                                    class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-900"
-                                >
-                                    ok
-                                </span>
-                            </button>
-
-                            <div v-else class="flex flex-wrap gap-1">
-                                <span
-                                    v-if="isMissingPdpImages(p)"
-                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
-                                >
-                                    images
-                                </span>
-                                <span
-                                    v-if="isMissingPdpDescription(p)"
-                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
-                                >
-                                    desc
-                                </span>
-                                <span
-                                    v-if="isMissingSellingPrice(p)"
-                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
-                                >
-                                    selling
-                                </span>
-                                <span
-                                    v-if="isMissingBarcode(p)"
-                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
-                                >
-                                    barcode
-                                </span>
-
-                                <span
-                                    v-if="
-                                        !isMissingPdpImages(p) &&
-                                        !isMissingPdpDescription(p) &&
-                                        !isMissingSellingPrice(p) &&
-                                        !isMissingBarcode(p)
-                                    "
-                                    class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-900"
-                                >
-                                    ok
-                                </span>
-                            </div>
-                        </td>
-
-                        <td class="px-4 py-3">
-                            <label
-                                class="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
-                            >
+                <table class="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead class="bg-slate-50">
+                        <tr class="text-left text-xs font-semibold tracking-wide text-slate-600">
+                            <th class="w-12 px-4 py-3">
                                 <input
                                     class="h-4 w-4 rounded border-slate-300"
                                     type="checkbox"
-                                    :checked="p.is_ready ?? false"
-                                    :disabled="editingId === p.id || isTogglingReady(p.id)"
-                                    @change="
-                                        toggleReady(
-                                            p.id,
-                                            ($event.target as HTMLInputElement).checked,
-                                        )
-                                    "
-                                    data-testid="product-ready-toggle"
+                                    :checked="allSelected"
+                                    :disabled="products.length === 0"
+                                    @change="toggleAll(($event.target as HTMLInputElement).checked)"
                                 />
-                                <span class="select-none">{{
-                                    (p.is_ready ?? false) ? 'ready' : 'not ready'
-                                }}</span>
-                            </label>
-                        </td>
-
-                        <td class="px-4 py-3">
-                            <label
-                                class="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
-                            >
-                                <input
-                                    class="h-4 w-4 rounded border-slate-300"
-                                    type="checkbox"
-                                    :checked="p.latest_arrival ?? false"
-                                    :disabled="editingId === p.id || isTogglingLatestArrival(p.id)"
-                                    @change="
-                                        toggleLatestArrival(
-                                            p.id,
-                                            ($event.target as HTMLInputElement).checked,
-                                        )
-                                    "
-                                    data-testid="product-latest-arrival-toggle"
-                                />
-                                <span class="select-none">{{
-                                    (p.latest_arrival ?? false) ? 'latest' : '—'
-                                }}</span>
-                            </label>
-                        </td>
-
-                        <td class="px-4 py-3">
-                            <span
-                                class="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
-                                :class="
-                                    p.published_on_shopify
-                                        ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-                                        : 'border-slate-200 bg-slate-50 text-slate-700'
-                                "
-                            >
-                                {{ p.published_on_shopify ? 'yes' : 'no' }}
-                            </span>
-                        </td>
-
-                        <td class="px-4 py-3 text-right">
-                            <div class="flex justify-end">
+                            </th>
+                            <th class="px-4 py-3">
                                 <button
-                                    class="mr-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50"
                                     type="button"
-                                    @click="props.onOpenPoLines(p.id)"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('description')"
+                                    @click="onSortChange('description')"
                                 >
-                                    PO Lines
+                                    Product{{ sortIndicator('description') }}
                                 </button>
+                            </th>
+                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('main_type')"
+                                    @click="onSortChange('main_type')"
+                                >
+                                    {{ sortLabel('main_type') }}{{ sortIndicator('main_type') }}
+                                </button>
+                            </th>
+                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('type')"
+                                    @click="onSortChange('type')"
+                                >
+                                    {{ sortLabel('type') }}{{ sortIndicator('type') }}
+                                </button>
+                            </th>
+                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('grade')"
+                                    @click="onSortChange('grade')"
+                                >
+                                    {{ sortLabel('grade') }}{{ sortIndicator('grade') }}
+                                </button>
+                            </th>
+                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('scale')"
+                                    @click="onSortChange('scale')"
+                                >
+                                    {{ sortLabel('scale') }}{{ sortIndicator('scale') }}
+                                </button>
+                            </th>
+                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('series')"
+                                    @click="onSortChange('series')"
+                                >
+                                    {{ sortLabel('series') }}{{ sortIndicator('series') }}
+                                </button>
+                            </th>
+                            <th class="px-4 py-3">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('vendor')"
+                                    @click="onSortChange('vendor')"
+                                >
+                                    {{ sortLabel('vendor') }}{{ sortIndicator('vendor') }}
+                                </button>
+                            </th>
+                            <th class="px-4 py-3 whitespace-nowrap">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('received_date')"
+                                    @click="onSortChange('received_date')"
+                                >
+                                    {{ sortLabel('received_date')
+                                    }}{{ sortIndicator('received_date') }}
+                                </button>
+                            </th>
+                            <th class="px-4 py-3 text-right">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('selling_price')"
+                                    @click="onSortChange('selling_price')"
+                                >
+                                    {{ sortLabel('selling_price')
+                                    }}{{ sortIndicator('selling_price') }}
+                                </button>
+                            </th>
+                            <th v-if="showCost" class="px-4 py-3 text-right">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('latest_landed_unit_cost')"
+                                    @click="onSortChange('latest_landed_unit_cost')"
+                                >
+                                    {{ sortLabel('latest_landed_unit_cost')
+                                    }}{{ sortIndicator('latest_landed_unit_cost') }}
+                                </button>
+                            </th>
+                            <th class="px-4 py-3 text-right">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('total_ordered')"
+                                    data-testid="products-sort-total-ordered"
+                                    @click="onSortChange('total_ordered')"
+                                >
+                                    {{ sortLabel('total_ordered')
+                                    }}{{ sortIndicator('total_ordered') }}
+                                </button>
+                            </th>
+                            <th class="px-4 py-3 text-right">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('total_sold')"
+                                    data-testid="products-sort-total-sold"
+                                    @click="onSortChange('total_sold')"
+                                >
+                                    {{ sortLabel('total_sold') }}{{ sortIndicator('total_sold') }}
+                                </button>
+                            </th>
+                            <th class="px-4 py-3 text-right">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('available')"
+                                    @click="onSortChange('available')"
+                                >
+                                    {{ sortLabel('available') }}{{ sortIndicator('available') }}
+                                </button>
+                            </th>
+                            <th class="px-4 py-3 text-right">Hold</th>
+                            <th class="min-w-[5.5rem] px-4 py-3 text-right">
+                                <button
+                                    type="button"
+                                    class="whitespace-nowrap hover:underline"
+                                    :class="sortHeaderClass('demand')"
+                                    data-testid="products-sort-demand"
+                                    @click="onSortChange('demand')"
+                                >
+                                    {{ sortLabel('demand') }}{{ sortIndicator('demand') }}
+                                </button>
+                            </th>
+                            <th class="px-4 py-3 text-right">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('maintain')"
+                                    @click="onSortChange('maintain')"
+                                >
+                                    {{ sortLabel('maintain') }}{{ sortIndicator('maintain') }}
+                                </button>
+                            </th>
+                            <th class="px-4 py-3 text-right">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('not_arrived')"
+                                    data-testid="products-sort-not-arrived"
+                                    @click="onSortChange('not_arrived')"
+                                >
+                                    {{ sortLabel('not_arrived') }}{{ sortIndicator('not_arrived') }}
+                                </button>
+                            </th>
+                            <th class="px-4 py-3 text-right">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('reorder')"
+                                    data-testid="products-sort-reorder"
+                                    @click="onSortChange('reorder')"
+                                >
+                                    {{ sortLabel('reorder') }}{{ sortIndicator('reorder') }}
+                                </button>
+                            </th>
+                            <th class="px-4 py-3">Info</th>
+                            <th class="px-4 py-3">Ready</th>
+                            <th class="px-4 py-3">Latest arrival</th>
+                            <th class="px-4 py-3">Published on Shopify</th>
+                            <th class="px-4 py-3 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <tr v-if="products.length === 0">
+                            <td class="px-4 py-4 text-slate-600" :colspan="emptyRowColspan">
+                                No products yet. Import a CSV or add one manually above.
+                            </td>
+                        </tr>
+
+                        <tr
+                            v-for="p in products"
+                            :key="p.id"
+                            class="hover:bg-slate-50"
+                            :class="p.is_archived ? 'bg-slate-50/80' : ''"
+                        >
+                            <td class="px-4 py-3">
+                                <input
+                                    class="h-4 w-4 rounded border-slate-300"
+                                    type="checkbox"
+                                    :checked="selected.has(p.id)"
+                                    @change="
+                                        toggleOne(p.id, ($event.target as HTMLInputElement).checked)
+                                    "
+                                />
+                            </td>
+
+                            <td class="px-4 py-3">
+                                <template v-if="editingId === p.id">
+                                    <div class="flex flex-col gap-2">
+                                        <input
+                                            v-model="draft!.description"
+                                            class="w-[28rem] max-w-full rounded-md border border-slate-200 px-2 py-1 text-sm"
+                                            type="text"
+                                        />
+                                        <div class="flex flex-wrap gap-2">
+                                            <input
+                                                v-model="draft!.sku"
+                                                class="w-40 rounded-md border border-slate-200 px-2 py-1 font-mono text-xs"
+                                                type="text"
+                                            />
+                                            <input
+                                                v-model="draft!.barcode"
+                                                class="w-44 rounded-md border border-slate-200 px-2 py-1 font-mono text-xs"
+                                                type="text"
+                                            />
+                                        </div>
+                                        <div class="flex flex-wrap gap-2 pt-1">
+                                            <button
+                                                class="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                                                type="button"
+                                                :disabled="saving"
+                                                @click="saveEdit"
+                                            >
+                                                {{ saving ? 'Saving…' : 'Save' }}
+                                            </button>
+                                            <button
+                                                class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50"
+                                                type="button"
+                                                :disabled="saving"
+                                                @click="cancelEdit"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <span class="self-center text-[11px] text-slate-500">
+                                                Esc cancel · Ctrl+Enter save
+                                            </span>
+                                        </div>
+                                    </div>
+                                </template>
+                                <template v-else>
+                                    <div
+                                        class="cursor-pointer rounded-md px-1 py-0.5 transition hover:bg-slate-100"
+                                        role="button"
+                                        tabindex="0"
+                                        title="Click to edit"
+                                        @click="startEdit(p)"
+                                        @keydown.enter.prevent="startEdit(p)"
+                                    >
+                                        <div
+                                            class="max-w-[28rem] truncate font-medium text-slate-900"
+                                            :title="p.description"
+                                        >
+                                            {{ p.description }}
+                                            <span
+                                                v-if="p.is_archived"
+                                                class="ml-2 inline-flex rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700"
+                                                data-testid="product-archived-badge"
+                                            >
+                                                Archived
+                                            </span>
+                                        </div>
+                                        <div
+                                            class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-600"
+                                        >
+                                            <span class="font-mono">{{ p.sku }}</span>
+                                            <span class="font-mono">{{ p.barcode ?? '—' }}</span>
+                                        </div>
+                                        <div class="mt-0.5 text-xs text-slate-500">
+                                            <span
+                                                class="font-mono"
+                                                :class="
+                                                    p.handle && p.handle.trim() !== ''
+                                                        ? 'text-slate-600'
+                                                        : 'text-slate-400'
+                                                "
+                                            >
+                                                {{
+                                                    p.handle && p.handle.trim() !== ''
+                                                        ? p.handle
+                                                        : '—'
+                                                }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="mt-1.5 flex flex-wrap gap-x-4 gap-y-1" @click.stop>
+                                        <label
+                                            class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
+                                        >
+                                            <input
+                                                class="h-3.5 w-3.5 rounded border-slate-300"
+                                                type="checkbox"
+                                                :checked="p.is_critical ?? false"
+                                                :disabled="
+                                                    editingId === p.id || isTogglingCritical(p.id)
+                                                "
+                                                @change="
+                                                    toggleCritical(
+                                                        p.id,
+                                                        ($event.target as HTMLInputElement).checked,
+                                                    )
+                                                "
+                                                data-testid="product-critical-toggle"
+                                            />
+                                            <span class="select-none">Critical</span>
+                                        </label>
+                                        <label
+                                            class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
+                                        >
+                                            <input
+                                                class="h-3.5 w-3.5 rounded border-slate-300"
+                                                type="checkbox"
+                                                :checked="p.is_discontinued ?? false"
+                                                :disabled="
+                                                    editingId === p.id ||
+                                                    isTogglingDiscontinue(p.id)
+                                                "
+                                                @change="onDiscontinueChange(p, $event)"
+                                                data-testid="product-discontinue-toggle"
+                                            />
+                                            <span class="select-none">Discontinue</span>
+                                        </label>
+                                        <label
+                                            class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
+                                        >
+                                            <input
+                                                class="h-3.5 w-3.5 rounded border-slate-300"
+                                                type="checkbox"
+                                                :checked="p.is_hazardous_shipment ?? false"
+                                                :disabled="
+                                                    editingId === p.id ||
+                                                    isTogglingHazardousShipment(p.id)
+                                                "
+                                                @change="onHazardousShipmentChange(p, $event)"
+                                                data-testid="product-hazardous-shipment-toggle"
+                                            />
+                                            <span class="select-none">Hazardous shipment</span>
+                                        </label>
+                                        <label
+                                            class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
+                                        >
+                                            <span class="select-none">Shipment</span>
+                                            <select
+                                                class="rounded border border-slate-300 bg-white px-1 py-0.5 text-[11px] font-medium text-slate-700"
+                                                :value="p.shipment_method ?? ''"
+                                                :disabled="
+                                                    editingId === p.id ||
+                                                    isUpdatingShipmentMethod(p.id)
+                                                "
+                                                data-testid="product-shipment-method-select"
+                                                @change="onShipmentMethodChange(p, $event)"
+                                            >
+                                                <option value="">—</option>
+                                                <option value="air">Air</option>
+                                                <option value="sea">Sea</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                </template>
+                            </td>
+
+                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                                <template v-if="editingId === p.id">
+                                    <select
+                                        v-model="draft!.main_type"
+                                        class="w-36 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                                    >
+                                        <option
+                                            v-for="opt in mainTypeChoices"
+                                            :key="`main-type-${opt}`"
+                                            :value="opt"
+                                        >
+                                            {{ opt }}
+                                        </option>
+                                    </select>
+                                </template>
+                                <template v-else>
+                                    <div
+                                        class="max-w-[10rem] cursor-pointer truncate rounded-md px-1 py-0.5 transition hover:bg-slate-100"
+                                        title="Click to edit"
+                                        role="button"
+                                        tabindex="0"
+                                        @click="startEdit(p)"
+                                        @keydown.enter.prevent="startEdit(p)"
+                                    >
+                                        {{ p.main_type }}
+                                    </div>
+                                </template>
+                            </td>
+
+                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                                <template v-if="editingId === p.id">
+                                    <select
+                                        class="max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                                        :class="typeChoices.length > 4 ? 'w-44' : 'w-28'"
+                                        :value="draft!.type ?? ''"
+                                        @change="setDraftTypeFromSelect"
+                                    >
+                                        <option value="">—</option>
+                                        <option
+                                            v-for="opt in typeChoices"
+                                            :key="`type-${opt}`"
+                                            :value="opt"
+                                        >
+                                            {{ opt }}
+                                        </option>
+                                    </select>
+                                </template>
+                                <template v-else>
+                                    <span
+                                        class="inline-block cursor-pointer rounded-md px-1 py-0.5 transition hover:bg-slate-100"
+                                        title="Click to edit"
+                                        role="button"
+                                        tabindex="0"
+                                        @click="startEdit(p)"
+                                        @keydown.enter.prevent="startEdit(p)"
+                                        >{{ p.type ?? '—' }}</span
+                                    >
+                                </template>
+                            </td>
+
+                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                                <template v-if="editingId === p.id">
+                                    <select
+                                        v-model="draft!.grade"
+                                        class="w-24 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                                    >
+                                        <option :value="null">—</option>
+                                        <option
+                                            v-for="opt in gradeChoices"
+                                            :key="`grade-${opt}`"
+                                            :value="opt"
+                                        >
+                                            {{ opt }}
+                                        </option>
+                                    </select>
+                                </template>
+                                <template v-else>
+                                    <span
+                                        class="inline-block cursor-pointer rounded-md px-1 py-0.5 font-semibold text-slate-900 transition hover:bg-slate-100"
+                                        title="Click to edit"
+                                        role="button"
+                                        tabindex="0"
+                                        @click="startEdit(p)"
+                                        @keydown.enter.prevent="startEdit(p)"
+                                        >{{ p.grade ?? '—' }}</span
+                                    >
+                                </template>
+                            </td>
+
+                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                                <template v-if="editingId === p.id">
+                                    <select
+                                        v-model="draft!.scale"
+                                        class="w-24 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 font-mono text-xs"
+                                    >
+                                        <option :value="null">—</option>
+                                        <option
+                                            v-for="opt in scaleChoices"
+                                            :key="`scale-${opt}`"
+                                            :value="opt"
+                                        >
+                                            {{ opt }}
+                                        </option>
+                                    </select>
+                                </template>
+                                <template v-else>
+                                    <span
+                                        class="inline-block cursor-pointer rounded-md px-1 py-0.5 font-mono text-xs transition hover:bg-slate-100"
+                                        title="Click to edit"
+                                        role="button"
+                                        tabindex="0"
+                                        @click="startEdit(p)"
+                                        @keydown.enter.prevent="startEdit(p)"
+                                        >{{ p.scale ?? '—' }}</span
+                                    >
+                                </template>
+                            </td>
+
+                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                                <template v-if="editingId === p.id">
+                                    <select
+                                        v-model="draft!.series"
+                                        class="w-56 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                                    >
+                                        <option :value="null">—</option>
+                                        <option
+                                            v-for="opt in seriesChoices"
+                                            :key="`series-${opt}`"
+                                            :value="opt"
+                                        >
+                                            {{ opt }}
+                                        </option>
+                                    </select>
+                                </template>
+                                <template v-else>
+                                    <div
+                                        class="max-w-[16rem] cursor-pointer truncate rounded-md px-1 py-0.5 transition hover:bg-slate-100"
+                                        :title="(p.series ?? '') || 'Click to edit'"
+                                        role="button"
+                                        tabindex="0"
+                                        @click="startEdit(p)"
+                                        @keydown.enter.prevent="startEdit(p)"
+                                    >
+                                        {{ p.series ?? '—' }}
+                                    </div>
+                                </template>
+                            </td>
+
+                            <td class="px-4 py-3 text-slate-700">
+                                <template v-if="editingId === p.id">
+                                    <select
+                                        v-model="draft!.vendor"
+                                        class="w-36 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                                    >
+                                        <option :value="null">—</option>
+                                        <option v-for="v in vendorChoices" :key="v" :value="v">
+                                            {{ v }}
+                                        </option>
+                                    </select>
+                                </template>
+                                <template v-else>
+                                    <span
+                                        class="inline-block cursor-pointer rounded-md px-1 py-0.5 transition hover:bg-slate-100"
+                                        title="Click to edit"
+                                        role="button"
+                                        tabindex="0"
+                                        @click="startEdit(p)"
+                                        @keydown.enter.prevent="startEdit(p)"
+                                        >{{ p.vendor ?? '—' }}</span
+                                    >
+                                </template>
+                            </td>
+
+                            <td class="px-4 py-3 whitespace-nowrap text-slate-700">
+                                {{ formatReceivedDate(p.received_date) }}
+                            </td>
+
+                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                {{ p.selling_price ? formatMoney2(p.selling_price) : '—' }}
+                            </td>
+
+                            <td
+                                v-if="showCost"
+                                class="px-4 py-3 text-right tabular-nums text-slate-700"
+                            >
+                                {{
+                                    p.latest_landed_unit_cost
+                                        ? formatMoney2(p.latest_landed_unit_cost)
+                                        : '—'
+                                }}
+                            </td>
+
+                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                {{ Math.max(0, Number(p.total_ordered ?? 0)) }}
+                            </td>
+
+                            <td
+                                class="px-4 py-3 text-right whitespace-nowrap tabular-nums text-slate-700"
+                            >
+                                <span class="inline-flex items-center justify-end gap-1">
+                                    <span>{{ totalSold(p) }}</span>
+                                    <button
+                                        v-if="props.onOpenDemand"
+                                        type="button"
+                                        class="rounded-md px-1 py-0.5 text-sky-800 underline decoration-sky-300 hover:bg-sky-50"
+                                        :data-testid="`product-shopify-orders-count:${p.id}`"
+                                        :title="`${shopifyOrdersCount(p)} Shopify order${shopifyOrdersCount(p) === 1 ? '' : 's'}`"
+                                        @click="props.onOpenDemand?.(p.id)"
+                                    >
+                                        ({{ shopifyOrdersCount(p) }})
+                                    </button>
+                                    <span v-else class="text-slate-500">
+                                        ({{ shopifyOrdersCount(p) }})
+                                    </span>
+                                </span>
+                            </td>
+
+                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                <template v-if="editingId === p.id">
+                                    <input
+                                        v-model.number="draft!.available"
+                                        class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
+                                        type="number"
+                                        min="0"
+                                    />
+                                </template>
+                                <template v-else>
+                                    <input
+                                        class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
+                                        type="number"
+                                        min="0"
+                                        inputmode="numeric"
+                                        :disabled="isSavingAvailable(p.id)"
+                                        :value="
+                                            availableDrafts[p.id] ??
+                                            (p.available === null ? '' : String(p.available))
+                                        "
+                                        :data-testid="`product-available-input:${p.id}`"
+                                        @focus="startAvailableInlineEdit(p.id, p.available)"
+                                        @input="
+                                            updateAvailableDraft(
+                                                p.id,
+                                                ($event.target as HTMLInputElement).value,
+                                            )
+                                        "
+                                        @keydown.enter.prevent="commitAvailableInlineEdit(p.id)"
+                                        @blur="commitAvailableInlineEdit(p.id)"
+                                    />
+                                </template>
+                            </td>
+
+                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                <input
+                                    class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
+                                    type="number"
+                                    min="0"
+                                    inputmode="numeric"
+                                    :disabled="isSavingHold(p.id)"
+                                    :value="
+                                        holdDrafts[p.id] ??
+                                        (p.hold === null || p.hold === 0 ? '' : String(p.hold))
+                                    "
+                                    :data-testid="`product-hold-input:${p.id}`"
+                                    @focus="startHoldInlineEdit(p.id, p.hold ?? null)"
+                                    @input="
+                                        updateHoldDraft(
+                                            p.id,
+                                            ($event.target as HTMLInputElement).value,
+                                        )
+                                    "
+                                    @keydown.enter.prevent="commitHoldInlineEdit(p.id)"
+                                    @blur="commitHoldInlineEdit(p.id)"
+                                />
+                            </td>
+
+                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                <button
+                                    v-if="props.onOpenDemand"
+                                    type="button"
+                                    class="rounded-md px-1 py-0.5 text-sky-800 underline decoration-sky-300 hover:bg-sky-50"
+                                    :data-testid="`product-demand-value:${p.id}`"
+                                    @click="props.onOpenDemand?.(p.id)"
+                                >
+                                    {{ Number(p.sold_4w ?? 0) }}
+                                </button>
+                                <span v-else>{{ Number(p.sold_4w ?? 0) }}</span>
+                            </td>
+
+                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                <template v-if="editingId === p.id">
+                                    <input
+                                        v-model.number="draft!.maintain"
+                                        class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
+                                        type="number"
+                                        min="0"
+                                    />
+                                </template>
+                                <template v-else>
+                                    <input
+                                        class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
+                                        type="number"
+                                        min="0"
+                                        inputmode="numeric"
+                                        :disabled="isSavingMaintain(p.id)"
+                                        :value="
+                                            maintainDrafts[p.id] ??
+                                            (p.maintain === null ? '' : String(p.maintain))
+                                        "
+                                        :data-testid="`product-maintain-input:${p.id}`"
+                                        @focus="startMaintainInlineEdit(p.id, p.maintain)"
+                                        @input="
+                                            updateMaintainDraft(
+                                                p.id,
+                                                ($event.target as HTMLInputElement).value,
+                                            )
+                                        "
+                                        @keydown.enter.prevent="commitMaintainInlineEdit(p.id)"
+                                        @blur="commitMaintainInlineEdit(p.id)"
+                                    />
+                                </template>
+                            </td>
+
+                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                                {{ Math.max(0, Number(p.not_arrived ?? 0)) }}
+                            </td>
+
+                            <td
+                                class="px-4 py-3 text-right tabular-nums font-semibold text-slate-900"
+                            >
+                                <span :data-testid="`product-reorder-value:${p.id}`">
+                                    {{ reorderValue(p) }}
+                                </span>
+                            </td>
+
+                            <td class="px-4 py-3">
                                 <button
                                     v-if="editingId !== p.id"
-                                    class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50"
+                                    class="flex cursor-pointer flex-wrap gap-1 rounded-md text-left transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
                                     type="button"
-                                    @click="startEdit(p)"
+                                    data-testid="product-info-open"
+                                    :aria-label="`Open PDP info for ${p.sku}`"
+                                    @click="props.onOpenPlamod(p.id)"
                                 >
-                                    Edit
+                                    <span
+                                        v-if="isMissingPdpImages(p)"
+                                        class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                    >
+                                        images
+                                    </span>
+                                    <span
+                                        v-if="isMissingPdpDescription(p)"
+                                        class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                    >
+                                        desc
+                                    </span>
+                                    <span
+                                        v-if="isMissingSellingPrice(p)"
+                                        class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                    >
+                                        selling
+                                    </span>
+                                    <span
+                                        v-if="isMissingBarcode(p)"
+                                        class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                    >
+                                        barcode
+                                    </span>
+
+                                    <span
+                                        v-if="
+                                            !isMissingPdpImages(p) &&
+                                            !isMissingPdpDescription(p) &&
+                                            !isMissingSellingPrice(p) &&
+                                            !isMissingBarcode(p)
+                                        "
+                                        class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-900"
+                                    >
+                                        ok
+                                    </span>
                                 </button>
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+
+                                <div v-else class="flex flex-wrap gap-1">
+                                    <span
+                                        v-if="isMissingPdpImages(p)"
+                                        class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                    >
+                                        images
+                                    </span>
+                                    <span
+                                        v-if="isMissingPdpDescription(p)"
+                                        class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                    >
+                                        desc
+                                    </span>
+                                    <span
+                                        v-if="isMissingSellingPrice(p)"
+                                        class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                    >
+                                        selling
+                                    </span>
+                                    <span
+                                        v-if="isMissingBarcode(p)"
+                                        class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900"
+                                    >
+                                        barcode
+                                    </span>
+
+                                    <span
+                                        v-if="
+                                            !isMissingPdpImages(p) &&
+                                            !isMissingPdpDescription(p) &&
+                                            !isMissingSellingPrice(p) &&
+                                            !isMissingBarcode(p)
+                                        "
+                                        class="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-900"
+                                    >
+                                        ok
+                                    </span>
+                                </div>
+                            </td>
+
+                            <td class="px-4 py-3">
+                                <label
+                                    class="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
+                                >
+                                    <input
+                                        class="h-4 w-4 rounded border-slate-300"
+                                        type="checkbox"
+                                        :checked="p.is_ready ?? false"
+                                        :disabled="editingId === p.id || isTogglingReady(p.id)"
+                                        @change="
+                                            toggleReady(
+                                                p.id,
+                                                ($event.target as HTMLInputElement).checked,
+                                            )
+                                        "
+                                        data-testid="product-ready-toggle"
+                                    />
+                                    <span class="select-none">{{
+                                        (p.is_ready ?? false) ? 'ready' : 'not ready'
+                                    }}</span>
+                                </label>
+                            </td>
+
+                            <td class="px-4 py-3">
+                                <label
+                                    class="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
+                                >
+                                    <input
+                                        class="h-4 w-4 rounded border-slate-300"
+                                        type="checkbox"
+                                        :checked="p.latest_arrival ?? false"
+                                        :disabled="
+                                            editingId === p.id || isTogglingLatestArrival(p.id)
+                                        "
+                                        @change="
+                                            toggleLatestArrival(
+                                                p.id,
+                                                ($event.target as HTMLInputElement).checked,
+                                            )
+                                        "
+                                        data-testid="product-latest-arrival-toggle"
+                                    />
+                                    <span class="select-none">{{
+                                        (p.latest_arrival ?? false) ? 'latest' : '—'
+                                    }}</span>
+                                </label>
+                            </td>
+
+                            <td class="px-4 py-3">
+                                <span
+                                    class="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+                                    :class="
+                                        p.published_on_shopify
+                                            ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                                            : 'border-slate-200 bg-slate-50 text-slate-700'
+                                    "
+                                >
+                                    {{ p.published_on_shopify ? 'yes' : 'no' }}
+                                </span>
+                            </td>
+
+                            <td class="px-4 py-3 text-right">
+                                <div class="flex justify-end">
+                                    <button
+                                        class="mr-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50"
+                                        type="button"
+                                        @click="props.onOpenPoLines(p.id)"
+                                    >
+                                        PO Lines
+                                    </button>
+                                    <button
+                                        v-if="editingId !== p.id"
+                                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50"
+                                        type="button"
+                                        @click="startEdit(p)"
+                                    >
+                                        Edit
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>

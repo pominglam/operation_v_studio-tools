@@ -92,6 +92,7 @@ final class ProductResource extends JsonResource
             'hold' => max(0, (int) ($product->hold_qty ?? 0)),
             'maintain' => $product->maintain_qty,
             'sold_4w' => max(0, (int) ($product->getAttribute('sold_4w') ?? 0)),
+            'shopify_orders_count' => max(0, (int) ($product->getAttribute('shopify_orders_count') ?? 0)),
             'not_arrived' => max(0, (int) ($product->getAttribute('inbound_open_po_qty') ?? 0)),
             'reorder' => max(0, (int) ($product->getAttribute('reorder_qty') ?? 0)),
             'extended' => $this->money2($product->extended),

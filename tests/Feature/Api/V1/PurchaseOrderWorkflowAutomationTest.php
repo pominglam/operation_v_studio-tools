@@ -244,6 +244,61 @@ it('does not reduce existing price when formula is lower', function (): void {
     ]);
 });
 
+it('applies a manual selling price override for a PO product', function (): void {
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111235',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+    ]);
+
+    $p = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111236',
+        'sku' => 'PRICE-OVERRIDE-SKU',
+        'barcode' => '9990017',
+        'description' => 'Manual override product',
+        'type' => 'Others',
+        'vendor' => 'Plamod',
+        'latest_landed_unit_cost' => '4.00',
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $p->id,
+        'sku' => 'PRICE-OVERRIDE-SKU',
+        'vendor' => 'Plamod',
+        'qty_ordered' => 1,
+    ]);
+
+    $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/set-prices", [
+        'overrides' => [
+            ['product_uuid' => $p->uuid, 'price' => '8.49'],
+        ],
+    ])
+        ->assertOk()
+        ->assertJsonPath('data.summary.updated', 1);
+
+    $this->assertDatabaseHas('product_selling_prices', [
+        'product_id' => $p->id,
+        'selling_price' => '8.49',
+    ]);
+});
+
+it('rejects invalid manual selling price overrides', function (): void {
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111237',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+    ]);
+
+    $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/set-prices", [
+        'overrides' => [
+            ['product_uuid' => 'not-a-uuid', 'price' => '-1'],
+        ],
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['overrides.0.product_uuid', 'overrides.0.price']);
+});
+
 it('raises existing price when formula is higher', function (): void {
     $po = PurchaseOrder::query()->create([
         'uuid' => '00000000-0000-0000-0000-000000111227',
@@ -415,9 +470,43 @@ it('previews PO export to Shopify for re-ordered products missing handle', funct
     expect(collect($res->json('data.products'))->pluck('sku')->all())->toContain('REORDER-NO-HANDLE');
 });
 
-it('pushes new PO products to Shopify and stores returned handles', function (): void {
+it('queues PO export to Shopify and stores returned handles', function (): void {
+    config(['queue.default' => 'sync']);
     config(['shopify.oauth_scopes' => 'read_products,write_products,write_inventory']);
     config(['shopify.inventory_location_gid' => 'gid://shopify/Location/1']);
+
+    app()->instance(\App\Services\Shopify\CloudflaredTunnel::class, new class implements \App\Services\Shopify\CloudflaredTunnel
+    {
+        private bool $running = false;
+
+        public function status(): array
+        {
+            return [
+                'running' => $this->running,
+                'tunnel_url' => $this->running ? 'https://export-test.trycloudflare.com' : null,
+                'container_id' => 'cid',
+                'error' => null,
+            ];
+        }
+
+        public function start(): array
+        {
+            $this->running = true;
+
+            return [
+                'ok' => true,
+                'tunnel_url' => 'https://export-test.trycloudflare.com',
+                'error' => null,
+            ];
+        }
+
+        public function stop(): array
+        {
+            $this->running = false;
+
+            return ['ok' => true, 'error' => null];
+        }
+    });
 
     $fake = new \Tests\Fakes\FakeShopifyAdminGraphQlClient;
     $fake->queueResponse(\Tests\Fakes\FakeShopifyAdminGraphQlClient::wrapProductSet(
@@ -464,15 +553,60 @@ it('pushes new PO products to Shopify and stores returned handles', function ():
         'qty_ordered' => 1,
     ]);
 
-    $res = $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/export-shopify-content/push");
+    $queued = $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/export-shopify-content/push")
+        ->assertAccepted()
+        ->assertJsonPath('queued', 1);
 
-    $res->assertOk();
-    $res->assertJsonPath('data.summary.created', 1);
-    $res->assertJsonPath('data.summary.failed', 0);
-    $res->assertJsonPath('data.summary.results.0.handle', 'export-ready-handle');
+    $batchId = (string) $queued->json('batch_id');
+    expect($batchId)->not->toBe('');
+
+    $statusRes = $this->getJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/export-shopify-content/status?batch_id={$batchId}")
+        ->assertOk();
+
+    if ($statusRes->json('data.phase') === 'finalizing') {
+        app(\App\Services\PurchaseOrders\PurchaseOrderWorkflowExportShopifyContentFinalizeService::class)
+            ->finalize($po->uuid, $batchId);
+    }
+
+    $this->getJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/export-shopify-content/status?batch_id={$batchId}")
+        ->assertOk()
+        ->assertJsonPath('data.phase', 'complete')
+        ->assertJsonPath('data.summary.created', 1)
+        ->assertJsonPath('data.summary.failed', 0)
+        ->assertJsonPath('data.summary.results.0.handle', 'export-ready-handle');
 
     $product->refresh();
     expect($product->handle)->toBe('export-ready-handle');
+});
+
+it('returns 422 when queuing export with no eligible products', function (): void {
+    config(['shopify.oauth_scopes' => 'read_products,write_products,write_inventory']);
+
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111251',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+    ]);
+
+    $product = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111252',
+        'sku' => 'HAS-HANDLE-SKU',
+        'description' => 'Already exported',
+        'vendor' => 'Plamod',
+        'handle' => 'existing-handle',
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => 'HAS-HANDLE-SKU',
+        'vendor' => 'Plamod',
+        'qty_ordered' => 1,
+    ]);
+
+    $this->postJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/export-shopify-content/push")
+        ->assertStatus(422)
+        ->assertJsonPath('message', 'No eligible products to export.');
 });
 
 it('auto-checks export to shopify step when all PO products have handles', function (): void {

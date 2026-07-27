@@ -330,7 +330,9 @@ async function bulkPushShopifySelected(
             }
         }
 
-        throw new Error(`Failed to queue Shopify push (HTTP ${status}).${details ? ` ${details}` : ''}`);
+        throw new Error(
+            `Failed to queue Shopify push (HTTP ${status}).${details ? ` ${details}` : ''}`,
+        );
     }
     await router.push({ name: 'sync-progress', query: { batch_id: res.data.batch_id } });
 }
@@ -395,6 +397,8 @@ type PoProductNovelty = 'all' | 'new' | 'existing';
 const poProductNovelty = ref<PoProductNovelty>('all');
 type ReadyFilter = 'all' | 'ready' | 'not_ready';
 const readyFilter = ref<ReadyFilter>('all');
+type PublishedFilter = 'all' | 'published' | 'not_published';
+const publishedFilter = ref<PublishedFilter>('all');
 type ArchivedFilter = 'active' | 'all' | 'archived';
 const archivedFilter = ref<ArchivedFilter>('active');
 const availableMinFilter = ref('');
@@ -580,6 +584,7 @@ const selectionScopeKey = computed<string>(() => {
         purchase_order_uuids: pos,
         po_product_novelty: poProductNovelty.value,
         ready: readyFilter.value,
+        published: publishedFilter.value,
         available_min: parseNonNegativeIntegerFilter(availableMinFilter.value) ?? null,
         available_max: parseNonNegativeIntegerFilter(availableMaxFilter.value) ?? null,
         not_arrived: parseNonNegativeIntegerFilter(notArrivedFilter.value) ?? null,
@@ -608,10 +613,9 @@ function productsListParams(per_page: number, pageNum: number): Record<string, u
         product_flags:
             selectedProductFlags.value.length > 0 ? selectedProductFlags.value : undefined,
         shipment_methods:
-            selectedShipmentMethods.value.length > 0
-                ? selectedShipmentMethods.value
-                : undefined,
+            selectedShipmentMethods.value.length > 0 ? selectedShipmentMethods.value : undefined,
         ready: readyFilter.value !== 'all' ? readyFilter.value : undefined,
+        published: publishedFilter.value !== 'all' ? publishedFilter.value : undefined,
         available_min: parseNonNegativeIntegerFilter(availableMinFilter.value),
         available_max: parseNonNegativeIntegerFilter(availableMaxFilter.value),
         not_arrived: parseNonNegativeIntegerFilter(notArrivedFilter.value),
@@ -705,6 +709,7 @@ function buildLoadKey(): string {
         purchase_order_uuids: pos,
         po_product_novelty: poProductNovelty.value,
         ready: readyFilter.value,
+        published: publishedFilter.value,
         available_min: parseNonNegativeIntegerFilter(availableMinFilter.value) ?? null,
         available_max: parseNonNegativeIntegerFilter(availableMaxFilter.value) ?? null,
         not_arrived: parseNonNegativeIntegerFilter(notArrivedFilter.value) ?? null,
@@ -1361,9 +1366,7 @@ async function toggleProductCritical(id: string, isCritical: boolean): Promise<v
             );
         }
     } catch (e: unknown) {
-        products.value = products.value.map((p) =>
-            p.id === id ? { ...p, is_critical: prev } : p,
-        );
+        products.value = products.value.map((p) => (p.id === id ? { ...p, is_critical: prev } : p));
         throw e;
     }
 }
@@ -1657,6 +1660,7 @@ watch(
         selectedProductFlags,
         selectedShipmentMethods,
         readyFilter,
+        publishedFilter,
         archivedFilter,
         availableMinFilter,
         availableMaxFilter,
@@ -1715,6 +1719,7 @@ onMounted(() => {
         selectedProductFlags?: string[];
         selectedShipmentMethods?: string[];
         readyFilter?: ReadyFilter;
+        publishedFilter?: PublishedFilter;
         archivedFilter?: ArchivedFilter;
         availableFilter?: string;
         availableMinFilter?: string;
@@ -1761,6 +1766,13 @@ onMounted(() => {
             saved.readyFilter === 'not_ready'
         ) {
             readyFilter.value = saved.readyFilter;
+        }
+        if (
+            saved.publishedFilter === 'all' ||
+            saved.publishedFilter === 'published' ||
+            saved.publishedFilter === 'not_published'
+        ) {
+            publishedFilter.value = saved.publishedFilter;
         }
         if (
             saved.archivedFilter === 'active' ||
@@ -1869,6 +1881,7 @@ watch(
         selectedProductFlags,
         selectedShipmentMethods,
         readyFilter,
+        publishedFilter,
         archivedFilter,
         availableMinFilter,
         availableMaxFilter,
@@ -1901,6 +1914,7 @@ watch(
             selectedProductFlags: selectedProductFlags.value,
             selectedShipmentMethods: selectedShipmentMethods.value,
             readyFilter: readyFilter.value,
+            publishedFilter: publishedFilter.value,
             archivedFilter: archivedFilter.value,
             availableMinFilter: availableMinFilter.value,
             availableMaxFilter: availableMaxFilter.value,
@@ -1933,6 +1947,7 @@ function resetListState(): void {
     selectedProductFlags.value = [];
     selectedShipmentMethods.value = [];
     readyFilter.value = 'all';
+    publishedFilter.value = 'all';
     archivedFilter.value = 'active';
     availableMinFilter.value = '';
     availableMaxFilter.value = '';
@@ -2248,6 +2263,24 @@ function resetListState(): void {
 
                             <div>
                                 <label
+                                    for="products-published-filter"
+                                    class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                                    >Published</label
+                                >
+                                <select
+                                    id="products-published-filter"
+                                    v-model="publishedFilter"
+                                    class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                    data-testid="products-filter-published"
+                                >
+                                    <option value="all">All</option>
+                                    <option value="published">Published only</option>
+                                    <option value="not_published">Not published only</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label
                                     class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
                                     >Available</label
                                 >
@@ -2471,7 +2504,9 @@ function resetListState(): void {
                         :on-bulk-export-selected="bulkExportSelected"
                         :on-bulk-recrawl-selected="bulkRecrawlSelected"
                         :on-bulk-push-shopify-selected="bulkPushShopifySelected"
-                        :on-create-draft-purchase-order="createDraftPurchaseOrderFromSelectedProducts"
+                        :on-create-draft-purchase-order="
+                            createDraftPurchaseOrderFromSelectedProducts
+                        "
                         :on-update="updateProduct"
                         :on-update-available="updateProductAvailable"
                         :on-update-hold="updateProductHold"
@@ -2510,6 +2545,8 @@ function resetListState(): void {
                     :message="createMessage"
                     :on-create="create"
                     :vendor-options="vendorOptions.map((v) => v.value)"
+                    :main-type-options="mainTypeOptions.map((v) => v.value)"
+                    :type-options="typeOptions.map((v) => v.value)"
                     :embedded="true"
                 />
                 <ImportProductsCard v-show="activeTab === 'import'" :embedded="true" />

@@ -1,13 +1,10 @@
 <script setup lang="ts">
 import { RouterView, useRoute } from 'vue-router';
+import { isFullWidthAppPath } from '../lib/appLayout';
 import { employeeInventoryScanNotFoundBg } from '../lib/employeeInventoryScanUi';
 import AppNav from './AppNav.vue';
 
 const route = useRoute();
-
-function isFullWidthPath(path: string): boolean {
-    return path.startsWith('/price-research');
-}
 </script>
 
 <template>
@@ -18,7 +15,7 @@ function isFullWidthPath(path: string): boolean {
         <AppNav />
         <main
             class="mx-auto w-full px-4 py-6"
-            :class="isFullWidthPath(route.path) ? 'max-w-none' : 'max-w-screen-2xl'"
+            :class="isFullWidthAppPath(route.path) ? 'max-w-none' : 'max-w-screen-2xl'"
         >
             <RouterView />
         </main>

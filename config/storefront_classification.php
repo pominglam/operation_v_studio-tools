@@ -27,6 +27,7 @@ return [
         'adhesives',
         'workshop-misc',
         'airbrush',
+        'weathering',
     ],
 
     /*
@@ -46,4 +47,15 @@ return [
     |--------------------------------------------------------------------------
     */
     'storefront_base_url' => env('SHOPIFY_STOREFRONT_BASE_URL', 'https://operationvstudio.com'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | ovs-shopify-theme repo path (manifest verify, local dev)
+    |--------------------------------------------------------------------------
+    |
+    | Sibling checkout used by shopify:storefront-collection-filters-manifest-verify
+    | and Pest manifest tests. Override in Docker when the theme is mounted elsewhere.
+    |
+    */
+    'ovs_shopify_theme_path' => env('OVS_SHOPIFY_THEME_PATH'),
 ];

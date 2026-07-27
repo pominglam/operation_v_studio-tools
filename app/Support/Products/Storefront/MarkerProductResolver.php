@@ -84,6 +84,41 @@ final class MarkerProductResolver
         return null;
     }
 
+    /**
+     * @return 'dspiae'|'stedi'|null
+     */
+    public function resolveMarkerBrand(Product $product): ?string
+    {
+        if (! $this->belongsToMarkersDepartment($product)) {
+            return null;
+        }
+
+        $sku = strtoupper(trim((string) $product->sku));
+
+        if (preg_match('/^(?:MK|MKF|MKM)-/', $sku) === 1) {
+            return 'dspiae';
+        }
+
+        if (preg_match('/^(?:DMM|MA)-/', $sku) === 1) {
+            return 'stedi';
+        }
+
+        if (preg_match('/^MS-(?:57|6[0-7]|7[0-7])$/', $sku) === 1) {
+            return 'stedi';
+        }
+
+        $vendor = strtolower(trim((string) ($product->vendor ?? '')));
+        if (str_contains($vendor, 'dspiae')) {
+            return 'dspiae';
+        }
+
+        if (str_contains($vendor, 'stedi')) {
+            return 'stedi';
+        }
+
+        return null;
+    }
+
     private function isExcludedFromMarkers(string $sku): bool
     {
         if (str_starts_with($sku, 'E2E-')) {

@@ -198,6 +198,18 @@ final class EloquentProductRepository implements ProductRepository
         )";
     }
 
+    private function shopifyOrdersCountExpression(): string
+    {
+        return "(
+            select count(distinct soli.order_gid)
+            from shopify_order_line_items soli
+            inner join shopify_orders so on so.gid = soli.order_gid
+            where soli.product_id = products.id
+              and so.cancelled_at is null
+              and (so.display_financial_status is null or so.display_financial_status <> 'VOIDED')
+        )";
+    }
+
     private function totalOrderedReceivedQtyExpression(): string
     {
         return '(
@@ -422,7 +434,7 @@ final class EloquentProductRepository implements ProductRepository
      * @param  array<int, string>  $productFlags
      * @param  array<int, string>  $shipmentMethods
      */
-    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null): LengthAwarePaginator
+    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null): LengthAwarePaginator
     {
         $q = $this->buildFilteredListQuery(
             $search,
@@ -435,6 +447,7 @@ final class EloquentProductRepository implements ProductRepository
             $archivedFilter,
             $poProductNovelty,
             $ready,
+            $published,
             $availableMin,
             $availableMax,
             $notArrived,
@@ -453,7 +466,7 @@ final class EloquentProductRepository implements ProductRepository
         return $q->paginate(perPage: $perPage);
     }
 
-    public function listFiltered(?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null): Collection
+    public function listFiltered(?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null): Collection
     {
         $q = $this->buildFilteredListQuery(
             $search,
@@ -466,6 +479,7 @@ final class EloquentProductRepository implements ProductRepository
             $archivedFilter,
             $poProductNovelty,
             $ready,
+            $published,
             $availableMin,
             $availableMax,
             $notArrived,
@@ -508,6 +522,7 @@ final class EloquentProductRepository implements ProductRepository
         string $archivedFilter,
         ?string $poProductNovelty,
         ?string $ready,
+        ?string $published,
         ?int $availableMin,
         ?int $availableMax,
         ?int $notArrived,
@@ -525,6 +540,7 @@ final class EloquentProductRepository implements ProductRepository
         $inboundOpenPoQtyExpr = $this->inboundOpenPoQtyExpression($notArrivedIncludeDraftOrders);
         $reorderQtyExpr = $this->reorderQtyExpression($inboundOpenPoQtyExpr);
         $soldLast4WeeksExpr = $this->soldLast4WeeksExpression();
+        $shopifyOrdersCountExpr = $this->shopifyOrdersCountExpression();
         $totalOrderedReceivedQtyExpr = $this->totalOrderedReceivedQtyExpression();
 
         $this->applyArchivedFilter($q, $archivedFilter);
@@ -550,6 +566,7 @@ final class EloquentProductRepository implements ProductRepository
             DB::raw("{$inboundOpenPoQtyExpr} as inbound_open_po_qty"),
             DB::raw("{$reorderQtyExpr} as reorder_qty"),
             DB::raw("{$soldLast4WeeksExpr} as sold_4w"),
+            DB::raw("{$shopifyOrdersCountExpr} as shopify_orders_count"),
             DB::raw("{$totalOrderedReceivedQtyExpr} as total_ordered_qty"),
             DB::raw("({$totalOrderedReceivedQtyExpr} - coalesce(products.available_qty, 0)) as total_sold_qty"),
             DB::raw($this->latestPoReceivedDateSubquery().' as latest_po_received_date'),
@@ -572,6 +589,7 @@ final class EloquentProductRepository implements ProductRepository
         $this->applyListQueryFilters($q, $search, $mainTypes, $types, $vendors, $searchTerms);
         $this->applyMissingFilters($q, $missing);
         $this->applyReadyFilter($q, $ready);
+        $this->applyPublishedFilter($q, $published);
         $this->applyProductFlagsFilter($q, $productFlags);
         $this->applyShipmentMethodsFilter($q, $shipmentMethods);
         $this->applyAvailableRangeFilter($q, $availableMin, $availableMax);
@@ -670,6 +688,20 @@ final class EloquentProductRepository implements ProductRepository
 
         if ($ready === 'not_ready') {
             $q->where('is_ready', '=', false);
+        }
+    }
+
+    private function applyPublishedFilter($q, ?string $published): void
+    {
+        $published = strtolower(trim((string) $published));
+        if ($published === 'published') {
+            $q->where('published_on_shopify', '=', true);
+
+            return;
+        }
+
+        if ($published === 'not_published') {
+            $q->where('published_on_shopify', '=', false);
         }
     }
 

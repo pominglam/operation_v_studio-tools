@@ -296,6 +296,35 @@ it('validates ready filter values', function (): void {
     $this->getJson('/api/v1/products?ready=invalid')->assertStatus(422);
 });
 
+it('filters products by published on shopify flag', function (): void {
+    \App\Models\Product::query()->create([
+        'sku' => 'PUBLISHED-FILTER-YES',
+        'description' => 'Published product',
+        'vendor' => 'Plamod',
+        'published_on_shopify' => true,
+    ]);
+    \App\Models\Product::query()->create([
+        'sku' => 'PUBLISHED-FILTER-NO',
+        'description' => 'Not published product',
+        'vendor' => 'Plamod',
+        'published_on_shopify' => false,
+    ]);
+
+    $publishedRes = $this->getJson('/api/v1/products?per_page=100&published=published');
+    $publishedRes->assertOk()
+        ->assertJsonPath('data.0.sku', 'PUBLISHED-FILTER-YES')
+        ->assertJsonMissing(['sku' => 'PUBLISHED-FILTER-NO']);
+
+    $notPublishedRes = $this->getJson('/api/v1/products?per_page=100&published=not_published');
+    $notPublishedRes->assertOk()
+        ->assertJsonPath('data.0.sku', 'PUBLISHED-FILTER-NO')
+        ->assertJsonMissing(['sku' => 'PUBLISHED-FILTER-YES']);
+});
+
+it('validates published filter values', function (): void {
+    $this->getJson('/api/v1/products?published=invalid')->assertStatus(422);
+});
+
 it('filters products by critical and discontinued product flags', function (): void {
     \App\Models\Product::query()->create([
         'sku' => 'FLAG-CRIT',
@@ -738,4 +767,43 @@ it('sorts products by demand (sold last 4 weeks)', function (): void {
     $demandDesc->assertOk()
         ->assertJsonPath('data.0.sku', 'SORT-DEMAND-HIGH')
         ->assertJsonPath('data.1.sku', 'SORT-DEMAND-LOW');
+});
+
+it('includes distinct eligible shopify order count on product rows', function (): void {
+    $product = \App\Models\Product::query()->create([
+        'sku' => 'SHOPIFY-ORDER-COUNT',
+        'description' => 'Shopify order count product',
+        'vendor' => 'Plamod',
+    ]);
+
+    foreach ([
+        ['gid' => 'gid://shopify/Order/1001', 'name' => '#1001'],
+        ['gid' => 'gid://shopify/Order/1002', 'name' => '#1002'],
+        ['gid' => 'gid://shopify/Order/1003', 'name' => '#1003', 'cancelled_at' => now()],
+        ['gid' => 'gid://shopify/Order/1004', 'name' => '#1004', 'display_financial_status' => 'VOIDED'],
+    ] as $order) {
+        \App\Models\Shopify\ShopifyOrder::query()->create($order);
+    }
+
+    foreach ([
+        ['order_gid' => 'gid://shopify/Order/1001', 'line_gid' => 'gid://shopify/LineItem/1001-A'],
+        ['order_gid' => 'gid://shopify/Order/1001', 'line_gid' => 'gid://shopify/LineItem/1001-B'],
+        ['order_gid' => 'gid://shopify/Order/1002', 'line_gid' => 'gid://shopify/LineItem/1002-A'],
+        ['order_gid' => 'gid://shopify/Order/1003', 'line_gid' => 'gid://shopify/LineItem/1003-A'],
+        ['order_gid' => 'gid://shopify/Order/1004', 'line_gid' => 'gid://shopify/LineItem/1004-A'],
+    ] as $line) {
+        \App\Models\Shopify\ShopifyOrderLineItem::query()->create([
+            ...$line,
+            'sku' => $product->sku,
+            'product_id' => $product->id,
+            'quantity' => 1,
+            'sold_on' => now()->toDateString(),
+        ]);
+    }
+
+    $response = $this->getJson('/api/v1/products?search=SHOPIFY-ORDER-COUNT');
+
+    $response->assertOk()
+        ->assertJsonPath('data.0.sku', 'SHOPIFY-ORDER-COUNT')
+        ->assertJsonPath('data.0.shopify_orders_count', 2);
 });

@@ -33,6 +33,7 @@ For every new or changed filter (facets, checkboxes, chips, dropdowns):
 - [ ] The checkbox/chip **stays checked** after tap — no flash refresh, no section reload, no spontaneous uncheck.
 - [ ] Clear or deselect → full list returns.
 - [ ] **Multiselect** (if supported) → union behaves correctly.
+- [ ] **Filter combinations** (when shelf has product + brand or other multigroup filters) → each group alone narrows correctly; **both together** further narrows; both URL params stay set; clearing reverses cleanly.
 - [ ] **Pagination** → filtering includes products on later pages (or document/limit if server-side only). Never sign off when filter only affects page 1.
 - [ ] **Desktop and mobile** panel if both exist (sync, no duplicate-panel desync).
 - [ ] **Mobile drawer**: open → tap filter(s) → close → reopen → selections and layout still correct.
@@ -54,6 +55,17 @@ For every new or changed interactive control:
 - Test on **operationvstudio.com** (or configured `storefront_base_url`), not only local mirrors.
 - After `theme push`, verify in browser — CDN/cache can lag behind section fetches.
 - Compare filter results to the **child collection** when the hub mirrors department shelves.
+
+## OVS Tools & Supplies collection filters (manifest + e2e)
+
+When adding or changing any `ovs-*-collection-filters` snippet or JS:
+
+1. Update **`ovs-shopify-theme/docs/storefront-ts-collection-filters.manifest.json`** (toggle cases + `mobileSmoke` per collection).
+2. Run **`php artisan shopify:storefront-collection-filters-manifest-verify`** — fails if a new snippet/handle is not registered.
+3. Run **`npm run test:e2e:storefront-filters`** against the live storefront (check→uncheck desktop + mobile drawer per manifest, plus **combinationCases** when the shelf has multiple OVS filter groups).
+4. Do not hardcode new filter cases only in the Playwright spec — the manifest is the registry.
+
+See **`ovs-shopify-theme/.cursor/rules/storefront-ts-collection-filters.mdc`** for the full checklist.
 
 ## Final reply must include
 

@@ -42,20 +42,25 @@ final class PurchaseOrderWorkflowSetPricesService
     }
 
     /**
+     * @param  array<int, array{product_uuid: string, price: string}>  $priceOverrides
      * @return array{
      *   updated: int,
      *   skipped_no_cost: int,
      *   skipped_unchanged: int
      * }
      */
-    public function apply(string $purchaseOrderUuid): array
+    public function apply(string $purchaseOrderUuid, array $priceOverrides = []): array
     {
         $plan = $this->buildPlan($purchaseOrderUuid);
+        $overridesByProductUuid = $this->normalizeOverrides($priceOverrides);
         $updated = 0;
+        $appliedOverrideUuids = [];
 
-        foreach ([...$plan['new_prices'], ...$plan['updates']] as $row) {
+        foreach ($this->rowsToApply($plan, $overridesByProductUuid) as $row) {
             $productId = (int) ($row['product_id'] ?? 0);
-            $proposed = is_string($row['proposed_price'] ?? null) ? trim($row['proposed_price']) : '';
+            $productUuid = (string) ($row['product_uuid'] ?? '');
+            $proposed = $overridesByProductUuid[$productUuid]
+                ?? (is_string($row['proposed_price'] ?? null) ? trim($row['proposed_price']) : '');
             if ($productId <= 0 || $proposed === '') {
                 continue;
             }
@@ -68,12 +73,15 @@ final class PurchaseOrderWorkflowSetPricesService
 
             $this->sellingPrices->upsertForProduct($product, $proposed, 'CAD');
             $updated++;
+            if (array_key_exists($productUuid, $overridesByProductUuid)) {
+                $appliedOverrideUuids[$productUuid] = true;
+            }
         }
 
         return [
             'updated' => $updated,
-            'skipped_no_cost' => count($plan['skipped_no_cost']),
-            'skipped_unchanged' => count($plan['unchanged']),
+            'skipped_no_cost' => $this->countRowsWithoutOverrides($plan['skipped_no_cost'], $appliedOverrideUuids),
+            'skipped_unchanged' => $this->countRowsWithoutOverrides($plan['unchanged'], $appliedOverrideUuids),
         ];
     }
 
@@ -196,6 +204,64 @@ final class PurchaseOrderWorkflowSetPricesService
         }
 
         return number_format((float) $trimmed, 2, '.', '');
+    }
+
+    /**
+     * @param  array<int, array{product_uuid: string, price: string}>  $priceOverrides
+     * @return array<string, string>
+     */
+    private function normalizeOverrides(array $priceOverrides): array
+    {
+        $normalized = [];
+
+        foreach ($priceOverrides as $override) {
+            $productUuid = trim($override['product_uuid']);
+            $price = $this->normalizeMoney($override['price']);
+            if ($productUuid === '' || $price === null) {
+                continue;
+            }
+
+            $normalized[$productUuid] = $price;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param  array{
+     *   new_prices: array<int, array<string, mixed>>,
+     *   updates: array<int, array<string, mixed>>,
+     *   unchanged: array<int, array<string, mixed>>,
+     *   skipped_no_cost: array<int, array<string, mixed>>
+     * }  $plan
+     * @param  array<string, string>  $overridesByProductUuid
+     * @return array<int, array<string, mixed>>
+     */
+    private function rowsToApply(array $plan, array $overridesByProductUuid): array
+    {
+        $rows = [];
+
+        foreach ([...$plan['new_prices'], ...$plan['updates'], ...$plan['unchanged'], ...$plan['skipped_no_cost']] as $row) {
+            $productUuid = (string) ($row['product_uuid'] ?? '');
+            $category = (string) ($row['category'] ?? '');
+            if ($category === 'new' || $category === 'update' || array_key_exists($productUuid, $overridesByProductUuid)) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  array<string, bool>  $appliedOverrideUuids
+     */
+    private function countRowsWithoutOverrides(array $rows, array $appliedOverrideUuids): int
+    {
+        return count(array_filter(
+            $rows,
+            static fn (array $row): bool => ! isset($appliedOverrideUuids[(string) ($row['product_uuid'] ?? '')]),
+        ));
     }
 
     private function moneyLessThan(string $left, string $right): bool

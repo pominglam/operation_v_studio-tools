@@ -19,11 +19,13 @@ Footer totals accumulate parsed money fields for **`landed_cost` vs `cost` prefe
 
 ### Filters
 
-| Control | Backend param(s) |
-| --- | --- |
-| Text search (`sku/description/barcode` semantics server-side) | `search` |
-| Fresh vs expired chips | `freshness[]` |
-| Competitor sites multi-toggle | **`quote_sites[]`** (when site not disabled locally) |
+| Control                                                       | Backend param(s)                                     |
+| ------------------------------------------------------------- | ---------------------------------------------------- |
+| Text search (`sku/description/barcode` semantics server-side) | `search`                                             |
+| Fresh vs expired chips                                        | `freshness[]`                                        |
+| Competitor sites multi-toggle                                 | **`quote_sites[]`** (when site not disabled locally) |
+| Purchase order multi-select                                   | `purchase_order_uuids[]`                             |
+| First-time vs already-seen products in selected PO(s)         | `po_product_novelty=new\|existing`                   |
 
 ### Disabled sites (operator preference)
 
@@ -41,10 +43,10 @@ AliExpress flagged separately—the run payload builder purposely treats AliExpr
 
 Buttons:
 
-| Action | Endpoint | Notes |
-| --- | --- | --- |
-| **Run refresh** scoped to page selection / filters | **`POST /api/v1/price-research/run`** body **`{ ids?, force? }`** | Honors disabled sites + Ali constraints |
-| **Force refresh row** (**per product**) | Same endpoint with narrowed ids + **`force: true`** | Guarded **`isRecrawlBlocked`** when global run spinner active unrelated to table hydration |
+| Action                                             | Endpoint                                                          | Notes                                                                                      |
+| -------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **Run refresh** scoped to page selection / filters | **`POST /api/v1/price-research/run`** body **`{ ids?, force? }`** | Honors disabled sites + Ali constraints                                                    |
+| **Force refresh row** (**per product**)            | Same endpoint with narrowed ids + **`force: true`**               | Guarded **`isRecrawlBlocked`** when global run spinner active unrelated to table hydration |
 
 Immediately after dispatch:
 
@@ -55,10 +57,10 @@ Immediately after dispatch:
 
 Blocking states:
 
-| Condition | Meaning |
-| --- | --- |
-| `loading` disables run | Prevents simultaneous confusing requests while table hydrating |
-| `running`/`isRunActive` | Locks certain buttons to avoid stacking runs |
+| Condition               | Meaning                                                        |
+| ----------------------- | -------------------------------------------------------------- |
+| `loading` disables run  | Prevents simultaneous confusing requests while table hydrating |
+| `running`/`isRunActive` | Locks certain buttons to avoid stacking runs                   |
 
 Polling implementation uses guarded loop (comment asserts prevention of overlapping timers historically bugfixed).
 
@@ -68,10 +70,10 @@ Polling implementation uses guarded loop (comment asserts prevention of overlapp
 
 Row-level actions hitting:
 
-| Interaction | Endpoint |
-| --- | --- |
+| Interaction                          | Endpoint                                                                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
 | Hard delete erroneous quote artifact | **`DELETE /api/v1/price-research/products/{uuid}/quotes/{siteKey}`** — confirm dialog keyed by **`deleting` ref** pairing |
-| “Report suspicious quote” workflow | **`POST /api/v1/price-research/reports`** JSON containing product + quote metadata snapshot + **`note`** string |
+| “Report suspicious quote” workflow   | **`POST /api/v1/price-research/reports`** JSON containing product + quote metadata snapshot + **`note`** string           |
 
 Handled flag surfaces success/failure ephemeral messaging refs.
 
@@ -79,9 +81,9 @@ Handled flag surfaces success/failure ephemeral messaging refs.
 
 ## Navigation affordances embedded in Pricing page header
 
-| Link | Destination |
-| --- | --- |
-| **Reported quotes** | `/price-research/reports` |
+| Link                                               | Destination                           |
+| -------------------------------------------------- | ------------------------------------- |
+| **Reported quotes**                                | `/price-research/reports`             |
 | **Latest run crawl logs** (when `runStatus` known) | `/price-research/runs/{runUuid}/logs` |
 
 ---
@@ -90,10 +92,10 @@ Handled flag surfaces success/failure ephemeral messaging refs.
 
 **File:** `PriceResearchReportsPage.vue`
 
-| Feature | API |
-| --- | --- |
-| Paginates historical operator notes | **`GET /api/v1/price-research/reports`** |
-| Marks card handled after review | **`PATCH /api/v1/price-research/reports/{numericId}/handled`** |
+| Feature                             | API                                                            |
+| ----------------------------------- | -------------------------------------------------------------- |
+| Paginates historical operator notes | **`GET /api/v1/price-research/reports`**                       |
+| Marks card handled after review     | **`PATCH /api/v1/price-research/reports/{numericId}/handled`** |
 
 Template includes breadcrumb **`Back to research`**.
 

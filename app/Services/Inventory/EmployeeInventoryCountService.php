@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Inventory;
 
 use App\DAL\InventoryChecks\InventoryCheckRepository;
+use App\DAL\Products\ProductRepository;
 use App\Models\InventoryCheck;
 use App\Models\InventoryCheckItem;
 use App\Models\Product;
@@ -16,6 +17,7 @@ final class EmployeeInventoryCountService
 {
     public function __construct(
         private readonly InventoryCheckRepository $inventoryChecks,
+        private readonly ProductRepository $products,
     ) {}
 
     /**
@@ -259,6 +261,45 @@ final class EmployeeInventoryCountService
             $this->touchReadyForReview($session);
 
             return $returnSessionPayload ? $this->sessionPayload((string) $session->uuid) : [];
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function assignLineToProduct(string $sessionUuid, int $lineId, string $productUuid): array
+    {
+        return DB::transaction(function () use ($sessionUuid, $lineId, $productUuid): array {
+            $session = $this->inventoryChecks->findByUuidOrFail($sessionUuid);
+            $this->assertSessionEditable($session);
+            $line = $this->inventoryChecks->findItemInSessionOrFail($session, $lineId);
+            $product = $this->products->findByUuidOrFail($productUuid);
+            $product->loadMissing('sellingPrice');
+
+            $line->product_id = (int) $product->id;
+            $line->handle = $product->handle;
+            $line->vendor = $product->vendor;
+            $line->sku = $product->sku;
+            $line->type = $product->type;
+            $line->product_name = $product->description;
+            $line->english_name = $product->description;
+            $line->available_amount = $product->available_qty;
+            $line->difference = $line->quantity_in_store !== null && $product->available_qty !== null
+                ? ((int) $line->quantity_in_store - (int) $product->available_qty)
+                : null;
+            $line->match_status = 'matched';
+            $line->match_error = null;
+            $line->issue_flag = false;
+            $line->issue_reason = null;
+            $line->selling_price_snapshot = $product->sellingPrice?->selling_price;
+            $line->landed_unit_cost_snapshot = $product->latest_landed_unit_cost;
+            $line->applied = false;
+            $line->applied_at = null;
+
+            $this->inventoryChecks->saveItem($line);
+            $this->touchReadyForReview($session);
+
+            return $this->sessionPayload((string) $session->uuid);
         });
     }
 

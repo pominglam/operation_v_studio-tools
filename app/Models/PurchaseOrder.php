@@ -27,6 +27,7 @@ use Illuminate\Support\Str;
  * @property string|null $fx_rate_to_cad
  * @property string|null $notes
  * @property bool $is_done
+ * @property bool $exclude_from_latest_arrivals_ordering
  */
 final class PurchaseOrder extends Model
 {
@@ -49,6 +50,7 @@ final class PurchaseOrder extends Model
         'fx_rate_to_cad',
         'notes',
         'is_done',
+        'exclude_from_latest_arrivals_ordering',
         'workflow_checklist_json',
     ];
 
@@ -65,6 +67,7 @@ final class PurchaseOrder extends Model
         'vendor_product_total' => 'decimal:2',
         'fx_rate_to_cad' => 'decimal:6',
         'is_done' => 'boolean',
+        'exclude_from_latest_arrivals_ordering' => 'boolean',
         'workflow_checklist_json' => 'array',
     ];
 

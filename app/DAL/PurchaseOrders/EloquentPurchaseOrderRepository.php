@@ -73,12 +73,12 @@ final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
     /**
      * @return LengthAwarePaginator<PurchaseOrder>
      */
-    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created', array $vendors = [], array $statuses = []): LengthAwarePaginator
+    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'ordered', array $vendors = [], array $statuses = []): LengthAwarePaginator
     {
         $sortDir = strtolower(trim($sortDir)) === 'asc' ? 'asc' : 'desc';
         $sortBy = strtolower(trim($sortBy));
         if (! in_array($sortBy, ['created', 'ordered', 'received', 'filter'], true)) {
-            $sortBy = 'created';
+            $sortBy = 'ordered';
         }
 
         $vendorFilters = [];

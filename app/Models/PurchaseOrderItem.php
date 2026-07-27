@@ -37,7 +37,7 @@ final class PurchaseOrderItem extends Model
 
     /** @var array<string, string> */
     protected $casts = [
-        'unit_cost' => 'decimal:4',
+        'unit_cost' => 'decimal:2',
         'vendor_unit_cost' => 'decimal:4',
         'qty_ordered' => 'integer',
         'qty_shipped' => 'integer',

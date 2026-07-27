@@ -7,21 +7,26 @@ namespace App\Http\Controllers\Api\V1;
 use App\Exceptions\Shopify\ShopifyAdminConfigurationException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\PurchaseOrderPrepareInventoryRequest;
+use App\Http\Requests\Api\V1\PurchaseOrderSetPricesRequest;
 use App\Http\Resources\Api\V1\PurchaseOrderResource;
 use App\Services\Products\ClearStaleLatestArrivalService;
+use App\Services\PurchaseOrders\Exceptions\PurchaseOrderWorkflowExportShopifyContentException;
 use App\Services\PurchaseOrders\Exceptions\PurchaseOrderWorkflowPrepareInventoryException;
 use App\Services\PurchaseOrders\Exceptions\PurchaseOrderWorkflowPushInventoryException;
 use App\Services\PurchaseOrders\PurchaseOrderWorkflowCrawlNewProductsService;
+use App\Services\PurchaseOrders\PurchaseOrderWorkflowExportShopifyContentQueueService;
 use App\Services\PurchaseOrders\PurchaseOrderWorkflowExportShopifyContentService;
 use App\Services\PurchaseOrders\PurchaseOrderWorkflowMarkLatestArrivalPublishedService;
 use App\Services\PurchaseOrders\PurchaseOrderWorkflowMarkLatestArrivalService;
 use App\Services\PurchaseOrders\PurchaseOrderWorkflowMarkPublishedOnShopifyService;
 use App\Services\PurchaseOrders\PurchaseOrderWorkflowPrepareInventoryService;
 use App\Services\PurchaseOrders\PurchaseOrderWorkflowPullHandlesService;
+use App\Services\PurchaseOrders\PurchaseOrderWorkflowPushInventoryQueueService;
 use App\Services\PurchaseOrders\PurchaseOrderWorkflowPushInventoryService;
 use App\Services\PurchaseOrders\PurchaseOrderWorkflowSetPricesService;
 use App\Services\PurchaseOrders\PurchaseOrderWorkflowVerifyService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 final class PurchaseOrderWorkflowActionController extends Controller
 {
@@ -47,28 +52,64 @@ final class PurchaseOrderWorkflowActionController extends Controller
 
     public function pushExportShopifyContent(
         string $id,
-        PurchaseOrderWorkflowExportShopifyContentService $exportShopify,
-        PurchaseOrderWorkflowVerifyService $verify,
+        PurchaseOrderWorkflowExportShopifyContentQueueService $exportShopifyQueue,
     ): JsonResponse {
-        $summary = $exportShopify->push($id);
-        $verification = $verify->verifyAndAutoCheck($id);
+        try {
+            $queued = $exportShopifyQueue->queuePush($id);
+        } catch (PurchaseOrderWorkflowExportShopifyContentException $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (ShopifyAdminConfigurationException $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
 
         return response()->json([
             'ok' => true,
-            'data' => [
-                'summary' => $summary,
-                'steps' => $verification['steps'],
-                'purchase_order' => PurchaseOrderResource::make($verification['purchase_order']),
-            ],
+            'batch_id' => $queued['batch_id'],
+            'queued' => $queued['queued'],
+        ], 202);
+    }
+
+    public function pushExportShopifyContentStatus(
+        string $id,
+        Request $request,
+        PurchaseOrderWorkflowExportShopifyContentQueueService $exportShopifyQueue,
+    ): JsonResponse {
+        $batchId = trim((string) $request->query('batch_id', ''));
+        if ($batchId === '') {
+            return response()->json([
+                'ok' => false,
+                'message' => 'batch_id is required.',
+            ], 422);
+        }
+
+        try {
+            $data = $exportShopifyQueue->pushStatus($id, $batchId);
+        } catch (PurchaseOrderWorkflowExportShopifyContentException $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+            ], 404);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'data' => $data,
         ]);
     }
 
     public function setPrices(
         string $id,
+        PurchaseOrderSetPricesRequest $request,
         PurchaseOrderWorkflowSetPricesService $setPrices,
         PurchaseOrderWorkflowVerifyService $verify,
     ): JsonResponse {
-        $summary = $setPrices->apply($id);
+        $summary = $setPrices->apply($id, $request->priceOverrides());
         $verification = $verify->verifyAndAutoCheck($id);
 
         return response()->json([
@@ -130,11 +171,10 @@ final class PurchaseOrderWorkflowActionController extends Controller
 
     public function pushInventory(
         string $id,
-        PurchaseOrderWorkflowPushInventoryService $pushInventory,
-        PurchaseOrderWorkflowVerifyService $verify,
+        PurchaseOrderWorkflowPushInventoryQueueService $pushInventoryQueue,
     ): JsonResponse {
         try {
-            $summary = $pushInventory->push($id);
+            $queued = $pushInventoryQueue->queuePush($id);
         } catch (PurchaseOrderWorkflowPushInventoryException $e) {
             return response()->json([
                 'ok' => false,
@@ -148,15 +188,38 @@ final class PurchaseOrderWorkflowActionController extends Controller
             ], 422);
         }
 
-        $verification = $verify->verifyAndAutoCheck($id);
+        return response()->json([
+            'ok' => true,
+            'batch_id' => $queued['batch_id'],
+            'queued' => $queued['queued'],
+        ], 202);
+    }
+
+    public function pushInventoryStatus(
+        string $id,
+        Request $request,
+        PurchaseOrderWorkflowPushInventoryQueueService $pushInventoryQueue,
+    ): JsonResponse {
+        $batchId = trim((string) $request->query('batch_id', ''));
+        if ($batchId === '') {
+            return response()->json([
+                'ok' => false,
+                'message' => 'batch_id is required.',
+            ], 422);
+        }
+
+        try {
+            $data = $pushInventoryQueue->pushStatus($id, $batchId);
+        } catch (PurchaseOrderWorkflowPushInventoryException $e) {
+            return response()->json([
+                'ok' => false,
+                'message' => $e->getMessage(),
+            ], 404);
+        }
 
         return response()->json([
             'ok' => true,
-            'data' => [
-                'summary' => $summary,
-                'steps' => $verification['steps'],
-                'purchase_order' => PurchaseOrderResource::make($verification['purchase_order']),
-            ],
+            'data' => $data,
         ]);
     }
 

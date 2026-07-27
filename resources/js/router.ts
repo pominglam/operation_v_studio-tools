@@ -5,6 +5,7 @@ import ShopifyWebhookLogsPage from './pages/ShopifyWebhookLogsPage.vue';
 import PriceResearchPage from './pages/PriceResearchPage.vue';
 import PriceResearchRunLogsPage from './pages/PriceResearchRunLogsPage.vue';
 import PriceResearchReportsPage from './pages/PriceResearchReportsPage.vue';
+import StaffOrdersReportPage from './pages/StaffOrdersReportPage.vue';
 import SyncProgressPage from './pages/SyncProgressPage.vue';
 import InventoryCheckPage from './pages/InventoryCheckPage.vue';
 import InventoryCheckDetailPage from './pages/InventoryCheckDetailPage.vue';
@@ -49,6 +50,11 @@ const routes: RouteRecordRaw[] = [
         path: '/price-research/runs/:id/logs',
         name: 'price-research-run-logs',
         component: PriceResearchRunLogsPage,
+    },
+    {
+        path: '/reports/staff-orders',
+        name: 'staff-orders-report',
+        component: StaffOrdersReportPage,
     },
     { path: '/sync-progress', name: 'sync-progress', component: SyncProgressPage },
     { path: '/tcg-events', name: 'tcg-events', component: TcgEventsPage },

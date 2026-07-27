@@ -97,6 +97,11 @@ final class ShopifyStorefrontPilotCollectionService
             'title' => 'Airbrush',
             'tag' => StorefrontTag::DEPT_AIRBRUSH,
         ],
+        'weathering' => [
+            'handle' => 'weathering',
+            'title' => 'Weathering',
+            'tag' => StorefrontTag::DEPT_WEATHERING,
+        ],
     ];
 
     /**

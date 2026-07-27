@@ -112,8 +112,11 @@ final class ProductDemandRollupService
     /**
      * @return array<string, mixed>
      */
-    public function detailForProduct(Product $product, int $linesPage = 1, int $linesPerPage = 10): array
-    {
+    public function detailForProduct(
+        Product $product,
+        int $linesPage = 1,
+        int $linesPerPage = 10,
+    ): array {
         $windowStart = now()->subDays(self::DETAIL_WINDOW_DAYS)->startOfWeek(Carbon::MONDAY);
         $windowEnd = now()->startOfWeek(Carbon::MONDAY);
         $detailSince = $windowStart->toDateString();

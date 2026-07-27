@@ -15,7 +15,8 @@ This area spans **three user experiences**:
 ### Create / Import
 
 - File input (CSV).
-- **`Import CSV`** posts **`multipart`** to **`POST /api/v1/products/import-inventory-check`**.
+- Optional **Session note** text field (stored on **`inventory_check.notes`**, max 2000 chars).
+- **`Import CSV`** posts **`multipart`** to **`POST /api/v1/products/import-inventory-check`** (fields: **`file`**, optional **`notes`**).
 - Outcome banner shows **`inventory_check`** uuid, **`rows_parsed`**, **`matched`**, **`applied`**, **`unmatched`**, **`ambiguous`**, plus **`not_applied`** metrics and downloadable row buckets with reasons.
 - Direct link hops to **`/inventory-check/{uuid}`** detail.
 
@@ -23,7 +24,7 @@ This area spans **three user experiences**:
 
 Loads **`GET /api/v1/inventory-check`** (paginates `per_page=50` in UI defaults).
 
-Shows counts per session (items/matched/unmatched/etc.) plus metadata timestamps.
+Shows counts per session (items/matched/unmatched/etc.) plus metadata timestamps and an editable **Note** column (**`PATCH /api/v1/inventory-check/{uuid}`** `{ notes }`).
 
 ### Delete session
 
@@ -40,6 +41,7 @@ Shows counts per session (items/matched/unmatched/etc.) plus metadata timestamps
 ### Load & download originals
 
 - Fetch **`GET /api/v1/inventory-check/{uuid}`** expanding **all line items**.
+- **Session note** field at top of page; save with **`PATCH /api/v1/inventory-check/{uuid}`** `{ notes }`.
 - **`Download CSV`** issues browser navigation **`GET /api/v1/inventory-check/{uuid}/download`**.
 
 ### Line review grid
@@ -48,14 +50,16 @@ Shows columns for handle/vendor/sku/type/names/qty snapshots/differences/notes +
 
 Interactions:
 
-| Action | Endpoint |
-| --- | --- |
-| Edit qty + product name drafts per row | **`PATCH /api/v1/inventory-check/{uuid}/items/{lineId}`** `{ quantity, product_name }` |
-| **Apply session** modal confirm | **`POST /api/v1/inventory-check/{uuid}/apply`** `{ apply_quantity, apply_name, apply_quantity_mode ('overwrite'\|'increment') }` delegated to **`EmployeeInventoryCountService::applySessionQuantities`** (shared service path for consolidated apply behavior) |
+| Action                                     | Endpoint                                                                                                                                                                                                                                                                     |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Edit qty + product name drafts per row     | **`PATCH /api/v1/inventory-check/{uuid}/items/{lineId}`** `{ quantity, product_name }`                                                                                                                                                                                       |
+| Resolve red “No active product found” rows | In-page **`InventoryCheckResolveProductDialog`** (**Resolve**, red) searches **`GET /api/v1/products`**, assigns with **`POST /api/v1/inventory-check/{uuid}/items/{lineId}/assign-product`** `{ product_id }`, or creates through **`POST /api/v1/products`** before assigning the new product |
+| Reassign matched / ambiguous rows | Same dialog opened via **Reassign** (neutral) on any row while session **`workflow_state`** is not **`applied`**; backend assign endpoint replaces the linked product and refreshes row snapshots |
+| **Apply session** modal confirm            | **`POST /api/v1/inventory-check/{uuid}/apply`** `{ apply_quantity, apply_name, apply_quantity_mode ('overwrite'\|'increment') }` delegated to **`EmployeeInventoryCountService::applySessionQuantities`** (shared service path for consolidated apply behavior)              |
 
 **Apply** confirms once via **`window.confirm`** before POST.
 
-Filters / search purely client-side: **applied / unmatched / ambiguous** subsets + textual search haystack assembled from row fields.
+Filters / search purely client-side: **applied / unmatched / ambiguous** subsets + textual search haystack assembled from row fields. The resolve dialog stays on `/inventory-check/:id`; successful assign/create refreshes the session data without clearing the page-level search/filter state.
 
 ### Export matched product IDs
 

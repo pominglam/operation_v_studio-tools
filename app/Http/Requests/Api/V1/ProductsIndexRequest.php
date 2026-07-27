@@ -29,6 +29,7 @@ final class ProductsIndexRequest extends FormRequest
             'include_archived' => ['sometimes', 'boolean'],
             'archived' => ['sometimes', 'string', Rule::in(['active', 'all', 'archived'])],
             'ready' => ['sometimes', 'string', Rule::in(['all', 'ready', 'not_ready'])],
+            'published' => ['sometimes', 'string', Rule::in(['all', 'published', 'not_published'])],
             'product_flags' => ['sometimes', 'array'],
             'product_flags.*' => [
                 'string',

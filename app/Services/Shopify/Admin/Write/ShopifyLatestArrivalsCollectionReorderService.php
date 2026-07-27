@@ -9,6 +9,7 @@ use App\Exceptions\Shopify\ShopifyGraphQlException;
 use App\Models\Product;
 use App\Services\Products\LatestArrivalCatalogOrderService;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlMutations;
+use App\Services\Shopify\Admin\Support\ShopifyAsyncJobWaitService;
 use Illuminate\Support\Facades\Log;
 
 final class ShopifyLatestArrivalsCollectionReorderService
@@ -18,6 +19,7 @@ final class ShopifyLatestArrivalsCollectionReorderService
         private readonly ShopifyWriteScopeGuard $scopeGuard,
         private readonly LatestArrivalCatalogOrderService $catalogOrder,
         private readonly ShopifyProductMirrorBySkuResolver $mirrorBySku,
+        private readonly ShopifyAsyncJobWaitService $asyncJobWait,
     ) {}
 
     /**
@@ -27,6 +29,8 @@ final class ShopifyLatestArrivalsCollectionReorderService
      *   product_count: int,
      *   moves_sent: int,
      *   job_id: string|null,
+     *   job_done: bool,
+     *   job_wait_timed_out: bool,
      *   skipped_reason: string|null
      * }
      */
@@ -98,11 +102,31 @@ final class ShopifyLatestArrivalsCollectionReorderService
             ? $payload['job']['id']
             : null;
 
+        $jobDone = false;
+        $jobWaitTimedOut = false;
+        if ($jobId !== null) {
+            $jobDone = $this->asyncJobWait->waitUntilDone(
+                $jobId,
+                (int) config('latest_arrival.collection_reorder_job_max_wait_seconds', 120),
+                (int) config('latest_arrival.collection_reorder_job_poll_ms', 1000),
+            );
+            $jobWaitTimedOut = ! $jobDone;
+        }
+
         Log::channel('shopify')->info('shopify.write.collection_reorder_products.finish', [
             'collection_gid' => $collectionGid,
             'moves_sent' => count($moves),
             'job_id' => $jobId,
+            'job_done' => $jobDone,
+            'job_wait_timed_out' => $jobWaitTimedOut,
         ]);
+
+        $skippedReason = null;
+        if (count($moves) < count($gids)) {
+            $skippedReason = 'moves_truncated_at_limit';
+        } elseif ($jobWaitTimedOut) {
+            $skippedReason = 'reorder_job_wait_timeout';
+        }
 
         return [
             'attempted' => true,
@@ -110,7 +134,9 @@ final class ShopifyLatestArrivalsCollectionReorderService
             'product_count' => count($gids),
             'moves_sent' => count($moves),
             'job_id' => $jobId,
-            'skipped_reason' => count($moves) < count($gids) ? 'moves_truncated_at_limit' : null,
+            'job_done' => $jobDone,
+            'job_wait_timed_out' => $jobWaitTimedOut,
+            'skipped_reason' => $skippedReason,
         ];
     }
 
@@ -143,6 +169,8 @@ final class ShopifyLatestArrivalsCollectionReorderService
      *   product_count: int,
      *   moves_sent: int,
      *   job_id: string|null,
+     *   job_done: bool,
+     *   job_wait_timed_out: bool,
      *   skipped_reason: string|null
      * }
      */
@@ -159,6 +187,8 @@ final class ShopifyLatestArrivalsCollectionReorderService
             'product_count' => $productCount,
             'moves_sent' => 0,
             'job_id' => null,
+            'job_done' => false,
+            'job_wait_timed_out' => false,
             'skipped_reason' => $reason,
         ];
     }

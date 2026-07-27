@@ -23,6 +23,7 @@ final class PriceResearchProductsIndexRequest extends FormRequest
             // New multi-select param
             'purchase_order_uuids' => ['sometimes', 'array', 'max:50'],
             'purchase_order_uuids.*' => ['uuid'],
+            'po_product_novelty' => ['sometimes', 'string', Rule::in(['all', 'new', 'existing'])],
             'sort_by' => [
                 'sometimes',
                 'string',

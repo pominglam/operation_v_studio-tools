@@ -29,8 +29,14 @@ final class ShopifyProductPushTagsResolver
         $classification = $this->classifier->classify($product);
 
         if ($classification->storefrontTags === []) {
-            if (! $isUpdate && $isInfoPush && $classification->shopifyTags !== []) {
-                return $classification->shopifyTags;
+            if ($isInfoPush && $classification->shopifyTags !== []) {
+                if (! $isUpdate) {
+                    return $classification->shopifyTags;
+                }
+
+                $existing = $productGid !== null ? $this->existingTags($productGid) : [];
+
+                return $this->mergeTagLists($existing, $classification->shopifyTags);
             }
 
             return null;

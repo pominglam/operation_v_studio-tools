@@ -31,6 +31,7 @@ final class ShopifyProductUpsertFromErpService
         private readonly ShopifyPushImageSourceVerifier $imageSourceVerifier,
         private readonly ShopifyProductMediaProcessingWaiter $mediaWaiter,
         private readonly ShopifyProductPushTagsResolver $pushTags,
+        private readonly ShopifyProductMirrorRefreshService $mirrorRefresh,
     ) {}
 
     /**
@@ -63,6 +64,11 @@ final class ShopifyProductUpsertFromErpService
 
         $mirror = $this->mirrorBySku->resolve((string) $product->sku);
         $storedHandle = is_string($product->handle) ? trim($product->handle) : '';
+        if (($mirror === null || ! $this->mirrorBySku->isUpsertableMirror($mirror)) && $storedHandle !== '') {
+            $this->mirrorRefresh->tryLinkBySku((string) $product->sku);
+            $mirror = $this->mirrorBySku->resolve((string) $product->sku);
+        }
+
         $isUpdate = $mirror !== null && $this->mirrorBySku->isUpsertableMirror($mirror);
 
         if ($isUpdate) {
@@ -111,11 +117,11 @@ final class ShopifyProductUpsertFromErpService
         $productSet['id'] = $mirror['product_gid'];
         $productSet['variants'][0]['id'] = $mirror['variant_gid'];
 
-        if ($options->images && $this->hasProductSetFiles($productSet)) {
+        if ($this->shouldClearShopifyMediaOnUpdate($product, $options)) {
             $this->productMedia->clearExistingMedia((string) $mirror['product_gid']);
         }
 
-        $payload = $this->executeProductSet($product, $handle, $productSet, 'update', $options);
+        $payload = $this->executeProductSet($product, $handle, $productSet, 'update', $options, $locationGid);
 
         return [
             'product_uuid' => (string) $product->uuid,
@@ -147,7 +153,7 @@ final class ShopifyProductUpsertFromErpService
         $usedHandles[$handle] = true;
 
         $productSet = $this->buildProductSet($product, $handle, $tunnelBaseUrl, $locationGid, $options, false, null);
-        $payload = $this->executeProductSet($product, $handle, $productSet, 'create', $options);
+        $payload = $this->executeProductSet($product, $handle, $productSet, 'create', $options, $locationGid);
 
         $product->handle = $payload['handle'];
         $this->products->save($product);
@@ -170,6 +176,7 @@ final class ShopifyProductUpsertFromErpService
         array $productSet,
         string $mode,
         ShopifyProductPushOptionsDTO $options,
+        string $locationGid,
     ): array {
         $startedAt = microtime(true);
         Log::channel('shopify')->info('shopify.write.product_set.start', [
@@ -233,6 +240,9 @@ final class ShopifyProductUpsertFromErpService
             $this->mediaWaiter->waitForReady($shopifyGid, count($files));
         }
 
+        $inventoryLocationGid = $options->quantities ? $locationGid : null;
+        $this->mirrorRefresh->refreshByProductGid($shopifyGid, $inventoryLocationGid);
+
         return [
             'shopify_gid' => $shopifyGid,
             'handle' => $createdHandle,
@@ -240,7 +250,7 @@ final class ShopifyProductUpsertFromErpService
     }
 
     /**
-     * @return array<string, mixed>
+     * @param  array<string, mixed>  $productSet
      */
     private function buildProductSet(
         Product $product,
@@ -340,14 +350,17 @@ final class ShopifyProductUpsertFromErpService
         return $productSet;
     }
 
-    /**
-     * @param  array<string, mixed>  $productSet
-     */
-    private function hasProductSetFiles(array $productSet): bool
+    private function shouldClearShopifyMediaOnUpdate(Product $product, ShopifyProductPushOptionsDTO $options): bool
     {
-        $files = $productSet['files'] ?? null;
+        if ($options->images) {
+            return true;
+        }
 
-        return is_array($files) && $files !== [];
+        if (! $product->relationLoaded('shopifyImageAssets')) {
+            $product->load('shopifyImageAssets');
+        }
+
+        return ! $this->hasShopifyEnabledImageAssets($product);
     }
 
     private function prepareImagesForPush(Product $product, ?string $tunnelBaseUrl): void

@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\DB;
  * Builds storefront Latest Arrivals order.
  *
  * 1. Group products by received purchase orders only (newest received_date first).
- * 2. Unreceived POs (null received_date) are ignored for grouping and PO ranking.
+ * 2. Unreceived POs (null received_date) and POs with exclude_from_latest_arrivals_ordering are ignored.
  * 3. Products on multiple POs are placed only under their newest received PO.
  * 4. Products with no received PO line fall back to grade-only sort at the end.
  * 5. Within each PO, sort by grade order (see config/latest_arrival.php), then newest created_at.
@@ -51,6 +51,7 @@ final class LatestArrivalCatalogOrderService
             ->join('purchase_orders as po', 'po.id', '=', 'poi.purchase_order_id')
             ->whereIn('poi.product_id', $productIds)
             ->whereNotNull('po.received_date')
+            ->where('po.exclude_from_latest_arrivals_ordering', '=', false)
             ->select([
                 'poi.product_id',
                 'po.id as purchase_order_id',

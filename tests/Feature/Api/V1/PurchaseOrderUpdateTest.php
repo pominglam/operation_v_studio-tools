@@ -69,3 +69,20 @@ it('updates purchase order header and recomputes related po lots shipping_per_un
     expect((string) $lot->shipping_per_unit)->toBe('10.000000');
     expect($lot->received_at?->toDateString())->toBe('2025-12-10');
 });
+
+it('updates exclude_from_latest_arrivals_ordering on purchase order header', function (): void {
+    $po = PurchaseOrder::query()->create([
+        'vendor' => 'Plamod',
+        'received_date' => '2025-12-01',
+        'exclude_from_latest_arrivals_ordering' => false,
+    ]);
+
+    $this->patchJson("/api/v1/purchase-orders/{$po->uuid}", [
+        'exclude_from_latest_arrivals_ordering' => true,
+    ])->assertOk()
+        ->assertJsonPath('data.exclude_from_latest_arrivals_ordering', true);
+
+    $po->refresh();
+    expect($po->exclude_from_latest_arrivals_ordering)->toBeTrue();
+    expect($po->received_date?->toDateString())->toBe('2025-12-01');
+});

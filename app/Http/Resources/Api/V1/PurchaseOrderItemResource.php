@@ -78,8 +78,8 @@ final class PurchaseOrderItemResource extends JsonResource
             return null;
         }
 
-        // 4dp for storage-style precision; money2() will display at 2dp.
-        return $this->mulDecimalRounded($vendor, $fx, 4);
+        // 2dp for PO line CAD unit costs; money2() also normalizes API output.
+        return $this->mulDecimalRounded($vendor, $fx, 2);
     }
 
     /**

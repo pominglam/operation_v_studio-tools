@@ -16,7 +16,9 @@ final class ProductStorefrontClassifier
         private readonly PaintProductResolver $paintProductResolver,
         private readonly PanelLineProductResolver $panelLineProductResolver,
         private readonly MarkerProductResolver $markerProductResolver,
+        private readonly DecalProductResolver $decalProductResolver,
         private readonly AirbrushProductResolver $airbrushProductResolver,
+        private readonly WeatheringProductResolver $weatheringProductResolver,
         private readonly ToolFamilyProductResolver $toolFamilyProductResolver,
     ) {}
 
@@ -53,7 +55,11 @@ final class ProductStorefrontClassifier
             return StorefrontDepartment::TAPES;
         }
 
-        if ($this->isDecalSoftenerSku($sku)) {
+        if ($this->decalProductResolver->isDecalSoftenerSku($sku)) {
+            return StorefrontDepartment::DECALS;
+        }
+
+        if ($this->decalProductResolver->isWaterDecal($product)) {
             return StorefrontDepartment::DECALS;
         }
 
@@ -79,6 +85,10 @@ final class ProductStorefrontClassifier
 
         if ($this->airbrushProductResolver->belongsToAirbrushDepartment($product)) {
             return StorefrontDepartment::AIRBRUSH;
+        }
+
+        if ($this->weatheringProductResolver->belongsToWeatheringDepartment($product)) {
+            return StorefrontDepartment::WEATHERING;
         }
 
         $toolFamily = $this->toolFamilyProductResolver->resolveDepartment($product);
@@ -128,11 +138,6 @@ final class ProductStorefrontClassifier
         return stripos((string) $product->description, 'tape') !== false;
     }
 
-    private function isDecalSoftenerSku(string $sku): bool
-    {
-        return in_array($sku, ['ETC-03', 'ETC-04'], true);
-    }
-
     /**
      * @return array<int, string>
      */
@@ -140,13 +145,14 @@ final class ProductStorefrontClassifier
     {
         return match ($department) {
             StorefrontDepartment::TAPES => $this->tapeTags($product),
-            StorefrontDepartment::DECALS => $this->decalTags(),
+            StorefrontDepartment::DECALS => $this->decalTags($product),
             StorefrontDepartment::SANDING => $this->sandingTags($product),
             StorefrontDepartment::CUTTING => $this->cuttingTags($product),
             StorefrontDepartment::PAINTS => $this->paintTags($product),
             StorefrontDepartment::PANEL_LINERS => $this->panelLinerTags($product),
             StorefrontDepartment::MARKERS => $this->markerTags($product),
             StorefrontDepartment::AIRBRUSH => $this->airbrushTags($product),
+            StorefrontDepartment::WEATHERING => $this->weatheringTags(),
             StorefrontDepartment::BRUSHES,
             StorefrontDepartment::DRILLS,
             StorefrontDepartment::TWEEZERS,
@@ -186,12 +192,23 @@ final class ProductStorefrontClassifier
     /**
      * @return array<int, string>
      */
-    private function decalTags(): array
+    private function decalTags(Product $product): array
     {
-        return [
-            StorefrontTag::DEPT_DECALS,
-            StorefrontTag::DECAL_SOFTENER,
-        ];
+        $tags = [StorefrontTag::DEPT_DECALS];
+
+        $kind = $this->decalProductResolver->resolveProductKind($product);
+        if ($kind === 'softener') {
+            $tags[] = StorefrontTag::DECAL_SOFTENER;
+        } elseif ($kind === 'sheet') {
+            $tags[] = StorefrontTag::DECAL_SHEET;
+        }
+
+        $brand = $this->decalProductResolver->resolveBrand($product);
+        if ($brand !== null) {
+            $tags[] = StorefrontTag::decalBrand($brand);
+        }
+
+        return $this->mergeTags([], $tags);
     }
 
     /**
@@ -268,6 +285,9 @@ final class ProductStorefrontClassifier
 
         if ($productKind === 'panel-line') {
             $tags[] = StorefrontTag::panelLinerKind('paint');
+            $tags[] = StorefrontTag::panelLinerType(
+                $paintType === 'fluorescent' ? 'fluorescent' : 'normal',
+            );
         }
 
         return $this->mergeTags([], $tags);
@@ -286,6 +306,7 @@ final class ProductStorefrontClassifier
         return $this->mergeTags([], [
             StorefrontTag::DEPT_PANEL_LINERS,
             StorefrontTag::panelLinerKind($kind),
+            StorefrontTag::panelLinerType('normal'),
         ]);
     }
 
@@ -306,6 +327,11 @@ final class ProductStorefrontClassifier
             $tags[] = StorefrontTag::markerTip($markerTip);
         }
 
+        $markerBrand = $this->markerProductResolver->resolveMarkerBrand($product);
+        if ($markerBrand !== null) {
+            $tags[] = StorefrontTag::markerBrand($markerBrand);
+        }
+
         return $this->mergeTags([], $tags);
     }
 
@@ -322,6 +348,16 @@ final class ProductStorefrontClassifier
         }
 
         return $this->mergeTags([], $tags);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function weatheringTags(): array
+    {
+        return [
+            StorefrontTag::DEPT_WEATHERING,
+        ];
     }
 
     /**

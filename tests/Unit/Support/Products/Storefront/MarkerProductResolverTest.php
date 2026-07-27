@@ -39,3 +39,14 @@ it('classifies marker type and tip tags', function (): void {
         ->and($resolver->resolveMarkerTip(markerTestProduct(['sku' => 'MS-70', 'type' => 'MARKERS', 'description' => 'Metallic space aluminum'])))->toBe('hard')
         ->and($resolver->resolveMarkerTip(markerTestProduct(['sku' => 'DMM-99', 'type' => 'MARKERS', 'description' => 'Soft tipped experimental'])))->toBe('soft');
 });
+
+it('classifies marker brand tags', function (): void {
+    $resolver = new MarkerProductResolver;
+
+    expect($resolver->resolveMarkerBrand(markerTestProduct(['sku' => 'MK-01', 'type' => 'MARKERS', 'description' => 'Soft tipped pure black'])))->toBe('dspiae')
+        ->and($resolver->resolveMarkerBrand(markerTestProduct(['sku' => 'MKF-01', 'type' => 'MARKERS', 'description' => 'Fluorescent green'])))->toBe('dspiae')
+        ->and($resolver->resolveMarkerBrand(markerTestProduct(['sku' => 'DMM-20', 'type' => 'MARKERS', 'description' => 'Metallic gold'])))->toBe('stedi')
+        ->and($resolver->resolveMarkerBrand(markerTestProduct(['sku' => 'MS-70', 'type' => 'MARKERS', 'description' => 'Metallic space aluminum'])))->toBe('stedi')
+        ->and($resolver->resolveMarkerBrand(markerTestProduct(['sku' => 'MA-01', 'type' => 'MARKERS', 'description' => 'Metallic laser silver'])))->toBe('stedi')
+        ->and($resolver->resolveMarkerBrand(markerTestProduct(['sku' => 'UNKNOWN-01', 'type' => 'MARKERS', 'description' => 'Generic marker', 'vendor' => 'Stedi'])))->toBe('stedi');
+});

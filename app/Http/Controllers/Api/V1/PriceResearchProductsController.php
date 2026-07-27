@@ -47,6 +47,8 @@ final class PriceResearchProductsController extends Controller
             $purchaseOrderUuids[] = $single;
             $purchaseOrderUuids = array_values(array_unique($purchaseOrderUuids));
         }
+        /** @var string|null $poProductNovelty */
+        $poProductNovelty = $request->validated('po_product_novelty');
 
         /** @var array<int, string> $vendors */
         $vendors = $request->validated('vendors') ?? [];
@@ -72,6 +74,7 @@ final class PriceResearchProductsController extends Controller
                 shippingPerUnit: $shippingPerUnit,
                 barcode: $barcode,
                 purchaseOrderUuids: $purchaseOrderUuids,
+                poProductNovelty: $poProductNovelty,
                 vendors: $vendors,
                 freshness: $freshness,
                 types: $types,

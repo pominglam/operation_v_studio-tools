@@ -87,6 +87,7 @@ final class PriceResearchQueryService
         ?string $shippingPerUnit = null,
         ?string $barcode = null,
         array $purchaseOrderUuids = [],
+        ?string $poProductNovelty = null,
         array $vendors = [],
         array $freshness = [],
         array $types = [],
@@ -177,6 +178,7 @@ final class PriceResearchQueryService
                     ->whereColumn('poi.product_id', 'products.id')
                     ->whereIn('po.uuid', $purchaseOrderUuids);
             });
+            $this->applyPurchaseOrderNoveltyFilter($q, $purchaseOrderUuids, $poProductNovelty);
         }
 
         // Note: avoid COALESCE(x) with 1 arg (SQLite errors); this expression already yields NULL when missing.
@@ -292,5 +294,32 @@ final class PriceResearchQueryService
         }
 
         return $q->orderBy($sortColumn, $sortDir)->paginate($perPage);
+    }
+
+    /**
+     * @param  array<int, string>  $purchaseOrderUuids
+     */
+    private function applyPurchaseOrderNoveltyFilter($q, array $purchaseOrderUuids, ?string $poProductNovelty): void
+    {
+        $novelty = strtolower(trim((string) $poProductNovelty));
+        if (! in_array($novelty, ['new', 'existing'], true)) {
+            return;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($purchaseOrderUuids), '?'));
+        $overallMinPoIdSql = '(select min(poi_all.purchase_order_id) from purchase_order_items poi_all where poi_all.product_id = products.id)';
+        $selectedMinPoIdSql = "(select min(poi_sel.purchase_order_id)
+            from purchase_order_items poi_sel
+            join purchase_orders po_sel on po_sel.id = poi_sel.purchase_order_id
+            where poi_sel.product_id = products.id
+              and po_sel.uuid in ({$placeholders}))";
+
+        if ($novelty === 'new') {
+            $q->whereRaw("{$overallMinPoIdSql} = {$selectedMinPoIdSql}", $purchaseOrderUuids);
+
+            return;
+        }
+
+        $q->whereRaw("{$overallMinPoIdSql} < {$selectedMinPoIdSql}", $purchaseOrderUuids);
     }
 }

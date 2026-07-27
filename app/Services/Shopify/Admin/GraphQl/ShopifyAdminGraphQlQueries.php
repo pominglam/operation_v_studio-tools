@@ -69,6 +69,72 @@ query Products($first: Int!, $after: String) {
 }
 GQL;
 
+    public const PRODUCT_MIRROR_BY_ID = <<<'GQL'
+query ProductMirrorById($id: ID!) {
+  product(id: $id) {
+    id
+    legacyResourceId
+    handle
+    title
+    status
+    vendor
+    updatedAt
+    variants(first: 100) {
+      nodes {
+        id
+        legacyResourceId
+        sku
+        barcode
+        inventoryQuantity
+        updatedAt
+        inventoryItem {
+          id
+          legacyResourceId
+          sku
+          tracked
+          requiresShipping
+          updatedAt
+        }
+      }
+    }
+  }
+}
+GQL;
+
+    public const PRODUCT_MIRROR_SEARCH = <<<'GQL'
+query ProductMirrorSearch($query: String!) {
+  products(first: 1, query: $query) {
+    nodes {
+      id
+      legacyResourceId
+      handle
+      title
+      status
+      vendor
+      updatedAt
+      variants(first: 100) {
+        nodes {
+          id
+          legacyResourceId
+          sku
+          barcode
+          inventoryQuantity
+          updatedAt
+          inventoryItem {
+            id
+            legacyResourceId
+            sku
+            tracked
+            requiresShipping
+            updatedAt
+          }
+        }
+      }
+    }
+  }
+}
+GQL;
+
     /**
      * Read-only storefront connectivity test; not used by sync runners (no persistence).
      *
@@ -342,6 +408,15 @@ query ProductMediaStatus($id: ID!, $first: Int!, $after: String) {
         }
       }
     }
+  }
+}
+GQL;
+
+    public const JOB_STATUS = <<<'GQL'
+query JobStatus($id: ID!) {
+  job(id: $id) {
+    id
+    done
   }
 }
 GQL;

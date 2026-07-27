@@ -9,7 +9,9 @@
     "build": "vite build",
     "dev": "vite",
         "test": "vitest run",
-        "test:e2e": "playwright test"
+        "test:e2e": "playwright test",
+        "test:e2e:storefront-filters": "playwright test tests/e2e/storefront-ts-collection-filters.spec.ts",
+        "verify:storefront-filters-manifest": "php artisan shopify:storefront-collection-filters-manifest-verify"
     },
     "devDependencies": {
         "@playwright/test": "^1.58.1",

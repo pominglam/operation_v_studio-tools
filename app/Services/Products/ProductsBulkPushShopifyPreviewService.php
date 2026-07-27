@@ -9,6 +9,7 @@ use App\DTOs\Shopify\ShopifyProductPushOptionsDTO;
 use App\Models\Product;
 use App\Services\Shopify\Admin\Write\ShopifyInventoryLocationResolver;
 use App\Services\Shopify\Admin\Write\ShopifyProductMirrorBySkuResolver;
+use App\Services\Shopify\Admin\Write\ShopifyProductMirrorRefreshService;
 use App\Services\Shopify\Admin\Write\ShopifyWriteScopeGuard;
 use App\Services\Shopify\CloudflaredTunnel;
 use App\Support\Products\ProductHoldQty;
@@ -21,6 +22,7 @@ final class ProductsBulkPushShopifyPreviewService
         private readonly ShopifyWriteScopeGuard $scopeGuard,
         private readonly ShopifyInventoryLocationResolver $locationResolver,
         private readonly ShopifyProductMirrorBySkuResolver $mirrorBySku,
+        private readonly ShopifyProductMirrorRefreshService $mirrorRefresh,
         private readonly CloudflaredTunnel $tunnel,
     ) {}
 
@@ -69,6 +71,16 @@ final class ProductsBulkPushShopifyPreviewService
             }
             $sku = trim((string) $product->sku);
             $mirror = $mirrorsBySku[$sku] ?? null;
+            if ($mirror === null || ! $this->mirrorBySku->isUpsertableMirror($mirror)) {
+                $storedHandle = is_string($product->handle) ? trim($product->handle) : '';
+                if ($storedHandle !== '' && $sku !== '') {
+                    $this->mirrorRefresh->tryLinkBySku($sku);
+                    $mirror = $this->mirrorBySku->resolve($sku);
+                    if ($mirror !== null) {
+                        $mirrorsBySku[$sku] = $mirror;
+                    }
+                }
+            }
             $rows[] = $this->buildProductRow($product, $locationGid, $options, $mirror, $inventoryQtyByItemGid);
         }
 

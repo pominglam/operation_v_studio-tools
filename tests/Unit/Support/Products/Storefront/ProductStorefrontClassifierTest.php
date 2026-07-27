@@ -98,8 +98,40 @@ it('classifies decal softener SKUs', function (): void {
         ->and($result->storefrontTags)->toBe([
             'ts:dept:decals',
             'ts:decal:softener',
+            'ts:decal:brand:dspiae',
         ])
-        ->and($result->shopifyTags)->toContain('ts:dept:decals', 'ts:decal:softener');
+        ->and($result->shopifyTags)->toContain('ts:dept:decals', 'ts:decal:softener', 'ts:decal:brand:dspiae');
+});
+
+it('classifies water decal SKUs with sheet tag and dspiae brand only when titled Dspiae', function (): void {
+    $classifier = app(ProductStorefrontClassifier::class);
+    $result = $classifier->classify(makeClassifierProduct([
+        'sku' => 'WD-MG-224',
+        'main_type' => 'water decals',
+        'type' => 'MG',
+        'vendor' => 'Dspiae',
+        'description' => 'Dspiae water decal - MG Turn A',
+    ]));
+
+    expect($result->department)->toBe(StorefrontDepartment::DECALS)
+        ->and($result->storefrontTags)->toBe([
+            'ts:dept:decals',
+            'ts:decal:sheet',
+            'ts:decal:brand:dspiae',
+        ]);
+});
+
+it('classifies generic water decals with unclassified brand tag', function (): void {
+    $classifier = app(ProductStorefrontClassifier::class);
+    $result = $classifier->classify(makeClassifierProduct([
+        'sku' => 'WD-HGUC-001',
+        'main_type' => 'water decals',
+        'type' => 'HGUC',
+        'description' => 'Water decal - HGUC Penelope',
+    ]));
+
+    expect($result->department)->toBe(StorefrontDepartment::DECALS)
+        ->and($result->storefrontTags)->toContain('ts:dept:decals', 'ts:decal:sheet', 'ts:decal:brand:unclassified');
 });
 
 it('classifies pilot paint SKUs with department and paint tags', function (): void {
@@ -160,6 +192,7 @@ it('classifies dspiae marker with marker department tags', function (): void {
             'ts:dept:markers',
             'ts:marker:type:fluorescent',
             'ts:marker:tip:soft',
+            'ts:marker:brand:dspiae',
         );
 });
 
@@ -207,7 +240,11 @@ it('classifies panel liner accent and wiper pens on panel liners shelf', functio
     ]));
 
     expect($accent->department)->toBe(StorefrontDepartment::PANEL_LINERS)
-        ->and($accent->storefrontTags)->toContain('ts:dept:panel-liners', 'ts:panel-liner:kind:paint');
+        ->and($accent->storefrontTags)->toContain(
+            'ts:dept:panel-liners',
+            'ts:panel-liner:kind:paint',
+            'ts:panel-liner:type:normal',
+        );
 
     $wiper = $classifier->classify(makeClassifierProduct([
         'sku' => 'MP-02B',
@@ -217,7 +254,42 @@ it('classifies panel liner accent and wiper pens on panel liners shelf', functio
     ]));
 
     expect($wiper->department)->toBe(StorefrontDepartment::PANEL_LINERS)
-        ->and($wiper->storefrontTags)->toContain('ts:dept:panel-liners', 'ts:panel-liner:kind:tool');
+        ->and($wiper->storefrontTags)->toContain(
+            'ts:dept:panel-liners',
+            'ts:panel-liner:kind:tool',
+            'ts:panel-liner:type:normal',
+        );
+});
+
+it('tags fluorescent liquid panel liners for panel liners type filter', function (): void {
+    $classifier = app(ProductStorefrontClassifier::class);
+    $result = $classifier->classify(makeClassifierProduct([
+        'sku' => 'MP-20',
+        'main_type' => 'supplies',
+        'type' => 'Panel liner',
+        'description' => 'Stedi Panel Liner MP-20 Fluorescent Orange',
+    ]));
+
+    expect($result->storefrontTags)->toContain(
+        'ts:panel-liner:kind:paint',
+        'ts:panel-liner:type:fluorescent',
+        'ts:paint:type:fluorescent',
+    );
+});
+
+it('tags normal liquid panel liners for panel liners type filter', function (): void {
+    $classifier = app(ProductStorefrontClassifier::class);
+    $result = $classifier->classify(makeClassifierProduct([
+        'sku' => 'MP-10',
+        'main_type' => 'supplies',
+        'type' => 'Panel liner',
+        'description' => 'Stedi Panel Liner MP-10 Brown',
+    ]));
+
+    expect($result->storefrontTags)->toContain(
+        'ts:panel-liner:kind:paint',
+        'ts:panel-liner:type:normal',
+    )->not->toContain('ts:panel-liner:type:fluorescent');
 });
 
 it('tags liquid panel liners with paint kind for panel liners page filters', function (): void {
@@ -234,6 +306,7 @@ it('tags liquid panel liners with paint kind for panel liners page filters', fun
             'ts:dept:paints',
             'ts:paint:product:panel-line',
             'ts:panel-liner:kind:paint',
+            'ts:panel-liner:type:normal',
         );
 });
 
@@ -248,6 +321,20 @@ it('classifies airbrush hardware with role tags', function (): void {
 
     expect($result->department)->toBe(StorefrontDepartment::AIRBRUSH)
         ->and($result->storefrontTags)->toContain('ts:dept:airbrush', 'ts:airbrush:role:tool');
+});
+
+it('classifies Stedi weathering supplies with weathering department tag', function (): void {
+    $classifier = app(ProductStorefrontClassifier::class);
+    $result = $classifier->classify(makeClassifierProduct([
+        'sku' => 'MP-51',
+        'main_type' => 'supplies',
+        'type' => 'Weathering',
+        'description' => 'Stedi Weathering MP-51 Ground Brown',
+    ]));
+
+    expect($result->department)->toBe(StorefrontDepartment::WEATHERING)
+        ->and($result->storefrontTags)->toContain('ts:dept:weathering')
+        ->and($result->shopifyTags)->toContain('ts:dept:weathering');
 });
 
 it('classifies brushes department with brush type tag', function (): void {

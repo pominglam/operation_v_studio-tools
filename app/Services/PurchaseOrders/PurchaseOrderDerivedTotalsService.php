@@ -43,16 +43,40 @@ final class PurchaseOrderDerivedTotalsService
             $productTotalCents += ($unitCostCents * $qtyForProductTotal);
         }
 
-        $shippingPerUnit = null;
-        $shippingTotal = $po->shipping_total !== null ? trim((string) $po->shipping_total) : null;
-        if ($shippingTotal !== null && $shippingTotal !== '' && $totalReceived > 0) {
-            $shippingPerUnit = $this->divideDecimal($shippingTotal, $totalReceived, 6);
-        }
+        $shippingPerUnit = $this->applyShippingToLots($po, $items, $totalReceived);
 
         if ($hasCadUnitCosts) {
             $po->product_total = $this->centsToMoney($productTotalCents);
         }
         $this->purchaseOrders->save($po);
+
+        return $shippingPerUnit;
+    }
+
+    public function recomputeShippingLotsOnly(PurchaseOrder $po): ?string
+    {
+        $items = $this->purchaseOrders->itemsForPurchaseOrderId((int) $po->id);
+        $totalReceived = 0;
+        foreach ($items as $item) {
+            $qtyReceived = (int) ($item->qty_received ?? 0);
+            if ($qtyReceived > 0) {
+                $totalReceived += $qtyReceived;
+            }
+        }
+
+        return $this->applyShippingToLots($po, $items, $totalReceived);
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, \App\Models\PurchaseOrderItem>  $items
+     */
+    private function applyShippingToLots(PurchaseOrder $po, $items, int $totalReceived): ?string
+    {
+        $shippingPerUnit = null;
+        $shippingTotal = $po->shipping_total !== null ? trim((string) $po->shipping_total) : null;
+        if ($shippingTotal !== null && $shippingTotal !== '' && $totalReceived > 0) {
+            $shippingPerUnit = $this->divideDecimal($shippingTotal, $totalReceived, 6);
+        }
 
         $itemIds = $items->pluck('id')->all();
         if ($itemIds !== []) {

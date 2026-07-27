@@ -40,6 +40,11 @@ type DemandDetail = {
     }>;
 };
 
+type OrderLinkLike = {
+    order_gid: string;
+    order_name: string | null;
+};
+
 const props = defineProps<{
     open: boolean;
     productId: string | null;
@@ -74,7 +79,7 @@ function formatWeekLabel(weekStart: string): string {
     return `${start} – ${end}`;
 }
 
-function orderLinkLabel(line: DemandDetail['recent_shopify_lines'][number]): string {
+function orderLinkLabel(line: OrderLinkLike): string {
     if (line.order_name) {
         return line.order_name;
     }
@@ -97,12 +102,15 @@ async function load(options: { linesOnly?: boolean } = {}): Promise<void> {
     }
 
     try {
-        const res = await api.get<{ data: DemandDetail }>(`/api/v1/products/${props.productId}/demand`, {
-            params: {
-                lines_page: linesPage.value,
-                lines_per_page: LINES_PER_PAGE,
+        const res = await api.get<{ data: DemandDetail }>(
+            `/api/v1/products/${props.productId}/demand`,
+            {
+                params: {
+                    lines_page: linesPage.value,
+                    lines_per_page: LINES_PER_PAGE,
+                },
             },
-        });
+        );
         detail.value = res.data.data;
     } catch {
         error.value = 'Failed to load demand detail.';
@@ -151,7 +159,11 @@ watch(
                         units (last {{ detail.window_days }} days)
                     </p>
                 </div>
-                <button type="button" class="text-slate-600 hover:text-slate-900" @click="emit('close')">
+                <button
+                    type="button"
+                    class="text-slate-600 hover:text-slate-900"
+                    @click="emit('close')"
+                >
                     ✕
                 </button>
             </div>
@@ -168,25 +180,35 @@ watch(
                 <div class="mt-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
                     <div class="rounded-md border border-slate-200 p-3">
                         <div class="text-slate-600">Shopify 4 wk</div>
-                        <div class="text-lg font-semibold tabular-nums">{{ detail.shopify_sold_4w }}</div>
+                        <div class="text-lg font-semibold tabular-nums">
+                            {{ detail.shopify_sold_4w }}
+                        </div>
                     </div>
                     <div class="rounded-md border border-slate-200 p-3">
                         <div class="text-slate-600">Shopify 12 wk</div>
-                        <div class="text-lg font-semibold tabular-nums">{{ detail.shopify_sold_12w }}</div>
+                        <div class="text-lg font-semibold tabular-nums">
+                            {{ detail.shopify_sold_12w }}
+                        </div>
                     </div>
                     <div class="rounded-md border border-slate-200 p-3">
                         <div class="text-slate-600">Assumed 4 wk</div>
-                        <div class="text-lg font-semibold tabular-nums">{{ detail.assumed_sold_4w }}</div>
+                        <div class="text-lg font-semibold tabular-nums">
+                            {{ detail.assumed_sold_4w }}
+                        </div>
                     </div>
                     <div class="rounded-md border border-slate-200 p-3">
                         <div class="text-slate-600">Assumed 12 wk</div>
-                        <div class="text-lg font-semibold tabular-nums">{{ detail.assumed_sold_12w }}</div>
+                        <div class="text-lg font-semibold tabular-nums">
+                            {{ detail.assumed_sold_12w }}
+                        </div>
                     </div>
                 </div>
 
                 <h3 class="mt-6 text-sm font-medium text-slate-900">
                     Weekly rollups
-                    <span class="font-normal text-slate-500">({{ detail.detail_window_days }}-day timeline)</span>
+                    <span class="font-normal text-slate-500"
+                        >({{ detail.detail_window_days }}-day timeline)</span
+                    >
                 </h3>
                 <p class="mt-1 text-xs text-slate-500">
                     Every week in the window is shown. Weeks with no sales display 0.
@@ -207,9 +229,15 @@ watch(
                                 :key="row.week_start"
                                 :class="row.total === 0 ? 'text-slate-400' : 'text-slate-900'"
                             >
-                                <td class="px-2 py-1 whitespace-nowrap">{{ formatWeekLabel(row.week_start) }}</td>
-                                <td class="px-2 py-1 text-right tabular-nums">{{ row.shopify_sold }}</td>
-                                <td class="px-2 py-1 text-right tabular-nums">{{ row.assumed_sold }}</td>
+                                <td class="px-2 py-1 whitespace-nowrap">
+                                    {{ formatWeekLabel(row.week_start) }}
+                                </td>
+                                <td class="px-2 py-1 text-right tabular-nums">
+                                    {{ row.shopify_sold }}
+                                </td>
+                                <td class="px-2 py-1 text-right tabular-nums">
+                                    {{ row.assumed_sold }}
+                                </td>
                                 <td class="px-2 py-1 text-right tabular-nums">{{ row.total }}</td>
                             </tr>
                         </tbody>
@@ -224,7 +252,10 @@ watch(
                 </div>
                 <div :class="linesLoading ? 'opacity-50' : ''">
                     <ul class="mt-2 space-y-1 text-xs text-slate-700">
-                        <li v-for="(line, i) in detail.recent_shopify_lines" :key="`${line.order_gid}-${i}`">
+                        <li
+                            v-for="(line, i) in detail.recent_shopify_lines"
+                            :key="`${line.order_gid}-${i}`"
+                        >
                             {{ line.sold_on }} · qty {{ line.quantity }} ·
                             <a
                                 v-if="line.order_admin_url"
@@ -237,7 +268,9 @@ watch(
                             </a>
                             <span v-else>{{ orderLinkLabel(line) }}</span>
                         </li>
-                        <li v-if="detail.recent_shopify_lines.length === 0" class="text-slate-500">None</li>
+                        <li v-if="detail.recent_shopify_lines.length === 0" class="text-slate-500">
+                            None
+                        </li>
                     </ul>
                 </div>
                 <div

@@ -15,6 +15,7 @@ final class InventoryCheckImportRequest extends FormRequest
     {
         return [
             'file' => ['required', 'file', 'mimes:csv,txt', 'max:51200'],
+            'notes' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ];
     }
 }

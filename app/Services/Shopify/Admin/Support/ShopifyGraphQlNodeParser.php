@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Shopify\Admin\Support;
 
-use Carbon\Carbon;
+use Illuminate\Support\Carbon;
 
 final class ShopifyGraphQlNodeParser
 {

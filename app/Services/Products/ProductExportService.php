@@ -8,6 +8,7 @@ use App\DAL\Products\ProductRepository;
 use App\Models\Product;
 use App\Models\ProductExternalContent;
 use App\Services\PriceResearch\FxRateService;
+use App\Support\Products\ShopifyHandleSlugger;
 use App\Support\Products\Storefront\ProductStorefrontClassifier;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -276,33 +277,39 @@ final class ProductExportService
         if ($stored !== '') {
             $handle = $stored;
         } else {
-            $base = Str::slug((string) $product->description);
-            if ($base === '') {
-                $base = Str::slug((string) $product->sku);
-            }
-            if ($base === '') {
-                $base = 'product';
-            }
-            $handle = $base;
+            $handle = ShopifyHandleSlugger::slugFromText((string) $product->description, (string) $product->sku);
         }
 
-        if (isset($usedHandles[$handle])) {
-            $base = $stored !== '' ? $stored : Str::slug((string) $product->description);
-            if ($base === '') {
-                $base = Str::slug((string) $product->sku);
-            }
-            if ($base === '') {
-                $base = 'product';
-            }
+        if ($this->isHandleReserved($handle, $product, $usedHandles)) {
+            $base = $stored !== ''
+                ? $stored
+                : ShopifyHandleSlugger::slugFromText((string) $product->description, (string) $product->sku);
             $handle = $base.'-'.Str::slug((string) $product->sku);
         }
-        if ($handle === '' || isset($usedHandles[$handle])) {
+        if ($this->isHandleReserved($handle, $product, $usedHandles)) {
             $handle = $handle.'-'.(string) $product->sku;
         }
 
         $usedHandles[$handle] = true;
 
         return $handle;
+    }
+
+    /**
+     * @param  array<string, bool>  $usedHandles
+     */
+    private function isHandleReserved(string $handle, Product $product, array $usedHandles): bool
+    {
+        if ($handle === '') {
+            return true;
+        }
+
+        if (isset($usedHandles[$handle])) {
+            return true;
+        }
+
+        return $this->products->findByHandle($handle)
+            ->contains(static fn (Product $match): bool => $match->id !== $product->id);
     }
 
     /**

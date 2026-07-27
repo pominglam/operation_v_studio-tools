@@ -163,6 +163,12 @@ it('paginates recent shopify lines on product demand detail', function (): void 
     ]);
 
     for ($i = 1; $i <= 12; $i++) {
+        \App\Models\Shopify\ShopifyOrder::query()->create([
+            'gid' => "gid://shopify/Order/{$i}",
+            'legacy_numeric_id' => (string) $i,
+            'name' => "#{$i}",
+        ]);
+
         \App\Models\Shopify\ShopifyOrderLineItem::query()->create([
             'order_gid' => "gid://shopify/Order/{$i}",
             'line_gid' => "gid://shopify/LineItem/{$i}",

@@ -74,7 +74,7 @@ final class ShopifyStorefrontPilotFiltersVerifyCommand extends Command
             [
                 'name' => 'Markers page loads',
                 'url' => $baseUrl.'/collections/markers',
-                'expect' => ['Type', 'Tip', 'ovs-markers-collection-filters.js', 'Availability'],
+                'expect' => ['Brand', 'Type', 'Tip', 'ovs-markers-collection-filters.js', 'Availability'],
                 'reject' => ['facets__summary-label">Price', 'id="Details-filter.v.price'],
             ],
             [

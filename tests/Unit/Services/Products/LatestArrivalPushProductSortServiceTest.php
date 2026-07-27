@@ -520,3 +520,126 @@ it('sorts products by type rank then newest created_at within group', function (
         '111',
     ]);
 });
+
+it('keeps 30MM option parts inside the 30MM block after kits and before 30MS', function (): void {
+    $service = new LatestArrivalPushProductSortService(new ProductTypeDerivationService);
+
+    $mmKit = new Product([
+        'sku' => '5072548',
+        'type' => '30MM',
+        'description' => '30MM 1/144 bEXM-40 NOVALV [ GREEN ]',
+    ]);
+    $mmKit->created_at = Carbon::parse('2026-06-01');
+
+    $mmOps = new Product([
+        'sku' => '5072549',
+        'type' => '30MM',
+        'description' => '30MM 1/144 OPTION PARTS SET 23 (EXPANSION PARTS SET TENTACLE ARM B)',
+    ]);
+    $mmOps->created_at = Carbon::parse('2026-05-01');
+
+    $thirtyMs = new Product([
+        'sku' => '5072625',
+        'type' => '30MS',
+        'description' => '30MS LULUPARADOL',
+    ]);
+    $thirtyMs->created_at = Carbon::parse('2026-04-01');
+
+    $pokemon = new Product([
+        'sku' => '5072617',
+        'type' => 'Others',
+        'description' => 'Pokemon Model Kit Bulbasaur',
+    ]);
+    $pokemon->created_at = Carbon::parse('2026-03-01');
+
+    $sorted = $service->sortProducts([$mmOps, $pokemon, $mmKit, $thirtyMs]);
+
+    expect(array_map(static fn (Product $p): string => (string) $p->sku, $sorted))->toBe([
+        '5072548',
+        '5072549',
+        '5072625',
+        '5072617',
+    ]);
+});
+
+it('places option parts after other kits within the same line prefix category', function (): void {
+    $service = new LatestArrivalPushProductSortService(new ProductTypeDerivationService);
+
+    $acKit = new Product([
+        'sku' => '5072551',
+        'type' => '30MM',
+        'description' => '30MM ARMORED CORE VI FIRES OF RUBICON ARQUEBUS CORPORATION VP-40S',
+    ]);
+    $acKit->created_at = Carbon::parse('2026-06-01');
+
+    $acOps = new Product([
+        'sku' => '5072552',
+        'type' => '30MM',
+        'description' => '30MM OPTION PARTS SET ARMORED CORE VI FIRES OF RUBICON WEAPON SET 07',
+    ]);
+    $acOps->created_at = Carbon::parse('2026-05-01');
+
+    $sorted = $service->sortProducts([$acOps, $acKit]);
+
+    expect(array_map(static fn (Product $p): string => (string) $p->sku, $sorted))->toBe([
+        '5072551',
+        '5072552',
+    ]);
+});
+
+it('places all 30MM option parts after all 30MM and Armored Core kits', function (): void {
+    $service = new LatestArrivalPushProductSortService(new ProductTypeDerivationService);
+
+    $macross = new Product([
+        'sku' => '5072546',
+        'type' => 'HG',
+        'description' => 'HG 1/100 VF-31E SIEGFRIED ( CHUCK MUSTANG USE )',
+    ]);
+    $macross->created_at = Carbon::parse('2026-07-01');
+
+    $acKit = new Product([
+        'sku' => '5072551',
+        'type' => '30MM',
+        'description' => '30MM ARMORED CORE VI FIRES OF RUBICON ARQUEBUS CORPORATION VP-40S',
+    ]);
+    $acKit->created_at = Carbon::parse('2026-06-01');
+
+    $acOps = new Product([
+        'sku' => '5072552',
+        'type' => '30MM',
+        'description' => '30MM OPTION PARTS SET ARMORED CORE VI FIRES OF RUBICON WEAPON SET 07',
+    ]);
+    $acOps->created_at = Carbon::parse('2026-05-01');
+
+    $mmKit = new Product([
+        'sku' => '5072548',
+        'type' => '30MM',
+        'description' => '30MM 1/144 bEXM-40 NOVALV [ GREEN ]',
+    ]);
+    $mmKit->created_at = Carbon::parse('2026-04-01');
+
+    $mmOps = new Product([
+        'sku' => '5072549',
+        'type' => '30MM',
+        'description' => '30MM 1/144 OPTION PARTS SET 23 (FULL ARMOR UNIT 2)',
+    ]);
+    $mmOps->created_at = Carbon::parse('2026-03-01');
+
+    $thirtyMs = new Product([
+        'sku' => '5072557',
+        'type' => '30MS',
+        'description' => '30MS SIS-J00 MERUNJA [COLOR A]',
+    ]);
+    $thirtyMs->created_at = Carbon::parse('2026-02-01');
+
+    $sorted = $service->sortProducts([$acOps, $mmOps, $thirtyMs, $macross, $mmKit, $acKit]);
+
+    expect(array_map(static fn (Product $p): string => (string) $p->sku, $sorted))->toBe([
+        '5072546',
+        '5072551',
+        '5072548',
+        '5072552',
+        '5072549',
+        '5072557',
+    ]);
+});

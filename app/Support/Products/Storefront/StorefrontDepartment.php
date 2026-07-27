@@ -34,6 +34,8 @@ final class StorefrontDepartment
 
     public const string AIRBRUSH = 'airbrush';
 
+    public const string WEATHERING = 'weathering';
+
     /** @deprecated Use tool-family department constants instead. */
     public const string TOOLS = 'tools';
 }

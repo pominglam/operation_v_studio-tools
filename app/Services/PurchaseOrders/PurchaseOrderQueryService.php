@@ -6,6 +6,7 @@ namespace App\Services\PurchaseOrders;
 
 use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\Models\PurchaseOrder;
+use App\Services\Products\LatestArrivalPushProductSortService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
 final class PurchaseOrderQueryService
@@ -13,13 +14,14 @@ final class PurchaseOrderQueryService
     public function __construct(
         private readonly PurchaseOrderRepository $purchaseOrders,
         private readonly PurchaseOrderProductMetricsService $productMetrics,
+        private readonly LatestArrivalPushProductSortService $productSort,
     ) {}
 
     /**
      * @param  array<int, string>  $vendors
      * @param  array<int, string>  $statuses
      */
-    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'created', array $vendors = [], array $statuses = []): LengthAwarePaginator
+    public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'ordered', array $vendors = [], array $statuses = []): LengthAwarePaginator
     {
         return $this->purchaseOrders->paginate($perPage, $sortDir, $sortBy, $vendors, $statuses);
     }
@@ -61,6 +63,8 @@ final class PurchaseOrderQueryService
             $item->setAttribute('product_selling_price', $metrics['selling_price']);
             $item->setAttribute('product_multiplier', $metrics['multiplier']);
         }
+
+        $po->setRelation('items', $this->productSort->sortPurchaseOrderItems($po->items));
 
         return $po;
     }

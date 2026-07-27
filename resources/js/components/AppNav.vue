@@ -14,6 +14,9 @@ function isActive(name: string): boolean {
     if (name === 'purchase-orders') {
         return route.path.startsWith('/purchase-orders');
     }
+    if (name === 'reports') {
+        return route.path.startsWith('/reports');
+    }
     return route.name === name;
 }
 </script>
@@ -121,6 +124,18 @@ function isActive(name: string): boolean {
                     "
                 >
                     TCG Events
+                </RouterLink>
+                <RouterLink
+                    v-if="!isEmployee"
+                    to="/reports/staff-orders"
+                    class="rounded-md px-3 py-1.5 transition"
+                    :class="
+                        isActive('reports')
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-100'
+                    "
+                >
+                    Reports
                 </RouterLink>
                 <RouterLink
                     v-if="!isEmployee"

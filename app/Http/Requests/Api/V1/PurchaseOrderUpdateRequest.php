@@ -29,6 +29,7 @@ final class PurchaseOrderUpdateRequest extends FormRequest
             'vendor_product_total' => ['nullable', 'numeric'],
             'notes' => ['nullable', 'string'],
             'is_done' => ['sometimes', 'boolean'],
+            'exclude_from_latest_arrivals_ordering' => ['sometimes', 'boolean'],
             'shipment_method' => ['sometimes', 'nullable', 'string', Rule::in(['air', 'sea'])],
         ];
     }

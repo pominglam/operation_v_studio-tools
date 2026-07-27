@@ -21,6 +21,21 @@ final class ShopifyAdminGraphQlMutations
         }
         GQL;
 
+    public const string PRODUCT_UPDATE = <<<'GQL'
+        mutation productUpdate($input: ProductInput!) {
+            productUpdate(input: $input) {
+                product {
+                    id
+                    handle
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GQL;
+
     public const string PRODUCT_DELETE_MEDIA = <<<'GQL'
         mutation productDeleteMedia($productId: ID!, $mediaIds: [ID!]!) {
             productDeleteMedia(productId: $productId, mediaIds: $mediaIds) {
@@ -56,6 +71,20 @@ final class ShopifyAdminGraphQlMutations
     public const string TAGS_REMOVE = <<<'GQL'
         mutation tagsRemove($id: ID!, $tags: [String!]!) {
             tagsRemove(id: $id, tags: $tags) {
+                node {
+                    id
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GQL;
+
+    public const string TAGS_ADD = <<<'GQL'
+        mutation tagsAdd($id: ID!, $tags: [String!]!) {
+            tagsAdd(id: $id, tags: $tags) {
                 node {
                     id
                 }

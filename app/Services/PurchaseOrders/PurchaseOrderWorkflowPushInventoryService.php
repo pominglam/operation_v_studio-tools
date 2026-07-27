@@ -161,7 +161,7 @@ final class PurchaseOrderWorkflowPushInventoryService
             $tunnelLeaseHandle->release();
         }
 
-        $collectionReorder = ['attempted' => false, 'collection_gid' => null, 'product_count' => 0, 'moves_sent' => 0, 'job_id' => null, 'skipped_reason' => 'push_had_failures'];
+        $collectionReorder = ['attempted' => false, 'collection_gid' => null, 'product_count' => 0, 'moves_sent' => 0, 'job_id' => null, 'job_done' => false, 'job_wait_timed_out' => false, 'skipped_reason' => 'push_had_failures'];
         if ($failed === 0) {
             try {
                 $collectionReorder = $this->collectionReorder->reorderFromCatalogOrder();
@@ -172,6 +172,8 @@ final class PurchaseOrderWorkflowPushInventoryService
                     'product_count' => 0,
                     'moves_sent' => 0,
                     'job_id' => null,
+                    'job_done' => false,
+                    'job_wait_timed_out' => false,
                     'skipped_reason' => 'reorder_failed: '.$e->getMessage(),
                 ];
             }
@@ -231,6 +233,8 @@ final class PurchaseOrderWorkflowPushInventoryService
                 'product_count' => 0,
                 'moves_sent' => 0,
                 'job_id' => null,
+                'job_done' => false,
+                'job_wait_timed_out' => false,
                 'skipped_reason' => 'no_eligible_products',
             ],
         ];

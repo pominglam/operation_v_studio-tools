@@ -95,4 +95,30 @@ return [
 
     'theme_mirror_path' => env('SHOPIFY_THEME_MIRROR_PATH', base_path('themes/shopify-draft')),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Staff order report (POS attribution buckets)
+    |--------------------------------------------------------------------------
+    |
+    | Maps Shopify REST order user_id values to report columns. Quick Sale and
+    | online channels are classified separately in ShopifyOrderStaffBucketClassifier.
+    |
+    */
+
+    'staff_order_report' => [
+        'timezone' => 'America/Toronto',
+        'staff' => [
+            '134032556113' => ['key' => 'alex_hui', 'label' => 'Alex Hui'],
+            '134032425041' => ['key' => 'kaz_dizaro', 'label' => 'Kaz Dizaro'],
+            '132966613073' => ['key' => 'po_ming_lam', 'label' => 'Po Ming Lam'],
+        ],
+        'extra_buckets' => [
+            ['key' => 'quick_sale', 'label' => 'Quick Sale'],
+            ['key' => 'online_store', 'label' => 'Online Store'],
+            ['key' => 'shop', 'label' => 'Shop'],
+            ['key' => 'pos_other', 'label' => 'POS (other)'],
+        ],
+        'cache_ttl_seconds' => max(60, (int) env('SHOPIFY_STAFF_ORDER_REPORT_CACHE_TTL', 300)),
+    ],
+
 ];
