@@ -27,6 +27,12 @@ final class PurchaseOrderDeleteService
                 $po->load('items');
             }
 
+            if ($this->purchaseOrders->hasCombinedPayment((int) $po->id)) {
+                throw new PurchaseOrderDeleteException(
+                    'Cannot delete a purchase order linked to a combined payment.',
+                );
+            }
+
             $skus = $po->items->pluck('sku')->all();
 
             $itemIds = $po->items->pluck('id')->all();

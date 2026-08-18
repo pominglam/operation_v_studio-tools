@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Services\PurchaseOrders;
 
 use App\DAL\Products\ProductSellingPriceRepository;
+use App\DTOs\Products\ProductSellingPriceUpsertContext;
 use App\Models\Product;
+use App\Models\PurchaseOrder;
 use App\Support\Pricing\CharmPricingCalculator;
+use App\Support\PurchaseOrders\ProductLatestArrivedLandedUnitCostResolver;
 
 final class PurchaseOrderWorkflowSetPricesService
 {
@@ -15,11 +18,13 @@ final class PurchaseOrderWorkflowSetPricesService
     public function __construct(
         private readonly PurchaseOrderProductScopeService $scope,
         private readonly ProductSellingPriceRepository $sellingPrices,
+        private readonly ProductLatestArrivedLandedUnitCostResolver $latestShippingCostedLanded,
     ) {}
 
     /**
      * @return array{
      *   multiplier: string,
+     *   landed_cost_warning: string|null,
      *   new_prices: array<int, array<string, mixed>>,
      *   updates: array<int, array<string, mixed>>,
      *   unchanged: array<int, array<string, mixed>>,
@@ -33,6 +38,7 @@ final class PurchaseOrderWorkflowSetPricesService
 
         return [
             'multiplier' => self::LANDED_COST_MULTIPLIER,
+            'landed_cost_warning' => $plan['landed_cost_warning'],
             'new_prices' => $plan['new_prices'],
             'updates' => $plan['updates'],
             'unchanged' => $plan['unchanged'],
@@ -51,10 +57,12 @@ final class PurchaseOrderWorkflowSetPricesService
      */
     public function apply(string $purchaseOrderUuid, array $priceOverrides = []): array
     {
+        $po = $this->scope->findPoOrFail($purchaseOrderUuid);
         $plan = $this->buildPlan($purchaseOrderUuid);
         $overridesByProductUuid = $this->normalizeOverrides($priceOverrides);
         $updated = 0;
         $appliedOverrideUuids = [];
+        $historyContext = new ProductSellingPriceUpsertContext('po_workflow', (int) $po->id);
 
         foreach ($this->rowsToApply($plan, $overridesByProductUuid) as $row) {
             $productId = (int) ($row['product_id'] ?? 0);
@@ -71,7 +79,7 @@ final class PurchaseOrderWorkflowSetPricesService
                 continue;
             }
 
-            $this->sellingPrices->upsertForProduct($product, $proposed, 'CAD');
+            $this->sellingPrices->upsertForProduct($product, $proposed, 'CAD', $historyContext);
             $updated++;
             if (array_key_exists($productUuid, $overridesByProductUuid)) {
                 $appliedOverrideUuids[$productUuid] = true;
@@ -87,6 +95,7 @@ final class PurchaseOrderWorkflowSetPricesService
 
     /**
      * @return array{
+     *   landed_cost_warning: string|null,
      *   new_prices: array<int, array<string, mixed>>,
      *   updates: array<int, array<string, mixed>>,
      *   unchanged: array<int, array<string, mixed>>,
@@ -95,8 +104,20 @@ final class PurchaseOrderWorkflowSetPricesService
      */
     private function buildPlan(string $purchaseOrderUuid): array
     {
+        $po = $this->scope->findPoOrFail($purchaseOrderUuid);
+
         $products = $this->scope->productsForPo($purchaseOrderUuid, false);
         $newProductIds = array_flip($this->scope->newProductIdsForPo($purchaseOrderUuid));
+
+        /** @var array<int, int> $productIds */
+        $productIds = $products
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->values()
+            ->all();
+
+        $landedByProductId = $this->latestShippingCostedLanded->landedByProductId($productIds);
 
         $newPrices = [];
         $updates = [];
@@ -104,7 +125,11 @@ final class PurchaseOrderWorkflowSetPricesService
         $skippedNoCost = [];
 
         foreach ($products as $product) {
-            $row = $this->rowForProduct($product, isset($newProductIds[(int) $product->id]));
+            $row = $this->rowForProduct(
+                $product,
+                isset($newProductIds[(int) $product->id]),
+                $landedByProductId,
+            );
             $category = (string) ($row['category'] ?? '');
 
             match ($category) {
@@ -121,6 +146,7 @@ final class PurchaseOrderWorkflowSetPricesService
         $this->sortPreviewRows($skippedNoCost);
 
         return [
+            'landed_cost_warning' => $this->landedCostWarning($po),
             'new_prices' => $newPrices,
             'updates' => $updates,
             'unchanged' => $unchanged,
@@ -128,17 +154,32 @@ final class PurchaseOrderWorkflowSetPricesService
         ];
     }
 
+    private function landedCostWarning(PurchaseOrder $po): ?string
+    {
+        if ($po->shipping_total !== null) {
+            return null;
+        }
+
+        return 'Shipping total has not been entered for this PO. Landed cost uses the latest PO with an entered shipping total; new products may remain unpriced until shipping is entered.';
+    }
+
     /**
      * @return array<string, mixed>
      */
-    private function rowForProduct(Product $product, bool $isNewOnPo): array
+    /**
+     * @param  array<int, string>  $landedByProductId
+     */
+    private function rowForProduct(Product $product, bool $isNewOnPo, array $landedByProductId): array
     {
-        $landed = $this->landedCostForProduct($product);
+        $landed = $this->landedCostForProduct($product, $landedByProductId);
         $current = $product->sellingPrice?->selling_price;
         $currentNormalized = $this->normalizeMoney($current);
-        $proposed = CharmPricingCalculator::sellingPriceX99FromCost(
+        $proposed = CharmPricingCalculator::applyHighMultiplierReduction(
+            CharmPricingCalculator::sellingPriceX99FromCost(
+                $landed !== '' ? $landed : null,
+                self::LANDED_COST_MULTIPLIER,
+            ),
             $landed !== '' ? $landed : null,
-            self::LANDED_COST_MULTIPLIER,
         );
         $proposedNormalized = $this->normalizeMoney($proposed);
 
@@ -174,18 +215,18 @@ final class PurchaseOrderWorkflowSetPricesService
         return [...$base, 'category' => 'update', 'keep_reason' => null];
     }
 
-    private function landedCostForProduct(Product $product): string
+    /**
+     * @param  array<int, string>  $landedByProductId
+     */
+    private function landedCostForProduct(Product $product, array $landedByProductId): string
     {
-        $landed = is_string($product->latest_landed_unit_cost ?? null)
-            ? trim($product->latest_landed_unit_cost)
-            : '';
-        if ($landed !== '') {
-            return $landed;
+        $productId = (int) $product->id;
+        if (isset($landedByProductId[$productId])) {
+            return $landedByProductId[$productId];
         }
 
-        return is_string($product->latest_unit_cost ?? null)
-            ? trim($product->latest_unit_cost)
-            : '';
+        // Do not fall back to products.latest_* or a PO without an entered shipping total.
+        return '';
     }
 
     private function normalizeMoney(mixed $value): ?string

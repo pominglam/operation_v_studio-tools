@@ -2,7 +2,6 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../lib/api';
-import { formatLocalDate, formatLocalDateTime } from '../lib/datetime';
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
 import { splitBulkSearchTerms } from '../lib/productsBulkSearch';
 import AddProductForm, {
@@ -27,6 +26,10 @@ import PlamodDrawer from '../components/products/PlamodDrawer.vue';
 import ProductDemandDetailDialog from '../components/products/ProductDemandDetailDialog.vue';
 import ProductPoLinesDrawer from '../components/products/ProductPoLinesDrawer.vue';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
+import {
+    purchaseOrderFilterMultiSelectOption,
+    type PurchaseOrderFilterSource,
+} from '../lib/purchaseOrderFilterOption';
 import ConfirmDialog from '../components/ui/ConfirmDialog.vue';
 import PaginationControls from '../components/ui/PaginationControls.vue';
 
@@ -40,13 +43,7 @@ type Paginated<T> = {
     };
 };
 
-type PurchaseOrderOption = {
-    id: string;
-    vendor: string;
-    created_at: string | null;
-    received_date: string | null;
-    counts: { items: number };
-};
+type PurchaseOrderOption = PurchaseOrderFilterSource;
 
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -421,11 +418,7 @@ const isBulkActive = computed<boolean>(
 const purchaseOrders = ref<PurchaseOrderOption[]>([]);
 
 const purchaseOrderOptions = computed<MultiSelectOption[]>(() => {
-    return purchaseOrders.value.map((po) => ({
-        value: po.id,
-        label: poLabel(po),
-        muted: isPoMuted(po),
-    }));
+    return purchaseOrders.value.map((po) => purchaseOrderFilterMultiSelectOption(po));
 });
 
 const productFlagOptions: MultiSelectOption[] = [
@@ -1011,22 +1004,6 @@ async function loadFilterOptions(): Promise<void> {
             ...mainTypeDefaults.map((t) => ({ value: t, label: t })),
         ];
     }
-}
-
-function poLabel(po: PurchaseOrderOption): string {
-    const short = po.id.slice(0, 8);
-    const tail = `${po.vendor} · ${po.counts.items} items · ${short}`;
-    const rd = po.received_date?.trim();
-    if (rd) {
-        return `Received ${formatLocalDate(rd)} · ${tail}`;
-    }
-    const created = po.created_at ? formatLocalDateTime(po.created_at) : '—';
-    return `Not arrived · created ${created} · ${tail}`;
-}
-
-function isPoMuted(po: PurchaseOrderOption): boolean {
-    // Visually mute POs that are still not arrived.
-    return !po.received_date;
 }
 
 async function loadPurchaseOrders(): Promise<void> {
@@ -1826,6 +1803,10 @@ onMounted(() => {
     if (qNovelty === 'all' || qNovelty === 'new' || qNovelty === 'existing') {
         poProductNovelty.value = qNovelty;
     }
+    const qSearch = route.query.search;
+    if (typeof qSearch === 'string' && qSearch.trim() !== '') {
+        search.value = qSearch.trim();
+    }
 
     hydrating.value = false;
 
@@ -2362,7 +2343,7 @@ function resetListState(): void {
                                         class="h-4 w-4 rounded border-slate-300 text-slate-900"
                                         data-testid="products-filter-reorder-gt-one"
                                     />
-                                    <span>Only reorder &gt; 1</span>
+                                    <span>Only reorder &ge; 1</span>
                                 </label>
                             </div>
 

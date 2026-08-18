@@ -58,9 +58,7 @@ describe('PurchaseOrdersPage history status filter', () => {
         await nextTick();
 
         const getMock = api.get as unknown as ReturnType<typeof vi.fn>;
-        const poListCall = getMock.mock.calls.find(
-            (call) => call[0] === '/api/v1/purchase-orders',
-        );
+        const poListCall = getMock.mock.calls.find((call) => call[0] === '/api/v1/purchase-orders');
         expect(poListCall).toBeDefined();
         expect(poListCall?.[1]?.params?.statuses).toEqual([
             'draft',
@@ -91,14 +89,70 @@ describe('PurchaseOrdersPage history status filter', () => {
         await flush();
         await nextTick();
 
-        const poListCall = getMock.mock.calls.find(
-            (call) => call[0] === '/api/v1/purchase-orders',
-        );
+        const poListCall = getMock.mock.calls.find((call) => call[0] === '/api/v1/purchase-orders');
         expect(poListCall?.[1]?.params?.statuses).toEqual([
             'draft',
             'ordered',
             'shipped',
             'received',
         ]);
+    });
+
+    it('links a listed purchase order tracking number to 17TRACK', async () => {
+        const getMock = api.get as unknown as ReturnType<typeof vi.fn>;
+        getMock.mockImplementation(async (url: string) => {
+            if (url.endsWith('/filter-options')) {
+                return { status: 200, data: { data: { vendors: [] } } };
+            }
+            if (url === '/api/v1/purchase-orders') {
+                return {
+                    status: 200,
+                    data: {
+                        ...emptyPaginated,
+                        data: [
+                            {
+                                id: 'po-tracking-test',
+                                status: 'shipped',
+                                shipment_method: 'air',
+                                shipment_tracking_numbers: ['1Z999AA10123456784', 'RR123456789CN'],
+                                vendor: 'Test vendor',
+                                supplier_order_id: null,
+                                vendor_currency_code: 'CAD',
+                                vendor_product_total: null,
+                                vendor_shipping_total: null,
+                                fx_rate_to_cad: null,
+                                ordered_date: null,
+                                shipped_date: null,
+                                estimated_arrival_date: null,
+                                received_date: null,
+                                fully_on_shelves_date: null,
+                                shipping_total: null,
+                                surcharge_total: null,
+                                product_total: null,
+                                notes: null,
+                                counts: { items: 0 },
+                                created_at: null,
+                            },
+                        ],
+                    },
+                };
+            }
+            throw new Error(`Unexpected GET ${url}`);
+        });
+
+        const wrapper = mount(PurchaseOrdersPage);
+        await flush();
+        await nextTick();
+
+        const firstLink = wrapper.get('[data-testid="po-history-tracking-po-tracking-test-0"]');
+        expect(firstLink.text()).toContain('1Z999AA10123456784');
+        expect(firstLink.attributes('href')).toBe(
+            'https://t.17track.net/en#nums=1Z999AA10123456784',
+        );
+        expect(firstLink.attributes('target')).toBe('_blank');
+
+        const secondLink = wrapper.get('[data-testid="po-history-tracking-po-tracking-test-1"]');
+        expect(secondLink.text()).toContain('RR123456789CN');
+        expect(secondLink.attributes('href')).toBe('https://t.17track.net/en#nums=RR123456789CN');
     });
 });

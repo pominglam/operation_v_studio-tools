@@ -1,0 +1,47 @@
+---
+description: Patterns for external data pull features (scrapers, sync jobs, cached snapshots)
+alwaysApply: false
+globs:
+  - app/Services/**/*
+  - app/Jobs/**/*
+  - node/**/*-scraper/**/*
+  - resources/js/pages/**/*
+  - tests/**/*
+---
+
+# Data pull features
+
+Use this checklist when adding or changing features that **pull data from an external system** (scrapers, Shopify sync, CSV exports) into local cache tables for operator review.
+
+## Architecture
+
+| Layer | Responsibility |
+| --- | --- |
+| **Dispatch service** | Health check → create sync log → queue job; return `{ ok, sync_log_id, error_message? }` |
+| **Sync job** | Single queue name per domain; idempotent upsert; persist log status + counts |
+| **Snapshot table(s)** | Normalized rows keyed by stable external id (SKU, GID); `last_seen_at`; optional raw path in log |
+| **Status API** | Latest log row for SPA polling (`running` / `completed` / `failed`) |
+| **UI** | Manual refresh button only unless spec says otherwise; poll until terminal state; reload proposal after success |
+
+## Mandatory behavior
+
+1. **Health before queue** — Do not enqueue if scraper `/health` or required routes are missing; surface a clear error in API + UI.
+2. **Sync logs** — Every run gets a row: `status`, timestamps, `duration_ms`, `counts_json`, `error_summary`.
+3. **Idempotent import** — Upsert by natural key; delete rows not seen in latest successful import when the export is authoritative full snapshot.
+4. **Never block HTTP** — Pull runs in a queued job with sane timeout; UI polls status.
+5. **Verify with a real pull** — Before marking done: trigger refresh once in browser or via API, confirm row counts and critical fields (not only unit tests with fixtures).
+6. **Field mapping per source tab/mode** — When the same scraper path serves multiple tabs (e.g. Preorder vs In-Stock), tab-specific required fields and enrich rules must be explicit in scraper + import (do not reuse preorder-only checks for stock price).
+7. **Session/auth resilience** — Scraper steps that navigate away from the list page (PDP enrich) must re-login and retry once before failing the batch.
+8. **Docs + tests** — Feature doc under `docs/features/`, Pest feature test for API, Vitest for page controls, targeted e2e when user-visible.
+
+## UI copy
+
+- Button: **Refresh from {Source}** or **Refresh {domain} snapshot** (not “Sync now” unless established elsewhere).
+- While running: disable button + show queued/running from latest log.
+- On failure: show `error_summary`; do not imply data is fresh.
+
+## Related rules
+
+- `shopify-erp-integration.mdc` — Shopify-specific pull constraints
+- `always-test-before-done.mdc` — run targeted tests + real pull verification
+- `definition_of_done.mdc` — external integrations need end-to-end check

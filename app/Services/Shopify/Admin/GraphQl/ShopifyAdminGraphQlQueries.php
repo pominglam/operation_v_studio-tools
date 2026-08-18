@@ -193,7 +193,10 @@ query Orders($first: Int!, $after: String) {
       name
       displayFinancialStatus
       displayFulfillmentStatus
+      sourceName
+      channelInformation { channelDefinition { channelName } }
       cancelledAt
+      currentSubtotalPriceSet { shopMoney { amount currencyCode } }
       createdAt
       updatedAt
       lineItems(first: 100) {
@@ -220,7 +223,10 @@ query OrdersIncremental($first: Int!, $after: String, $query: String) {
       name
       displayFinancialStatus
       displayFulfillmentStatus
+      sourceName
+      channelInformation { channelDefinition { channelName } }
       cancelledAt
+      currentSubtotalPriceSet { shopMoney { amount currencyCode } }
       createdAt
       updatedAt
       lineItems(first: 100) {
@@ -245,7 +251,10 @@ query OrderById($id: ID!) {
     name
     displayFinancialStatus
     displayFulfillmentStatus
+    sourceName
+    channelInformation { channelDefinition { channelName } }
     cancelledAt
+    currentSubtotalPriceSet { shopMoney { amount currencyCode } }
     createdAt
     updatedAt
     lineItems(first: 100) {

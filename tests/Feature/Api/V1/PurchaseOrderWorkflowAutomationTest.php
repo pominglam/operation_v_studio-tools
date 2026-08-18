@@ -71,6 +71,9 @@ it('previews PO set prices grouped by new, updates, unchanged, and skipped', fun
         'uuid' => '00000000-0000-0000-0000-000000111220',
         'vendor' => 'Plamod',
         'vendor_currency_code' => 'CAD',
+        'shipping_total' => '0.00',
+        'received_date' => '2026-01-15',
+        'fully_on_shelves_date' => '2026-01-16',
     ]);
 
     $newProduct = Product::query()->create([
@@ -140,6 +143,7 @@ it('previews PO set prices grouped by new, updates, unchanged, and skipped', fun
             'product_id' => $product->id,
             'sku' => (string) $product->sku,
             'vendor' => 'Plamod',
+            'unit_cost' => '4.00',
             'qty_ordered' => 1,
         ]);
     }
@@ -147,29 +151,189 @@ it('previews PO set prices grouped by new, updates, unchanged, and skipped', fun
     $res = $this->getJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/set-prices/preview");
 
     $res->assertOk();
-    $res->assertJsonPath('data.apply_count', 2);
+    $res->assertJsonPath('data.landed_cost_warning', null);
+    $res->assertJsonPath('data.apply_count', 1);
     $res->assertJsonPath('data.new_prices.0.sku', 'PREVIEW-NEW');
-    $res->assertJsonPath('data.new_prices.0.proposed_price', '6.99');
-    $res->assertJsonPath('data.new_prices.0.proposed_multiplier', '1.75');
-    $res->assertJsonPath('data.updates.0.sku', 'PREVIEW-UPDATE');
-    $res->assertJsonPath('data.updates.0.current_price', '5.99');
-    $res->assertJsonPath('data.updates.0.current_multiplier', '1.50');
-    $res->assertJsonPath('data.updates.0.proposed_multiplier', '1.75');
+    $res->assertJsonPath('data.new_prices.0.proposed_price', '5.99');
+    $res->assertJsonPath('data.new_prices.0.proposed_multiplier', '1.50');
 
     $unchanged = collect($res->json('data.unchanged'))->keyBy('sku');
     expect($unchanged->has('PREVIEW-SAME'))->toBeTrue();
+    expect($unchanged->has('PREVIEW-UPDATE'))->toBeTrue();
+    expect($unchanged->get('PREVIEW-UPDATE')['current_price'] ?? null)->toBe('5.99');
+    expect($unchanged->get('PREVIEW-UPDATE')['proposed_price'] ?? null)->toBe('5.99');
     expect($unchanged->get('PREVIEW-KEEP')['keep_reason'] ?? null)->toBe('current_higher_than_formula');
     expect($unchanged->get('PREVIEW-KEEP')['current_multiplier'] ?? null)->toBe('2.75');
-    expect($unchanged->get('PREVIEW-KEEP')['proposed_multiplier'] ?? null)->toBe('1.75');
+    expect($unchanged->get('PREVIEW-KEEP')['proposed_multiplier'] ?? null)->toBe('1.50');
 });
 
-it('sets PO product prices at 1.5x landed cost rounded to x.99', function (): void {
+it('previews set prices using the current unreceived PO after shipping is entered', function (): void {
+    $receivedPo = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111229',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+        'shipping_total' => '10.00',
+        'surcharge_total' => '0.00',
+        'ordered_date' => '2026-01-01',
+        'received_date' => '2026-01-01',
+        'fully_on_shelves_date' => '2026-01-05',
+    ]);
+
+    $workflowPo = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111230',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+        'shipping_total' => '10.00',
+        'surcharge_total' => '0.00',
+        'ordered_date' => '2026-02-01',
+    ]);
+
+    $product = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111231',
+        'sku' => 'LANDED-PO-SKU',
+        'barcode' => '9990020',
+        'description' => 'Uses current shipping-costed landed cost',
+        'type' => 'Others',
+        'vendor' => 'Plamod',
+        'latest_unit_cost' => '40.00',
+        'latest_landed_unit_cost' => '40.00',
+    ]);
+
+    ProductSellingPrice::query()->create([
+        'product_id' => $product->id,
+        'product_uuid' => $product->uuid,
+        'selling_price' => '93.99',
+        'currency' => 'CAD',
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $receivedPo->id,
+        'product_id' => $product->id,
+        'sku' => 'LANDED-PO-SKU',
+        'vendor' => 'Plamod',
+        'unit_cost' => '40.00',
+        'qty_ordered' => 2,
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $workflowPo->id,
+        'product_id' => $product->id,
+        'sku' => 'LANDED-PO-SKU',
+        'vendor' => 'Plamod',
+        'unit_cost' => '50.00',
+        'qty_ordered' => 2,
+    ]);
+
+    $res = $this->getJson("/api/v1/purchase-orders/{$workflowPo->uuid}/workflow-actions/set-prices/preview");
+
+    $res->assertOk();
+    $res->assertJsonPath('data.landed_cost_warning', null);
+    $res->assertJsonPath('data.unchanged.0.sku', 'LANDED-PO-SKU');
+    $res->assertJsonPath('data.unchanged.0.landed_unit_cost', '55.00');
+    $res->assertJsonPath('data.unchanged.0.current_multiplier', '1.71');
+    $res->assertJsonPath('data.unchanged.0.proposed_price', '81.99');
+    $res->assertJsonPath('data.unchanged.0.proposed_multiplier', '1.49');
+});
+
+it('previews set prices using FX-converted vendor unit cost when CAD unit cost is null', function (): void {
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111240',
+        'vendor' => 'Dspiae',
+        'vendor_currency_code' => 'HKD',
+        'fx_rate_to_cad' => '0.180000',
+        'shipping_total' => '0.00',
+        'surcharge_total' => '0.00',
+        'received_date' => '2026-02-01',
+        'fully_on_shelves_date' => '2026-02-02',
+    ]);
+
+    $product = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111241',
+        'sku' => 'FX-LANDED-SKU',
+        'barcode' => '9990021',
+        'description' => 'FX landed product',
+        'type' => 'Others',
+        'vendor' => 'Dspiae',
+        'latest_unit_cost' => '99.00',
+        'latest_landed_unit_cost' => '99.00',
+    ]);
+
+    ProductSellingPrice::query()->create([
+        'product_id' => $product->id,
+        'product_uuid' => $product->uuid,
+        'selling_price' => '149.99',
+        'currency' => 'CAD',
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => 'FX-LANDED-SKU',
+        'vendor' => 'Dspiae',
+        'vendor_unit_cost' => '100.0000',
+        'unit_cost' => null,
+        'qty_ordered' => 1,
+    ]);
+
+    $res = $this->getJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/set-prices/preview");
+
+    $res->assertOk();
+    $res->assertJsonPath('data.unchanged.0.landed_unit_cost', '18.00');
+    $res->assertJsonPath('data.unchanged.0.proposed_price', '26.99');
+});
+
+it('skips set prices rows without a PO line whose shipping total is entered', function (): void {
+    $po = PurchaseOrder::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111250',
+        'vendor' => 'Plamod',
+        'vendor_currency_code' => 'CAD',
+    ]);
+
+    $product = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000111251',
+        'sku' => 'NO-CACHE-SKU',
+        'barcode' => '9990022',
+        'description' => 'Missing PO unit cost',
+        'type' => 'Others',
+        'vendor' => 'Plamod',
+        'latest_unit_cost' => '6.63',
+        'latest_landed_unit_cost' => '6.63',
+    ]);
+
+    ProductSellingPrice::query()->create([
+        'product_id' => $product->id,
+        'product_uuid' => $product->uuid,
+        'selling_price' => '12.99',
+        'currency' => 'CAD',
+    ]);
+
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $po->id,
+        'product_id' => $product->id,
+        'sku' => 'NO-CACHE-SKU',
+        'vendor' => 'Plamod',
+        'unit_cost' => null,
+        'qty_ordered' => 1,
+    ]);
+
+    $res = $this->getJson("/api/v1/purchase-orders/{$po->uuid}/workflow-actions/set-prices/preview");
+
+    $res->assertOk();
+    expect(collect($res->json('data.skipped_no_cost'))->pluck('sku')->all())->toContain('NO-CACHE-SKU');
+    expect(collect($res->json('data.unchanged'))->pluck('sku')->all())->not->toContain('NO-CACHE-SKU');
+});
+
+it('sets PO product prices at 1.5x landed cost rounded to x.99 with high-multiplier adjustment', function (): void {
     expect(CharmPricingCalculator::sellingPriceX99FromCost('4.00', '1.5'))->toBe('6.99');
+    expect(CharmPricingCalculator::applyHighMultiplierReduction('6.99', '4.00'))->toBe('5.99');
 
     $po = PurchaseOrder::query()->create([
         'uuid' => '00000000-0000-0000-0000-000000111221',
         'vendor' => 'Plamod',
         'vendor_currency_code' => 'CAD',
+        'shipping_total' => '0.00',
+        'received_date' => '2026-01-10',
+        'fully_on_shelves_date' => '2026-01-11',
     ]);
 
     $p = Product::query()->create([
@@ -187,6 +351,7 @@ it('sets PO product prices at 1.5x landed cost rounded to x.99', function (): vo
         'product_id' => $p->id,
         'sku' => 'PRICE-SKU',
         'vendor' => 'Plamod',
+        'unit_cost' => '4.00',
         'qty_ordered' => 1,
     ]);
 
@@ -198,7 +363,7 @@ it('sets PO product prices at 1.5x landed cost rounded to x.99', function (): vo
 
     $this->assertDatabaseHas('product_selling_prices', [
         'product_id' => $p->id,
-        'selling_price' => '6.99',
+        'selling_price' => '5.99',
     ]);
 });
 
@@ -207,6 +372,9 @@ it('does not reduce existing price when formula is lower', function (): void {
         'uuid' => '00000000-0000-0000-0000-000000111225',
         'vendor' => 'Plamod',
         'vendor_currency_code' => 'CAD',
+        'shipping_total' => '0.00',
+        'received_date' => '2026-01-10',
+        'fully_on_shelves_date' => '2026-01-11',
     ]);
 
     $p = Product::query()->create([
@@ -249,6 +417,9 @@ it('applies a manual selling price override for a PO product', function (): void
         'uuid' => '00000000-0000-0000-0000-000000111235',
         'vendor' => 'Plamod',
         'vendor_currency_code' => 'CAD',
+        'shipping_total' => '0.00',
+        'received_date' => '2026-01-10',
+        'fully_on_shelves_date' => '2026-01-11',
     ]);
 
     $p = Product::query()->create([
@@ -304,6 +475,9 @@ it('raises existing price when formula is higher', function (): void {
         'uuid' => '00000000-0000-0000-0000-000000111227',
         'vendor' => 'Plamod',
         'vendor_currency_code' => 'CAD',
+        'shipping_total' => '0.00',
+        'received_date' => '2026-01-10',
+        'fully_on_shelves_date' => '2026-01-11',
     ]);
 
     $p = Product::query()->create([
@@ -319,7 +493,7 @@ it('raises existing price when formula is higher', function (): void {
     ProductSellingPrice::query()->create([
         'product_id' => $p->id,
         'product_uuid' => $p->uuid,
-        'selling_price' => '5.99',
+        'selling_price' => '4.99',
         'currency' => 'CAD',
     ]);
 
@@ -328,6 +502,7 @@ it('raises existing price when formula is higher', function (): void {
         'product_id' => $p->id,
         'sku' => 'PRICE-RAISE-SKU',
         'vendor' => 'Plamod',
+        'unit_cost' => '4.00',
         'qty_ordered' => 1,
     ]);
 
@@ -337,7 +512,7 @@ it('raises existing price when formula is higher', function (): void {
 
     $this->assertDatabaseHas('product_selling_prices', [
         'product_id' => $p->id,
-        'selling_price' => '6.99',
+        'selling_price' => '5.99',
     ]);
 });
 

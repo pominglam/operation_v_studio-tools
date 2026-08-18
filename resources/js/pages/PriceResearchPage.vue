@@ -12,7 +12,12 @@ import {
 import { parseNonNegativeIntOrNull } from '../lib/numbers';
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
+import {
+    purchaseOrderFilterMultiSelectOption,
+    type PurchaseOrderFilterSource,
+} from '../lib/purchaseOrderFilterOption';
 import PaginationControls from '../components/ui/PaginationControls.vue';
+import ProductPoLinesDrawer from '../components/products/ProductPoLinesDrawer.vue';
 
 type Quote = {
     site_key: string;
@@ -92,6 +97,15 @@ const reporting = ref<{
 } | null>(null);
 const reportNote = ref('');
 const reportSaving = ref(false);
+const poLinesProduct = ref<ProductResearch | null>(null);
+
+function openPoLinesDrawer(product: ProductResearch): void {
+    poLinesProduct.value = product;
+}
+
+function closePoLinesDrawer(): void {
+    poLinesProduct.value = null;
+}
 
 const isRunActive = computed<boolean>(() => {
     return runStatus.value?.status === 'queued' || runStatus.value?.status === 'running';
@@ -224,24 +238,14 @@ const vendorOptions = computed<MultiSelectOption[]>(() => {
 });
 const vendors = ref<string[]>([]);
 
-type PurchaseOrderOption = {
-    id: string;
-    vendor: string;
-    created_at: string | null;
-    received_date: string | null;
-    counts: { items: number };
-};
+type PurchaseOrderOption = PurchaseOrderFilterSource;
 
 const purchaseOrderUuids = ref<string[]>([]);
 const poProductNovelty = ref<'all' | 'new' | 'existing'>('all');
 const purchaseOrders = ref<PurchaseOrderOption[]>([]);
 
 const purchaseOrderOptions = computed<MultiSelectOption[]>(() => {
-    return purchaseOrders.value.map((po) => ({
-        value: po.id,
-        label: poLabel(po),
-        muted: isPoMuted(po),
-    }));
+    return purchaseOrders.value.map((po) => purchaseOrderFilterMultiSelectOption(po));
 });
 
 const STATE_KEY = 'page_state:price_research';
@@ -489,22 +493,6 @@ async function loadProductFilterOptions(): Promise<void> {
     } catch {
         // ignore
     }
-}
-
-function poLabel(po: PurchaseOrderOption): string {
-    const short = po.id.slice(0, 8);
-    const tail = `${po.vendor} · ${po.counts.items} items · ${short}`;
-    const rd = po.received_date?.trim();
-    if (rd) {
-        return `Received ${formatLocalDate(rd)} · ${tail}`;
-    }
-    const created = po.created_at ? formatLocalDateTime(po.created_at) : '—';
-    return `Not arrived · created ${created} · ${tail}`;
-}
-
-function isPoMuted(po: PurchaseOrderOption): boolean {
-    // Visually mute POs that are still not arrived.
-    return !po.received_date;
 }
 
 async function loadPurchaseOrders(): Promise<void> {
@@ -1520,28 +1508,43 @@ function resetPageState(): void {
                                     }}</span>
                                 </td>
                                 <td class="px-4 py-3 text-right tabular-nums text-slate-700">
-                                    <div class="flex flex-col items-end">
-                                        <input
-                                            class="w-24 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-sm tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
-                                            type="text"
-                                            inputmode="decimal"
-                                            :value="
-                                                sellingPriceDrafts[p.id] ?? p.selling_price ?? ''
-                                            "
-                                            :disabled="savingSellingPrice === p.id"
-                                            placeholder="—"
-                                            @focus="startSellingPriceEdit(p.id, p.selling_price)"
-                                            @input="
-                                                updateSellingPriceDraft(
-                                                    p.id,
-                                                    ($event.target as HTMLInputElement).value,
-                                                )
-                                            "
-                                            @blur="commitSellingPriceEdit(p.id)"
-                                        />
-                                        <div class="mt-1 text-xs text-slate-500 tabular-nums">
-                                            {{ marginMultiplier(p) ?? '—' }}
+                                    <div class="flex items-start justify-end gap-2">
+                                        <div class="flex flex-col items-end">
+                                            <input
+                                                class="w-24 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-sm tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                                                type="text"
+                                                inputmode="decimal"
+                                                :value="
+                                                    sellingPriceDrafts[p.id] ??
+                                                    p.selling_price ??
+                                                    ''
+                                                "
+                                                :disabled="savingSellingPrice === p.id"
+                                                placeholder="—"
+                                                @focus="
+                                                    startSellingPriceEdit(p.id, p.selling_price)
+                                                "
+                                                @input="
+                                                    updateSellingPriceDraft(
+                                                        p.id,
+                                                        ($event.target as HTMLInputElement).value,
+                                                    )
+                                                "
+                                                @blur="commitSellingPriceEdit(p.id)"
+                                            />
+                                            <div class="mt-1 text-xs text-slate-500 tabular-nums">
+                                                {{ marginMultiplier(p) ?? '—' }}
+                                            </div>
                                         </div>
+                                        <button
+                                            type="button"
+                                            class="mt-0.5 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-sky-700 hover:border-sky-300 hover:bg-sky-50"
+                                            :aria-label="`PO lines for ${p.sku}`"
+                                            title="View purchase-order history"
+                                            @click="openPoLinesDrawer(p)"
+                                        >
+                                            PO lines
+                                        </button>
                                     </div>
                                 </td>
                                 <td
@@ -1737,6 +1740,14 @@ function resetPageState(): void {
                 :on-change="onPageChange"
             />
         </div>
+
+        <ProductPoLinesDrawer
+            :open="poLinesProduct !== null"
+            :product-id="poLinesProduct?.id ?? null"
+            :product-sku="poLinesProduct?.sku ?? null"
+            :product-name="poLinesProduct?.description ?? null"
+            @close="closePoLinesDrawer"
+        />
 
         <div
             v-if="reporting"

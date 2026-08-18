@@ -13,6 +13,7 @@ final class PlamodPreorderMissingImageEnrichService
 
     public function __construct(
         private readonly PlamodScraper $scraper,
+        private readonly PlamodPreorderOfferUpsertService $offerUpserts,
     ) {}
 
     /**
@@ -65,6 +66,11 @@ final class PlamodPreorderMissingImageEnrichService
                 }
 
                 $imageUrl = trim((string) ($fields['image_url'] ?? ''));
+                $offers = is_array($fields['preorder_offers'] ?? null) ? $fields['preorder_offers'] : [];
+                if ($offers !== []) {
+                    $this->offerUpserts->replaceForSku($sku, $offers);
+                }
+
                 if ($imageUrl === '') {
                     $failed++;
 

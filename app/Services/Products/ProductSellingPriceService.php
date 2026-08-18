@@ -6,6 +6,7 @@ namespace App\Services\Products;
 
 use App\DAL\Products\ProductRepository;
 use App\DAL\Products\ProductSellingPriceRepository;
+use App\DTOs\Products\ProductSellingPriceUpsertContext;
 use App\Models\ProductSellingPrice;
 
 final class ProductSellingPriceService
@@ -15,10 +16,19 @@ final class ProductSellingPriceService
         private readonly ProductSellingPriceRepository $sellingPrices,
     ) {}
 
-    public function upsertForProductUuid(string $productUuid, ?string $sellingPrice, string $currency = 'CAD'): ProductSellingPrice
-    {
+    public function upsertForProductUuid(
+        string $productUuid,
+        ?string $sellingPrice,
+        string $currency = 'CAD',
+        ?ProductSellingPriceUpsertContext $context = null,
+    ): ProductSellingPrice {
         $product = $this->products->findByUuidOrFail($productUuid);
 
-        return $this->sellingPrices->upsertForProduct($product, $sellingPrice, $currency);
+        return $this->sellingPrices->upsertForProduct(
+            $product,
+            $sellingPrice,
+            $currency,
+            $context ?? new ProductSellingPriceUpsertContext('manual'),
+        );
     }
 }

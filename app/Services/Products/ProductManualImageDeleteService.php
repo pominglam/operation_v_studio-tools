@@ -13,6 +13,7 @@ final class ProductManualImageDeleteService
 {
     public function __construct(
         private readonly ProductExternalAssetRepository $assets,
+        private readonly ProductExternalAssetThumbnailService $thumbnails,
     ) {}
 
     /**
@@ -32,6 +33,7 @@ final class ProductManualImageDeleteService
 
         $storagePath = trim((string) $asset->storage_path);
         $this->assets->deleteById($assetId);
+        $this->thumbnails->deleteThumbnail($assetId);
 
         if ($storagePath !== '') {
             Storage::disk('local')->delete($storagePath);

@@ -47,6 +47,9 @@ const typeRecomputeMessage = ref<string | null>(null);
 const typeRecomputeError = ref<string | null>(null);
 const refreshLatestCostsMessage = ref<string | null>(null);
 const refreshLatestCostsError = ref<string | null>(null);
+const refreshingPlamodInstock = ref(false);
+const refreshPlamodInstockMessage = ref<string | null>(null);
+const refreshPlamodInstockError = ref<string | null>(null);
 const notesMessage = ref<string | null>(null);
 const notesError = ref<string | null>(null);
 const notesBody = ref<string>('');
@@ -278,6 +281,13 @@ type ConfirmState =
           message: string;
           confirmText: string;
           variant: 'danger' | 'primary';
+      }
+    | {
+          kind: 'plamod_instock_refresh';
+          title: string;
+          message: string;
+          confirmText: string;
+          variant: 'danger' | 'primary';
       };
 
 const confirm = ref<ConfirmState | null>(null);
@@ -357,6 +367,17 @@ function requestClearStaleLatestArrival(): void {
     };
 }
 
+function requestRefreshPlamodInstock(): void {
+    confirm.value = {
+        kind: 'plamod_instock_refresh',
+        title: 'Refresh PLAMOD in-stock catalog',
+        message:
+            'Queue a Playwright export of Bandai Hobby Plastic Model Kits (In-Stock tab) into the restock snapshot. Continue?',
+        confirmText: 'Refresh',
+        variant: 'primary',
+    };
+}
+
 function requestRestoreDb(): void {
     if (!selectedRestoreUuid.value) return;
     const b = dbBackups.value.find((x) => x.uuid === selectedRestoreUuid.value) ?? null;
@@ -401,6 +422,11 @@ async function confirmAction(): Promise<void> {
 
     if (current.kind === 'clear_stale_latest_arrival') {
         await clearStaleLatestArrival();
+        return;
+    }
+
+    if (current.kind === 'plamod_instock_refresh') {
+        await refreshPlamodInstockCatalog();
         return;
     }
 
@@ -475,6 +501,24 @@ async function refreshLatestCosts(): Promise<void> {
         refreshLatestCostsError.value = 'Failed to refresh latest costs.';
     } finally {
         refreshingLatestCosts.value = false;
+        confirm.value = null;
+    }
+}
+
+async function refreshPlamodInstockCatalog(): Promise<void> {
+    refreshingPlamodInstock.value = true;
+    refreshPlamodInstockMessage.value = null;
+    refreshPlamodInstockError.value = null;
+
+    try {
+        const res = await api.post<{ data: { ok: boolean; sync_log_id: number | null } }>(
+            '/api/v1/plamod/restock/sync',
+        );
+        refreshPlamodInstockMessage.value = `Queued PLAMOD in-stock refresh (log #${res.data.data.sync_log_id ?? '—'}).`;
+    } catch {
+        refreshPlamodInstockError.value = 'Failed to queue PLAMOD in-stock refresh.';
+    } finally {
+        refreshingPlamodInstock.value = false;
         confirm.value = null;
     }
 }
@@ -1587,6 +1631,45 @@ watch(
                 class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
             >
                 {{ refreshLatestCostsMessage }}
+            </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                    <div class="text-sm font-medium text-slate-900">Refresh PLAMOD in-stock catalog</div>
+                    <div class="mt-1 text-sm text-slate-600">
+                        Export Bandai Hobby Plastic Model Kits (In-Stock) for the
+                        <RouterLink to="/restocking/plamod" class="font-medium text-blue-700 hover:underline">
+                            restock proposal
+                        </RouterLink>
+                        page.
+                    </div>
+                </div>
+
+                <button
+                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    :disabled="refreshingPlamodInstock"
+                    data-testid="maintenance-plamod-instock-refresh"
+                    @click="requestRefreshPlamodInstock"
+                >
+                    {{ refreshingPlamodInstock ? 'Queueing…' : 'Refresh PLAMOD in-stock' }}
+                </button>
+            </div>
+
+            <div
+                v-if="refreshPlamodInstockError"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
+                {{ refreshPlamodInstockError }}
+            </div>
+
+            <div
+                v-if="refreshPlamodInstockMessage"
+                class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+                {{ refreshPlamodInstockMessage }}
             </div>
         </div>
 

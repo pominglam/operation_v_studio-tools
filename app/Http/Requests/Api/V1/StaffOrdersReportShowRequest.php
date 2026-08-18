@@ -20,27 +20,66 @@ final class StaffOrdersReportShowRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'month' => ['required', 'regex:/^\d{4}-\d{2}$/'],
+            'month' => ['sometimes', 'regex:/^\d{4}-\d{2}$/'],
+            'from_month' => ['sometimes', 'regex:/^\d{4}-\d{2}$/'],
+            'to_month' => ['sometimes', 'regex:/^\d{4}-\d{2}$/'],
         ];
     }
 
-    public function month(): string
+    /**
+     * @return array{0: string, 1: string}
+     */
+    public function resolvedRange(): array
     {
-        return (string) $this->validated('month');
+        $validated = $this->validated();
+        $month = is_string($validated['month'] ?? null) ? trim($validated['month']) : '';
+        if ($month !== '') {
+            return [$month, $month];
+        }
+
+        return [
+            (string) $validated['from_month'],
+            (string) $validated['to_month'],
+        ];
     }
 
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
-            $month = (string) $this->input('month', '');
-            if ($month === '' || $validator->errors()->has('month')) {
+            $month = trim((string) $this->input('month', ''));
+            $fromMonth = trim((string) $this->input('from_month', ''));
+            $toMonth = trim((string) $this->input('to_month', ''));
+
+            if ($month !== '' && ! $validator->errors()->has('month')) {
+                $this->assertValidMonth($validator, 'month', $month);
+
                 return;
             }
 
-            $parsed = \DateTimeImmutable::createFromFormat('Y-m-d', $month.'-01');
-            if ($parsed === false || $parsed->format('Y-m') !== $month) {
-                $validator->errors()->add('month', 'Month must be a valid YYYY-MM value.');
+            if ($fromMonth === '' || $toMonth === '') {
+                $validator->errors()->add('from_month', 'Provide month or both from_month and to_month.');
+
+                return;
+            }
+
+            if ($validator->errors()->hasAny(['from_month', 'to_month'])) {
+                return;
+            }
+
+            $this->assertValidMonth($validator, 'from_month', $fromMonth);
+            $this->assertValidMonth($validator, 'to_month', $toMonth);
+
+            if ($fromMonth > $toMonth) {
+                $validator->errors()->add('to_month', 'to_month must be on or after from_month.');
             }
         });
+    }
+
+    private function assertValidMonth(Validator $validator, string $field, string $month): void
+    {
+        $parsed = \DateTimeImmutable::createFromFormat('Y-m-d', $month.'-01');
+        if ($parsed === false || $parsed->format('Y-m') !== $month) {
+            $validator->errors()->add($field, 'Month must be a valid YYYY-MM value.');
+        }
     }
 }

@@ -600,7 +600,7 @@ final class EloquentProductRepository implements ProductRepository
             $q->whereRaw("{$reorderQtyExpr} = ?", [$reorder]);
         }
         if ($reorderGtOne) {
-            $q->whereRaw("{$reorderQtyExpr} > 1");
+            $q->whereRaw("{$reorderQtyExpr} >= 1");
         }
         $this->applySellingPriceRangeFilter($q, $sellingPriceMin, $sellingPriceMax);
 
@@ -1362,6 +1362,7 @@ final class EloquentProductRepository implements ProductRepository
 
             // Detach or delete dependent records that have FK restrictions.
             DB::table('product_selling_prices')->whereIn('product_id', $productIds)->delete();
+            DB::table('product_selling_price_history')->whereIn('product_id', $productIds)->delete();
             DB::table('product_external_assets')->whereIn('product_id', $productIds)->delete();
             DB::table('product_external_contents')->whereIn('product_id', $productIds)->delete();
 

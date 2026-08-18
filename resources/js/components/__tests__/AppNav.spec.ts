@@ -15,6 +15,7 @@ describe('AppNav', () => {
                     component: { template: '<div />' },
                 },
                 { path: '/maintenance', name: 'maintenance', component: { template: '<div />' } },
+                { path: '/restocking/plamod', name: 'plamod-restock', component: { template: '<div />' } },
             ],
         });
 
@@ -27,6 +28,7 @@ describe('AppNav', () => {
 
         expect(wrapper.text()).toContain('Products');
         expect(wrapper.text()).toContain('Pricing');
+        expect(wrapper.text()).toContain('Restock');
         expect(wrapper.text()).toContain('Maintenance');
     });
 });

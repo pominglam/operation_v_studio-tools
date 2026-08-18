@@ -1,0 +1,43 @@
+---
+description: Use the correct source column for every calculation — verify three times before shipping
+alwaysApply: true
+---
+
+# Data column discipline
+
+Wrong column = wrong math for the entire feature. Treat column/source mix-ups as **severity-1** bugs.
+
+## Before using a value in business logic or UI
+
+1. **Name the semantic** — e.g. “this PO line landed CAD”, “catalog selling price”, “historical latest landed from last PO”.
+2. **Trace to canonical source** — table/column or API field; read the feature doc and the screen that already shows the correct number.
+3. **Cross-check another layer** — if PO detail **Landed** shows X, set-prices / exports / formulas must use the same resolver, not a nearby column (`latest_landed_unit_cost`, raw `unit_cost` vs FX-converted CAD, product vs line, etc.).
+
+## PO costing column cheat sheet (pricing-tool)
+
+| Label / intent | Use | Do **not** substitute |
+| --- | --- | --- |
+| **Shipping-costed landed (set-prices / formula)** | `ProductLatestArrivedLandedUnitCostResolver` — line from the latest PO where **`purchase_orders.shipping_total IS NOT NULL`**, ordered by `ordered_date`; CAD unit + shipping/surcharge allocated across **all lines on that PO** | PO with shipping still `NULL`; raw DB `unit_cost`; product cache fallback |
+| **This PO line unit (CAD)** | `PurchaseOrderItemCadUnitCostResolver` → same as `PurchaseOrderItemResource.unit_cost` | Raw DB `unit_cost` on foreign-currency POs; `vendor_unit_cost` without FX |
+| **Historical latest landed (catalog cache)** | `products.latest_landed_unit_cost` from **`ProductLatestArrivedLandedUnitCostResolver`** / maintenance refresh — latest PO with entered shipping | PO with shipping still `NULL`; PO `created_at` ordering |
+| **PLAMOD restock new cost** | `plamod_instock_items.price_stock` | ERP `latest_unit_cost` unless spec says otherwise |
+
+## Workflow-specific rules
+
+- **Set/review selling prices** (`PurchaseOrderWorkflowSetPricesService`): formula and **Mult.** use the product line from the latest PO whose shipping total has been entered. This can be the current unreceived PO, allowing new products to be priced once shipping is known.
+- **PO detail grid Landed column** uses **this PO's** line (`PurchaseOrderLandedUnitCostResolver`). **Set-prices dialog Landed** uses the latest shipping-costed PO per product.
+- An explicit shipping total of **`0.00` is valid**; `NULL` means shipping has not been entered.
+- Shipping/surcharge allocation must use totals across **every line on the selected PO**, not only the one product line being priced.
+- When adding sort/filter/formula fields, document which column feeds each displayed number in the feature doc.
+
+## Tests required when touching costing
+
+- Regression test that compares set-prices preview landed to PO-line resolver output (including FX `vendor_unit_cost` case when applicable).
+- Assert product cache columns are **not** used where PO-line landed is required.
+
+## Review checklist (agent + human)
+
+- [ ] Identified semantic for every money field in the change
+- [ ] Matched existing screen/API that operators trust
+- [ ] Added or updated test with intentional wrong-column guard
+- [ ] Updated `docs/features/**` if user-visible costing semantics changed

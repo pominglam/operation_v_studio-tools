@@ -35,10 +35,12 @@ final class PurchaseOrderUpdateService
      *   product_total?:string|null,
      *   vendor_currency_code?:string,
      *   vendor_product_total?:string|null,
+     *   vendor_shipping_total?:string|null,
      *   notes?:string|null,
      *   is_done?:bool,
      *   exclude_from_latest_arrivals_ordering?:bool,
-     *   shipment_method?:string|null
+     *   shipment_method?:string|null,
+     *   shipment_tracking_numbers?:array<int, string>
      * } $changes
      */
     public function update(string $uuid, array $changes): PurchaseOrder
@@ -88,6 +90,9 @@ final class PurchaseOrderUpdateService
             if (array_key_exists('vendor_product_total', $changes)) {
                 $po->vendor_product_total = $changes['vendor_product_total'];
             }
+            if (array_key_exists('vendor_shipping_total', $changes)) {
+                $po->vendor_shipping_total = $changes['vendor_shipping_total'];
+            }
             if (array_key_exists('notes', $changes)) {
                 $po->notes = $changes['notes'];
             }
@@ -100,6 +105,11 @@ final class PurchaseOrderUpdateService
             if (array_key_exists('shipment_method', $changes)) {
                 $po->shipment_method = $this->shipmentMethods->normalize(
                     $changes['shipment_method'] !== null ? (string) $changes['shipment_method'] : null,
+                );
+            }
+            if (array_key_exists('shipment_tracking_numbers', $changes)) {
+                $po->shipment_tracking_numbers = $this->normalizeTrackingNumbers(
+                    $changes['shipment_tracking_numbers'],
                 );
             }
 
@@ -132,6 +142,21 @@ final class PurchaseOrderUpdateService
 
             return $po;
         });
+    }
+
+    /** @return array<int, string>|null */
+    private function normalizeTrackingNumbers(mixed $numbers): ?array
+    {
+        if (! is_array($numbers)) {
+            return null;
+        }
+
+        $normalized = array_values(array_unique(array_filter(
+            array_map(static fn (mixed $number): string => trim((string) $number), $numbers),
+            static fn (string $number): bool => $number !== '',
+        )));
+
+        return $normalized !== [] ? $normalized : null;
     }
 
     private function recomputeLotsForPo(PurchaseOrder $po): void

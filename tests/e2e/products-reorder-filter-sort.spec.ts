@@ -1,6 +1,6 @@
 import { expect, test } from './fixtures';
 
-test('products list supports reorder > 1 filter and not-arrived/reorder sorting', async ({ page }) => {
+test('products list supports reorder >= 1 filter and not-arrived/reorder sorting', async ({ page }) => {
     await page.goto('/products');
 
     const reorderGtOne = page.getByTestId('products-filter-reorder-gt-one');

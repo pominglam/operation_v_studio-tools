@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\PurchaseOrders;
 
 use App\DAL\Inventory\InventoryRepository;
+use App\DAL\Products\ProductRepository;
 use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
@@ -18,6 +19,7 @@ final class PurchaseOrderItemUpdateService
         private readonly PurchaseOrderRepository $purchaseOrders,
         private readonly InventoryRepository $inventory,
         private readonly ProductLatestCostCacheService $latestCosts,
+        private readonly ProductRepository $products,
     ) {}
 
     public function updateItem(
@@ -243,13 +245,13 @@ final class PurchaseOrderItemUpdateService
 
     /**
      * @param  array<int, int>  $itemIds
-     * @param  array{qty_shipped?:int|null, qty_received?:int|null, set_shipped_to_ordered?:bool, set_received_to_shipped?:bool}  $changes
+     * @param  array{qty_shipped?:int|null, qty_received?:int|null, set_shipped_to_ordered?:bool, set_received_to_shipped?:bool, product_vendor?:string|null}  $changes
      */
     public function bulkUpdateSelected(string $purchaseOrderUuid, array $itemIds, array $changes): PurchaseOrder
     {
         return DB::transaction(function () use ($purchaseOrderUuid, $itemIds, $changes): PurchaseOrder {
             $po = $this->purchaseOrders->findByUuidOrFail($purchaseOrderUuid);
-            $po->loadMissing('items');
+            $po->loadMissing(['items.product']);
 
             $allowed = array_flip($itemIds);
             $items = $po->items->filter(fn (PurchaseOrderItem $it): bool => isset($allowed[$it->id]))->values();
@@ -266,6 +268,13 @@ final class PurchaseOrderItemUpdateService
             $qtyReceived = array_key_exists('qty_received', $changes) ? $changes['qty_received'] : null;
             $applyQtyShipped = array_key_exists('qty_shipped', $changes);
             $applyQtyReceived = array_key_exists('qty_received', $changes);
+            $applyProductVendor = array_key_exists('product_vendor', $changes);
+            $productVendor = $applyProductVendor
+                ? (is_string($changes['product_vendor'] ?? null) ? trim((string) $changes['product_vendor']) : null)
+                : null;
+            if ($applyProductVendor && $productVendor === '') {
+                $productVendor = null;
+            }
 
             if ($applyQtyReceived) {
                 $countLots = $this->inventory->countLotsForPurchaseOrderItems($items->pluck('id')->all());
@@ -321,6 +330,17 @@ final class PurchaseOrderItemUpdateService
                 }
 
                 $this->purchaseOrders->saveItem($it);
+            }
+
+            if ($applyProductVendor) {
+                foreach ($items as $it) {
+                    $product = $it->product;
+                    if ($product === null) {
+                        continue;
+                    }
+                    $product->vendor = $productVendor;
+                    $this->products->save($product);
+                }
             }
 
             if ($issues !== []) {

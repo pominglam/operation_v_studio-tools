@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\PurchaseOrders;
 
+use App\Models\Product;
+use App\Models\PurchaseOrderItem;
+use App\Services\Products\ProductInboundOpenPoQtySql;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Facades\DB;
 
 final class PurchaseOrderProductMetricsService
@@ -33,6 +37,8 @@ final class PurchaseOrderProductMetricsService
             return [];
         }
 
+        $inboundOpenPoQtyExpr = ProductInboundOpenPoQtySql::expression(false, 'p.id', 'p.sku');
+
         /** @var array<int, object{
          *   id:int,
          *   available_qty:int|null,
@@ -52,15 +58,7 @@ final class PurchaseOrderProductMetricsService
                 'p.maintain_qty',
                 'p.latest_landed_unit_cost',
                 DB::raw('sps.selling_price as selling_price'),
-                DB::raw('(
-                    select coalesce(sum(
-                        case when coalesce(poi.qty_ordered, 0) > 0 then coalesce(poi.qty_ordered, 0) else 0 end
-                    ), 0)
-                    from purchase_order_items poi
-                    inner join purchase_orders po on po.id = poi.purchase_order_id
-                    where poi.product_id = p.id
-                      and po.received_date is null
-                ) as not_arrived'),
+                DB::raw("{$inboundOpenPoQtyExpr} as not_arrived"),
                 DB::raw('(
                     select coalesce(sum(coalesce(poi.qty_received, 0)), 0)
                     from purchase_order_items poi
@@ -107,6 +105,88 @@ final class PurchaseOrderProductMetricsService
         }
 
         return $out;
+    }
+
+    /**
+     * @param  EloquentCollection<int, PurchaseOrderItem>|iterable<int, PurchaseOrderItem>  $items
+     */
+    public function hydratePurchaseOrderItems(EloquentCollection|iterable $items): void
+    {
+        /** @var array<int, int> $productIdBySku */
+        $productIdBySku = [];
+        $productIds = [];
+
+        foreach ($items as $item) {
+            if (! $item instanceof PurchaseOrderItem) {
+                continue;
+            }
+
+            if ($item->product_id !== null) {
+                $productIds[] = (int) $item->product_id;
+
+                continue;
+            }
+
+            $sku = trim($item->sku);
+            if ($sku !== '') {
+                $productIdBySku[$sku] = 0;
+            }
+        }
+
+        if ($productIdBySku !== []) {
+            $resolved = Product::query()
+                ->whereIn('sku', array_keys($productIdBySku))
+                ->pluck('id', 'sku')
+                ->all();
+            foreach ($resolved as $sku => $id) {
+                $productIdBySku[(string) $sku] = (int) $id;
+                $productIds[] = (int) $id;
+            }
+        }
+
+        $metricsByProductId = $this->metricsByProductIds($productIds);
+
+        foreach ($items as $item) {
+            if (! $item instanceof PurchaseOrderItem) {
+                continue;
+            }
+
+            $productId = $item->product_id !== null
+                ? (int) $item->product_id
+                : ($productIdBySku[trim($item->sku)] ?? 0);
+
+            if ($productId <= 0 || ! isset($metricsByProductId[$productId])) {
+                continue;
+            }
+
+            $this->applyMetricsToItem($item, $metricsByProductId[$productId]);
+        }
+    }
+
+    /**
+     * @param  array{
+     *   available:int|null,
+     *   maintain:int|null,
+     *   not_arrived:int,
+     *   reorder:int,
+     *   total_ordered:int,
+     *   total_sold:int,
+     *   latest_landed_unit_cost:string|null,
+     *   selling_price:string|null,
+     *   multiplier:string|null
+     * }  $metrics
+     */
+    private function applyMetricsToItem(PurchaseOrderItem $item, array $metrics): void
+    {
+        $item->setAttribute('product_available', $metrics['available']);
+        $item->setAttribute('product_maintain', $metrics['maintain']);
+        $item->setAttribute('product_not_arrived', $metrics['not_arrived']);
+        $item->setAttribute('product_reorder', $metrics['reorder']);
+        $item->setAttribute('product_total_ordered', $metrics['total_ordered']);
+        $item->setAttribute('product_total_sold', $metrics['total_sold']);
+        $item->setAttribute('product_latest_landed_unit_cost', $metrics['latest_landed_unit_cost']);
+        $item->setAttribute('product_selling_price', $metrics['selling_price']);
+        $item->setAttribute('product_multiplier', $metrics['multiplier']);
     }
 
     private function money2(string|int|float|null $value): ?string

@@ -9,6 +9,7 @@ use App\Models\Shopify\ShopifyOrder;
 use App\Models\Shopify\ShopifyOrderLineItem;
 use App\Services\Shopify\Admin\Demand\ProductDemandRollupService;
 use App\Services\Shopify\Admin\Support\ShopifyGraphQlNodeParser;
+use App\Support\Shopify\Admin\Orders\ShopifyOrderGraphQlSubtotal;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 
@@ -17,6 +18,7 @@ final class ShopifyOrderUpsertService
     public function __construct(
         private readonly ProductDemandRollupService $demandRollups,
         private readonly ShopifyOrderDemandEligibility $demandEligibility,
+        private readonly ShopifyOrderStaffAttributionUpsertService $staffAttribution,
     ) {}
 
     /**
@@ -44,6 +46,8 @@ final class ShopifyOrderUpsertService
                 'name' => isset($node['name']) && is_string($node['name']) ? $node['name'] : null,
                 'display_financial_status' => $financial,
                 'display_fulfillment_status' => $fulfillment,
+                ...$this->staffAttribution->attributesFromGraphQlNode($node),
+                'subtotal_shop_amount' => ShopifyOrderGraphQlSubtotal::subtotalShopAmount($node),
                 'ordered_at_shop_tz' => ShopifyGraphQlNodeParser::timestampInShopTz($orderedAtStr),
                 'cancelled_at' => $this->demandEligibility->parseCancelledAt($node),
                 'graphql_updated_at' => ShopifyGraphQlNodeParser::timestampInShopTz(

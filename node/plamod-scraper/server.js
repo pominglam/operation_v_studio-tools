@@ -5,10 +5,19 @@ const {
   exportPlamodPreordersCsv,
   listManufacturerPreorderFilters,
   exportManufacturerPreordersCsv,
+  exportManufacturerInstockMerged,
+  readInstockExportProgress,
   searchRetailerPreorders,
   resetPlamodScraperSessions,
   enrichPreorderPdpFields,
+  ensureLoggedInQuick,
+  ensureOnRetailerPdp,
 } = require('./src/plamod');
+const {
+  restockAddLinesToCart,
+  restockVerifyCart,
+  readRestockCartProgress,
+} = require('./src/plamod-restock-cart');
 
 function readJson(req) {
   return new Promise((resolve, reject) => {
@@ -53,6 +62,9 @@ async function withTimeout(promise, timeoutMs) {
 
 const port = Number.parseInt(process.env.PORT || '3001', 10);
 const requestTimeoutMs = Number.parseInt(process.env.PLAMOD_REQUEST_TIMEOUT_MS || '360000', 10);
+const instockMergedTimeoutMs = Number.parseInt(process.env.PLAMOD_INSTOCK_MERGED_TIMEOUT_MS || '10800000', 10);
+const restockCartTimeoutMs = Number.parseInt(process.env.PLAMOD_RESTOCK_CART_TIMEOUT_MS || '7200000', 10);
+const restockVerifyTimeoutMs = Number.parseInt(process.env.PLAMOD_RESTOCK_VERIFY_TIMEOUT_MS || '180000', 10);
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -63,10 +75,15 @@ const server = http.createServer(async (req, res) => {
           'POST /download-zip',
           'POST /export-preorders-csv',
           'POST /export-manufacturer-preorders-csv',
+          'POST /export-manufacturer-instock-merged',
+          'GET /instock-export-progress',
           'POST /list-manufacturer-preorders-filters',
           'POST /search-retailer-preorders',
           'POST /reset-scraper-sessions',
           'POST /enrich-preorder-pdp-fields',
+          'POST /restock-add-to-cart',
+          'POST /restock-verify-cart',
+          'GET /restock-cart-progress',
         ],
       });
     }
@@ -170,6 +187,40 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    if (req.method === 'GET' && req.url === '/instock-export-progress') {
+      return sendJson(res, 200, readInstockExportProgress());
+    }
+
+    if (req.method === 'POST' && req.url === '/export-manufacturer-instock-merged') {
+      const payload = await readJson(req);
+      const manufacturerId = payload.manufacturer_id ?? payload.manufacturerId ?? 1;
+      const maxFiltersRaw = payload.max_filters ?? payload.maxFilters ?? 0;
+      const maxFilters = Number.parseInt(String(maxFiltersRaw), 10) || 0;
+      const started = Date.now();
+      // eslint-disable-next-line no-console
+      console.log(
+        `[plamod] export-manufacturer-instock-merged start id=${manufacturerId}${maxFilters > 0 ? ` max_filters=${maxFilters}` : ''}`,
+      );
+
+      try {
+        const out = await withTimeout(
+          exportManufacturerInstockMerged({ manufacturerId, maxFilters }),
+          instockMergedTimeoutMs,
+        );
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plamod] export-manufacturer-instock-merged end ok=${Boolean(out?.ok)} rows=${out?.row_count ?? 0} ms=${Date.now() - started}`,
+        );
+        return sendJson(res, 200, out);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plamod] export-manufacturer-instock-merged error msg=${String(e?.message || 'Unknown error')} ms=${Date.now() - started}`,
+        );
+        return sendJson(res, 200, { ok: false, error_message: String(e?.message || 'Unknown error'), duration_ms: Date.now() - started });
+      }
+    }
+
     if (req.method === 'POST' && req.url === '/list-manufacturer-preorders-filters') {
       const payload = await readJson(req);
       const manufacturerId = payload.manufacturer_id ?? payload.manufacturerId ?? 1;
@@ -212,6 +263,68 @@ const server = http.createServer(async (req, res) => {
         // eslint-disable-next-line no-console
         console.log(`[plamod] enrich-preorder-pdp-fields error msg=${String(e?.message || 'Unknown error')} ms=${Date.now() - started}`);
         return sendJson(res, 200, { ok: false, error_message: String(e?.message || 'Unknown error'), duration_ms: Date.now() - started });
+      }
+    }
+
+    if (req.method === 'GET' && req.url === '/restock-cart-progress') {
+      return sendJson(res, 200, readRestockCartProgress());
+    }
+
+    if (req.method === 'POST' && req.url === '/restock-add-to-cart') {
+      const payload = await readJson(req);
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      const started = Date.now();
+      // eslint-disable-next-line no-console
+      console.log(`[plamod] restock-add-to-cart start count=${items.length}`);
+
+      try {
+        await resetPlamodScraperSessions();
+        const out = await withTimeout(
+          restockAddLinesToCart({ ensureLoggedInQuick, ensureOnRetailerPdp }, payload),
+          restockCartTimeoutMs,
+        );
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plamod] restock-add-to-cart end ok=${Boolean(out?.ok)} verified=${out?.report?.summary?.verified ?? 0}/${out?.report?.summary?.requested_lines ?? 0} ms=${Date.now() - started}`,
+        );
+        return sendJson(res, 200, out);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] restock-add-to-cart error msg=${String(e?.message || 'Unknown error')} ms=${Date.now() - started}`);
+        return sendJson(res, 200, {
+          ok: false,
+          error_message: String(e?.message || 'Unknown error'),
+          duration_ms: Date.now() - started,
+        });
+      }
+    }
+
+    if (req.method === 'POST' && req.url === '/restock-verify-cart') {
+      const payload = await readJson(req);
+      const lineCount = Array.isArray(payload.lines) ? payload.lines.length : 0;
+      const started = Date.now();
+      // eslint-disable-next-line no-console
+      console.log(`[plamod] restock-verify-cart start lines=${lineCount}`);
+
+      try {
+        await resetPlamodScraperSessions();
+        const out = await withTimeout(
+          restockVerifyCart({ ensureLoggedInQuick }, payload),
+          restockVerifyTimeoutMs,
+        );
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plamod] restock-verify-cart end ok=${Boolean(out?.ok)} verified=${out?.report?.summary?.verified ?? 0}/${out?.report?.summary?.requested_lines ?? 0} ms=${Date.now() - started}`,
+        );
+        return sendJson(res, 200, out);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] restock-verify-cart error msg=${String(e?.message || 'Unknown error')} ms=${Date.now() - started}`);
+        return sendJson(res, 200, {
+          ok: false,
+          error_message: String(e?.message || 'Unknown error'),
+          duration_ms: Date.now() - started,
+        });
       }
     }
 

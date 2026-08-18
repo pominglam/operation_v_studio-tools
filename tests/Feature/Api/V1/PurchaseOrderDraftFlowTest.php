@@ -56,8 +56,8 @@ it('creates a draft PO from selected products', function (): void {
     $po = PurchaseOrder::query()->where('uuid', $poUuid)->firstOrFail();
     expect($po->vendor)->toBe('Stedi');
     expect($po->shipment_method)->toBe('air');
-    expect($po->product_total)->toBe('30.00');
-    expect($po->shipping_total)->toBe('7.02');
+    expect($po->product_total)->toBe('70.00');
+    expect($po->shipping_total)->toBe('16.38');
 
     $items = PurchaseOrderItem::query()
         ->where('purchase_order_id', $po->id)
@@ -65,7 +65,7 @@ it('creates a draft PO from selected products', function (): void {
         ->get()
         ->keyBy('sku');
 
-    expect((int) ($items['DR-CREATE-1']->qty_ordered ?? -1))->toBe(3);
+    expect((int) ($items['DR-CREATE-1']->qty_ordered ?? -1))->toBe(7);
     expect((float) $items['DR-CREATE-1']->unit_cost)->toBe(10.0);
     expect((int) ($items['DR-CREATE-2']->qty_ordered ?? -1))->toBe(0);
 });
@@ -240,7 +240,10 @@ it('returns status and draft metrics on purchase order detail items', function (
         'selling_price' => '11.00',
     ]);
 
-    $openPo = PurchaseOrder::query()->create(['vendor' => 'Stedi']);
+    $openPo = PurchaseOrder::query()->create([
+        'vendor' => 'Stedi',
+        'ordered_date' => '2026-03-01',
+    ]);
     PurchaseOrderItem::query()->create([
         'purchase_order_id' => $openPo->id,
         'product_id' => $product->id,
@@ -277,11 +280,73 @@ it('returns status and draft metrics on purchase order detail items', function (
     $res->assertJsonPath('data.status', 'draft');
     $res->assertJsonPath('data.items.0.available', 6);
     $res->assertJsonPath('data.items.0.maintain', 15);
-    $res->assertJsonPath('data.items.0.not_arrived', 6);
-    $res->assertJsonPath('data.items.0.reorder', 3);
+    $res->assertJsonPath('data.items.0.not_arrived', 4);
+    $res->assertJsonPath('data.items.0.reorder', 5);
     $res->assertJsonPath('data.items.0.total_ordered', 20);
     $res->assertJsonPath('data.items.0.total_sold', 14);
     $res->assertJsonPath('data.items.0.selling_price', '11.00');
     $res->assertJsonPath('data.items.0.latest_landed_unit_cost', '5.50');
     $res->assertJsonPath('data.items.0.multiplier', '2.00');
+});
+
+it('shows reorder on draft PO detail when only draft open POs contribute zero not arrived', function (): void {
+    $product = Product::query()->create([
+        'sku' => 'DR-REORDER-ONLY',
+        'description' => 'Reorder only product',
+        'vendor' => 'Dspiae',
+        'available_qty' => 5,
+        'maintain_qty' => 10,
+    ]);
+
+    $res = $this->postJson('/api/v1/purchase-orders/drafts/create-from-products', [
+        'ids' => [$product->uuid],
+    ]);
+    $res->assertOk();
+
+    $poUuid = (string) $res->json('purchase_order_uuid');
+    $detail = $this->getJson("/api/v1/purchase-orders/{$poUuid}");
+    $detail->assertOk();
+    $detail->assertJsonPath('data.items.0.not_arrived', 0);
+    $detail->assertJsonPath('data.items.0.reorder', 5);
+    $detail->assertJsonPath('data.items.0.qty_ordered', 5);
+});
+
+it('counts not arrived on draft PO detail from open ordered lines matched by sku', function (): void {
+    $product = Product::query()->create([
+        'sku' => 'DR-SKU-NA',
+        'description' => 'Sku matched inbound',
+        'vendor' => 'Dspiae',
+        'available_qty' => 0,
+        'maintain_qty' => 10,
+    ]);
+
+    $orderedOpenPo = PurchaseOrder::query()->create([
+        'vendor' => 'Dspiae',
+        'ordered_date' => '2026-05-01',
+        'received_date' => null,
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $orderedOpenPo->id,
+        'product_id' => null,
+        'sku' => $product->sku,
+        'vendor' => 'Dspiae',
+        'qty_ordered' => 4,
+    ]);
+
+    $draftPo = PurchaseOrder::query()->create([
+        'vendor' => 'Dspiae',
+        'ordered_date' => null,
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $draftPo->id,
+        'product_id' => $product->id,
+        'sku' => $product->sku,
+        'vendor' => 'Dspiae',
+        'qty_ordered' => 1,
+    ]);
+
+    $detail = $this->getJson("/api/v1/purchase-orders/{$draftPo->uuid}");
+    $detail->assertOk();
+    $detail->assertJsonPath('data.items.0.not_arrived', 4);
+    $detail->assertJsonPath('data.items.0.reorder', 6);
 });

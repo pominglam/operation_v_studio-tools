@@ -17,6 +17,33 @@ final class PlamodScraperHealthService
      */
     public function assertPreordersExportReady(): array
     {
+        return $this->assertRoutesReady([
+            'POST /export-preorders-csv',
+            'POST /export-manufacturer-preorders-csv',
+            'POST /export-manufacturer-instock-merged',
+            'POST /list-manufacturer-preorders-filters',
+            'POST /search-retailer-preorders',
+        ]);
+    }
+
+    /**
+     * @return array{ok: bool, error_message?: string}
+     */
+    public function assertRestockCartReady(): array
+    {
+        return $this->assertRoutesReady([
+            'POST /restock-add-to-cart',
+            'POST /restock-verify-cart',
+            'GET /restock-cart-progress',
+        ]);
+    }
+
+    /**
+     * @param  array<int, string>  $required
+     * @return array{ok: bool, error_message?: string}
+     */
+    private function assertRoutesReady(array $required): array
+    {
         $url = rtrim($this->baseUrl, '/').'/health';
 
         try {
@@ -46,12 +73,6 @@ final class PlamodScraperHealthService
             ];
         }
 
-        $required = [
-            'POST /export-preorders-csv',
-            'POST /export-manufacturer-preorders-csv',
-            'POST /list-manufacturer-preorders-filters',
-            'POST /search-retailer-preorders',
-        ];
         $missing = array_values(array_filter($required, static fn (string $route): bool => ! in_array($route, $routes, true)));
         if ($missing !== []) {
             return [

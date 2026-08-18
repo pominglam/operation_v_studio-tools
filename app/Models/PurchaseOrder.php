@@ -6,6 +6,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 /**
@@ -13,6 +14,7 @@ use Illuminate\Support\Str;
  * @property string $uuid
  * @property string $vendor
  * @property string|null $shipment_method
+ * @property array<int, string>|null $shipment_tracking_numbers
  * @property string|null $supplier_order_id
  * @property string $vendor_currency_code
  * @property string|null $ordered_date
@@ -24,6 +26,7 @@ use Illuminate\Support\Str;
  * @property string|null $surcharge_total
  * @property string|null $product_total
  * @property string|null $vendor_product_total
+ * @property string|null $vendor_shipping_total
  * @property string|null $fx_rate_to_cad
  * @property string|null $notes
  * @property bool $is_done
@@ -36,6 +39,7 @@ final class PurchaseOrder extends Model
         'uuid',
         'vendor',
         'shipment_method',
+        'shipment_tracking_numbers',
         'supplier_order_id',
         'vendor_currency_code',
         'ordered_date',
@@ -47,6 +51,7 @@ final class PurchaseOrder extends Model
         'surcharge_total',
         'product_total',
         'vendor_product_total',
+        'vendor_shipping_total',
         'fx_rate_to_cad',
         'notes',
         'is_done',
@@ -65,9 +70,11 @@ final class PurchaseOrder extends Model
         'surcharge_total' => 'decimal:2',
         'product_total' => 'decimal:2',
         'vendor_product_total' => 'decimal:2',
+        'vendor_shipping_total' => 'decimal:2',
         'fx_rate_to_cad' => 'decimal:6',
         'is_done' => 'boolean',
         'exclude_from_latest_arrivals_ordering' => 'boolean',
+        'shipment_tracking_numbers' => 'array',
         'workflow_checklist_json' => 'array',
     ];
 
@@ -84,5 +91,11 @@ final class PurchaseOrder extends Model
     public function items(): HasMany
     {
         return $this->hasMany(PurchaseOrderItem::class);
+    }
+
+    /** @return HasOne<PurchaseOrderCombinedPaymentLine> */
+    public function combinedPaymentLine(): HasOne
+    {
+        return $this->hasOne(PurchaseOrderCombinedPaymentLine::class);
     }
 }

@@ -37,6 +37,22 @@ final class PurchaseOrderWorkflowPrepareInventoryService
     {
         $freshness = $this->mirrorFreshness->snapshot();
 
+        if ($pullShopify) {
+            $refresh = $this->poInventoryRefresh->refreshForPurchaseOrder($purchaseOrderUuid);
+            $summary = $this->validateAndSummarize($purchaseOrderUuid);
+
+            return [
+                ...$summary,
+                'sync_mode' => 'po_inventory_refresh',
+                'mirror_fresh' => $freshness['mirror_fresh'],
+                'max_age_seconds' => $freshness['max_age_seconds'],
+                'products_last_completed_at' => $freshness['products_last_completed_at'],
+                'inventory_levels_last_completed_at' => $freshness['inventory_levels_last_completed_at'],
+                'skus_refreshed' => $refresh['skus_refreshed'],
+                'inventory_items_refreshed' => $refresh['inventory_items_refreshed'],
+            ];
+        }
+
         if ($freshness['mirror_fresh']) {
             $summary = $this->validateAndSummarize($purchaseOrderUuid);
 
@@ -50,31 +66,15 @@ final class PurchaseOrderWorkflowPrepareInventoryService
             ];
         }
 
-        if (! $pullShopify) {
-            $summary = $this->validateAndSummarize($purchaseOrderUuid);
-
-            return [
-                ...$summary,
-                'sync_mode' => 'mirror_stale_confirmation_required',
-                'mirror_fresh' => false,
-                'max_age_seconds' => $freshness['max_age_seconds'],
-                'products_last_completed_at' => $freshness['products_last_completed_at'],
-                'inventory_levels_last_completed_at' => $freshness['inventory_levels_last_completed_at'],
-            ];
-        }
-
-        $refresh = $this->poInventoryRefresh->refreshForPurchaseOrder($purchaseOrderUuid);
         $summary = $this->validateAndSummarize($purchaseOrderUuid);
 
         return [
             ...$summary,
-            'sync_mode' => 'po_inventory_refresh',
+            'sync_mode' => 'mirror_stale_confirmation_required',
             'mirror_fresh' => false,
             'max_age_seconds' => $freshness['max_age_seconds'],
             'products_last_completed_at' => $freshness['products_last_completed_at'],
             'inventory_levels_last_completed_at' => $freshness['inventory_levels_last_completed_at'],
-            'skus_refreshed' => $refresh['skus_refreshed'],
-            'inventory_items_refreshed' => $refresh['inventory_items_refreshed'],
         ];
     }
 
@@ -153,26 +153,21 @@ final class PurchaseOrderWorkflowPrepareInventoryService
             return null;
         }
 
+        $itemGid = is_string($variantRow->inventory_item_gid ?? null) ? trim($variantRow->inventory_item_gid) : '';
+        if ($itemGid !== '') {
+            $levelsQuery = DB::table('shopify_inventory_levels')
+                ->where('inventory_item_gid', '=', $itemGid)
+                ->whereNotNull('quantity_available');
+
+            if ($levelsQuery->exists()) {
+                return max(0, (int) $levelsQuery->sum('quantity_available'));
+            }
+        }
+
         if ($variantRow->inventory_quantity !== null) {
             return (int) $variantRow->inventory_quantity;
         }
 
-        $itemGid = is_string($variantRow->inventory_item_gid ?? null) ? $variantRow->inventory_item_gid : null;
-        if ($itemGid === null || $itemGid === '') {
-            return null;
-        }
-
-        /** @var object{quantity_available:?int}|null $level */
-        $level = DB::table('shopify_inventory_levels')
-            ->where('inventory_item_gid', '=', $itemGid)
-            ->select('quantity_available')
-            ->orderByDesc('id')
-            ->first();
-
-        if ($level === null || $level->quantity_available === null) {
-            return null;
-        }
-
-        return (int) $level->quantity_available;
+        return null;
     }
 }

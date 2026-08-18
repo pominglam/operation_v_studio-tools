@@ -9,6 +9,7 @@ type PoLine = {
     ordered_date: string | null;
     shipped_date: string | null;
     received_date: string | null;
+    qty_ordered: number | null;
     qty_shipped: number | null;
     qty_received: number | null;
     unit_cost: string | null;
@@ -43,9 +44,12 @@ async function load(): Promise<void> {
     loading.value = true;
     error.value = null;
     try {
-        const res = await api.get<{ lines: PoLine[] }>(`/api/v1/products/${props.productId}/po-lines`, {
-            params: { limit: 50 },
-        });
+        const res = await api.get<{ lines: PoLine[] }>(
+            `/api/v1/products/${props.productId}/po-lines`,
+            {
+                params: { limit: 50 },
+            },
+        );
         lines.value = res.data.lines ?? [];
     } catch {
         error.value = 'Failed to load PO lines.';
@@ -73,11 +77,18 @@ watch(
             aria-modal="true"
             @click.self="emit('close')"
         >
-            <div class="h-full w-full max-w-4xl bg-white shadow-xl">
-                <div class="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3">
+            <div
+                data-testid="product-po-lines-panel"
+                class="h-full w-full max-w-7xl bg-white shadow-xl"
+            >
+                <div
+                    class="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3"
+                >
                     <div>
                         <div class="text-sm font-semibold text-slate-900">{{ title }}</div>
-                        <div v-if="productName" class="mt-1 text-sm text-slate-600">{{ productName }}</div>
+                        <div v-if="productName" class="mt-1 text-sm text-slate-600">
+                            {{ productName }}
+                        </div>
                     </div>
                     <button
                         type="button"
@@ -98,14 +109,21 @@ watch(
 
                     <div v-if="loading" class="text-sm text-slate-600">Loading…</div>
 
-                    <div v-else class="overflow-hidden rounded-lg border border-slate-200">
-                        <table class="w-full text-sm">
-                            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <div
+                        v-else
+                        data-testid="product-po-lines-table-scroll"
+                        class="overflow-x-auto rounded-lg border border-slate-200"
+                    >
+                        <table class="min-w-[64rem] w-full text-sm">
+                            <thead
+                                class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600"
+                            >
                                 <tr>
                                     <th class="px-3 py-2 text-left">PO</th>
                                     <th class="px-3 py-2 text-left">Vendor</th>
                                     <th class="px-3 py-2 text-left">Ordered</th>
                                     <th class="px-3 py-2 text-left">Received</th>
+                                    <th class="px-3 py-2 text-right">Qty ordered</th>
                                     <th class="px-3 py-2 text-right">Qty shipped</th>
                                     <th class="px-3 py-2 text-right">Qty received</th>
                                     <th class="px-3 py-2 text-right">Unit</th>
@@ -129,8 +147,15 @@ watch(
                                         </RouterLink>
                                     </td>
                                     <td class="px-3 py-2">{{ l.vendor }}</td>
-                                    <td class="px-3 py-2 font-mono text-xs">{{ l.ordered_date ?? '—' }}</td>
-                                    <td class="px-3 py-2 font-mono text-xs">{{ l.received_date ?? '—' }}</td>
+                                    <td class="px-3 py-2 font-mono text-xs">
+                                        {{ l.ordered_date ?? '—' }}
+                                    </td>
+                                    <td class="px-3 py-2 font-mono text-xs">
+                                        {{ l.received_date ?? '—' }}
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono text-xs">
+                                        {{ l.qty_ordered ?? '—' }}
+                                    </td>
                                     <td class="px-3 py-2 text-right font-mono text-xs">
                                         {{ l.qty_shipped ?? '—' }}
                                     </td>
@@ -147,12 +172,16 @@ watch(
                                         {{ formatMoney2(l.surcharge_per_unit) }}
                                     </td>
                                     <td class="px-3 py-2 text-right font-mono text-xs">
-                                        {{ l.landed_unit_cost ? formatMoney2(l.landed_unit_cost) : '—' }}
+                                        {{
+                                            l.landed_unit_cost
+                                                ? formatMoney2(l.landed_unit_cost)
+                                                : '—'
+                                        }}
                                     </td>
                                 </tr>
 
                                 <tr v-if="lines.length === 0">
-                                    <td class="px-3 py-4 text-sm text-slate-600" colspan="10">
+                                    <td class="px-3 py-4 text-sm text-slate-600" colspan="11">
                                         No purchase order lines found for this product.
                                     </td>
                                 </tr>
@@ -164,4 +193,3 @@ watch(
         </div>
     </Teleport>
 </template>
-

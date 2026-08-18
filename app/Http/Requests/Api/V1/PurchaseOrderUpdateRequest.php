@@ -27,10 +27,13 @@ final class PurchaseOrderUpdateRequest extends FormRequest
             'product_total' => ['nullable', 'numeric'],
             'vendor_currency_code' => ['string', 'size:3', 'regex:/^[A-Z]{3}$/'],
             'vendor_product_total' => ['nullable', 'numeric'],
+            'vendor_shipping_total' => ['nullable', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string'],
             'is_done' => ['sometimes', 'boolean'],
             'exclude_from_latest_arrivals_ordering' => ['sometimes', 'boolean'],
             'shipment_method' => ['sometimes', 'nullable', 'string', Rule::in(['air', 'sea'])],
+            'shipment_tracking_numbers' => ['sometimes', 'array', 'max:40'],
+            'shipment_tracking_numbers.*' => ['required', 'string', 'max:255'],
         ];
     }
 }

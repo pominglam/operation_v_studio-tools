@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\DAL\PurchaseOrders;
 
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderCombinedPayment;
+use App\Models\PurchaseOrderCombinedPaymentLine;
 use App\Models\PurchaseOrderItem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -224,6 +226,50 @@ final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
         }
 
         return $po;
+    }
+
+    /**
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, PurchaseOrder>
+     */
+    public function findManyForCombinedPayment(array $uuids, bool $lockForUpdate = false): Collection
+    {
+        $query = PurchaseOrder::query()
+            ->with(['items.lots', 'combinedPaymentLine'])
+            ->whereIn('uuid', $uuids);
+
+        if ($lockForUpdate) {
+            $query->lockForUpdate();
+        }
+
+        /** @var Collection<int, PurchaseOrder> $rows */
+        $rows = $query->get()->keyBy('uuid');
+
+        return collect($uuids)
+            ->map(static fn (string $uuid): ?PurchaseOrder => $rows->get($uuid))
+            ->filter(static fn (?PurchaseOrder $po): bool => $po !== null)
+            ->values();
+    }
+
+    public function createCombinedPayment(PurchaseOrderCombinedPayment $payment): PurchaseOrderCombinedPayment
+    {
+        $payment->save();
+
+        return $payment;
+    }
+
+    public function createCombinedPaymentLine(PurchaseOrderCombinedPaymentLine $line): PurchaseOrderCombinedPaymentLine
+    {
+        $line->save();
+
+        return $line;
+    }
+
+    public function hasCombinedPayment(int $purchaseOrderId): bool
+    {
+        return PurchaseOrderCombinedPaymentLine::query()
+            ->where('purchase_order_id', $purchaseOrderId)
+            ->exists();
     }
 
     public function countItems(int $purchaseOrderId): int

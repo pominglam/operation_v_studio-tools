@@ -7,12 +7,14 @@ export type PoItemsBulkChanges = {
     qty_received?: number | null;
     set_shipped_to_ordered?: boolean;
     set_received_to_shipped?: boolean;
+    product_vendor?: string | null;
 };
 
 const props = defineProps<{
     open: boolean;
     selectedCount: number;
     busy: boolean;
+    vendorOptions?: string[];
 }>();
 
 const emit = defineEmits<{
@@ -31,10 +33,28 @@ const qtyShipped = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const qtyReceived = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const setShippedToOrdered = ref(false);
 const setReceivedToShipped = ref(false);
+const productVendor = ref<BulkFieldState<string>>({ apply: false, value: '' });
 
 const hasAnyApply = computed<boolean>(() => {
-    return qtyShipped.value.apply || qtyReceived.value.apply || setShippedToOrdered.value || setReceivedToShipped.value;
+    return (
+        qtyShipped.value.apply ||
+        qtyReceived.value.apply ||
+        setShippedToOrdered.value ||
+        setReceivedToShipped.value ||
+        productVendor.value.apply
+    );
 });
+
+function normalizeVendorOptions(list: string[] | undefined, current: string): string[] {
+    const base = (list ?? []).map((v) => String(v).trim()).filter((v) => v !== '');
+    const cur = current.trim();
+    const merged = cur !== '' ? [...base, cur] : base;
+    return Array.from(new Set(merged)).sort((a, b) => a.localeCompare(b));
+}
+
+const vendorChoices = computed<string[]>(() =>
+    normalizeVendorOptions(props.vendorOptions, productVendor.value.value),
+);
 
 function reset(): void {
     localError.value = null;
@@ -42,6 +62,7 @@ function reset(): void {
     qtyReceived.value = { apply: false, value: '' };
     setShippedToOrdered.value = false;
     setReceivedToShipped.value = false;
+    productVendor.value = { apply: false, value: '' };
 }
 
 watch(
@@ -51,7 +72,7 @@ watch(
     },
 );
 
-watch([qtyShipped, qtyReceived, setShippedToOrdered, setReceivedToShipped], () => {
+watch([qtyShipped, qtyReceived, setShippedToOrdered, setReceivedToShipped, productVendor], () => {
     if (localError.value !== null) localError.value = null;
 });
 
@@ -83,6 +104,11 @@ function onConfirm(): void {
 
     if (qtyReceived.value.apply) {
         changes.qty_received = parseNullableInt(qtyReceived.value.value);
+    }
+
+    if (productVendor.value.apply) {
+        const trimmed = productVendor.value.value.trim();
+        changes.product_vendor = trimmed === '' ? null : trimmed;
     }
 
     emit('confirm', { changes });
@@ -168,6 +194,28 @@ function onConfirm(): void {
                             <input v-model="setReceivedToShipped" type="checkbox" class="h-4 w-4 rounded" />
                             Set received = shipped
                         </label>
+                    </div>
+
+                    <div class="md:col-span-6">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input v-model="productVendor.apply" type="checkbox" class="h-4 w-4 rounded" />
+                            Product vendor
+                        </label>
+                        <input
+                            v-model="productVendor.value"
+                            class="mt-1 block w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            type="text"
+                            list="po-bulk-vendor-options"
+                            :disabled="busy || !productVendor.apply"
+                            placeholder="Stedi, Dspiae, …"
+                        />
+                        <datalist id="po-bulk-vendor-options">
+                            <option v-for="v in vendorChoices" :key="v" :value="v" />
+                        </datalist>
+                        <p class="mt-1 text-xs text-slate-500">
+                            Sets catalog product vendor for each selected line. Type a new name to add a vendor on the
+                            fly.
+                        </p>
                     </div>
                 </div>
 

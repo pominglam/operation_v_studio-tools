@@ -26,6 +26,7 @@ final class PurchaseOrderItemsBulkUpdateRequest extends FormRequest
             'changes.qty_received' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'changes.set_shipped_to_ordered' => ['sometimes', 'boolean'],
             'changes.set_received_to_shipped' => ['sometimes', 'boolean'],
+            'changes.product_vendor' => ['sometimes', 'nullable', 'string', 'max:128'],
         ];
     }
 

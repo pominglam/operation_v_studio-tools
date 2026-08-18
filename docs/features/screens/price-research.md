@@ -13,7 +13,7 @@ Loads **`GET /api/v1/price-research/products`** with pagination + filters persis
 
 ### Columns & derived math
 
-Shows per-product SKU, barcode text, descriptions, freshness indicator (**fresh vs expired TTL** mirrored from backend), **`available`**, **`landed_cost` / fallback `cost` Po band fields**, **`selling_price`**, **`multiplier`**, **`quotes[]`** matrix for each crawler result (availability tinting rules: **`sold_out` red accent**, **`not_found` grey**).
+Shows per-product SKU, barcode text, descriptions, freshness indicator (**fresh vs expired TTL** mirrored from backend), **`available`**, **`landed_cost` / fallback `cost` Po band fields**, **`selling_price`**, **`multiplier`**, **`quotes[]`** matrix for each crawler result (availability tinting rules: **`sold_out` red accent**, **`not_found` grey**). A **PO lines** link immediately to the right of each selling-price input opens `ProductPoLinesDrawer` with that SKU’s PO history and unit/shipping/surcharge/landed breakdown.
 
 Footer totals accumulate parsed money fields for **`landed_cost` vs `cost` preference** identical to grid row logic (**`parseMoney`** on page slice).
 

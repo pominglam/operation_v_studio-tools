@@ -24,9 +24,10 @@ When `currentAccessRole() !== 'employee'`, links appear in this order:
 3. **Purchase Orders** → `/purchase-orders` (active for any `/purchase-orders/*`)
 4. **Pricing** → `/price-research` (label “Pricing”; path is still `price-research`)
 5. **Preorders** → `/preorders`
-6. **TCG Events** → `/tcg-events`
-7. **Reports** → `/reports/staff-orders` (active for any `/reports/*`)
-8. **Maintenance** → `/maintenance`
+6. **Restock** → `/restocking/plamod` (PLAMOD in-stock restock proposal)
+7. **TCG Events** → `/tcg-events`
+8. **Reports** → `/reports/staff-orders` (active for any `/reports/*`)
+9. **Maintenance** → `/maintenance`
 
 ## Top navigation (employee)
 

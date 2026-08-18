@@ -19,6 +19,7 @@ type ProductInfoAsset = {
     shopify_enabled?: boolean | null;
     download_url: string;
     view_url: string;
+    thumb_url?: string | null;
 };
 
 type ProductInfoContent = {
@@ -1126,6 +1127,10 @@ async function disableExactDuplicateImages(): Promise<void> {
     }
 }
 
+function assetThumbUrl(asset: ProductInfoAsset): string {
+    return asset.thumb_url ?? asset.view_url;
+}
+
 async function load(): Promise<void> {
     if (!props.productId) return;
     loading.value = true;
@@ -1537,6 +1542,7 @@ watch(
                             <div class="relative">
                                 <img
                                     v-if="activeImage"
+                                    data-testid="photo-hero-image"
                                     :src="activeImage.view_url"
                                     :alt="activeImage.filename"
                                     class="h-72 w-full rounded-md object-contain"
@@ -1652,7 +1658,9 @@ watch(
                                         @click="activeImageId = img.id"
                                     >
                                         <img
-                                            :src="img.view_url"
+                                            data-testid="photo-grid-thumb"
+                                            loading="lazy"
+                                            :src="assetThumbUrl(img)"
                                             :alt="img.filename"
                                             class="h-full w-full rounded object-cover"
                                             :class="

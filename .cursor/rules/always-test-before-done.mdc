@@ -15,7 +15,7 @@ A task is **not complete** until behavior is verified the way a real user/system
    - Run the **targeted test file(s)** for the area you changed; report command + pass/fail in the final reply.
 
 2. **User-visible flows**
-   - UI/storefront changes: follow **`verify-ui-before-done.mdc`** — open the real page, click controls, and confirm filters/results match customer expectations before saying work is complete.
+   - UI/storefront changes: follow **`verify-ui-before-done.mdc`** and **`rigorous-qa-before-handoff.mdc`** — filter combinations, full action flows, Playwright e2e when applicable; open the real page and confirm outcomes on real/seeded data.
    - API-only changes: hit the same endpoints the client will use; do not rely on code inspection alone.
 
 3. **Integration dependencies**
@@ -40,10 +40,19 @@ A task is **not complete** until behavior is verified the way a real user/system
 - **OVS T&S collection filters (theme + manifest):**
   - `php artisan shopify:storefront-collection-filters-manifest-verify` (no network; catches missing collections)
   - `npm run test:e2e:storefront-filters` (live storefront check→uncheck + mobile sync + **combinationCases** from manifest)
+- **Staff orders report (`StaffOrdersReportPage`, staff-orders API):**
+  - `php artisan test tests/Feature/Api/V1/StaffOrdersReportTest.php`
+  - `npm run test:e2e -- tests/e2e/staff-orders-report.spec.ts`
+  - Browser: `/reports/staff-orders` must show **days in month > 0** after load (see **`staff-orders-report.mdc`**)
+- **PLAMOD restock new-products section (`PlamodRestockPage`, filters, include/exclude/bulk):**
+  - `php artisan test tests/Feature/Api/V1/PlamodRestockTest.php`
+  - `npm run test:e2e -- tests/e2e/plamod-restock-new-section.spec.ts`
+  - Browser: `/restocking/plamod` — filter combos, include/exclude, real row counts (see **`rigorous-qa-before-handoff.mdc`**)
 
 ## Final reply must include
 
 - Which tests were run and whether they passed.
+- A **QA matrix** (URL, actions, pass/fail evidence) per **`rigorous-qa-before-handoff.mdc`** when user-visible behavior changed.
 - If UI was tested: URL, actions performed, and pass/fail vs customer expectation (see `verify-ui-before-done.mdc`).
 - If something could not be run, why and what unblocks it.
 

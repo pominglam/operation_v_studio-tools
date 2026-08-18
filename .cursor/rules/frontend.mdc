@@ -113,6 +113,11 @@ Example:
 - Centralize error handling
 - Base URL from environment variables
 
+## Data grids
+
+- **Sortable columns**: Tabular data grids must support client-side or server-side sorting on every column unless the spec explicitly exempts a column (e.g. action buttons only).
+- **Column help**: When a column header needs explanation, include an accessible info control (icon button that opens a visible popover on click, with `aria-label`)—never a decorative ⓘ that does nothing.
+
 ## Code Quality
 
 - **Max component length**: 400 lines

@@ -15,8 +15,10 @@ final class StaffOrdersReportShowController extends Controller
         StaffOrdersReportShowRequest $request,
         ShopifyStaffOrdersMonthlyReportService $service,
     ): JsonResponse {
+        [$fromMonth, $toMonth] = $request->resolvedRange();
+
         return response()->json([
-            'data' => $service->reportForMonth($request->month()),
+            'data' => $service->reportForRange($fromMonth, $toMonth),
         ]);
     }
 }

@@ -13,6 +13,7 @@ import PurchaseOrdersPage from './pages/PurchaseOrdersPage.vue';
 import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage.vue';
 import TcgEventsPage from './pages/TcgEventsPage.vue';
 import PreordersPage from './pages/PreordersPage.vue';
+import PlamodRestockPage from './pages/PlamodRestockPage.vue';
 import EmployeeInventoryCountPage from './pages/EmployeeInventoryCountPage.vue';
 import { currentAccessRole } from './lib/accessRole';
 
@@ -59,6 +60,7 @@ const routes: RouteRecordRaw[] = [
     { path: '/sync-progress', name: 'sync-progress', component: SyncProgressPage },
     { path: '/tcg-events', name: 'tcg-events', component: TcgEventsPage },
     { path: '/preorders', name: 'preorders', component: PreordersPage },
+    { path: '/restocking/plamod', name: 'plamod-restock', component: PlamodRestockPage },
     { path: '/maintenance', name: 'maintenance', component: MaintenancePage },
     { path: '/shopify/webhooks', name: 'shopify-webhooks', component: ShopifyWebhookLogsPage },
 ];

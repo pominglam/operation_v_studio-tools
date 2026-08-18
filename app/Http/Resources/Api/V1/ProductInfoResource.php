@@ -7,6 +7,7 @@ namespace App\Http\Resources\Api\V1;
 use App\DTOs\Products\ProductInfoData;
 use App\Models\ProductExternalAsset;
 use App\Models\ProductExternalContent;
+use App\Support\Products\ProductExternalAssetUrlBuilder;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -53,8 +54,11 @@ final class ProductInfoResource extends JsonResource
                         'checksum_sha256' => $a->checksum_sha256,
                         'sort_order' => $a->sort_order,
                         'shopify_enabled' => (bool) ($a->shopify_enabled ?? true),
-                        'download_url' => '/api/v1/product-assets/'.$a->id.'/download',
-                        'view_url' => '/api/v1/product-assets/'.$a->id.'/view',
+                        'download_url' => ProductExternalAssetUrlBuilder::downloadUrl((int) $a->id),
+                        'view_url' => ProductExternalAssetUrlBuilder::viewUrl((int) $a->id),
+                        'thumb_url' => $a->kind === 'image'
+                            ? ProductExternalAssetUrlBuilder::thumbUrl((int) $a->id)
+                            : null,
                     ];
                 },
                 $data->assets,

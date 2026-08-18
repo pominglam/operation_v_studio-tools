@@ -17,6 +17,9 @@ function isActive(name: string): boolean {
     if (name === 'reports') {
         return route.path.startsWith('/reports');
     }
+    if (name === 'plamod-restock') {
+        return route.path.startsWith('/restocking/plamod');
+    }
     return route.name === name;
 }
 </script>
@@ -112,6 +115,18 @@ function isActive(name: string): boolean {
                     "
                 >
                     Preorders
+                </RouterLink>
+                <RouterLink
+                    v-if="!isEmployee"
+                    to="/restocking/plamod"
+                    class="rounded-md px-3 py-1.5 transition"
+                    :class="
+                        isActive('plamod-restock')
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-100'
+                    "
+                >
+                    Restock
                 </RouterLink>
                 <RouterLink
                     v-if="!isEmployee"

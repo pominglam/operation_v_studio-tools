@@ -13,6 +13,7 @@ This folder is the **navigation hub** for **what each screen does**, how users m
 | **PDP / Plamod rename batch progress** | [screens/sync-progress.md](screens/sync-progress.md) |
 | **Bandai TCG+ events** | [screens/tcg-events.md](screens/tcg-events.md) |
 | **Plamod preorders** | [screens/preorders.md](screens/preorders.md) |
+| **PLAMOD restock (in-stock)** | [screens/plamod-restock.md](screens/plamod-restock.md) |
 | **Maintenance & dangerous ops** | [screens/maintenance.md](screens/maintenance.md) |
 | **Full HTTP/job/service catalog** (dense backend reference) | [backend/system-catalog-services-and-http.md](backend/system-catalog-services-and-http.md) |
 
@@ -39,6 +40,7 @@ Shopify **Online Store theme** workflows (draft theme, static About page handoff
 | Stuck price run reset | [screens/maintenance.md](screens/maintenance.md) |
 | TCG+ events | [screens/tcg-events.md](screens/tcg-events.md) |
 | Plamod preorders | [screens/preorders.md](screens/preorders.md) |
+| PLAMOD restock | [screens/plamod-restock.md](screens/plamod-restock.md) |
 
 ## Screen ↔ route cheat sheet
 
@@ -57,6 +59,7 @@ Shopify **Online Store theme** workflows (draft theme, static About page handoff
 | `/sync-progress` | `SyncProgressPage.vue` |
 | `/tcg-events` | `TcgEventsPage.vue` |
 | `/preorders` | `PreordersPage.vue` |
+| `/restocking/plamod` | `PlamodRestockPage.vue` |
 | `/maintenance` | `MaintenancePage.vue` |
 | `/shopify/webhooks` | `ShopifyWebhookLogsPage.vue` |
 

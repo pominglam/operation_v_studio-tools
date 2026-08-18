@@ -1,20 +1,32 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
+import ConfirmDialog from '../components/ui/ConfirmDialog.vue';
 import PoImportPreviewDialog, {
     type PoImportPreview,
 } from '../components/purchaseOrders/PoImportPreviewDialog.vue';
+import PoCombinedPaymentDialog, {
+    type PoCombinedPaymentPreview,
+    type PoCombinedPaymentValues,
+} from '../components/purchaseOrders/PoCombinedPaymentDialog.vue';
 import { api } from '../lib/api';
 import { formatTorontoDate } from '../lib/datetime';
 import { formatMoney2OrEmpty, parseMoney } from '../lib/money';
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
+import { build17TrackUrl } from '../lib/shipmentTracking';
+import { isPmBrokerVendor } from '../composables/purchaseOrders/pmBrokerVendor';
 
 type PurchaseOrderListRow = {
     id: string;
     status: 'draft' | 'ordered' | 'shipped' | 'received' | 'on_shelves';
     shipment_method: 'air' | 'sea' | null;
+    shipment_tracking_numbers: string[];
     vendor: string;
     supplier_order_id: string | null;
+    vendor_currency_code: string;
+    vendor_product_total: string | null;
+    vendor_shipping_total: string | null;
+    fx_rate_to_cad: string | null;
     ordered_date: string | null;
     shipped_date: string | null;
     estimated_arrival_date: string | null;
@@ -81,6 +93,7 @@ const DEFAULT_VENDOR_OPTIONS = [
     'Plamod',
     'Dspiae',
     'Stedi',
+    'Other/multi',
     'Gaahleri',
     'MSMN',
     'PM',
@@ -104,9 +117,7 @@ type PurchaseOrderSortBy = 'created' | 'ordered' | 'received';
 const sortBy = ref<PurchaseOrderSortBy>('ordered');
 const sortDir = ref<'asc' | 'desc'>('desc');
 const selectedVendors = ref<string[]>([]);
-const selectedStatuses = ref<PurchaseOrderListRow['status'][]>([
-    ...DEFAULT_SELECTED_STATUSES,
-]);
+const selectedStatuses = ref<PurchaseOrderListRow['status'][]>([...DEFAULT_SELECTED_STATUSES]);
 
 const file = ref<File | null>(null);
 const importing = ref(false);
@@ -117,6 +128,40 @@ const importPreview = ref<PoImportPreview | null>(null);
 const importError = ref<string | null>(null);
 const importIssues = ref<Array<Record<string, unknown>> | null>(null);
 const importResult = ref<ImportResult | null>(null);
+
+const deleteTarget = ref<PurchaseOrderListRow | null>(null);
+const deletingId = ref<string | null>(null);
+const deleteError = ref<string | null>(null);
+const selectedPoIds = ref<Set<string>>(new Set());
+const combinedPaymentOpen = ref(false);
+const combinedPaymentBusy = ref(false);
+const combinedPaymentError = ref<string | null>(null);
+const combinedPaymentPreview = ref<PoCombinedPaymentPreview | null>(null);
+const combinedPaymentSuccess = ref<string | null>(null);
+
+const deleteDialogOpen = computed(() => deleteTarget.value !== null);
+const selectedPurchaseOrders = computed(() =>
+    pos.value.filter((po) => selectedPoIds.value.has(po.id)),
+);
+const allVisibleSelected = computed(
+    () => pos.value.length > 0 && pos.value.every((po) => selectedPoIds.value.has(po.id)),
+);
+const deleteDialogMessage = computed(() => {
+    const po = deleteTarget.value;
+    if (!po) return '';
+    const lineCount = po.counts.items;
+    const vendorLabel = po.vendor.trim() !== '' ? po.vendor : 'Unknown vendor';
+    const supplierLabel =
+        po.supplier_order_id && po.supplier_order_id.trim() !== ''
+            ? ` (supplier order ${po.supplier_order_id.trim()})`
+            : '';
+    const linesLabel = lineCount > 0 ? ` and its ${lineCount} line item(s)` : '';
+    const base = `Delete ${vendorLabel}${supplierLabel}${linesLabel}? This cannot be undone. POs with received inventory or FIFO lots cannot be deleted.`;
+    if (deleteError.value) {
+        return `${base}\n\n${deleteError.value}`;
+    }
+    return base;
+});
 
 const vendors = ref<string[]>([]);
 const vendor = ref<string>('');
@@ -226,11 +271,6 @@ async function sniffVendorFromCsv(f: File): Promise<string | null> {
     }
 }
 
-function isPmBrokerVendor(value: string): boolean {
-    const normalized = value.trim().toLowerCase();
-    return normalized === 'dspiae' || normalized === 'stedi';
-}
-
 function buildImportFormData(): FormData {
     const fd = new FormData();
     if (!file.value) {
@@ -280,6 +320,8 @@ async function loadHistory(): Promise<void> {
         });
         pos.value = res.data.data;
         meta.value = res.data.meta;
+        const visibleIds = new Set(pos.value.map((po) => po.id));
+        selectedPoIds.value = new Set([...selectedPoIds.value].filter((id) => visibleIds.has(id)));
         mergeVendorOptions(
             pos.value.map((x) => String(x.vendor ?? '').trim()).filter((x) => x !== ''),
         );
@@ -380,7 +422,8 @@ async function loadImportPreview(): Promise<void> {
     } catch (e: unknown) {
         const anyErr = e as any;
         previewError.value =
-            anyErr?.response?.data?.message ?? 'Preview failed. Check the file format and try again.';
+            anyErr?.response?.data?.message ??
+            'Preview failed. Check the file format and try again.';
     } finally {
         previewLoading.value = false;
     }
@@ -449,6 +492,141 @@ function resetHistoryFilters(): void {
     sortBy.value = 'ordered';
     sortDir.value = 'desc';
     void loadHistory();
+}
+
+function togglePoSelection(id: string): void {
+    const next = new Set(selectedPoIds.value);
+    if (next.has(id)) {
+        next.delete(id);
+    } else {
+        next.add(id);
+    }
+    selectedPoIds.value = next;
+    combinedPaymentSuccess.value = null;
+}
+
+function toggleAllVisible(): void {
+    if (allVisibleSelected.value) {
+        selectedPoIds.value = new Set();
+        return;
+    }
+    selectedPoIds.value = new Set(pos.value.map((po) => po.id));
+}
+
+function clearPoSelection(): void {
+    selectedPoIds.value = new Set();
+}
+
+function openCombinedPaymentDialog(): void {
+    if (selectedPurchaseOrders.value.length < 2) return;
+    combinedPaymentError.value = null;
+    combinedPaymentPreview.value = null;
+    combinedPaymentOpen.value = true;
+}
+
+function closeCombinedPaymentDialog(): void {
+    if (combinedPaymentBusy.value) return;
+    combinedPaymentOpen.value = false;
+    combinedPaymentError.value = null;
+    combinedPaymentPreview.value = null;
+}
+
+function combinedPaymentPayload(values: PoCombinedPaymentValues): {
+    purchase_order_ids: string[];
+    total_paid_cad: string;
+    includes_shipping: boolean;
+    product_paid_cad?: string;
+    shipping_paid_cad?: string;
+    allocations?: PoCombinedPaymentValues['allocations'];
+} {
+    return {
+        purchase_order_ids: selectedPurchaseOrders.value.map((po) => po.id),
+        total_paid_cad: values.total_paid_cad,
+        includes_shipping: values.includes_shipping,
+        ...(values.product_paid_cad
+            ? {
+                  product_paid_cad: values.product_paid_cad,
+                  shipping_paid_cad: values.shipping_paid_cad,
+              }
+            : {}),
+        ...(values.allocations ? { allocations: values.allocations } : {}),
+    };
+}
+
+async function previewCombinedPayment(values: PoCombinedPaymentValues): Promise<void> {
+    combinedPaymentBusy.value = true;
+    combinedPaymentError.value = null;
+    combinedPaymentPreview.value = null;
+    try {
+        const response = await api.post<{ data: PoCombinedPaymentPreview }>(
+            '/api/v1/purchase-orders/combined-payments/preview',
+            combinedPaymentPayload(values),
+        );
+        combinedPaymentPreview.value = response.data.data;
+    } catch (exception: unknown) {
+        const apiError = exception as { response?: { data?: { message?: string } } };
+        combinedPaymentError.value =
+            apiError.response?.data?.message ?? 'Unable to preview the combined payment.';
+    } finally {
+        combinedPaymentBusy.value = false;
+    }
+}
+
+async function recordCombinedPayment(values: PoCombinedPaymentValues): Promise<void> {
+    combinedPaymentBusy.value = true;
+    combinedPaymentError.value = null;
+    try {
+        await api.post<{ data: PoCombinedPaymentPreview }>(
+            '/api/v1/purchase-orders/combined-payments',
+            combinedPaymentPayload(values),
+        );
+        combinedPaymentOpen.value = false;
+        combinedPaymentPreview.value = null;
+        combinedPaymentSuccess.value = `Combined payment recorded across ${selectedPurchaseOrders.value.length} POs.`;
+        clearPoSelection();
+        await loadHistory();
+    } catch (exception: unknown) {
+        const apiError = exception as { response?: { data?: { message?: string } } };
+        combinedPaymentError.value =
+            apiError.response?.data?.message ?? 'Unable to record the combined payment.';
+    } finally {
+        combinedPaymentBusy.value = false;
+    }
+}
+
+function openDeleteDialog(po: PurchaseOrderListRow): void {
+    deleteError.value = null;
+    deleteTarget.value = po;
+}
+
+function cancelDeleteDialog(): void {
+    if (deletingId.value !== null) return;
+    deleteTarget.value = null;
+    deleteError.value = null;
+}
+
+async function confirmDeletePo(): Promise<void> {
+    const po = deleteTarget.value;
+    if (!po) return;
+
+    deletingId.value = po.id;
+    deleteError.value = null;
+
+    try {
+        const res = await api.delete<{ message?: string }>(`/api/v1/purchase-orders/${po.id}`, {
+            validateStatus: () => true,
+        });
+        if (res.status !== 200) {
+            deleteError.value = res.data?.message ?? 'Failed to delete purchase order.';
+            return;
+        }
+        deleteTarget.value = null;
+        await loadHistory();
+    } catch {
+        deleteError.value = 'Failed to delete purchase order.';
+    } finally {
+        deletingId.value = null;
+    }
 }
 
 onMounted(() => {
@@ -560,11 +738,7 @@ onMounted(() => {
             <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-6 lg:items-end">
                 <div>
                     <label class="text-xs font-medium text-slate-700">
-                        {{
-                            productTotalIncludesFees
-                                ? 'Total paid (CAD)'
-                                : 'Product total (CAD)'
-                        }}
+                        {{ productTotalIncludesFees ? 'Total paid (CAD)' : 'Product total (CAD)' }}
                     </label>
                     <input
                         v-model="productTotal"
@@ -727,6 +901,40 @@ onMounted(() => {
                 />
             </div>
 
+            <div
+                v-if="selectedPoIds.size > 0"
+                class="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
+            >
+                <div class="text-sm text-slate-700">
+                    <span class="font-semibold text-slate-900">{{ selectedPoIds.size }}</span>
+                    PO(s) selected
+                    <span v-if="selectedPoIds.size < 2" class="ml-1 text-xs text-amber-700">
+                        Select at least two POs.
+                    </span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button
+                        type="button"
+                        class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+                        @click="clearPoSelection"
+                    >
+                        Clear
+                    </button>
+                    <button
+                        type="button"
+                        data-testid="combined-payment-open"
+                        class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                        :disabled="selectedPoIds.size < 2"
+                        @click="openCombinedPaymentDialog"
+                    >
+                        Record combined payment
+                    </button>
+                </div>
+            </div>
+
+            <p v-if="combinedPaymentSuccess" class="mt-3 text-sm text-emerald-700">
+                {{ combinedPaymentSuccess }}
+            </p>
             <p v-if="error" class="mt-3 text-sm text-red-700">{{ error }}</p>
             <p v-else-if="loading" class="mt-3 text-sm text-slate-600">Loading…</p>
 
@@ -734,6 +942,15 @@ onMounted(() => {
                 <table class="min-w-full text-left text-sm">
                     <thead class="text-slate-600">
                         <tr>
+                            <th class="px-2 py-2">
+                                <input
+                                    type="checkbox"
+                                    data-testid="po-history-select-all"
+                                    aria-label="Select all visible purchase orders"
+                                    :checked="allVisibleSelected"
+                                    @change="toggleAllVisible"
+                                />
+                            </th>
                             <th class="px-2 py-2">ID</th>
                             <th class="px-2 py-2">Status</th>
                             <th class="px-2 py-2">Shipment</th>
@@ -775,6 +992,7 @@ onMounted(() => {
                             <th class="px-2 py-2 text-right">Shipping total</th>
                             <th class="px-2 py-2 text-right">Surcharge total</th>
                             <th class="px-2 py-2 text-right">Total</th>
+                            <th class="px-2 py-2 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="text-slate-800">
@@ -783,6 +1001,15 @@ onMounted(() => {
                             :key="po.id"
                             class="border-t border-slate-200 hover:bg-slate-50"
                         >
+                            <td class="px-2 py-2">
+                                <input
+                                    type="checkbox"
+                                    data-testid="po-history-select"
+                                    :aria-label="`Select purchase order ${po.id}`"
+                                    :checked="selectedPoIds.has(po.id)"
+                                    @change="togglePoSelection(po.id)"
+                                />
+                            </td>
                             <td class="px-2 py-2">
                                 <a
                                     class="underline underline-offset-2"
@@ -794,7 +1021,21 @@ onMounted(() => {
                                 </div>
                             </td>
                             <td class="px-2 py-2">{{ poStatusLabel(po.status) }}</td>
-                            <td class="px-2 py-2">{{ poShipmentMethodLabel(po.shipment_method) }}</td>
+                            <td class="px-2 py-2">
+                                <div>{{ poShipmentMethodLabel(po.shipment_method) }}</div>
+                                <a
+                                    v-for="(trackingNumber, index) in po.shipment_tracking_numbers"
+                                    :key="trackingNumber"
+                                    :href="build17TrackUrl(trackingNumber) ?? undefined"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="mt-0.5 block max-w-36 truncate text-xs text-indigo-700 underline underline-offset-2"
+                                    :title="trackingNumber"
+                                    :data-testid="`po-history-tracking-${po.id}-${index}`"
+                                >
+                                    Track {{ trackingNumber }}
+                                </a>
+                            </td>
                             <td class="px-2 py-2 text-slate-600">
                                 {{ formatTorontoDate(po.created_at) }}
                             </td>
@@ -816,6 +1057,18 @@ onMounted(() => {
                             <td class="px-2 py-2 text-right">
                                 {{ formatMoney2OrEmpty(poTotal(po)) }}
                             </td>
+                            <td class="px-2 py-2 text-right">
+                                <button
+                                    type="button"
+                                    class="rounded px-2 py-1 text-xs font-medium text-slate-600 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                    data-testid="po-history-delete"
+                                    :aria-label="`Delete purchase order ${po.id}`"
+                                    :disabled="deletingId === po.id"
+                                    @click="openDeleteDialog(po)"
+                                >
+                                    {{ deletingId === po.id ? 'Deleting…' : 'Delete' }}
+                                </button>
+                            </td>
                         </tr>
                     </tbody>
                 </table>
@@ -833,6 +1086,28 @@ onMounted(() => {
             :error="previewError"
             @cancel="closeImportPreview"
             @confirm="confirmImportPreview"
+        />
+
+        <PoCombinedPaymentDialog
+            :open="combinedPaymentOpen"
+            :busy="combinedPaymentBusy"
+            :selected-count="selectedPoIds.size"
+            :preview="combinedPaymentPreview"
+            :error="combinedPaymentError"
+            @cancel="closeCombinedPaymentDialog"
+            @preview="previewCombinedPayment"
+            @confirm="recordCombinedPayment"
+        />
+
+        <ConfirmDialog
+            :open="deleteDialogOpen"
+            title="Delete purchase order"
+            :message="deleteDialogMessage"
+            confirm-text="Delete"
+            variant="danger"
+            :busy="deletingId !== null"
+            @cancel="cancelDeleteDialog"
+            @confirm="confirmDeletePo"
         />
     </main>
 </template>

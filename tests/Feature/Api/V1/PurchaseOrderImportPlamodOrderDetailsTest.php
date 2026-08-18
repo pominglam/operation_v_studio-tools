@@ -37,7 +37,7 @@ it('imports a Plamod order-details CSV and stops before SUMMARY rows', function 
 
     $uuid = (string) ($res->json('purchase_order_uuid') ?? '');
     expect($uuid)->not()->toBe('');
-    expect((string) $res->json('shipping_per_unit'))->toBe('1.428571'); // 10 / (2 + 4 + 1)
+    expect($res->json('shipping_per_unit'))->toBeNull();
 
     /** @var PurchaseOrder $po */
     $po = PurchaseOrder::query()->where('uuid', $uuid)->firstOrFail();
@@ -47,21 +47,24 @@ it('imports a Plamod order-details CSV and stops before SUMMARY rows', function 
     expect(PurchaseOrderItem::query()->where('purchase_order_id', $po->id)->count())->toBe(3);
     /** @var PurchaseOrderItem $preorder */
     $preorder = PurchaseOrderItem::query()->where('purchase_order_id', $po->id)->where('sku', '5057434')->firstOrFail();
-    expect((string) $preorder->unit_cost)->toBe('9.1700');
+    expect((string) $preorder->unit_cost)->toBe('9.17');
     expect($preorder->qty_ordered)->toBe(4);
-    expect($preorder->qty_received)->toBe(4);
+    expect($preorder->qty_shipped)->toBe(4);
+    expect($preorder->qty_received)->toBeNull();
 
     /** @var PurchaseOrderItem $item1 */
     $item1 = PurchaseOrderItem::query()->where('purchase_order_id', $po->id)->where('sku', '5055897')->firstOrFail();
-    expect((string) $item1->unit_cost)->toBe('16.3100');
+    expect((string) $item1->unit_cost)->toBe('16.31');
     expect($item1->qty_ordered)->toBe(2);
-    expect($item1->qty_received)->toBe(2);
+    expect($item1->qty_shipped)->toBe(2);
+    expect($item1->qty_received)->toBeNull();
 
     /** @var PurchaseOrderItem $item2 */
     $item2 = PurchaseOrderItem::query()->where('purchase_order_id', $po->id)->where('sku', '5064094')->firstOrFail();
-    expect((string) $item2->unit_cost)->toBe('61.4700');
+    expect((string) $item2->unit_cost)->toBe('61.47');
     expect($item2->qty_ordered)->toBe(5);
-    expect($item2->qty_received)->toBe(1);
+    expect($item2->qty_shipped)->toBe(1);
+    expect($item2->qty_received)->toBeNull();
 
     $p1 = Product::query()->where('sku', '5055897')->firstOrFail();
     expect((string) $p1->barcode)->toBe('4573102558978');
@@ -71,7 +74,5 @@ it('imports a Plamod order-details CSV and stops before SUMMARY rows', function 
     expect((string) $p2->barcode)->toBe('4573102640949');
     expect((string) $p2->description)->toBe('MG MSN-02 Zeong');
 
-    expect(InventoryLot::query()->whereIn('purchase_order_item_id', [$item1->id, $preorder->id, $item2->id])->count())->toBe(3);
-    $lot = InventoryLot::query()->where('purchase_order_item_id', $item1->id)->firstOrFail();
-    expect((string) $lot->shipping_per_unit)->toBe('1.428571');
+    expect(InventoryLot::query()->whereIn('purchase_order_item_id', [$item1->id, $preorder->id, $item2->id])->count())->toBe(0);
 });

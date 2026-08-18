@@ -50,6 +50,7 @@ it('updates purchase order header and recomputes related po lots shipping_per_un
         'surcharge_total' => 12.34,
         'product_total' => 250.5,
         'supplier_order_id' => 'SUP-12345',
+        'shipment_tracking_numbers' => ['1Z999AA10123456784', 'RR123456789CN'],
         'estimated_arrival_date' => '2025-12-08',
         'received_date' => '2025-12-10',
         'is_done' => true,
@@ -60,6 +61,8 @@ it('updates purchase order header and recomputes related po lots shipping_per_un
         ->assertJsonPath('data.surcharge_total', '12.34')
         ->assertJsonPath('data.product_total', '250.50')
         ->assertJsonPath('data.supplier_order_id', 'SUP-12345')
+        ->assertJsonPath('data.shipment_tracking_numbers.0', '1Z999AA10123456784')
+        ->assertJsonPath('data.shipment_tracking_numbers.1', 'RR123456789CN')
         ->assertJsonPath('data.estimated_arrival_date', '2025-12-08')
         ->assertJsonPath('data.received_date', '2025-12-10')
         ->assertJsonPath('data.is_done', true)
@@ -85,4 +88,18 @@ it('updates exclude_from_latest_arrivals_ordering on purchase order header', fun
     $po->refresh();
     expect($po->exclude_from_latest_arrivals_ordering)->toBeTrue();
     expect($po->received_date?->toDateString())->toBe('2025-12-01');
+});
+
+it('rejects invalid purchase order shipment tracking number lists', function (): void {
+    $po = PurchaseOrder::query()->create(['vendor' => 'Plamod']);
+
+    $this->patchJson("/api/v1/purchase-orders/{$po->uuid}", [
+        'shipment_tracking_numbers' => [str_repeat('A', 256)],
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors('shipment_tracking_numbers.0');
+
+    $this->patchJson("/api/v1/purchase-orders/{$po->uuid}", [
+        'shipment_tracking_numbers' => array_fill(0, 41, 'TRACKING'),
+    ])->assertUnprocessable()
+        ->assertJsonValidationErrors('shipment_tracking_numbers');
 });

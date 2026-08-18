@@ -106,3 +106,22 @@ it('posts retailer preorder search queries to the scraper', function (): void {
     expect($result['ok'])->toBeTrue();
     expect($result['results']['RE 1/100 VIGNA-GHINA']['sku'])->toBe('0225768');
 });
+
+it('calls instock merged export endpoint', function (): void {
+    Http::fake([
+        'http://plamod-scraper.test/export-manufacturer-instock-merged' => Http::response([
+            'ok' => true,
+            'csv_storage_path' => 'plamod/instock_merged_exports/instock-mfr-1-merged.csv',
+            'row_count' => 700,
+            'expected_row_count' => 709,
+            'filter_mode' => 'BRAND',
+        ], 200),
+    ]);
+
+    $client = new PlamodScraperClient('http://plamod-scraper.test');
+    $result = $client->exportManufacturerInstockMerged(1);
+
+    expect($result['ok'])->toBeTrue();
+    expect($result['row_count'])->toBe(700);
+    expect($result['filter_mode'])->toBe('BRAND');
+});

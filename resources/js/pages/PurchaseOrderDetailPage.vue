@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { api } from '../lib/api';
 import { formatTorontoDateTime } from '../lib/datetime';
 import { formatMoney2, formatMoney2OrEmpty, parseMoney } from '../lib/money';
+import { build17TrackUrl, parseShipmentTrackingNumbers } from '../lib/shipmentTracking';
 import BulkUpdatePoItemsDialog, {
     type PoItemsBulkChanges,
 } from '../components/purchaseOrders/BulkUpdatePoItemsDialog.vue';
@@ -26,6 +27,7 @@ import PoWorkflowPushInventoryDialog, {
 import PoImportPreviewDialog, {
     type PoImportPreview,
 } from '../components/purchaseOrders/PoImportPreviewDialog.vue';
+import { isPmBrokerVendor } from '../composables/purchaseOrders/pmBrokerVendor';
 import BulkExportDialog, {
     type ProductsBulkExportType,
 } from '../components/products/BulkExportDialog.vue';
@@ -35,6 +37,15 @@ import BulkRecrawlDialog, {
 import ImportHandlesCard from '../components/products/ImportHandlesCard.vue';
 import ImportInventoryQuantityOverrideCard from '../components/products/ImportInventoryQuantityOverrideCard.vue';
 import ProductPoLinesDrawer from '../components/products/ProductPoLinesDrawer.vue';
+import PoSellingPriceHistoryPanel, {
+    type PoSellingPriceHistoryEntry,
+} from '../components/purchaseOrders/PoSellingPriceHistoryPanel.vue';
+import {
+    poItemSortHeaderClass,
+    poItemSortIndicator,
+    sortPoItems,
+    type PoItemSortKey,
+} from '../lib/poItemsSort';
 
 type PurchaseOrderItem = {
     id: number;
@@ -42,6 +53,8 @@ type PurchaseOrderItem = {
     product_name: string | null;
     product_barcode: string | null;
     product_handle: string | null;
+    product_vendor: string | null;
+    product_vendor_missing?: boolean;
     sku: string;
     vendor: string;
     unit_cost: string | null;
@@ -86,6 +99,7 @@ type PurchaseOrder = {
     id: string;
     vendor: string;
     supplier_order_id: string | null;
+    shipment_tracking_numbers: string[];
     vendor_currency_code: string;
     ordered_date: string | null;
     shipped_date: string | null;
@@ -96,6 +110,7 @@ type PurchaseOrder = {
     surcharge_total: string | null;
     product_total: string | null;
     vendor_product_total: string | null;
+    vendor_shipping_total: string | null;
     fx_rate_to_cad: string | null;
     fx_rate_cad_to_vendor: string | null;
     notes: string | null;
@@ -103,7 +118,7 @@ type PurchaseOrder = {
     workflow_checklist: Record<string, boolean> | null;
     status: 'draft' | 'ordered' | 'shipped' | 'received' | 'on_shelves';
     shipment_method: 'air' | 'sea' | null;
-    counts: { items: number };
+    counts: { items: number; unassigned_product_vendor?: number };
     items: PurchaseOrderItem[];
     created_at: string | null;
 };
@@ -115,6 +130,14 @@ const id = computed(() => String(route.params.id ?? ''));
 const loading = ref(false);
 const error = ref<string | null>(null);
 const po = ref<PurchaseOrder | null>(null);
+const productsGridHref = computed<string>(() => {
+    if (!po.value) return '';
+
+    return router.resolve({
+        name: 'products',
+        query: { purchase_order_uuid: po.value.id },
+    }).href;
+});
 const saving = ref(false);
 const editOpen = ref(false);
 const deleting = ref(false);
@@ -133,10 +156,13 @@ const importProductTotalIncludesFees = ref(false);
 /** When true, replace re-import deletes PO-linked lots/movements and clears qty received before replacing lines. */
 const reimportResetReceipt = ref(false);
 
-const isPmBrokerVendor = computed(() => {
-    const vendor = po.value?.vendor ?? '';
-    const normalized = vendor.trim().toLowerCase();
-    return normalized === 'dspiae' || normalized === 'stedi';
+const isPmBrokerVendorPo = computed(() => isPmBrokerVendor(po.value?.vendor ?? ''));
+
+const unassignedProductVendorCount = computed<number>(() => {
+    if (po.value?.counts?.unassigned_product_vendor !== undefined) {
+        return po.value.counts.unassigned_product_vendor;
+    }
+    return (po.value?.items ?? []).filter((it) => it.product_vendor_missing).length;
 });
 
 const savingQtyOrdered = ref<number | null>(null);
@@ -155,6 +181,11 @@ const savingBarcodeProductId = ref<string | null>(null);
 const editingBarcodeItemId = ref<number | null>(null);
 const barcodeDrafts = reactive<Record<number, string>>({});
 
+const savingProductVendorProductId = ref<string | null>(null);
+const editingProductVendorItemId = ref<number | null>(null);
+const productVendorDrafts = reactive<Record<number, string>>({});
+const productVendorOptions = ref<string[]>([]);
+
 const savingUnitCost = ref<number | null>(null);
 const editingUnitCostId = ref<number | null>(null);
 const unitCostDrafts = reactive<Record<number, string>>({});
@@ -162,6 +193,8 @@ const unitCostDrafts = reactive<Record<number, string>>({});
 const itemQtyError = ref<string | null>(null);
 
 const itemsSearch = ref('');
+const itemsSortBy = ref<PoItemSortKey>('sku');
+const itemsSortDir = ref<'asc' | 'desc'>('asc');
 
 const selectedItemIds = ref<Set<number>>(new Set());
 const bulkUpdateOpen = ref(false);
@@ -250,6 +283,9 @@ const addDraftProductsError = ref<string | null>(null);
 const addDraftProductsSummary = ref<string | null>(null);
 const poLinesOpen = ref(false);
 const poLinesProductId = ref<string | null>(null);
+const sellingPriceHistory = ref<PoSellingPriceHistoryEntry[]>([]);
+const sellingPriceHistoryLoading = ref(false);
+const sellingPriceHistoryError = ref<string | null>(null);
 const poLinesProductSku = ref<string | null>(null);
 const poLinesProductName = ref<string | null>(null);
 
@@ -360,8 +396,7 @@ async function runWorkflowAction(
         const expected = options?.expect202 ? 202 : 200;
         if (res.status !== expected) {
             const issues = (res.data as any)?.issues as
-                | Array<{ sku: string; reason: string }>
-                | undefined;
+                Array<{ sku: string; reason: string }> | undefined;
             let msg = (res.data as any)?.message as string | undefined;
             if (issues?.length) {
                 const lines = issues
@@ -393,9 +428,7 @@ type PrepareInventoryResponse = {
     data: {
         lines_validated: number;
         sync_mode?:
-            | 'skipped_mirror_fresh'
-            | 'mirror_stale_confirmation_required'
-            | 'po_inventory_refresh';
+            'skipped_mirror_fresh' | 'mirror_stale_confirmation_required' | 'po_inventory_refresh';
         mirror_fresh?: boolean;
         max_age_seconds?: number;
         products_last_completed_at?: string | null;
@@ -423,7 +456,7 @@ function prepareInventorySummaryFromResponse(data: PrepareInventoryResponse['dat
     }
     if (mode === 'po_inventory_refresh') {
         const skuCount = data.skus_refreshed ?? n;
-        return `Refreshed Shopify inventory for ${skuCount} PO SKU(s). ${n} PO line(s) validated with received qty.`;
+        return `Refreshed local Shopify inventory mirror for ${skuCount} PO SKU(s). ${n} PO line(s) validated with received qty. Maintenance sync timestamps are unchanged (PO-scoped pull only). Use Apply received to add qty to ERP available.`;
     }
     if (mode === 'mirror_stale_confirmation_required') {
         return `Validated ${n} PO line(s) with received qty. Using existing Shopify mirror data (not refreshed).`;
@@ -431,9 +464,82 @@ function prepareInventorySummaryFromResponse(data: PrepareInventoryResponse['dat
     return `${n} PO line(s) validated with received qty.`;
 }
 
-async function postPrepareInventory(
-    pullShopify: boolean,
-): Promise<PrepareInventoryResponse['data']> {
+type PrepareInventoryCallResult =
+    | { ok: true; data: PrepareInventoryResponse['data'] }
+    | { ok: false; message: string; issues: Array<{ sku: string; reason: string }> };
+
+function formatPrepareInventoryError(
+    message: string,
+    issues: Array<{ sku: string; reason: string }>,
+): string {
+    const lines = issues
+        .slice(0, 8)
+        .map((i) => `${i.sku}: ${i.reason}`)
+        .join('; ');
+    const suffix = lines !== '' ? ` ${lines}` : '';
+    const missingReceived = issues.some((i) => i.reason === 'missing_or_zero_qty_received');
+    const hint = missingReceived
+        ? ' Plamod import sets Qty shipped only — enter Qty received on each line, use Bulk update → Set qty received to qty shipped, or apply an inventory check first.'
+        : '';
+    return `${message}${suffix}${hint}`;
+}
+
+function poItemIdsMissingReceivedWithShipped(): number[] {
+    return (po.value?.items ?? [])
+        .filter((it) => {
+            const received = it.qty_received;
+            const shipped = it.qty_shipped ?? 0;
+            return (received === null || received <= 0) && shipped > 0;
+        })
+        .map((it) => it.id);
+}
+
+async function bulkSetReceivedToShipped(itemIds: number[]): Promise<boolean> {
+    if (!po.value || itemIds.length === 0) {
+        return false;
+    }
+
+    const res = await api.patch(
+        `/api/v1/purchase-orders/${po.value.id}/items`,
+        { ids: itemIds, changes: { set_received_to_shipped: true } },
+        { validateStatus: () => true },
+    );
+
+    if (res.status < 200 || res.status >= 300) {
+        workflowActionError.value =
+            (res.data as { message?: string })?.message ??
+            'Failed to set qty received from qty shipped.';
+        return false;
+    }
+
+    po.value = (res.data as { data?: PurchaseOrder })?.data ?? po.value;
+    return true;
+}
+
+async function maybeFillReceivedFromShippedBeforePrepare(
+    issues: Array<{ sku: string; reason: string }>,
+): Promise<boolean> {
+    const hasMissingReceived = issues.some((i) => i.reason === 'missing_or_zero_qty_received');
+    if (!hasMissingReceived) {
+        return false;
+    }
+
+    const ids = poItemIdsMissingReceivedWithShipped();
+    if (ids.length === 0) {
+        return false;
+    }
+
+    const confirmed = window.confirm(
+        `${ids.length} PO line(s) have no Qty received (Plamod import only sets Qty shipped).\n\nCopy Qty shipped → Qty received on those lines and continue Prepare?`,
+    );
+    if (!confirmed) {
+        return false;
+    }
+
+    return bulkSetReceivedToShipped(ids);
+}
+
+async function postPrepareInventory(pullShopify: boolean): Promise<PrepareInventoryCallResult> {
     if (!po.value) {
         throw new Error('Purchase order is not loaded.');
     }
@@ -444,16 +550,13 @@ async function postPrepareInventory(
         { validateStatus: () => true, timeout: 0 },
     );
     if (res.status !== 200) {
-        const issues = res.data?.issues ?? [];
-        const lines = issues
-            .slice(0, 8)
-            .map((i) => `${i.sku}: ${i.reason}`)
-            .join('; ');
-        throw new Error(
-            `${res.data?.message ?? 'Prepare inventory failed.'}${lines ? ` ${lines}` : ''}`,
-        );
+        return {
+            ok: false,
+            message: res.data?.message ?? 'Prepare inventory failed.',
+            issues: res.data?.issues ?? [],
+        };
     }
-    return res.data.data;
+    return { ok: true, data: res.data.data };
 }
 
 async function prepareInventoryForPo(): Promise<void> {
@@ -467,7 +570,19 @@ async function prepareInventoryForPo(): Promise<void> {
     inventoryPrepareReady.value = false;
     inventoryPrepareSummary.value = null;
     try {
-        let data = await postPrepareInventory(false);
+        let prepareResult = await postPrepareInventory(false);
+        if (!prepareResult.ok) {
+            if (await maybeFillReceivedFromShippedBeforePrepare(prepareResult.issues)) {
+                prepareResult = await postPrepareInventory(false);
+            }
+            if (!prepareResult.ok) {
+                throw new Error(
+                    formatPrepareInventoryError(prepareResult.message, prepareResult.issues),
+                );
+            }
+        }
+
+        let data = prepareResult.data;
         if (data.sync_mode === 'mirror_stale_confirmation_required') {
             const maxAgeHours = Math.max(1, Math.round((data.max_age_seconds ?? 3600) / 3600));
             const productsAt = formatShopifyMirrorSyncLabel(data.products_last_completed_at);
@@ -479,7 +594,13 @@ async function prepareInventoryForPo(): Promise<void> {
                 `Qty received validated on ${n} PO line(s).\n\nShopify catalog data is older than ${maxAgeHours} hour(s) (products last synced: ${productsAt}; inventory last synced: ${inventoryAt}).\n\nPull fresh inventory for PO SKUs from Shopify now? This may take a few minutes.`,
             );
             if (pullConfirmed) {
-                data = await postPrepareInventory(true);
+                const pullResult = await postPrepareInventory(true);
+                if (!pullResult.ok) {
+                    throw new Error(
+                        formatPrepareInventoryError(pullResult.message, pullResult.issues),
+                    );
+                }
+                data = pullResult.data;
             }
         }
         inventoryPrepareReady.value = true;
@@ -1703,6 +1824,7 @@ async function applyReceivedQtyToAvailable(): Promise<void> {
 const draft = reactive<{
     vendor: string;
     supplier_order_id: string;
+    shipment_tracking_numbers: string;
     shipment_method: '' | 'air' | 'sea';
     vendor_currency_code: string;
     ordered_date: string;
@@ -1714,11 +1836,13 @@ const draft = reactive<{
     surcharge_total: string;
     product_total: string;
     vendor_product_total: string;
+    vendor_shipping_total: string;
     notes: string;
     exclude_from_latest_arrivals_ordering: boolean;
 }>({
     vendor: '',
     supplier_order_id: '',
+    shipment_tracking_numbers: '',
     shipment_method: '',
     vendor_currency_code: 'CAD',
     ordered_date: '',
@@ -1730,6 +1854,7 @@ const draft = reactive<{
     surcharge_total: '',
     product_total: '',
     vendor_product_total: '',
+    vendor_shipping_total: '',
     notes: '',
     exclude_from_latest_arrivals_ordering: false,
 });
@@ -1957,6 +2082,43 @@ function landedFor(
     return centsToMoney(unitCents + ship + surcharge);
 }
 
+async function loadProductVendorOptions(): Promise<void> {
+    try {
+        const res = await api.get<{ data: { vendors: string[] } }>(
+            '/api/v1/products/filter-options',
+        );
+        productVendorOptions.value = (res.data.data?.vendors ?? []).filter(
+            (v) => typeof v === 'string' && v.trim() !== '',
+        );
+    } catch {
+        productVendorOptions.value = [];
+    }
+}
+
+function vendorChoicesIncludingDraft(draft: string): string[] {
+    const base = productVendorOptions.value.map((v) => v.trim()).filter((v) => v !== '');
+    const cur = draft.trim();
+    const merged = cur !== '' ? [...base, cur] : base;
+    return Array.from(new Set(merged)).sort((a, b) => a.localeCompare(b));
+}
+
+async function loadSellingPriceHistory(): Promise<void> {
+    if (!po.value) return;
+    sellingPriceHistoryLoading.value = true;
+    sellingPriceHistoryError.value = null;
+    try {
+        const res = await api.get<{ data: { entries: PoSellingPriceHistoryEntry[] } }>(
+            `/api/v1/purchase-orders/${po.value.id}/selling-price-history`,
+        );
+        sellingPriceHistory.value = res.data.data.entries ?? [];
+    } catch {
+        sellingPriceHistoryError.value = 'Failed to load selling price history.';
+        sellingPriceHistory.value = [];
+    } finally {
+        sellingPriceHistoryLoading.value = false;
+    }
+}
+
 async function load(): Promise<void> {
     loading.value = true;
     error.value = null;
@@ -1966,6 +2128,7 @@ async function load(): Promise<void> {
         if (!editOpen.value && po.value) {
             draft.vendor = po.value.vendor ?? '';
             draft.supplier_order_id = po.value.supplier_order_id ?? '';
+            draft.shipment_tracking_numbers = (po.value.shipment_tracking_numbers ?? []).join('\n');
             draft.vendor_currency_code = po.value.vendor_currency_code ?? 'CAD';
             draft.ordered_date = po.value.ordered_date ?? '';
             draft.shipped_date = po.value.shipped_date ?? '';
@@ -1976,6 +2139,7 @@ async function load(): Promise<void> {
             draft.surcharge_total = po.value.surcharge_total ?? '';
             draft.product_total = po.value.product_total ?? '';
             draft.vendor_product_total = po.value.vendor_product_total ?? '';
+            draft.vendor_shipping_total = po.value.vendor_shipping_total ?? '';
             draft.notes = po.value.notes ?? '';
             draft.exclude_from_latest_arrivals_ordering =
                 po.value.exclude_from_latest_arrivals_ordering ?? false;
@@ -1986,7 +2150,7 @@ async function load(): Promise<void> {
     } finally {
         loading.value = false;
         if (po.value) {
-            await runWorkflowVerify();
+            await Promise.all([runWorkflowVerify(), loadSellingPriceHistory()]);
         }
     }
 }
@@ -1996,6 +2160,7 @@ function startEdit(): void {
     editOpen.value = true;
     draft.vendor = po.value.vendor ?? '';
     draft.supplier_order_id = po.value.supplier_order_id ?? '';
+    draft.shipment_tracking_numbers = (po.value.shipment_tracking_numbers ?? []).join('\n');
     draft.vendor_currency_code = po.value.vendor_currency_code ?? 'CAD';
     draft.ordered_date = po.value.ordered_date ?? '';
     draft.shipped_date = po.value.shipped_date ?? '';
@@ -2006,6 +2171,7 @@ function startEdit(): void {
     draft.surcharge_total = po.value.surcharge_total ?? '';
     draft.product_total = po.value.product_total ?? '';
     draft.vendor_product_total = po.value.vendor_product_total ?? '';
+    draft.vendor_shipping_total = po.value.vendor_shipping_total ?? '';
     draft.notes = po.value.notes ?? '';
     draft.exclude_from_latest_arrivals_ordering =
         po.value.exclude_from_latest_arrivals_ordering ?? false;
@@ -2026,6 +2192,9 @@ async function save(): Promise<void> {
             vendor: draft.vendor.trim(),
             supplier_order_id:
                 draft.supplier_order_id.trim() === '' ? null : draft.supplier_order_id.trim(),
+            shipment_tracking_numbers: parseShipmentTrackingNumbers(
+                draft.shipment_tracking_numbers,
+            ),
             vendor_currency_code: draft.vendor_currency_code.trim().toUpperCase(),
             ordered_date: draft.ordered_date || null,
             shipped_date: draft.shipped_date || null,
@@ -2038,6 +2207,10 @@ async function save(): Promise<void> {
             product_total: draft.product_total.trim() === '' ? null : draft.product_total.trim(),
             vendor_product_total:
                 draft.vendor_product_total.trim() === '' ? null : draft.vendor_product_total.trim(),
+            vendor_shipping_total:
+                draft.vendor_shipping_total.trim() === ''
+                    ? null
+                    : draft.vendor_shipping_total.trim(),
             notes: draft.notes.trim() === '' ? null : draft.notes.trim(),
             exclude_from_latest_arrivals_ordering: draft.exclude_from_latest_arrivals_ordering,
             shipment_method: draft.shipment_method === '' ? null : draft.shipment_method,
@@ -2205,6 +2378,93 @@ async function saveBarcode(itemId: number, value: string | null): Promise<void> 
     } finally {
         if (savingBarcodeProductId.value === productId) {
             savingBarcodeProductId.value = null;
+        }
+    }
+}
+
+function setProductVendorLocal(productId: string, vendor: string | null): void {
+    if (!po.value) return;
+    for (const item of po.value.items) {
+        if (item.product_id === productId) {
+            item.product_vendor = vendor;
+            item.product_vendor_missing = vendor === null || vendor.trim() === '';
+        }
+    }
+    if (po.value.counts) {
+        po.value.counts.unassigned_product_vendor = po.value.items.filter(
+            (it) => it.product_vendor_missing,
+        ).length;
+    }
+}
+
+function startProductVendorEdit(itemId: number, current: string | null): void {
+    editingProductVendorItemId.value = itemId;
+    if (productVendorDrafts[itemId] === undefined) {
+        productVendorDrafts[itemId] = current ?? '';
+    }
+}
+
+function updateProductVendorDraft(itemId: number, value: string): void {
+    productVendorDrafts[itemId] = value;
+    const trimmed = value.trim();
+    if (trimmed !== '' && !productVendorOptions.value.includes(trimmed)) {
+        productVendorOptions.value = [...productVendorOptions.value, trimmed].sort((a, b) =>
+            a.localeCompare(b),
+        );
+    }
+}
+
+function commitProductVendorEdit(itemId: number): void {
+    if (editingProductVendorItemId.value !== itemId) return;
+    editingProductVendorItemId.value = null;
+    const value = productVendorDrafts[itemId] ?? '';
+    delete productVendorDrafts[itemId];
+    void saveProductVendor(itemId, value);
+}
+
+async function saveProductVendor(itemId: number, value: string): Promise<void> {
+    if (!po.value) return;
+    itemQtyError.value = null;
+
+    const row = po.value.items.find((it) => it.id === itemId);
+    if (!row) {
+        itemQtyError.value = 'Failed to save product vendor.';
+        return;
+    }
+
+    const productId = typeof row.product_id === 'string' ? row.product_id.trim() : '';
+    if (productId === '') {
+        itemQtyError.value = 'Cannot set vendor for a line without product id.';
+        return;
+    }
+
+    const previous = row.product_vendor ?? null;
+    const vendor = value.trim() === '' ? null : value.trim();
+    savingProductVendorProductId.value = productId;
+
+    try {
+        setProductVendorLocal(productId, vendor);
+
+        const res = await api.patch(
+            `/api/v1/products/${productId}/vendor`,
+            { vendor },
+            { validateStatus: () => true },
+        );
+
+        if (res.status < 200 || res.status >= 300) {
+            setProductVendorLocal(productId, previous);
+            itemQtyError.value = (res.data as any)?.message ?? 'Failed to save product vendor.';
+            return;
+        }
+
+        const saved = (res.data as any)?.data?.vendor as string | null | undefined;
+        setProductVendorLocal(productId, saved ?? null);
+    } catch {
+        setProductVendorLocal(productId, previous);
+        itemQtyError.value = 'Failed to save product vendor.';
+    } finally {
+        if (savingProductVendorProductId.value === productId) {
+            savingProductVendorProductId.value = null;
         }
     }
 }
@@ -2385,6 +2645,7 @@ function purchaseOrderItemSearchHaystack(item: PurchaseOrderItem): string {
         item.product_name ?? '',
         item.product_barcode ?? '',
         item.product_handle ?? '',
+        item.product_vendor ?? '',
         item.vendor,
     ]
         .join(' ')
@@ -2405,6 +2666,25 @@ const filteredPoItems = computed<PurchaseOrderItem[]>(() => {
     if (query.trim() === '') return items;
     return items.filter((item) => purchaseOrderItemMatchesSearch(item, query));
 });
+
+function toggleItemsSort(key: PoItemSortKey): void {
+    if (itemsSortBy.value === key) {
+        itemsSortDir.value = itemsSortDir.value === 'asc' ? 'desc' : 'asc';
+        return;
+    }
+    itemsSortBy.value = key;
+    itemsSortDir.value = 'asc';
+}
+
+const sortedFilteredPoItems = computed<PurchaseOrderItem[]>(() =>
+    sortPoItems(
+        filteredPoItems.value,
+        itemsSortBy.value,
+        itemsSortDir.value,
+        shippingPerUnitCents.value,
+        surchargePerUnitCents.value,
+    ),
+);
 
 function toggleAllItems(checked: boolean): void {
     if (!po.value) return;
@@ -2605,7 +2885,7 @@ async function startPoImport(mode: 'replace' | 'append'): Promise<void> {
         return;
     }
 
-    if (isPmBrokerVendor.value) {
+    if (isPmBrokerVendorPo.value) {
         await loadPoImportPreview(mode);
         return;
     }
@@ -2688,6 +2968,7 @@ watch(id, () => {
 onMounted(() => {
     void load();
     void loadInventoryChecksForPicker();
+    void loadProductVendorOptions();
 });
 </script>
 
@@ -2704,6 +2985,18 @@ onMounted(() => {
         <p v-else-if="loading" class="text-sm text-slate-600">Loading…</p>
 
         <div v-else-if="po" class="space-y-6">
+            <div
+                v-if="unassignedProductVendorCount > 0"
+                class="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+                data-testid="po-unassigned-product-vendor-alert"
+            >
+                <span class="font-semibold">{{ unassignedProductVendorCount }}</span>
+                line(s) on this PO have no product vendor assigned. Set
+                <span class="font-semibold">Product vendor</span> on each row below (or bulk-update
+                selected lines). Other/multi imports leave new catalog products unassigned on
+                purpose.
+            </div>
+
             <section class="rounded-lg border border-slate-200 bg-white p-4">
                 <div class="flex items-start justify-between gap-3">
                     <div class="text-sm text-slate-800">
@@ -2724,8 +3017,32 @@ onMounted(() => {
                             <span class="font-medium">Shipment:</span>
                             {{ poShipmentMethodLabel(po.shipment_method) }}
                         </div>
+                        <div>
+                            <span class="font-medium">Tracking:</span>
+                            <a
+                                v-for="(trackingNumber, index) in po.shipment_tracking_numbers ??
+                                []"
+                                :key="trackingNumber"
+                                :href="build17TrackUrl(trackingNumber) ?? undefined"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="ml-1 inline-block text-indigo-700 underline underline-offset-2"
+                                :data-testid="`po-tracking-link-${index}`"
+                            >
+                                {{ trackingNumber }}
+                            </a>
+                            <span v-if="(po.shipment_tracking_numbers ?? []).length === 0">—</span>
+                        </div>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex flex-wrap items-center justify-end gap-2">
+                        <a
+                            :href="productsGridHref"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                        >
+                            View products in grid
+                        </a>
                         <button
                             type="button"
                             class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
@@ -2787,7 +3104,7 @@ onMounted(() => {
                                 :disabled="reimporting || importMoreing || importPreviewLoading"
                             />
                             <label
-                                v-if="isPmBrokerVendor"
+                                v-if="isPmBrokerVendorPo"
                                 class="mt-2 flex items-start gap-2 text-[11px] text-slate-600"
                             >
                                 <input
@@ -2851,9 +3168,9 @@ onMounted(() => {
                             <div class="mt-1 text-[11px] text-slate-500">
                                 Re-import replaces existing lines unless you use the option above
                                 when receipt data exists. Import more appends new lines and keeps
-                                existing lines. For Dspiae/Stedi PM invoices, use Preview import
-                                first. Import more combines product, shipping, and vendor totals
-                                from each import into the PO header.
+                                existing lines. For Dspiae, Stedi, or Other/multi PM invoices, use
+                                Preview import first. Import more combines product, shipping, and
+                                vendor totals from each import into the PO header.
                             </div>
                         </div>
                         <div class="lg:col-span-1 space-y-2">
@@ -2866,7 +3183,7 @@ onMounted(() => {
                                 {{
                                     reimporting
                                         ? 'Re-importing…'
-                                        : isPmBrokerVendor
+                                        : isPmBrokerVendorPo
                                           ? 'Preview re-import'
                                           : 'Re-import'
                                 }}
@@ -2882,7 +3199,7 @@ onMounted(() => {
                                         ? 'Importing…'
                                         : importPreviewLoading
                                           ? 'Previewing…'
-                                          : isPmBrokerVendor
+                                          : isPmBrokerVendorPo
                                             ? 'Preview import more'
                                             : 'Import more'
                                 }}
@@ -3246,6 +3563,12 @@ onMounted(() => {
                     </p>
                 </div>
 
+                <PoSellingPriceHistoryPanel
+                    :entries="sellingPriceHistory"
+                    :loading="sellingPriceHistoryLoading"
+                    :error="sellingPriceHistoryError"
+                />
+
                 <div
                     v-if="editOpen"
                     class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3"
@@ -3268,6 +3591,21 @@ onMounted(() => {
                                 type="text"
                                 class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                             />
+                        </div>
+                        <div class="lg:col-span-2">
+                            <label class="text-xs font-medium text-slate-700"
+                                >Shipment tracking numbers</label
+                            >
+                            <textarea
+                                v-model="draft.shipment_tracking_numbers"
+                                rows="3"
+                                autocomplete="off"
+                                class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                data-testid="po-tracking-input"
+                            ></textarea>
+                            <p class="mt-1 text-xs text-slate-500">
+                                Enter one tracking number per line (maximum 40).
+                            </p>
                         </div>
                         <div>
                             <label class="text-xs font-medium text-slate-700">Shipment</label>
@@ -3408,6 +3746,21 @@ onMounted(() => {
                                 FX auto-calculates when currency ≠ CAD.
                             </div>
                         </div>
+                        <div>
+                            <label class="text-xs font-medium text-slate-700"
+                                >Vendor shipping total</label
+                            >
+                            <input
+                                v-model="draft.vendor_shipping_total"
+                                type="text"
+                                inputmode="decimal"
+                                class="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                placeholder="0.00"
+                            />
+                            <div class="mt-1 text-[11px] text-slate-500">
+                                Original invoice currency; used by combined payments.
+                            </div>
+                        </div>
                         <div class="sm:col-span-2 lg:col-span-2">
                             <label class="text-xs font-medium text-slate-700">Notes</label>
                             <input
@@ -3459,6 +3812,13 @@ onMounted(() => {
                             {{ formatMoney2(po.shipping_total) }}
                         </div>
                         <div>
+                            <span class="font-medium">Vendor shipping total:</span>
+                            {{ formatMoney2OrEmpty(po.vendor_shipping_total) }}
+                            <span v-if="po.vendor_shipping_total" class="text-slate-500">
+                                {{ po.vendor_currency_code }}</span
+                            >
+                        </div>
+                        <div>
                             <span class="font-medium">Surcharge total:</span>
                             {{ formatMoney2OrEmpty(po.surcharge_total) }}
                         </div>
@@ -3483,6 +3843,10 @@ onMounted(() => {
                             }}
                         </div>
                         <div><span class="font-medium">Items:</span> {{ po.counts.items }}</div>
+                        <div data-testid="po-total-quantity">
+                            <span class="font-medium">Total quantity:</span>
+                            {{ totalQtyOrdered }}
+                        </div>
                     </div>
 
                     <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
@@ -3625,26 +3989,325 @@ onMounted(() => {
                                         "
                                     />
                                 </th>
-                                <th class="px-2 py-1">SKU</th>
-                                <th class="px-2 py-1">Product</th>
-                                <th class="px-2 py-1">Vendor</th>
-                                <th class="px-2 py-1 text-right">Unit cost</th>
-                                <th class="px-2 py-1 text-right">Ship/unit</th>
-                                <th class="px-2 py-1 text-right">Surcharge/unit</th>
-                                <th class="px-2 py-1 text-right">Landed</th>
-                                <th class="px-2 py-1 text-right">Available</th>
-                                <th class="px-2 py-1 text-right">Maintain</th>
-                                <th class="px-2 py-1 text-right">Not arrived</th>
-                                <th class="px-2 py-1 text-right">Reorder</th>
-                                <th class="px-2 py-1 text-right">Total ordered</th>
-                                <th class="px-2 py-1 text-right">Total sold</th>
-                                <th class="px-2 py-1 text-right">Selling</th>
-                                <th class="px-2 py-1 text-right">Latest landed</th>
-                                <th class="px-2 py-1 text-right">Multiplier</th>
+                                <th class="px-2 py-1">
+                                    <button
+                                        type="button"
+                                        class="hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'sku')"
+                                        data-testid="po-items-sort-sku"
+                                        @click="toggleItemsSort('sku')"
+                                    >
+                                        SKU{{
+                                            poItemSortIndicator(itemsSortBy, itemsSortDir, 'sku')
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1">
+                                    <button
+                                        type="button"
+                                        class="hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'product_name')"
+                                        data-testid="po-items-sort-product"
+                                        @click="toggleItemsSort('product_name')"
+                                    >
+                                        Product{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'product_name',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1">
+                                    <button
+                                        type="button"
+                                        class="hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'vendor')"
+                                        data-testid="po-items-sort-vendor"
+                                        @click="toggleItemsSort('vendor')"
+                                    >
+                                        Product vendor{{
+                                            poItemSortIndicator(itemsSortBy, itemsSortDir, 'vendor')
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'unit_cost')"
+                                        data-testid="po-items-sort-unit-cost"
+                                        @click="toggleItemsSort('unit_cost')"
+                                    >
+                                        Unit cost{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'unit_cost',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'ship_per_unit')"
+                                        data-testid="po-items-sort-ship-unit"
+                                        @click="toggleItemsSort('ship_per_unit')"
+                                    >
+                                        Ship/unit{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'ship_per_unit',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="
+                                            poItemSortHeaderClass(itemsSortBy, 'surcharge_per_unit')
+                                        "
+                                        data-testid="po-items-sort-surcharge-unit"
+                                        @click="toggleItemsSort('surcharge_per_unit')"
+                                    >
+                                        Surcharge/unit{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'surcharge_per_unit',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'landed')"
+                                        data-testid="po-items-sort-landed"
+                                        @click="toggleItemsSort('landed')"
+                                    >
+                                        Landed{{
+                                            poItemSortIndicator(itemsSortBy, itemsSortDir, 'landed')
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'available')"
+                                        data-testid="po-items-sort-available"
+                                        @click="toggleItemsSort('available')"
+                                    >
+                                        Available{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'available',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'maintain')"
+                                        data-testid="po-items-sort-maintain"
+                                        @click="toggleItemsSort('maintain')"
+                                    >
+                                        Maintain{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'maintain',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'not_arrived')"
+                                        data-testid="po-items-sort-not-arrived"
+                                        @click="toggleItemsSort('not_arrived')"
+                                    >
+                                        Not arrived{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'not_arrived',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'reorder')"
+                                        data-testid="po-items-sort-reorder"
+                                        @click="toggleItemsSort('reorder')"
+                                    >
+                                        Reorder{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'reorder',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'total_ordered')"
+                                        data-testid="po-items-sort-total-ordered"
+                                        @click="toggleItemsSort('total_ordered')"
+                                    >
+                                        Total ordered{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'total_ordered',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'total_sold')"
+                                        data-testid="po-items-sort-total-sold"
+                                        @click="toggleItemsSort('total_sold')"
+                                    >
+                                        Total sold{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'total_sold',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'selling_price')"
+                                        data-testid="po-items-sort-selling"
+                                        @click="toggleItemsSort('selling_price')"
+                                    >
+                                        Selling{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'selling_price',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="
+                                            poItemSortHeaderClass(
+                                                itemsSortBy,
+                                                'latest_landed_unit_cost',
+                                            )
+                                        "
+                                        data-testid="po-items-sort-latest-landed"
+                                        @click="toggleItemsSort('latest_landed_unit_cost')"
+                                    >
+                                        Latest landed{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'latest_landed_unit_cost',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'multiplier')"
+                                        data-testid="po-items-sort-multiplier"
+                                        @click="toggleItemsSort('multiplier')"
+                                    >
+                                        Multiplier{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'multiplier',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
                                 <th class="px-2 py-1 text-right">PO Lines</th>
-                                <th class="px-2 py-1 text-right">Qty ordered</th>
-                                <th class="px-2 py-1 text-right">Qty shipped</th>
-                                <th class="px-2 py-1 text-right">Qty received</th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'qty_ordered')"
+                                        data-testid="po-items-sort-qty-ordered"
+                                        @click="toggleItemsSort('qty_ordered')"
+                                    >
+                                        Qty ordered{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'qty_ordered',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'qty_shipped')"
+                                        data-testid="po-items-sort-qty-shipped"
+                                        @click="toggleItemsSort('qty_shipped')"
+                                    >
+                                        Qty shipped{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'qty_shipped',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'qty_received')"
+                                        data-testid="po-items-sort-qty-received"
+                                        @click="toggleItemsSort('qty_received')"
+                                    >
+                                        Qty received{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'qty_received',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
                             </tr>
                         </thead>
                         <tbody class="text-slate-800">
@@ -3658,7 +4321,7 @@ onMounted(() => {
                                 </td>
                             </tr>
                             <tr
-                                v-for="it in filteredPoItems"
+                                v-for="it in sortedFilteredPoItems"
                                 :key="it.id"
                                 class="border-t border-slate-200"
                             >
@@ -3727,7 +4390,36 @@ onMounted(() => {
                                         </div>
                                     </div>
                                 </td>
-                                <td class="px-2 py-1">{{ it.vendor }}</td>
+                                <td class="px-2 py-1">
+                                    <input
+                                        :data-testid="`product-vendor-input-${it.id}`"
+                                        class="w-36 rounded border px-1.5 py-0.5 text-xs disabled:bg-slate-50 disabled:text-slate-400"
+                                        :class="
+                                            it.product_vendor_missing
+                                                ? 'border-amber-400 bg-amber-50 text-amber-950'
+                                                : 'border-slate-200 bg-white text-slate-700'
+                                        "
+                                        type="text"
+                                        list="po-item-vendor-options"
+                                        :value="
+                                            productVendorDrafts[it.id] ?? it.product_vendor ?? ''
+                                        "
+                                        :disabled="
+                                            !it.product_id ||
+                                            savingProductVendorProductId === it.product_id
+                                        "
+                                        placeholder="Assign vendor"
+                                        @focus="startProductVendorEdit(it.id, it.product_vendor)"
+                                        @input="
+                                            updateProductVendorDraft(
+                                                it.id,
+                                                ($event.target as HTMLInputElement).value,
+                                            )
+                                        "
+                                        @keydown.enter.prevent="commitProductVendorEdit(it.id)"
+                                        @blur="commitProductVendorEdit(it.id)"
+                                    />
+                                </td>
                                 <td class="px-2 py-1 text-right">
                                     <input
                                         class="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-xs tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
@@ -3930,6 +4622,13 @@ onMounted(() => {
                             </tr>
                         </tfoot>
                     </table>
+                    <datalist id="po-item-vendor-options">
+                        <option
+                            v-for="v in vendorChoicesIncludingDraft('')"
+                            :key="`vendor-opt-${v}`"
+                            :value="v"
+                        />
+                    </datalist>
                 </div>
             </section>
         </div>
@@ -3939,6 +4638,7 @@ onMounted(() => {
         :open="bulkUpdateOpen"
         :selected-count="selectedItemIds.size"
         :busy="bulkUpdating"
+        :vendor-options="productVendorOptions"
         @cancel="bulkUpdateOpen = false"
         @confirm="confirmBulkUpdate"
     />

@@ -17,6 +17,8 @@ it('recomputes cached latest unit/landed costs via maintenance endpoint', functi
         'shipping_total' => '10.00',
         'surcharge_total' => '0.00',
         'ordered_date' => '2026-01-01',
+        'received_date' => '2026-01-15',
+        'fully_on_shelves_date' => '2026-01-16',
     ]);
 
     PurchaseOrderItem::query()->create([

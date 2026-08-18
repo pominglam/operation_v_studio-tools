@@ -142,6 +142,16 @@ final class ProductUpdateService
         return $this->products->save($product);
     }
 
+    public function updateVendor(string $uuid, ?string $vendor): Product
+    {
+        $product = $this->products->findByUuidOrFail($uuid);
+        $product->fill([
+            'vendor' => $vendor !== null && trim($vendor) !== '' ? trim($vendor) : null,
+        ]);
+
+        return $this->products->save($product);
+    }
+
     public function updateHold(string $uuid, ?int $hold): Product
     {
         $product = $this->products->findByUuidOrFail($uuid);

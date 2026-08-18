@@ -6,6 +6,11 @@ namespace App\Support\Pricing;
 
 final class CharmPricingCalculator
 {
+    private const float MIN_REDUCED_MULTIPLIER = 1.45;
+
+    /** Step-1 formula price must exceed this multiple of cost before stepping down one X.99 tier. */
+    private const float MIN_FORMULA_MULTIPLIER_FOR_REDUCTION = 1.55;
+
     /**
      * Compute a CAD selling price using charm pricing (.99) from unit cost × multiplier.
      * Example: cost 4.00 × 1.5 = 6.00 → 6.99.
@@ -34,6 +39,44 @@ final class CharmPricingCalculator
         $sellingCents = ($dollars * 100) + 99;
 
         return self::centsToMoney($sellingCents);
+    }
+
+    /**
+     * Prefer one X.99 tier below the formula price when the formula price is over 1.55× cost
+     * and the reduced price remains at least 1.45× cost.
+     */
+    public static function applyHighMultiplierReduction(?string $sellingPrice, ?string $unitCost): ?string
+    {
+        $sellingPrice = $sellingPrice !== null ? trim($sellingPrice) : null;
+        $unitCost = $unitCost !== null ? trim($unitCost) : null;
+        if ($sellingPrice === null || $sellingPrice === '') {
+            return null;
+        }
+
+        if ($unitCost === null || $unitCost === '') {
+            return $sellingPrice;
+        }
+
+        $costValue = (float) $unitCost;
+        $priceValue = (float) $sellingPrice;
+        if ($costValue <= 0 || $priceValue <= 0) {
+            return $sellingPrice;
+        }
+
+        if (($priceValue / $costValue) <= self::MIN_FORMULA_MULTIPLIER_FOR_REDUCTION) {
+            return $sellingPrice;
+        }
+
+        $reducedValue = $priceValue - 1.0;
+        if ($reducedValue <= 0) {
+            return $sellingPrice;
+        }
+
+        if (($reducedValue / $costValue) < self::MIN_REDUCED_MULTIPLIER) {
+            return $sellingPrice;
+        }
+
+        return number_format($reducedValue, 2, '.', '');
     }
 
     private static function moneyToCents(string $amount): int

@@ -11,9 +11,12 @@ use App\Models\InventoryLot;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Services\Plamod\PlamodRestockPlannedMaintainService;
 use App\Services\Products\ProductLatestCostCacheService;
 use App\Services\Products\ProductTypeDerivationService;
 use App\Services\PurchaseOrders\Exceptions\PurchaseOrderImportException;
+use App\Support\PurchaseOrders\PmBrokerVendor;
+use App\Support\PurchaseOrders\PmInvoiceImportSkuResolver;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Illuminate\Http\UploadedFile;
@@ -77,6 +80,8 @@ final class PurchaseOrderImportService
 
     private const COL_AL_TOTAL = 'Total';
 
+    private const COL_PM_CUSTOMER = 'Customer';
+
     private const COL_PM_ITEM = 'Item';
 
     private const COL_PM_UNIT_PRICE = 'Unit price';
@@ -92,7 +97,9 @@ final class PurchaseOrderImportService
         private readonly PurchaseOrderXlsxReader $xlsxReader,
         private readonly PurchaseOrderShipmentMethodService $shipmentMethods,
         private readonly PurchaseOrderLineMergeService $lineMerge,
+        private readonly PmInvoiceImportSkuResolver $pmInvoiceSkuResolver,
         private readonly PurchaseOrderDerivedTotalsService $derivedTotals,
+        private readonly PlamodRestockPlannedMaintainService $plamodPlannedMaintain,
     ) {}
 
     /**
@@ -130,6 +137,7 @@ final class PurchaseOrderImportService
         $parsed = $this->parseUploadedFile($file, $vendor);
         $rows = $parsed['rows'];
         $preambleMeta = $parsed['preambleMeta'];
+        $format = $parsed['format'];
 
         if ($rows === []) {
             throw new PurchaseOrderImportException('No rows found in CSV.');
@@ -144,8 +152,10 @@ final class PurchaseOrderImportService
 
         $this->applyAllInFeesCadSplit($meta, $preambleMeta);
 
-        $mergedRows = $this->lineMerge->mergeParsedImportRows($rows);
-        $rows = $mergedRows['rows'];
+        if ($format !== 'pm_invoice') {
+            $mergedRows = $this->lineMerge->mergeParsedImportRows($rows);
+            $rows = $mergedRows['rows'];
+        }
 
         $productsBySku = $this->resolveOrCreateProductsBySku($vendor, $rows);
         $importMode = array_key_exists('import_mode', $meta)
@@ -198,6 +208,7 @@ final class PurchaseOrderImportService
                 if ($appendMode && isset($existingItemsByProductId[$productId])) {
                     $item = $existingItemsByProductId[$productId];
                     $previousReceived = (int) ($item->qty_received ?? 0);
+                    $item->vendor = $vendor;
 
                     if ($po->vendor_currency_code === 'CAD') {
                         $this->lineMerge->mergeImportRowIntoItem($item, $r);
@@ -238,7 +249,7 @@ final class PurchaseOrderImportService
                 $item->purchase_order_id = $po->id;
                 $item->product_id = $productId;
                 $item->sku = (string) $product->sku;
-                $item->vendor = (string) ($product->vendor ?? $vendor);
+                $item->vendor = $vendor;
                 $item->vendor_unit_cost = $po->vendor_currency_code !== 'CAD' ? $r['unit_cost'] : null;
                 $item->unit_cost = $po->vendor_currency_code !== 'CAD'
                     ? ($item->vendor_unit_cost !== null && $fxRateForLines !== null ? $this->mulDecimalRounded((string) $item->vendor_unit_cost, $fxRateForLines, 2) : null)
@@ -258,7 +269,12 @@ final class PurchaseOrderImportService
                 $lots += $this->createInventoryLotForItem($po, $item, $product, $qtyReceived);
             }
 
-            $shippingPerUnit = $this->derivedTotals->recompute($po);
+            $hasFixedProductTotal = array_key_exists('product_total', $meta)
+                && $meta['product_total'] !== null
+                && trim((string) $meta['product_total']) !== '';
+            $shippingPerUnit = $hasFixedProductTotal
+                ? $this->derivedTotals->recomputeShippingLotsOnly($po)
+                : $this->derivedTotals->recompute($po);
 
             if ($appendMode) {
                 $combinedFx = $this->deriveFxRateToCad(
@@ -275,13 +291,29 @@ final class PurchaseOrderImportService
             $this->latestCosts->recomputeForSkus(array_values(array_unique(array_map(static fn (array $r): string => (string) $r['sku'], $rows))));
             $this->shipmentMethods->applyInferredFromLineItemsIfUnset($po);
 
+            $po->load(['items.product']);
+
             return [
                 'purchase_order_uuid' => (string) $po->uuid,
                 'items' => $items,
                 'lots' => $lots,
                 'shipping_per_unit' => $shippingPerUnit,
+                'unassigned_product_vendor_count' => $this->countUnassignedProductVendors($po),
             ];
         });
+    }
+
+    private function countUnassignedProductVendors(PurchaseOrder $po): int
+    {
+        $count = 0;
+        foreach ($po->items as $item) {
+            $vendor = $item->product?->vendor;
+            if ($vendor === null || trim((string) $vendor) === '') {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     /**
@@ -575,7 +607,11 @@ final class PurchaseOrderImportService
      *   notes?:string|null,
      *   reset_receipt_before_reimport?:bool
      * } $meta
-     * @param  array{vendor_currency_code?:string,vendor_product_total?:string|null}  $preambleMeta
+     * @param  array{
+     *   vendor_currency_code?:string,
+     *   vendor_product_total?:string|null,
+     *   vendor_freight_total?:string|null
+     * }  $preambleMeta
      */
     private function resolveOrCreatePurchaseOrder(array $meta, string $vendor, array $preambleMeta, string $importMode = 'replace'): PurchaseOrder
     {
@@ -629,6 +665,7 @@ final class PurchaseOrderImportService
             if (! $appendMode) {
                 $po->vendor_currency_code = $preambleMeta['vendor_currency_code'] ?? $po->vendor_currency_code ?? 'CAD';
                 $po->vendor_product_total = $preambleMeta['vendor_product_total'] ?? $po->vendor_product_total;
+                $po->vendor_shipping_total = $preambleMeta['vendor_freight_total'] ?? $po->vendor_shipping_total;
             } else {
                 $this->mergeAppendHeaderTotals($po, $meta, $preambleMeta);
             }
@@ -678,6 +715,7 @@ final class PurchaseOrderImportService
         $po->supplier_order_id = $supplierOrderId !== '' ? $supplierOrderId : null;
         $po->vendor_currency_code = $preambleMeta['vendor_currency_code'] ?? 'CAD';
         $po->vendor_product_total = $preambleMeta['vendor_product_total'] ?? null;
+        $po->vendor_shipping_total = $preambleMeta['vendor_freight_total'] ?? null;
         $po->ordered_date = array_key_exists('ordered_date', $meta) ? $meta['ordered_date'] : null;
         $po->shipped_date = array_key_exists('shipped_date', $meta) ? $meta['shipped_date'] : null;
         $po->estimated_arrival_date = array_key_exists('estimated_arrival_date', $meta) ? $meta['estimated_arrival_date'] : null;
@@ -789,6 +827,7 @@ final class PurchaseOrderImportService
             'amount(hkd)' => self::COL_AMOUNT_HKD,
             'total' => self::COL_AL_TOTAL,
             'item' => self::COL_PM_ITEM,
+            'customer' => self::COL_PM_CUSTOMER,
             'unit price' => self::COL_PM_UNIT_PRICE,
             'amount' => self::COL_PM_AMOUNT,
         ];
@@ -1002,6 +1041,7 @@ final class PurchaseOrderImportService
             if ($freightHkd !== null) {
                 $preambleMeta['vendor_freight_total'] = $freightHkd;
             }
+            $rows = $this->pmInvoiceSkuResolver->normalizeRows($rows);
         }
 
         return [
@@ -1106,9 +1146,7 @@ final class PurchaseOrderImportService
 
     private function isPmBrokerVendor(string $vendor): bool
     {
-        $normalized = strtolower(trim($vendor));
-
-        return in_array($normalized, ['dspiae', 'stedi'], true);
+        return PmBrokerVendor::isPmBrokerVendor($vendor);
     }
 
     /**
@@ -1221,7 +1259,10 @@ final class PurchaseOrderImportService
             return [
                 'row' => $rowNumber,
                 'sku' => $sku,
-                'product_name' => $this->nullableStringAt($data, $map[self::COL_PM_ITEM] ?? -1),
+                'pm_customer_ref' => $this->nullableStringAt($data, $map[self::COL_PM_CUSTOMER] ?? -1),
+                'product_name' => $this->normalizePmInvoiceItemName(
+                    $this->nullableStringAt($data, $map[self::COL_PM_ITEM] ?? -1),
+                ),
                 'barcode' => null,
                 'unit_cost' => $this->nullableDecimalAt($data, $map[self::COL_PM_UNIT_PRICE] ?? -1),
                 'qty_ordered' => $qtyOrdered,
@@ -1369,7 +1410,7 @@ final class PurchaseOrderImportService
             'unit_cost' => $this->nullableDecimalAt($data, $map[self::COL_PLAMOD_UNIT_PRICE]),
             'qty_ordered' => $this->nullableIntAt($data, $map[self::COL_PLAMOD_QTY_ORDERED]),
             'qty_shipped' => $qtyFilled,
-            'qty_received' => $qtyFilled,
+            'qty_received' => null,
             'vendor_line_total' => null,
         ];
     }
@@ -1722,7 +1763,10 @@ final class PurchaseOrderImportService
      *   product_total?:string|null,
      *   surcharge_total?:string|null
      * }  $meta
-     * @param  array{vendor_product_total?:string|null}  $preambleMeta
+     * @param  array{
+     *   vendor_product_total?:string|null,
+     *   vendor_freight_total?:string|null
+     * }  $preambleMeta
      */
     private function mergeAppendHeaderTotals(PurchaseOrder $po, array $meta, array $preambleMeta): void
     {
@@ -1733,6 +1777,16 @@ final class PurchaseOrderImportService
             $po->vendor_product_total = $this->addDecimalMoney(
                 $this->moneyOrZero($po->vendor_product_total),
                 $incomingVendorProduct,
+            );
+        }
+
+        $incomingVendorShipping = isset($preambleMeta['vendor_freight_total'])
+            ? trim((string) $preambleMeta['vendor_freight_total'])
+            : '';
+        if ($incomingVendorShipping !== '' && is_numeric($incomingVendorShipping)) {
+            $po->vendor_shipping_total = $this->addDecimalMoney(
+                $this->moneyOrZero($po->vendor_shipping_total),
+                $incomingVendorShipping,
             );
         }
 
@@ -2250,8 +2304,12 @@ final class PurchaseOrderImportService
                 $product->barcode = $this->normalizeBarcode(isset($r['barcode']) ? (string) ($r['barcode'] ?? '') : null);
                 $product->description = $description;
                 $product->type = $type;
-                $product->vendor = $vendor;
+                $product->vendor = PmBrokerVendor::productVendorForNewImportProduct($vendor);
+                $appliedPlannedMaintain = $this->plamodPlannedMaintain->applyToNewProduct($product);
                 $this->products->create($product);
+                if ($appliedPlannedMaintain) {
+                    $this->plamodPlannedMaintain->markApplied($sku);
+                }
 
                 $existing->put($sku, $product);
 
@@ -2269,11 +2327,6 @@ final class PurchaseOrderImportService
             $name = isset($r['product_name']) ? trim((string) ($r['product_name'] ?? '')) : '';
             if ($name !== '' && $name !== (string) $p->description) {
                 $p->description = $name;
-                $changed = true;
-            }
-
-            if ($p->vendor !== $vendor) {
-                $p->vendor = $vendor;
                 $changed = true;
             }
 
@@ -2351,5 +2404,16 @@ final class PurchaseOrderImportService
         }
 
         return trim($normalized);
+    }
+
+    private function normalizePmInvoiceItemName(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $collapsed = preg_replace('/\s+/u', ' ', trim($value));
+
+        return is_string($collapsed) && $collapsed !== '' ? $collapsed : null;
     }
 }

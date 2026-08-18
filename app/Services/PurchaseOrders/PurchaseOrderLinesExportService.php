@@ -6,6 +6,7 @@ namespace App\Services\PurchaseOrders;
 
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Support\PurchaseOrders\PmBrokerVendor;
 
 final class PurchaseOrderLinesExportService
 {
@@ -81,10 +82,7 @@ final class PurchaseOrderLinesExportService
 
     public function isHkdBrokerVendor(string $vendor): bool
     {
-        $vendor = trim($vendor);
-
-        return strcasecmp($vendor, 'Stedi') === 0
-            || strcasecmp($vendor, 'Dspiae') === 0;
+        return PmBrokerVendor::isPmBrokerVendor($vendor);
     }
 
     private function productCostUnitCad(PurchaseOrder $po, PurchaseOrderItem $item): ?string

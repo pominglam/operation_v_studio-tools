@@ -1,0 +1,54 @@
+---
+description: Verify bugs are fixed and no regressions before returning to the user
+alwaysApply: true
+---
+
+# Bug Check Before Return
+
+Do **not** return to the user until you have **actively looked for bugs** in what you changed or claimed is fixed. Code that "looks correct" or passes unrelated tests is **not enough**.
+
+This rule complements **`always-test-before-done.mdc`**, **`verify-ui-before-done.mdc`**, **`rigorous-qa-before-handoff.mdc`**, and **`definition_of_done.mdc`**.
+
+## Mandatory before every handoff
+
+1. **Reproduce the reported problem first** (or confirm a regression test fails red) when the user reported a bug.
+2. **Verify the fix on real data/path** the user uses — DB rows, API response, scraper output, browser UI — not only unit tests with mocks.
+3. **Check for partial failure** — jobs that "complete" but leave bad rows (null prices, empty fields, 69/86 skipped) count as **bugs**, not success.
+4. **Read logs / stderr** when integrations are involved (scraper, queue, webhooks) before saying done.
+5. **Multi-angle review**: correctness, completeness, consistency — ask "what would still frustrate the user?"
+
+## Bug-fix minimum bar
+
+| Situation | Required check |
+| --- | --- |
+| User shows missing/wrong UI value | Hit the same API/DB field the UI reads; confirm non-empty/correct |
+| Scraper / sync | Inspect output for reported SKUs; restart service if Node changed; smoke live endpoint when feasible |
+| Parser / extractor change | Regression test with **realistic** sample text/DOM (including edge cases user showed) |
+| "Optimized" or refactored path | Confirm the happy path still works end-to-end, not only that code is shorter |
+
+## Same-control browser proof
+
+When the user reports a wrong UI result from a named control (for example **Verify again**), root-cause analysis alone is not a completed fix.
+
+1. Reproduce the wrong value.
+2. Implement the correction.
+3. In a real browser, click the **same control** the user clicked.
+4. Inspect the exact affected row/value after the operation finishes.
+5. If the value is still wrong, continue debugging; do not hand it back.
+
+## Forbidden handoff phrases
+
+Do **not** end with only:
+
+- "should work after refresh"
+- "try running sync again"
+- "tests pass" (when user-visible behavior was not checked)
+- "likely fixed" without evidence on the failing case
+
+If live verification is blocked (auth, credentials, service down), say so explicitly and list what remains unverified.
+
+## Final reply must include
+
+- What bug symptom was checked and the **result** (pass/fail + evidence: SKU, field value, log line, URL).
+- Which targeted tests/commands were run.
+- Any known gaps still open — do not imply the bug is gone if it is not verified.

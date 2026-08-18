@@ -12,6 +12,12 @@ final class PlamodScraperClient implements PlamodScraper
 {
     private const int LONG_TIMEOUT_SECONDS = 400;
 
+    private const int INSTOCK_MERGED_TIMEOUT_SECONDS = 10800;
+
+    private const int RESTOCK_CART_TIMEOUT_SECONDS = 7200;
+
+    private const int RESTOCK_VERIFY_TIMEOUT_SECONDS = 180;
+
     public function __construct(
         private readonly string $baseUrl,
     ) {}
@@ -62,8 +68,9 @@ final class PlamodScraperClient implements PlamodScraper
         int $manufacturerId = 1,
         ?string $series = null,
         ?string $categoryLine = null,
+        string $tab = 'Preorder',
     ): array {
-        $body = ['manufacturer_id' => $manufacturerId];
+        $body = ['manufacturer_id' => $manufacturerId, 'tab' => $tab];
         if ($series !== null && $series !== '') {
             $body['series'] = $series;
         }
@@ -84,6 +91,24 @@ final class PlamodScraperClient implements PlamodScraper
 
         if (($payload['ok'] ?? false) === false && ! isset($payload['error_message'])) {
             $payload['error_message'] = 'Plamod manufacturer preorders CSV export failed';
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @return array{ok: bool, error_message?: string, csv_storage_path?: string, bytes?: int, row_count?: int, expected_row_count?: int, filter_mode?: string|null, filter_chunks?: array<int, array<string, mixed>>, duration_ms?: int}
+     */
+    public function exportManufacturerInstockMerged(int $manufacturerId = 1): array
+    {
+        $payload = $this->decodeResponse(
+            $this->post('/export-manufacturer-instock-merged', ['manufacturer_id' => $manufacturerId], self::INSTOCK_MERGED_TIMEOUT_SECONDS, 1),
+            'Plamod scraper error',
+            notFoundMessage: 'Plamod scraper endpoint not found. Restart the pricing-tool-plamod-scraper container after scraper code changes.',
+        );
+
+        if (($payload['ok'] ?? false) === false && ! isset($payload['error_message'])) {
+            $payload['error_message'] = 'Plamod in-stock merged export failed';
         }
 
         return $payload;
@@ -121,6 +146,55 @@ final class PlamodScraperClient implements PlamodScraper
         return $this->decodeResponse(
             $this->post('/enrich-preorder-pdp-fields', ['skus' => array_values($skus)], self::LONG_TIMEOUT_SECONDS, 2),
             'Plamod scraper PDP enrich failed',
+        );
+    }
+
+    /**
+     * @param  array<int, array{sku: string, qty: int, product_name?: string, source?: string}>  $items
+     * @return array{ok: bool, error_message?: string, duration_ms?: int, report?: array<string, mixed>, lines?: array<int, array<string, mixed>>}
+     */
+    public function restockAddToCart(array $items): array
+    {
+        $payload = $this->decodeResponse(
+            $this->post('/restock-add-to-cart', ['items' => array_values($items)], self::RESTOCK_CART_TIMEOUT_SECONDS, 1),
+            'Plamod restock cart automation failed',
+            notFoundMessage: 'Plamod scraper endpoint not found. Restart the pricing-tool-plamod-scraper container after scraper code changes.',
+        );
+
+        if (($payload['ok'] ?? false) === false && ! isset($payload['error_message'])) {
+            $payload['error_message'] = 'Plamod restock cart automation failed';
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array{cart_before?: array<string, int>, lines?: array<int, array<string, mixed>>}  $payload
+     * @return array{ok: bool, error_message?: string, duration_ms?: int, report?: array<string, mixed>}
+     */
+    public function restockVerifyCart(array $payload): array
+    {
+        $response = $this->decodeResponse(
+            $this->post('/restock-verify-cart', $payload, self::RESTOCK_VERIFY_TIMEOUT_SECONDS, 1),
+            'Plamod restock cart verification failed',
+            notFoundMessage: 'Plamod scraper endpoint not found. Restart the pricing-tool-plamod-scraper container after scraper code changes.',
+        );
+
+        if (($response['ok'] ?? false) === false && ! isset($response['error_message'])) {
+            $response['error_message'] = 'Plamod restock cart verification failed';
+        }
+
+        return $response;
+    }
+
+    /**
+     * @return array{ok: bool, active?: bool, phase?: string, items_total?: int, items_processed?: int, current_sku?: string, report?: array<string, mixed>, error_message?: string}
+     */
+    public function restockCartProgress(): array
+    {
+        return $this->decodeResponse(
+            $this->get('/restock-cart-progress', 5, 1),
+            'Plamod restock cart progress failed',
         );
     }
 
@@ -174,5 +248,30 @@ final class PlamodScraperClient implements PlamodScraper
         }
 
         return $payload;
+    }
+
+    /**
+     * @return array{ok: bool, active: bool, phase?: string, filters_total?: int, filters_processed?: int, current_filter?: string, error_message?: string}
+     */
+    public function instockExportProgress(): array
+    {
+        return $this->decodeResponse(
+            $this->get('/instock-export-progress', 5, 1),
+            'Plamod scraper in-stock export progress failed',
+        );
+    }
+
+    private function get(string $path, int $timeoutSeconds, int $retries): ?Response
+    {
+        try {
+            return Http::timeout($timeoutSeconds)
+                ->connectTimeout(5)
+                ->retry($retries, 200, function (\Throwable $exception): bool {
+                    return $exception instanceof ConnectionException;
+                }, throw: false)
+                ->get(rtrim($this->baseUrl, '/').$path);
+        } catch (\Throwable $exception) {
+            return null;
+        }
     }
 }

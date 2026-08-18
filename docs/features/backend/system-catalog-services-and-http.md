@@ -152,7 +152,8 @@ Below, **verbs** reflect Laravel router methods. **`{id}` on products** uses **U
 | PATCH  | `/products/{id}/shipment-method`                           | Shipment method (`shipment_method`: `air`, `sea`, or null).                                                                                                                             |
 | POST   | `/purchase-orders/{id}/workflow-actions/prepare-inventory` | Validates PO **qty received**; skips Shopify if mirror fresh (default 1h). If stale, returns confirmation payload unless body **`pull_shopify: true`** (PO-SKU inventory refresh only). |
 | GET    | `/products`                                                | List supports `product_flags[]`: `critical`, `discontinued`, `hazardous_shipment` (multi-select OR); `shipment_methods[]`: `air`, `sea` (multi-select OR).                              |
-| PUT    | `/products/{id}/selling-price`                             | Upsert **`product_selling_prices`** row (Shopify variant price drives exports).                                                                                                         |
+| PUT    | `/products/{id}/selling-price`                             | Upsert **`product_selling_prices`** row (Shopify variant price drives exports); appends **`product_selling_price_history`** with **`source: manual`** when price changes.               |
+| GET    | `/products/{id}/selling-price-history`                     | Append-only selling price change log for the product (optional **`purchase_order_uuid`** when change came from PO Set/review).                                                          |
 
 ### Products — Shopify / replenishment helpers
 
@@ -181,12 +182,13 @@ Two **different orchestrations** deliberately exist:
 | PUT    | `/products/{id}/assets/order`         | Re-order **all** relevant image assets (includes manual uploads / mixed ordering—see UI).                                        |
 | POST   | `/products/{id}/assets/manual-upload` | Multipart upload of **`manual_upload`** assets; persists file + checksum + Shopify-enabled default per product rules in service. |
 
-| Method | Path                                   | Purpose                                                                                                                                                                                                           |
-| ------ | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/product-assets/{id}/download`        | Attachment download (numeric **`id`**).                                                                                                                                                                           |
-| GET    | `/product-assets/{id}/view`            | Inline view (numeric **`id`**).                                                                                                                                                                                   |
-| PATCH  | `/product-assets/{id}/shopify-enabled` | Toggle whether asset participates in Shopify image export (**`shopifyImageAssets`** relationship).                                                                                                                |
-| DELETE | `/product-assets/{id}`                 | **Only** **`source === manual_upload`**: deletes DB row + underlying storage file (`ProductManualImageDeleteService`). Other sources → **`ManualUploadDeletionDeniedException`** / mapped HTTP error (see tests). |
+| Method | Path                                   | Purpose                                                                                                                                                                                                                      |
+| ------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/product-assets/{id}/download`        | Attachment download (numeric **`id`**).                                                                                                                                                                                      |
+| GET    | `/product-assets/{id}/view`            | Inline view (numeric **`id`**).                                                                                                                                                                                              |
+| GET    | `/product-assets/{id}/thumb`           | Inline thumbnail (max width **320px** JPEG, generated on first request and cached under `product-external-assets/thumbs/{id}.jpg`; falls back to full file when GD unavailable). **`Cache-Control: public, max-age=86400`**. |
+| PATCH  | `/product-assets/{id}/shopify-enabled` | Toggle whether asset participates in Shopify image export (**`shopifyImageAssets`** relationship).                                                                                                                           |
+| DELETE | `/product-assets/{id}`                 | **Only** **`source === manual_upload`**: deletes DB row + underlying storage file (`ProductManualImageDeleteService`). Other sources → **`ManualUploadDeletionDeniedException`** / mapped HTTP error (see tests).            |
 
 ### Bulk PDP sync via job batches
 
@@ -264,35 +266,37 @@ Two **different orchestrations** deliberately exist:
 
 ### Purchase orders
 
-| Method | Path                              | Purpose                                                                                                                                                                                                         |
-| ------ | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/purchase-orders/import/preview` | Parses upload without DB write; returns HKD/CAD line preview for Dspiae/Stedi PM broker invoices (`PurchaseOrderImportService::preview`).                                                                       |
-| POST   | `/purchase-orders/import`         | Parses vendor-specific PDF/HTML/CSV/XLSX blobs into PO + lines (`PurchaseOrderImportService`—heavy edge-case coverage in `tests/Feature/Api/V1/PurchaseOrder*`). Supports append/re-import behaviors per tests. |
-| GET    | `/purchase-orders`                | Indexed list filters/sorts (**vendor**, arrival-derived fields tested).                                                                                                                                         |
-| GET    | `/purchase-orders/filter-options` | Dropdown facets.                                                                                                                                                                                                |
-| GET    | `/purchase-orders/{id}`           | Detailed PO projection including FX-derived CAD unit economics where imported (`PurchaseOrderResource`).                                                                                                        |
-| PATCH  | `/purchase-orders/{id}`           | Header updates (dates, totals, **`shipment_method`** (`air` \| `sea` \| null), checklist container, **`is_done`**, notes…).                                                                                     |
-| DELETE | `/purchase-orders/{id}`           | Controlled delete with referential safeguards (`PurchaseOrderDeleteService`).                                                                                                                                   |
+| Method | Path                                         | Purpose                                                                                                                                                                                                                                                                                                                         |
+| ------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/purchase-orders/import/preview`            | Parses upload without DB write; returns HKD/CAD line preview for Dspiae/Stedi/Other/multi PM broker invoices (`PurchaseOrderImportService::preview`).                                                                                                                                                                           |
+| POST   | `/purchase-orders/import`                    | Parses vendor-specific PDF/HTML/CSV/XLSX blobs into PO + lines (`PurchaseOrderImportService`—heavy edge-case coverage in `tests/Feature/Api/V1/PurchaseOrder*`). Supports append/re-import behaviors per tests.                                                                                                                 |
+| POST   | `/purchase-orders/combined-payments/preview` | Validates two or more same-currency foreign POs and previews one CAD payment allocated across their vendor product totals and, optionally, vendor freight totals. Accepts optional combined `product_paid_cad` + `shipping_paid_cad` pools or exact per-PO CAD `allocations[]`; all amounts must reconcile to `total_paid_cad`. |
+| POST   | `/purchase-orders/combined-payments`         | Persists the combined-payment header and per-PO snapshots, updates each PO's suggested or exact CAD product/shipping allocation, and converts line CAD unit costs using each PO's product FX without changing original vendor-currency values.                                                                                  |
+| GET    | `/purchase-orders`                           | Indexed list filters/sorts (**vendor**, arrival-derived fields tested).                                                                                                                                                                                                                                                         |
+| GET    | `/purchase-orders/filter-options`            | Dropdown facets.                                                                                                                                                                                                                                                                                                                |
+| GET    | `/purchase-orders/{id}`                      | Detailed PO projection including FX-derived CAD unit economics where imported (`PurchaseOrderResource`).                                                                                                                                                                                                                        |
+| PATCH  | `/purchase-orders/{id}`                      | Header updates (dates, totals, **`shipment_method`** (`air` \| `sea` \| null), **`shipment_tracking_numbers`** array (up to 40 strings, max 255 each), checklist container, **`is_done`**, notes…).                                                                                                                             |
+| DELETE | `/purchase-orders/{id}`                      | Controlled delete with referential safeguards (`PurchaseOrderDeleteService`).                                                                                                                                                                                                                                                   |
 
-| Draft workflow | Purpose                                        |
+| Draft workflow | Purpose |
 | -------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| POST           | `/purchase-orders/drafts/create-from-products` | Convert selected products into PO draft lines (`PurchaseOrderDraftService`).                                                                           |
-| POST           | `/purchase-orders/{id}/draft-products`         | Append SKU lines referencing catalog.                                                                                                                  |
-| GET            | `/purchase-orders/{id}/draft-lines-export`     | Vendor order CSV: SKU, name, qty, always CAD product cost columns; Stedi/Dspiae add HKD columns; FX fallback from latest PO with same vendor currency. |
+| POST | `/purchase-orders/drafts/create-from-products` | Convert selected products into PO draft lines (`PurchaseOrderDraftService`). |
+| POST | `/purchase-orders/{id}/draft-products` | Append SKU lines referencing catalog. |
+| GET | `/purchase-orders/{id}/draft-lines-export` | Vendor order CSV: SKU, name, qty, always CAD product cost columns; Stedi/Dspiae add HKD columns; FX fallback from latest PO with same vendor currency. |
 
-| Line updates | Purpose                       |
+| Line updates | Purpose |
 | ------------ | ----------------------------- | -------------------------------------------------------------------------------------------- |
-| PATCH        | `/purchase-orders/{id}/items` | Bulk update selected line ids (qty ordered/received/unit cost fields—see bulk request).      |
-| PATCH        | `/purchase-order-items/{id}`  | Numeric line id PATCH for granular edits (**validation** avoids inconsistent states tested). |
+| PATCH | `/purchase-orders/{id}/items` | Bulk update selected line ids (qty ordered/received/unit cost fields—see bulk request). |
+| PATCH | `/purchase-order-items/{id}` | Numeric line id PATCH for granular edits (**validation** avoids inconsistent states tested). |
 
-| Applicators | Behavior summary                                    |
+| Applicators | Behavior summary |
 | ----------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST        | `/purchase-orders/{id}/apply-received-to-available` | Requires **`qty_received > 0` on every line**; sums per distinct **`product_id`**, increments **`products.available_qty`** transactional (`PurchaseOrderApplyReceivedToAvailableService`). |
-| POST        | `/purchase-orders/{id}/apply-inventory-check`       | **Destructive-ish reset**: deletes inventory movements/lots linked to PO line ids, clears **`qty_received`**, aggregates inventory-check rows by SKU, overwrites **`qty_received`**, then **`ProductLatestCostCacheService::recomputeForSkus`** for affected SKU set (`PurchaseOrderApplyInventoryCheckService`). Returns warnings like SKUs appearing on check lines but not PO. |
+| POST | `/purchase-orders/{id}/apply-received-to-available` | Requires **`qty_received > 0` on every line**; sums per distinct **`product_id`**, increments **`products.available_qty`** transactional (`PurchaseOrderApplyReceivedToAvailableService`). |
+| POST | `/purchase-orders/{id}/apply-inventory-check` | **Destructive-ish reset**: deletes inventory movements/lots linked to PO line ids, clears **`qty_received`**, aggregates inventory-check rows by SKU, overwrites **`qty_received`**, then **`ProductLatestCostCacheService::recomputeForSkus`** for affected SKU set (`PurchaseOrderApplyInventoryCheckService`). Returns warnings like SKUs appearing on check lines but not PO. |
 
-| Checklist store | Meaning                                    |
+| Checklist store | Meaning |
 | --------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PATCH           | `/purchase-orders/{id}/workflow-checklist` | JSON checklist blob persisted to **`purchase_orders.workflow_checklist_json`** validated by `PurchaseOrderWorkflowChecklistUpdateRequest` + service for shape constraints. |
+| PATCH | `/purchase-orders/{id}/workflow-checklist` | JSON checklist blob persisted to **`purchase_orders.workflow_checklist_json`** validated by `PurchaseOrderWorkflowChecklistUpdateRequest` + service for shape constraints. |
 
 **Model fields (conceptual anchors):**
 
@@ -301,29 +305,29 @@ Two **different orchestrations** deliberately exist:
 
 ### Inventory check (admin + employee)
 
-| Admin session CRUD-ish | Purpose                                                 |
+| Admin session CRUD-ish | Purpose |
 | ---------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| POST                   | `/products/import-inventory-check`                      | Creates **`inventory_check` + inventory_check_items** from counted CSV (**matching rules**: Handle then `(SKU,Vendor)`—requirements). Optional multipart **`notes`** stores session label on **`inventory_check.notes`**.            |
-| GET                    | `/inventory-check`                                      | List historical sessions (`InventoryCheckQueryService`/repository-backed).                                                                                               |
-| PATCH                  | `/inventory-check/{uuid}`                               | Update session metadata (**`notes`**, nullable string max 2000).                                                                                                         |
-| GET                    | `/inventory-check/{uuid}`                               | Session detail projection.                                                                                                                                               |
-| GET                    | `/inventory-check/{uuid}/download`                      | Original CSV blob download if stored (`uploaded_file_path`).                                                                                                             |
-| DELETE                 | `/inventory-check/{uuid}`                               | Session delete (**must match confirm-delete-actions rule at UI layer**—API still should enforce authorization if added later).                                           |
-| PATCH                  | `/inventory-check/{uuid}/items/{lineId}`                | Line-level tweaks when reviewing CSV rows pre-apply.                                                                                                                     |
-| POST                   | `/inventory-check/{uuid}/items/{lineId}/assign-product` | Resolves unmatched review rows by assigning an existing product UUID; row snapshots/status/errors are refreshed by `EmployeeInventoryCountService::assignLineToProduct`. |
+| POST | `/products/import-inventory-check` | Creates **`inventory_check` + inventory_check_items** from counted CSV (**matching rules**: Handle then `(SKU,Vendor)`—requirements). Optional multipart **`notes`** stores session label on **`inventory_check.notes`**. |
+| GET | `/inventory-check` | List historical sessions (`InventoryCheckQueryService`/repository-backed). |
+| PATCH | `/inventory-check/{uuid}` | Update session metadata (**`notes`**, nullable string max 2000). |
+| GET | `/inventory-check/{uuid}` | Session detail projection. |
+| GET | `/inventory-check/{uuid}/download` | Original CSV blob download if stored (`uploaded_file_path`). |
+| DELETE | `/inventory-check/{uuid}` | Session delete (**must match confirm-delete-actions rule at UI layer**—API still should enforce authorization if added later). |
+| PATCH | `/inventory-check/{uuid}/items/{lineId}` | Line-level tweaks when reviewing CSV rows pre-apply. |
+| POST | `/inventory-check/{uuid}/items/{lineId}/assign-product` | Resolves unmatched review rows by assigning an existing product UUID; row snapshots/status/errors are refreshed by `EmployeeInventoryCountService::assignLineToProduct`. |
 
-| Employee scan flows | Meaning                                     |
+| Employee scan flows | Meaning |
 | ------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST                | `/inventory-check/employee/sessions`        | Creates **`inventory_check`** with **`source='employee_scan'`**, `workflow_state='draft'`; attributes creator role (`EmployeeInventoryCountService::createSession`).                                                                                              |
-| GET                 | `/inventory-check/employee/sessions/{uuid}` | Session payload augmented with thumbnails via **`resolveImageUrlsByProductId`** (hits first Plamod image asset rule in service—see implementation).                                                                                                               |
-| POST                | **`.../scan`** body `{ barcode }`           | Looks up **`Product`** by barcode (**`notArchived()`** constraint). Dedup/issue rows on unknown barcodes behave per transactional rules in **`EmployeeInventoryCountService::scanBarcode`** (increment quantity vs create issue stubs—read method for branching). |
-| PATCH               | **`.../lines/{lineId}`**                    | Update counted **`quantity`** and/or **`product_name`** (**422** requires at least one field).                                                                                                                                                                    |
-| DELETE              | **`.../lines/{lineId}`**                    | Remove line mid-session (`removeLine`).                                                                                                                                                                                                                           |
-| POST                | **`.../flag-issue`**                        | Annotate barcode discrepancy without product match (`flagBarcodeIssue`).                                                                                                                                                                                          |
+| POST | `/inventory-check/employee/sessions` | Creates **`inventory_check`** with **`source='employee_scan'`**, `workflow_state='draft'`; attributes creator role (`EmployeeInventoryCountService::createSession`). |
+| GET | `/inventory-check/employee/sessions/{uuid}` | Session payload augmented with thumbnails via **`resolveImageUrlsByProductId`** (hits first Plamod image asset rule in service—see implementation). |
+| POST | **`.../scan`** body `{ barcode }` | Looks up **`Product`** by barcode (**`notArchived()`** constraint). Dedup/issue rows on unknown barcodes behave per transactional rules in **`EmployeeInventoryCountService::scanBarcode`** (increment quantity vs create issue stubs—read method for branching). |
+| PATCH | **`.../lines/{lineId}`** | Update counted **`quantity`** and/or **`product_name`** (**422** requires at least one field). |
+| DELETE | **`.../lines/{lineId}`** | Remove line mid-session (`removeLine`). |
+| POST | **`.../flag-issue`** | Annotate barcode discrepancy without product match (`flagBarcodeIssue`). |
 
-| Unified apply endpoint | Consumers                           |
+| Unified apply endpoint | Consumers |
 | ---------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST                   | **`/inventory-check/{uuid}/apply`** | Delegates **admin + employee modes** via **`EmployeeInventoryCountService::applySessionQuantities`**: knobs `apply_quantity`, `apply_name`, `apply_quantity_mode` (`overwrite` | `increment`), optional `line_item_ids`. Updates canonical **`products.available_qty`** + optional description updates governed by **`apply_name`**/`apply_quantity`. Uses **`ConflictHttpException`** when session forbidden to apply (**see guards** inside service). |
+| POST | **`/inventory-check/{uuid}/apply`** | Delegates **admin + employee modes** via **`EmployeeInventoryCountService::applySessionQuantities`**: knobs `apply_quantity`, `apply_name`, `apply_quantity_mode` (`overwrite` | `increment`), optional `line_item_ids`. Updates canonical **`products.available_qty`** + optional description updates governed by **`apply_name`**/`apply_quantity`. Uses **`ConflictHttpException`** when session forbidden to apply (**see guards** inside service). |
 
 ### Maintenance APIs
 
@@ -332,32 +336,33 @@ Two **different orchestrations** deliberately exist:
 | GET    | `/maintenance/notes` | Freeform maintenance bulletin text.                |
 | PUT    | `/maintenance/notes` | Upserts maintenance note markdown/plain text blob. |
 
-| Database backups (`docs/requirements/maintenance-db-backups.md`) | Purpose                           |
+| Database backups (`docs/requirements/maintenance-db-backups.md`) | Purpose |
 | ---------------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET                                                              | `/maintenance/db-backups`         | List metadata rows from `database_backups` (+ size).                                                                                           |
-| POST                                                             | `/maintenance/db-backups`         | Runs logical dump via **`DatabaseBackupManagerService`** (**requires mysqldump** in PATH in MySQL setups). Body includes required description. |
-| POST                                                             | `/maintenance/db-backups/restore` | **Destructive** restore—UI must confirm; service shells to `mysql` client.                                                                     |
+| GET | `/maintenance/db-backups` | List metadata rows from `database_backups` (+ size). |
+| POST | `/maintenance/db-backups` | Runs logical dump via **`DatabaseBackupManagerService`** (**requires mysqldump** in PATH in MySQL setups). Body includes required description. |
+| POST | `/maintenance/db-backups/restore` | **Destructive** restore—UI must confirm; service shells to `mysql` client. |
 
-| Ops toggles | Purpose                                                             |
+| Ops toggles | Purpose |
 | ----------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| POST        | `/maintenance/refresh-latest-costs`                                 | Recomputes **`latest_unit_cost`** + **`latest_landed_unit_cost`** for entire catalog via **`ProductLatestCostCacheService::recomputeAll`** (joins newest PO lines by SKU with shipping/surcharge proration logic). |
-| POST        | `/maintenance/clear-stale-latest-arrival`                           | Clears **`latest_arrival`** on products linked to POs older than 4 weeks; Shopify **`tagsRemove`** for **`latest arrival`** tag only (`ShopifyLatestArrivalTagRemoverService`).                                    |
-| POST        | `/purchase-orders/{id}/workflow-actions/clear-stale-latest-arrival` | Same clear-stale action (PO workflow shortcut).                                                                                                                                                                    |
-| GET         | `/purchase-orders/{id}/workflow-actions/set-prices/preview`         | Previews PO product selling prices from landed cost × 1.5, grouped by new/update/unchanged/missing-cost rows.                                                                                                      |
-| POST        | `/purchase-orders/{id}/workflow-actions/set-prices`                 | Applies formula rows and optional manual `overrides[]` (`product_uuid`, `price`) for PO products, then re-verifies workflow state.                                                                                 |
-| GET         | `/purchase-orders/{id}/workflow-actions/export-shopify-content/preview` | PO products without handles eligible for Shopify content create (`PurchaseOrderWorkflowExportShopifyContentService`).                                                                                          |
-| POST        | `/purchase-orders/{id}/workflow-actions/export-shopify-content/push` | Queues PO content export batch (`PurchaseOrderWorkflowExportShopifyContentQueueService` → **`PushSelectedProductToShopifyJob`** per SKU); **202** + `batch_id`. Finalize job runs workflow verify when batch completes. |
-| GET         | `/purchase-orders/{id}/workflow-actions/export-shopify-content/status` | Poll export progress by `batch_id` — phases: `pushing`, `finalizing`, `complete`, `failed`.                                                                                                                    |
-| GET         | `/purchase-orders/{id}/workflow-actions/push-inventory/preview`     | PO products eligible for Shopify inventory push (`PurchaseOrderWorkflowPushInventoryService`).                                                                                                                     |
-| POST        | `/purchase-orders/{id}/workflow-actions/mark-published-on-shopify`  | ERP `published_on_shopify` for all PO products.                                                                                                                                                                    |
-| POST        | `/purchase-orders/{id}/workflow-actions/mark-latest-arrival`        | ERP `latest_arrival` for PO products (skips `main_type` tools).                                                                                                                                                    |
-| POST        | `/purchase-orders/{id}/workflow-actions/push-inventory`             | Queues PO product push batch (`PurchaseOrderWorkflowPushInventoryQueueService` → **`PushSelectedProductToShopifyJob`** per SKU); **202** + `batch_id`. Finalize job runs collection reorder + workflow verify when batch completes. |
-| GET         | `/purchase-orders/{id}/workflow-actions/push-inventory/status`     | Poll push progress by `batch_id` — phases: `pushing`, `finalizing`, `complete`, `failed`.                                                                                                                            |
+| POST | `/maintenance/refresh-latest-costs` | Recomputes **`latest_unit_cost`** + **`latest_landed_unit_cost`** for entire catalog via **`ProductLatestCostCacheService::recomputeAll`** (joins newest PO lines by SKU with shipping/surcharge proration logic). |
+| POST | `/maintenance/clear-stale-latest-arrival` | Clears **`latest_arrival`** on products linked to POs older than 4 weeks; Shopify **`tagsRemove`** for **`latest arrival`** tag only (`ShopifyLatestArrivalTagRemoverService`). |
+| POST | `/purchase-orders/{id}/workflow-actions/clear-stale-latest-arrival` | Same clear-stale action (PO workflow shortcut). |
+| GET | `/purchase-orders/{id}/workflow-actions/set-prices/preview` | Previews prices from PO-line landed cost × 1.5 (ceil to next X.99, then one X.99 tier lower only when formula price is > 1.55× and lower tier is still ≥ 1.45×), including a warning when shipping is not entered; groups new/update/unchanged/missing-cost rows. |
+| POST | `/purchase-orders/{id}/workflow-actions/set-prices` | Applies formula rows and optional manual `overrides[]` (`product_uuid`, `price`) for PO products, then re-verifies workflow state; logs **`product_selling_price_history`** rows with **`source: po_workflow`** and **`purchase_order_id`** when prices change. |
+| GET | `/purchase-orders/{id}/selling-price-history` | Lists selling price changes recorded from this PO’s Set/review apply (SKU, product, previous → new, timestamp). |
+| GET | `/purchase-orders/{id}/workflow-actions/export-shopify-content/preview` | PO products without handles eligible for Shopify content create (`PurchaseOrderWorkflowExportShopifyContentService`). |
+| POST | `/purchase-orders/{id}/workflow-actions/export-shopify-content/push` | Queues PO content export batch (`PurchaseOrderWorkflowExportShopifyContentQueueService` → **`PushSelectedProductToShopifyJob`** per SKU); **202** + `batch_id`. Finalize job runs workflow verify when batch completes. |
+| GET | `/purchase-orders/{id}/workflow-actions/export-shopify-content/status` | Poll export progress by `batch_id` — phases: `pushing`, `finalizing`, `complete`, `failed`. |
+| GET | `/purchase-orders/{id}/workflow-actions/push-inventory/preview` | PO products eligible for Shopify inventory push (`PurchaseOrderWorkflowPushInventoryService`). |
+| POST | `/purchase-orders/{id}/workflow-actions/mark-published-on-shopify` | ERP `published_on_shopify` for all PO products. |
+| POST | `/purchase-orders/{id}/workflow-actions/mark-latest-arrival` | ERP `latest_arrival` for PO products (skips `main_type` tools). |
+| POST | `/purchase-orders/{id}/workflow-actions/push-inventory` | Queues PO product push batch (`PurchaseOrderWorkflowPushInventoryQueueService` → **`PushSelectedProductToShopifyJob`** per SKU); **202** + `batch_id`. Finalize job runs collection reorder + workflow verify when batch completes. |
+| GET | `/purchase-orders/{id}/workflow-actions/push-inventory/status` | Poll push progress by `batch_id` — phases: `pushing`, `finalizing`, `complete`, `failed`. |
 
-| Operational throttles/settings | Meaning                            |
+| Operational throttles/settings | Meaning |
 | ------------------------------ | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET/PUT                        | `/maintenance/external-rate-limit` | JSON settings used to pace outbound scraping/API calls (**`ExternalRateLimitService`**).                                                                                                       |
-| GET/PUT                        | `/maintenance/external-access`     | Toggle/password configuration used by **`ExternalAccessSettingsService`**. Requires secure handling—never log secrets (`project.mdc` external API logging masking rules apply broadly to ops). |
+| GET/PUT | `/maintenance/external-rate-limit` | JSON settings used to pace outbound scraping/API calls (**`ExternalRateLimitService`**). |
+| GET/PUT | `/maintenance/external-access` | Toggle/password configuration used by **`ExternalAccessSettingsService`**. Requires secure handling—never log secrets (`project.mdc` external API logging masking rules apply broadly to ops). |
 
 ### Price research APIs (`docs/requirements/price-research.md` + `price-research-crawlers.md`)
 
@@ -367,31 +372,32 @@ Two **different orchestrations** deliberately exist:
 | GET    | `/price-research/products`       | Paginated table with freshness + quote expansion (see documented query params).                                                                                                    |
 | POST   | `/price-research/run`            | Queues **`RunPriceResearchJob`** when async queue ≠ `sync`; else inline completion vs **202 queued** semantics (tests freeze behavior). TTL default **`PRICE_RESEARCH_TTL_DAYS`**. |
 
-| Run observability | Purpose                                                      |
+| Run observability | Purpose |
 | ----------------- | ------------------------------------------------------------ | -------------------------------------------------------- |
-| GET               | `/price-research/runs/latest`, `/price-research/runs/{uuid}` | Run metadata (**status counters**, durations, failures). |
-| GET               | `/price-research/runs/{uuid}/logs`                           | Drill-down text logs for crawler failures.               |
+| GET | `/price-research/runs/latest`, `/price-research/runs/{uuid}` | Run metadata (**status counters**, durations, failures). |
+| GET | `/price-research/runs/{uuid}/logs` | Drill-down text logs for crawler failures. |
 
-| Cleanup / housekeeping | Meaning                                            |
+| Cleanup / housekeeping | Meaning |
 | ---------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| DELETE                 | `/price-research/products/{uuid}/quotes/{siteKey}` | Manual quote eviction for erroneous rows (`PriceResearchQuoteMaintenanceController`). |
-| POST                   | `/price-research/runs/reset`                       | Maintenance reset for wedged runners (`PriceResearchRunMaintenanceService`).          |
+| DELETE | `/price-research/products/{uuid}/quotes/{siteKey}` | Manual quote eviction for erroneous rows (`PriceResearchQuoteMaintenanceController`). |
+| POST | `/price-research/runs/reset` | Maintenance reset for wedged runners (`PriceResearchRunMaintenanceService`). |
 
-| AliExpress / Playwright | Purpose                              |
+| AliExpress / Playwright | Purpose |
 | ----------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------- |
-| POST                    | `/price-research/aliexpress/cookies` | Persist cookie jar blobs used by scripted AliExpress lookups (`AliExpressCookiesController`). |
+| POST | `/price-research/aliexpress/cookies` | Persist cookie jar blobs used by scripted AliExpress lookups (`AliExpressCookiesController`). |
 
-| Reporting backlog | Meaning                                |
+| Reporting backlog | Meaning |
 | ----------------- | -------------------------------------- | ---------------------------------------------------------- |
-| GET/POST          | `/price-research/reports`              | List/create “quote issue” reports surfaced in UI workflow. |
-| PATCH             | `/price-research/reports/{id}/handled` | Numeric id resolution + handled flag bookkeeping.          |
-| GET               | `/reports/staff-orders`                | Monthly POS staff / channel order counts (`month=YYYY-MM`). |
+| GET/POST | `/price-research/reports` | List/create “quote issue” reports surfaced in UI workflow. |
+| PATCH | `/price-research/reports/{id}/handled` | Numeric id resolution + handled flag bookkeeping. |
+| GET | `/reports/staff-orders` | Monthly POS staff / channel order counts (`month=YYYY-MM`). |
 
 ### Staff orders report (`app/Services/Shopify/Admin/Orders`)
 
-| Method | Path | Purpose |
-| ------ | ---- | ------- |
-| GET | `/reports/staff-orders` | `ShopifyStaffOrdersMonthlyReportService` — paginates Shopify orders for one calendar month, classifies POS staff via REST `user_id`, returns daily bucket counts. |
+| Method | Path                                                  | Purpose                                                                                                                                                  |
+| ------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/reports/staff-orders`                               | `ShopifyStaffOrdersMonthlyReportService` — aggregates **`shopify_orders`** mirror (`source_name`, `channel_name`, `pos_user_id`) for one calendar month. |
+| CLI    | `shopify:orders-backfill-staff-attribution {YYYY-MM}` | Backfill staff attribution columns on existing mirror rows for one month.                                                                                |
 
 ### TCG events (`app/Services/TcgEvents`)
 
@@ -414,6 +420,27 @@ Two **different orchestrations** deliberately exist:
 | PUT    | `/preorders/manufacturer-filters`          | Batch update filter decisions (`updates: [{ id, decision }]`).                                                                                                               |
 | POST   | `/preorders/search-lines`                  | Multi-line match; optional `phase` (`snapshot` \| `live` \| `all`). Live fallback returns `plamod_only`.                                                                     |
 | GET    | `/preorders/{sku}/image`                   | Serve cached image from `storage/app/private/plamod/preorder-images/`.                                                                                                       |
+
+### PLAMOD restock (in-stock proposal)
+
+| Method | Path                                      | Purpose                                                                                                                                                                                                                                          |
+| ------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/plamod/restock/proposal`                | Existing ERP ∩ in-stock snapshot + new SKUs; existing rows include canonical ERP `products.type`; query `hide_dismissed`, `only_included_new`; response includes persistent series/product-name exclusion rules.                                 |
+| GET    | `/plamod/restock/settings`                | Read persisted shipping estimate percent and automatic new-product exclusion rules.                                                                                                                                                              |
+| PUT    | `/plamod/restock/settings`                | Save shipping estimate percent plus optional `excluded_series` and `excluded_product_terms` arrays; omitted arrays preserve their current values.                                                                                                |
+| POST   | `/plamod/restock/sync`                    | Queue `SyncPlamodInstockJob` (manufacturer In-Stock CSV → `plamod_instock_items`).                                                                                                                                                               |
+| GET    | `/plamod/restock/sync-status`             | Latest `plamod_instock_sync_logs` snapshot.                                                                                                                                                                                                      |
+| PUT    | `/plamod/restock/decisions/{sku}`         | Dismiss or include new SKU (`order_qty`, `planned_maintain_qty` when included).                                                                                                                                                                  |
+| POST   | `/plamod/restock/decisions/bulk`          | Bulk dismiss or include new SKUs (`skus[]`, `status`, optional qtys when included).                                                                                                                                                              |
+| PUT    | `/plamod/restock/reorder-overrides/{sku}` | Persist or clear existing-SKU order qty override (`reorder_qty`, nullable to reset).                                                                                                                                                             |
+| POST   | `/plamod/restock/draft-purchase-order`    | Create Plamod draft PO from proposal (existing + catalog-less included lines).                                                                                                                                                                   |
+| POST   | `/plamod/restock/cart-run`                | Queue `SyncPlamodRestockCartJob` — body `{ skus[] }` required; rejects concurrent cart runs, freezes selected proposal quantities at dispatch, sets each PDP to its requested cart total, then performs one final verification snapshot.         |
+| POST   | `/plamod/restock/cart-run-recheck`        | Sync re-scrape PLAMOD cart for latest run report (`cart_before` baseline); updates stored verification report.                                                                                                                                   |
+| GET    | `/plamod/restock/cart-run-status`         | Latest `plamod_restock_cart_runs` snapshot; merges scraper progress while running; exposes `report`, `summary`, `all_verified`.                                                                                                                  |
+| POST   | `/plamod/restock/order-verify`            | Sync scrape PLAMOD cart against **all** proposal order lines (`proposed_qty` + included new `order_qty`); persists report to `app_runtime_settings` key `plamod_restock.order_verify_report`; exposes `order_matches_cart` + `extra_cart_lines`. |
+| GET    | `/plamod/restock/order-verify`            | Last stored full-order verification snapshot.                                                                                                                                                                                                    |
+
+Cart dispatch health requires scraper routes `POST /restock-add-to-cart`, `POST /restock-verify-cart`, and `GET /restock-cart-progress`. The queue job marks its run failed through `failed()` if the worker times out or terminates with an exception, preventing permanently active run state.
 
 Scheduled: `plamod:preorders-sync` daily 06:00 America/Toronto — **temporarily disabled** in `routes/console.php` (2026-06-18); manual `POST /preorders/sync` only.
 

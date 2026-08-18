@@ -47,6 +47,22 @@ final class PurchaseOrderResource extends JsonResource
         return number_format((float) $clean, 2, '.', '');
     }
 
+    private function trimmedOrNull(?string $value): ?string
+    {
+        $trimmed = trim((string) $value);
+
+        return $trimmed !== '' ? $trimmed : null;
+    }
+
+    /** @return array<int, string> */
+    private function trackingNumbers(PurchaseOrder $po): array
+    {
+        return array_values(array_filter(
+            $po->shipment_tracking_numbers ?? [],
+            static fn (mixed $number): bool => is_string($number) && trim($number) !== '',
+        ));
+    }
+
     private function decimal6(?string $value): ?string
     {
         if ($value === null) {
@@ -97,7 +113,8 @@ final class PurchaseOrderResource extends JsonResource
         return [
             'id' => $po->uuid,
             'vendor' => $po->vendor,
-            'supplier_order_id' => $po->supplier_order_id !== null ? trim((string) $po->supplier_order_id) : null,
+            'supplier_order_id' => $this->trimmedOrNull($po->supplier_order_id),
+            'shipment_tracking_numbers' => $this->trackingNumbers($po),
             'vendor_currency_code' => $po->vendor_currency_code,
             'ordered_date' => $po->ordered_date?->toDateString(),
             'shipped_date' => $po->shipped_date?->toDateString(),
@@ -108,6 +125,7 @@ final class PurchaseOrderResource extends JsonResource
             'surcharge_total' => $this->money2($po->surcharge_total),
             'product_total' => $this->money2($po->product_total),
             'vendor_product_total' => $this->money2($po->vendor_product_total),
+            'vendor_shipping_total' => $this->money2($po->vendor_shipping_total),
             // Stored as "vendor -> CAD" for internal cost conversion.
             'fx_rate_to_cad' => $this->decimal6($po->fx_rate_to_cad),
             // Display-friendly: "CAD -> vendor" (e.g. ~5.x for HKD).
@@ -121,10 +139,33 @@ final class PurchaseOrderResource extends JsonResource
             'shipment_method' => app(PurchaseOrderShipmentMethodService::class)->normalize($po->shipment_method),
             'counts' => [
                 'items' => $po->relationLoaded('items') ? (int) $po->items->count() : (int) ($po->items_count ?? 0),
+                'unassigned_product_vendor' => $po->relationLoaded('items')
+                    ? $this->countUnassignedProductVendors($po)
+                    : 0,
             ],
             'items' => PurchaseOrderItemResource::collection($this->whenLoaded('items')),
             'created_at' => optional($po->created_at)->toISOString(),
             'updated_at' => optional($po->updated_at)->toISOString(),
         ];
+    }
+
+    private function countUnassignedProductVendors(PurchaseOrder $po): int
+    {
+        if (! $po->relationLoaded('items')) {
+            return 0;
+        }
+
+        $count = 0;
+        foreach ($po->items as $item) {
+            if ($item->product_id === null) {
+                continue;
+            }
+            $vendor = $item->product?->vendor;
+            if ($vendor === null || trim((string) $vendor) === '') {
+                $count++;
+            }
+        }
+
+        return $count;
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources\Api\V1;
 
 use App\DTOs\Products\PlamodProductData;
+use App\Support\Products\ProductExternalAssetUrlBuilder;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -38,8 +39,11 @@ final class PlamodProductResource extends JsonResource
                     'filename' => (string) $a->filename,
                     'mime_type' => $a->mime_type,
                     'size_bytes' => $a->size_bytes,
-                    'download_url' => '/api/v1/product-assets/'.$a->id.'/download',
-                    'view_url' => '/api/v1/product-assets/'.$a->id.'/view',
+                    'download_url' => ProductExternalAssetUrlBuilder::downloadUrl((int) $a->id),
+                    'view_url' => ProductExternalAssetUrlBuilder::viewUrl((int) $a->id),
+                    'thumb_url' => $a->kind === 'image'
+                        ? ProductExternalAssetUrlBuilder::thumbUrl((int) $a->id)
+                        : null,
                 ];
             }, $data->assets),
         ];

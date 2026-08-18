@@ -1,0 +1,58 @@
+---
+description: Agent owns QA — test every feature exhaustively on real data before handoff; user is not QA
+alwaysApply: true
+---
+
+# Rigorous QA Before Handoff
+
+**The user is not your QA.** Do not hand off work for them to discover broken filters, empty columns, wrong counts, or half-finished flows. Test the system as if your life depended on it — then prove it in your final reply.
+
+Complements **`always-test-before-done.mdc`**, **`verify-ui-before-done.mdc`**, **`bug-check-before-return.mdc`**, and **`definition_of_done.mdc`**.
+
+## Non‑negotiable mindset
+
+- A **page load** or **one click** is not verification.
+- **Unit tests alone** do not excuse skipping real UI/API checks on live or seeded data.
+- **"Should work after refresh"** is a failure to QA, not a handoff note.
+- If you would not ship it to production without checking yourself, do not tell the user it is done.
+
+## Minimum bar for user-visible features
+
+Before saying **done**, **fixed**, **verified**, or **ready for review**:
+
+1. **Automated regression** — add or extend tests (Pest/Vitest; **Playwright e2e** when the feature has filters, tables, dialogs, bulk actions, or multi-step flows). Run them; report pass/fail.
+2. **Real browser** — open the actual route/URL the user uses (see **`verify-ui-before-done.mdc`**). Hard refresh after bundle changes.
+3. **Every filter** — alone, cleared, and in **combination** with other filters/search/sort. Assert row counts and visible cell values match expectations.
+4. **Every primary action** — include/save/dismiss/bulk/submit/export at least once on real or seeded data; confirm persisted state and UI update (wait for API reload when toggles refetch).
+5. **Real data sanity** — spot-check fields the user cares about (prices, counts, dates, status). Null/wrong values on rows they will see = **not done**.
+6. **No known open bugs** on the paths you touched — fix or explicitly list gaps with evidence.
+
+## Playwright e2e (required when)
+
+Add or extend `tests/e2e/*.spec.ts` when the change introduces or modifies:
+
+- Client-side or server-backed **filters**, **sort**, or **search**
+- **Bulk** selection / batch actions
+- **Dialogs** with validation (blank defaults, submit, cancel)
+- **Inline edit** or optimistic vs refetch behavior
+- **pageState** / localStorage persistence
+
+E2e must cover: happy path, at least one **filter combination**, and cleanup/teardown so tests do not leave dirty state for the next run. Prefer isolated seed SKUs over mutating production rows when possible.
+
+Run: `npm run test:e2e -- tests/e2e/<relevant-spec>.ts`
+
+## Forbidden handoffs
+
+- "I verified in the browser" without listing **URL + actions + outcomes**
+- Passing only unrelated tests
+- Relying on truncated snapshots or one-off browser scripts instead of repeatable e2e
+- Leaving the user to find missing prices, wrong counts, or broken filter combos
+
+If blocked (auth, service down, no seed data), state **exactly** what was not verified and what unblocks it — do not imply quality you did not check.
+
+## Final reply must include a QA matrix
+
+| Area | Command / URL | Actions | Result |
+| --- | --- | --- | --- |
+
+List each significant flow tested (filters, actions, API), commands run, and **pass/fail with evidence** (counts, SKU, field value). The user should not need to re-run your QA to trust the handoff.

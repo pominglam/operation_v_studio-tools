@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\DAL\PurchaseOrders;
 
 use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderCombinedPayment;
+use App\Models\PurchaseOrderCombinedPaymentLine;
 use App\Models\PurchaseOrderItem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -39,6 +41,18 @@ interface PurchaseOrderRepository
     public function distinctVendors(): array;
 
     public function findByUuidOrFail(string $uuid): PurchaseOrder;
+
+    /**
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, PurchaseOrder>
+     */
+    public function findManyForCombinedPayment(array $uuids, bool $lockForUpdate = false): Collection;
+
+    public function createCombinedPayment(PurchaseOrderCombinedPayment $payment): PurchaseOrderCombinedPayment;
+
+    public function createCombinedPaymentLine(PurchaseOrderCombinedPaymentLine $line): PurchaseOrderCombinedPaymentLine;
+
+    public function hasCombinedPayment(int $purchaseOrderId): bool;
 
     public function countItems(int $purchaseOrderId): int;
 

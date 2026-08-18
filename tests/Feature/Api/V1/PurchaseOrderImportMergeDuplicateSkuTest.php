@@ -30,8 +30,9 @@ it('merges duplicate skus within a plamod import file into one line', function (
     /** @var PurchaseOrderItem $merged */
     $merged = PurchaseOrderItem::query()->where('purchase_order_id', $po->id)->where('sku', '5058777')->firstOrFail();
     expect($merged->qty_ordered)->toBe(4);
-    expect($merged->qty_received)->toBe(4);
-    expect((string) $merged->unit_cost)->toBe('26.1200');
+    expect($merged->qty_shipped)->toBe(4);
+    expect($merged->qty_received)->toBeNull();
+    expect((string) $merged->unit_cost)->toBe('26.12');
 });
 
 it('merges append import rows into an existing purchase order line by product', function (): void {
@@ -70,5 +71,5 @@ it('merges append import rows into an existing purchase order line by product', 
     $item = PurchaseOrderItem::query()->where('purchase_order_id', $po->id)->where('sku', 'APPEND-MERGE-SKU')->firstOrFail();
     expect($item->qty_ordered)->toBe(7);
     expect($item->qty_received)->toBe(7);
-    expect((string) $item->unit_cost)->toBe('10.0000');
+    expect((string) $item->unit_cost)->toBe('10.00');
 });

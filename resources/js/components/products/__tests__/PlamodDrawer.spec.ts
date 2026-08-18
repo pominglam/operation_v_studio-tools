@@ -194,6 +194,76 @@ describe('PlamodDrawer', () => {
         });
     });
 
+    it('uses thumb_url with lazy loading for grid thumbnails and view_url for the hero image', async () => {
+        (api.get as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+            data: {
+                data: {
+                    preferred_description_source: null,
+                    contents: [],
+                    assets: [
+                        {
+                            id: 11,
+                            source: 'hlj',
+                            kind: 'image',
+                            filename: 'hlj-hero.jpg',
+                            mime_type: 'image/jpeg',
+                            size_bytes: 10,
+                            checksum_sha256: 'a'.repeat(64),
+                            shopify_enabled: true,
+                            sort_order: 1,
+                            download_url: 'https://example.com/dl/hlj-hero.jpg',
+                            view_url: 'https://example.com/view/hlj-hero.jpg',
+                            thumb_url: 'https://example.com/thumb/hlj-hero.jpg',
+                        },
+                        {
+                            id: 12,
+                            source: 'plamod',
+                            kind: 'image',
+                            filename: 'plamod-grid.jpg',
+                            mime_type: 'image/jpeg',
+                            size_bytes: 10,
+                            checksum_sha256: 'b'.repeat(64),
+                            shopify_enabled: true,
+                            sort_order: 2,
+                            download_url: 'https://example.com/dl/plamod-grid.jpg',
+                            view_url: 'https://example.com/view/plamod-grid.jpg',
+                            thumb_url: 'https://example.com/thumb/plamod-grid.jpg',
+                        },
+                    ],
+                },
+            },
+        });
+
+        const wrapper = mount(PlamodDrawer, {
+            props: {
+                open: true,
+                productId: 'p-thumb-grid',
+                productSku: 'SKU-THUMB',
+                productName: 'Thumb Grid Product',
+                productPrice: null,
+                onClose: () => undefined,
+            },
+            global: {
+                stubs: {
+                    Teleport: true,
+                },
+            },
+        });
+
+        await Promise.resolve();
+        await wrapper.vm.$nextTick();
+
+        const hero = wrapper.find('[data-testid="photo-hero-image"]');
+        expect(hero.attributes('src')).toBe('https://example.com/view/hlj-hero.jpg');
+
+        const gridThumbs = wrapper.findAll('[data-testid="photo-grid-thumb"]');
+        expect(gridThumbs).toHaveLength(2);
+        expect(gridThumbs[0]?.attributes('src')).toBe('https://example.com/thumb/hlj-hero.jpg');
+        expect(gridThumbs[1]?.attributes('src')).toBe('https://example.com/thumb/plamod-grid.jpg');
+        expect(gridThumbs[0]?.attributes('loading')).toBe('lazy');
+        expect(gridThumbs[1]?.attributes('loading')).toBe('lazy');
+    });
+
     it('can hide/show images by source (affects grid + preview)', async () => {
         (api.get as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
             data: {

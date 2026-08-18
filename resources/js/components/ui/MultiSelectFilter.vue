@@ -4,6 +4,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 export type MultiSelectOption = {
     value: string;
     label: string;
+    subLabel?: string;
     muted?: boolean;
 };
 
@@ -32,7 +33,10 @@ const someSelected = computed<boolean>(() => props.modelValue.length > 0 && prop
 const filteredOptions = computed<MultiSelectOption[]>(() => {
     const q = searchQuery.value.trim().toLowerCase();
     if (q === '') return props.options;
-    return props.options.filter((o) => o.label.toLowerCase().includes(q));
+    return props.options.filter((o) => {
+        const haystack = `${o.label} ${o.subLabel ?? ''}`.toLowerCase();
+        return haystack.includes(q);
+    });
 });
 const filteredOptionValues = computed<string[]>(() => filteredOptions.value.map((o) => o.value));
 const filteredAllSelected = computed<boolean>(() => {
@@ -207,12 +211,21 @@ onBeforeUnmount(() => {
                         :checked="selectedSet.has(o.value)"
                         @change="toggle(o.value)"
                     />
-                    <span
-                        class="min-w-0 truncate"
-                        :class="o.muted ? 'text-slate-400' : 'text-slate-800'"
-                    >
-                        {{ o.label }}
-                    </span>
+                    <div class="min-w-0 flex-1">
+                        <span
+                            class="block truncate"
+                            :class="o.muted ? 'text-slate-400' : 'text-slate-800'"
+                        >
+                            {{ o.label }}
+                        </span>
+                        <span
+                            v-if="o.subLabel"
+                            class="block truncate text-xs"
+                            :class="o.muted ? 'text-slate-400' : 'text-slate-500'"
+                        >
+                            {{ o.subLabel }}
+                        </span>
+                    </div>
                 </label>
                 <div
                     v-if="options.length === 0"

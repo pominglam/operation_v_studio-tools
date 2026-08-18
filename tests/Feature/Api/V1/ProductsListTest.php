@@ -586,7 +586,7 @@ it('validates numeric product list filters as non-negative integers', function (
     $this->getJson('/api/v1/products?reorder=-1')->assertStatus(422);
 });
 
-it('filters products by reorder greater than one', function (): void {
+it('filters products by reorder greater than or equal to one', function (): void {
     $poOpen = PurchaseOrder::query()->create([
         'vendor' => 'Plamod',
         'vendor_currency_code' => 'CAD',
@@ -594,15 +594,22 @@ it('filters products by reorder greater than one', function (): void {
     ]);
 
     $needsReorder = \App\Models\Product::query()->create([
-        'sku' => 'REORDER-GT1-MATCH',
+        'sku' => 'REORDER-GTE1-MATCH',
         'description' => 'Reorder greater than one',
         'vendor' => 'Plamod',
         'available_qty' => 0,
         'maintain_qty' => 5,
     ]);
+    $reorderExactlyOne = \App\Models\Product::query()->create([
+        'sku' => 'REORDER-GTE1-EXACT',
+        'description' => 'Reorder exactly one',
+        'vendor' => 'Plamod',
+        'available_qty' => 3,
+        'maintain_qty' => 5,
+    ]);
     $noReorder = \App\Models\Product::query()->create([
-        'sku' => 'REORDER-GT1-NOMATCH',
-        'description' => 'Reorder not greater than one',
+        'sku' => 'REORDER-GTE1-NOMATCH',
+        'description' => 'Reorder zero',
         'vendor' => 'Plamod',
         'available_qty' => 4,
         'maintain_qty' => 5,
@@ -618,6 +625,14 @@ it('filters products by reorder greater than one', function (): void {
     ]);
     PurchaseOrderItem::query()->create([
         'purchase_order_id' => $poOpen->id,
+        'product_id' => $reorderExactlyOne->id,
+        'sku' => $reorderExactlyOne->sku,
+        'vendor' => 'Plamod',
+        'qty_ordered' => 1,
+        'qty_received' => 0,
+    ]);
+    PurchaseOrderItem::query()->create([
+        'purchase_order_id' => $poOpen->id,
         'product_id' => $noReorder->id,
         'sku' => $noReorder->sku,
         'vendor' => 'Plamod',
@@ -627,8 +642,9 @@ it('filters products by reorder greater than one', function (): void {
 
     $res = $this->getJson('/api/v1/products?per_page=100&reorder_gt_one=1');
     $res->assertOk()
-        ->assertJsonPath('data.0.sku', 'REORDER-GT1-MATCH')
-        ->assertJsonMissing(['sku' => 'REORDER-GT1-NOMATCH']);
+        ->assertJsonFragment(['sku' => 'REORDER-GTE1-MATCH'])
+        ->assertJsonFragment(['sku' => 'REORDER-GTE1-EXACT'])
+        ->assertJsonMissing(['sku' => 'REORDER-GTE1-NOMATCH']);
 });
 
 it('sorts products by total ordered and total sold', function (): void {

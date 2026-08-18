@@ -23,12 +23,7 @@ function flush(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function baseItem(
-    id: number,
-    sku: string,
-    productName: string,
-    barcode: string | null = null,
-) {
+function baseItem(id: number, sku: string, productName: string, barcode: string | null = null) {
     return {
         id,
         product_id: `p-${id}`,
@@ -72,6 +67,7 @@ describe('PurchaseOrderDetailPage items search', () => {
                             id: poId,
                             vendor: 'Plamod',
                             supplier_order_id: null,
+                            shipment_tracking_numbers: ['1Z999AA10123456784', 'RR123456789CN'],
                             vendor_currency_code: 'CAD',
                             ordered_date: null,
                             shipped_date: null,
@@ -89,9 +85,23 @@ describe('PurchaseOrderDetailPage items search', () => {
                             status: 'draft',
                             counts: { items: 3 },
                             items: [
-                                baseItem(11, '5061290', 'MG ZETA GUNDAM Ver.Ka'),
-                                baseItem(12, '5058740', 'HG GUNDAM AGE-1 Normal', '4573102558740'),
-                                baseItem(13, '5072548', '30MM ARMORED CORE VI'),
+                                {
+                                    ...baseItem(11, '5061290', 'MG ZETA GUNDAM Ver.Ka'),
+                                    qty_ordered: 2,
+                                },
+                                {
+                                    ...baseItem(
+                                        12,
+                                        '5058740',
+                                        'HG GUNDAM AGE-1 Normal',
+                                        '4573102558740',
+                                    ),
+                                    qty_ordered: 3,
+                                },
+                                {
+                                    ...baseItem(13, '5072548', '30MM ARMORED CORE VI'),
+                                    qty_ordered: 4,
+                                },
                             ],
                             created_at: null,
                         },
@@ -116,6 +126,11 @@ describe('PurchaseOrderDetailPage items search', () => {
                     path: '/purchase-orders/:id',
                     name: 'purchase-order-detail',
                     component: PurchaseOrderDetailPage,
+                },
+                {
+                    path: '/products',
+                    name: 'products',
+                    component: { template: '<div />' },
                 },
             ],
         });
@@ -142,6 +157,19 @@ describe('PurchaseOrderDetailPage items search', () => {
         expect(wrapper.text()).toContain('5061290');
         expect(wrapper.text()).toContain('5058740');
         expect(wrapper.text()).toContain('5072548');
+        expect(wrapper.get('[data-testid="po-total-quantity"]').text()).toContain(
+            'Total quantity: 9',
+        );
+        const firstTrackingLink = wrapper.get('[data-testid="po-tracking-link-0"]');
+        expect(firstTrackingLink.text()).toBe('1Z999AA10123456784');
+        expect(firstTrackingLink.attributes('href')).toBe(
+            'https://t.17track.net/en#nums=1Z999AA10123456784',
+        );
+        const secondTrackingLink = wrapper.get('[data-testid="po-tracking-link-1"]');
+        expect(secondTrackingLink.text()).toBe('RR123456789CN');
+        expect(secondTrackingLink.attributes('href')).toBe(
+            'https://t.17track.net/en#nums=RR123456789CN',
+        );
 
         await wrapper.get('[data-testid="po-items-search"]').setValue('zeta');
         await nextTick();

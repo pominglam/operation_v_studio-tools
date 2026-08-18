@@ -70,20 +70,22 @@ it('returns purchase order lines for a product with computed ship/surcharge/land
         ->assertJsonCount(2, 'lines')
         // po2 is newer by created_at
         ->assertJsonPath('lines.0.vendor', 'Vendor B')
+        ->assertJsonPath('lines.0.qty_ordered', 1)
         ->assertJsonPath('lines.0.qty_shipped', 2)
         ->assertJsonPath('lines.0.qty_received', 1)
         ->assertJsonPath('lines.0.unit_cost', '5.00')
         ->assertJsonPath('lines.0.ship_per_unit', '0.00')
         ->assertJsonPath('lines.0.surcharge_per_unit', '0.00')
         ->assertJsonPath('lines.0.landed_unit_cost', '5.00')
-        // po1 allocation units = 2 + 3 = 5 => ship/unit 2.00, surcharge/unit 0.40
+        // po1: one line has qty_received entered => allocation units = sum_received (1), not sum_ordered (5)
         ->assertJsonPath('lines.1.vendor', 'Vendor A')
+        ->assertJsonPath('lines.1.qty_ordered', 2)
         ->assertJsonPath('lines.1.qty_shipped', 1)
         ->assertJsonPath('lines.1.qty_received', 1)
         ->assertJsonPath('lines.1.unit_cost', '4.00')
-        ->assertJsonPath('lines.1.ship_per_unit', '2.00')
-        ->assertJsonPath('lines.1.surcharge_per_unit', '0.40')
-        ->assertJsonPath('lines.1.landed_unit_cost', '6.40');
+        ->assertJsonPath('lines.1.ship_per_unit', '10.00')
+        ->assertJsonPath('lines.1.surcharge_per_unit', '2.00')
+        ->assertJsonPath('lines.1.landed_unit_cost', '16.00');
 });
 
 it('returns empty po-lines list when a product has no purchase order items', function (): void {

@@ -1,5 +1,104 @@
 import { expect, test } from './fixtures';
 
+test('shows the total ordered quantity in the PO header', async ({
+    page,
+    request,
+    trackE2EProductId,
+    trackE2EPurchaseOrderId,
+}) => {
+    const uniq = String(Date.now());
+    const sku = `E2E-PO-QTY-${uniq}`;
+
+    const create = await request.post('/api/v1/products', {
+        data: { sku, description: `E2E PO Quantity ${uniq}`, vendor: 'Plamod' },
+    });
+    expect(create.ok()).toBeTruthy();
+    const created = (await create.json()) as any;
+    trackE2EProductId(created?.data?.id as string | undefined);
+
+    const csv =
+        ['SKU,Unit cost,Qty ordered,Qty shipped,Qty received', `${sku},1.23,7,,`].join('\n') + '\n';
+    const poImport = await request.post('/api/v1/purchase-orders/import', {
+        multipart: {
+            vendor: 'Plamod',
+            file: {
+                name: `po-quantity-${uniq}.csv`,
+                mimeType: 'text/csv',
+                buffer: Buffer.from(csv, 'utf-8'),
+            },
+        },
+    });
+    expect(poImport.ok(), `PO import failed: HTTP ${poImport.status()}`).toBeTruthy();
+    const imported = (await poImport.json()) as any;
+    const poUuid = imported?.purchase_order_uuid as string | undefined;
+    expect(poUuid).toBeTruthy();
+    trackE2EPurchaseOrderId(poUuid);
+
+    await page.goto(`/purchase-orders/${poUuid}`);
+
+    await expect(page.getByTestId('po-total-quantity')).toHaveText(/Total quantity:\s*7/);
+});
+
+test('saves shipment tracking numbers and links each from PO detail and history', async ({
+    page,
+    request,
+    trackE2EProductId,
+    trackE2EPurchaseOrderId,
+}) => {
+    const uniq = String(Date.now());
+    const sku = `E2E-PO-TRACK-${uniq}`;
+    const trackingNumbers = ['1Z999AA10123456784', 'RR123456789CN'];
+
+    const create = await request.post('/api/v1/products', {
+        data: { sku, description: `E2E PO Tracking ${uniq}`, vendor: 'Plamod' },
+    });
+    expect(create.ok()).toBeTruthy();
+    const created = (await create.json()) as any;
+    trackE2EProductId(created?.data?.id as string | undefined);
+
+    const csv =
+        ['SKU,Unit cost,Qty ordered,Qty shipped,Qty received', `${sku},1.23,1,,`].join('\n') + '\n';
+    const poImport = await request.post('/api/v1/purchase-orders/import', {
+        multipart: {
+            vendor: 'Plamod',
+            file: {
+                name: `po-tracking-${uniq}.csv`,
+                mimeType: 'text/csv',
+                buffer: Buffer.from(csv, 'utf-8'),
+            },
+        },
+    });
+    expect(poImport.ok(), `PO import failed: HTTP ${poImport.status()}`).toBeTruthy();
+    const imported = (await poImport.json()) as any;
+    const poUuid = imported?.purchase_order_uuid as string | undefined;
+    expect(poUuid).toBeTruthy();
+    trackE2EPurchaseOrderId(poUuid);
+
+    await page.goto(`/purchase-orders/${poUuid}`);
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await page.getByTestId('po-tracking-input').fill(trackingNumbers.join('\n'));
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+    for (const [index, trackingNumber] of trackingNumbers.entries()) {
+        const detailLink = page.getByTestId(`po-tracking-link-${index}`);
+        await expect(detailLink).toHaveText(trackingNumber);
+        await expect(detailLink).toHaveAttribute(
+            'href',
+            `https://t.17track.net/en#nums=${trackingNumber}`,
+        );
+    }
+
+    await page.goto('/purchase-orders');
+    for (const [index, trackingNumber] of trackingNumbers.entries()) {
+        const historyLink = page.getByTestId(`po-history-tracking-${poUuid}-${index}`);
+        await expect(historyLink).toContainText(trackingNumber);
+        await expect(historyLink).toHaveAttribute(
+            'href',
+            `https://t.17track.net/en#nums=${trackingNumber}`,
+        );
+    }
+});
+
 test('purchase order detail shows PO actions and persisted workflow checklist', async ({
     page,
     request,
@@ -21,7 +120,8 @@ test('purchase order detail shows PO actions and persisted workflow checklist', 
     trackE2EProductId(productUuid);
 
     // Import a PO with a single line (standard format). Keep qty received blank so it can be deleted in cleanup.
-    const csv = ['SKU,Unit cost,Qty ordered,Qty shipped,Qty received', `${sku},1.23,1,,`].join('\n') + '\n';
+    const csv =
+        ['SKU,Unit cost,Qty ordered,Qty shipped,Qty received', `${sku},1.23,1,,`].join('\n') + '\n';
     const poImport = await request.post('/api/v1/purchase-orders/import', {
         multipart: {
             vendor: 'Plamod',
@@ -44,6 +144,7 @@ test('purchase order detail shows PO actions and persisted workflow checklist', 
     await expect(page.getByText('Workflow checklist')).toBeVisible();
     await expect(page.getByText(/Totals check:\s*OK/i)).toBeVisible();
     await expect(page.getByText(/Landed Σ Δ/)).toBeVisible();
+    await expect(page.getByTestId('po-total-quantity')).toHaveText(/Total quantity:\s*1/);
 
     // Items table shows barcode + handle under product name.
     const skuCell = page.getByText(sku, { exact: true });
@@ -87,3 +188,54 @@ test('purchase order detail shows PO actions and persisted workflow checklist', 
     await expect(page.getByLabel('Import PO')).toBeChecked();
 });
 
+test('opens the Products grid in a new tab filtered to the current PO', async ({
+    page,
+    request,
+    trackE2EProductId,
+    trackE2EPurchaseOrderId,
+}) => {
+    const uniq = String(Date.now());
+    const sku = `E2E-PO-GRID-${uniq}`;
+
+    const create = await request.post('/api/v1/products', {
+        data: { sku, description: `E2E PO Grid Product ${uniq}`, vendor: 'Plamod' },
+    });
+    expect(create.ok()).toBeTruthy();
+    const created = (await create.json()) as any;
+    trackE2EProductId(created?.data?.id as string | undefined);
+
+    const csv =
+        ['SKU,Unit cost,Qty ordered,Qty shipped,Qty received', `${sku},1.23,1,,`].join('\n') + '\n';
+    const poImport = await request.post('/api/v1/purchase-orders/import', {
+        multipart: {
+            vendor: 'Plamod',
+            file: {
+                name: `po-grid-${uniq}.csv`,
+                mimeType: 'text/csv',
+                buffer: Buffer.from(csv, 'utf-8'),
+            },
+        },
+    });
+    expect(poImport.ok(), `PO import failed: HTTP ${poImport.status()}`).toBeTruthy();
+    const imported = (await poImport.json()) as any;
+    const poUuid = imported?.purchase_order_uuid as string | undefined;
+    expect(poUuid).toBeTruthy();
+    trackE2EPurchaseOrderId(poUuid);
+
+    await page.goto(`/purchase-orders/${poUuid}`);
+
+    const productsGridLink = page.getByRole('link', { name: 'View products in grid' });
+    await expect(productsGridLink).toHaveAttribute(
+        'href',
+        `/products?purchase_order_uuid=${poUuid}`,
+    );
+    await expect(productsGridLink).toHaveAttribute('target', '_blank');
+
+    const productsPagePromise = page.waitForEvent('popup');
+    await productsGridLink.click();
+    const productsPage = await productsPagePromise;
+    await productsPage.waitForLoadState('domcontentloaded');
+    await expect(productsPage).toHaveURL(new RegExp(`/products\\?purchase_order_uuid=${poUuid}$`));
+    await expect(productsPage.getByText(sku, { exact: true })).toBeVisible();
+    await productsPage.close();
+});

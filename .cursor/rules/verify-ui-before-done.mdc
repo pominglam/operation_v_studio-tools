@@ -9,6 +9,8 @@ Do **not** tell the user a UI/storefront change is **done**, **fixed**, **live**
 
 Code review, `curl`, HTML string checks, and passing unit tests **alone** are not enough for user-visible behavior.
 
+**You own QA** — see **`rigorous-qa-before-handoff.mdc`**. The user is not your tester; exercise filter combinations, full flows, and repeatable Playwright e2e before handoff.
+
 ## When this applies
 
 Any change that affects what customers **see**, **click**, **filter**, **sort**, **navigate**, or **submit** — including:

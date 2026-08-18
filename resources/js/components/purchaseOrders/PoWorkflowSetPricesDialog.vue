@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, shallowRef, watch, type Ref } from 'vue';
+
+import { useClientTableSort } from '../../composables/useClientTableSort';
+import PoSetPriceSortableTh from './PoSetPriceSortableTh.vue';
 
 export type PoSetPricePreviewRow = {
     product_uuid: string;
@@ -16,6 +19,7 @@ export type PoSetPricePreviewRow = {
 
 export type PoSetPricePreview = {
     multiplier: string;
+    landed_cost_warning: string | null;
     new_prices: PoSetPricePreviewRow[];
     updates: PoSetPricePreviewRow[];
     unchanged: PoSetPricePreviewRow[];
@@ -42,6 +46,14 @@ const emit = defineEmits<{
 
 const overridePrices = reactive<Record<string, string>>({});
 const unchangedHelpOpen = ref(false);
+
+type PoSetPriceSortColumn = 'sku' | 'product' | 'po' | 'landed' | 'current' | 'mult' | 'override';
+type PoSetPriceSkippedSortColumn = 'sku' | 'product' | 'po' | 'override';
+
+const newPricesSort = useClientTableSort<PoSetPriceSortColumn>();
+const updatesSort = useClientTableSort<PoSetPriceSortColumn>();
+const unchangedSort = useClientTableSort<PoSetPriceSortColumn>();
+const skippedSort = useClientTableSort<PoSetPriceSkippedSortColumn>();
 
 const moneyPattern = /^\d+(\.\d{1,2})?$/;
 
@@ -88,6 +100,12 @@ function resetOverride(row: PoSetPricePreviewRow): void {
     delete overridePrices[row.product_uuid];
 }
 
+function useSuggestedPrice(row: PoSetPricePreviewRow): void {
+    if (row.proposed_price === null) return;
+
+    overridePrices[row.product_uuid] = row.proposed_price;
+}
+
 function isOverride(row: PoSetPricePreviewRow): boolean {
     return overridePrices[row.product_uuid] !== undefined;
 }
@@ -131,6 +149,163 @@ function effectiveMultiplier(row: PoSetPricePreviewRow, fallback: string | null)
         fallback
     );
 }
+
+function multiplierNeedsReview(value: string | null): boolean {
+    if (value === null || value.trim() === '') return false;
+
+    const multiplier = Number(value);
+    return Number.isFinite(multiplier) && (multiplier < 1.45 || multiplier > 1.6);
+}
+
+function multiplierClass(value: string | null, manual = false): string {
+    if (multiplierNeedsReview(value)) {
+        return 'inline-flex rounded bg-rose-100 px-1.5 py-0.5 font-bold text-rose-800 ring-1 ring-inset ring-rose-300';
+    }
+    if (manual) return 'font-semibold text-amber-700';
+
+    return '';
+}
+
+function parseSortNumber(value: string | null | undefined): number | null {
+    if (value == null || value.trim() === '') return null;
+
+    const numericValue = Number(value.trim());
+    return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function compareNullableNumbers(left: number | null, right: number | null): number {
+    if (left === null && right === null) return 0;
+    if (left === null) return 1;
+    if (right === null) return -1;
+
+    return left - right;
+}
+
+function compareSku(left: PoSetPricePreviewRow, right: PoSetPricePreviewRow): number {
+    const leftNumeric = parseSortNumber(left.sku);
+    const rightNumeric = parseSortNumber(right.sku);
+    if (leftNumeric !== null && rightNumeric !== null) {
+        return leftNumeric - rightNumeric;
+    }
+
+    return left.sku.localeCompare(right.sku, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function compareRows(
+    left: PoSetPricePreviewRow,
+    right: PoSetPricePreviewRow,
+    column: PoSetPriceSortColumn | PoSetPriceSkippedSortColumn,
+    multiplierFallback: (row: PoSetPricePreviewRow) => string | null,
+): number {
+    switch (column) {
+        case 'sku':
+            return compareSku(left, right);
+        case 'product':
+            return (left.description ?? '').localeCompare(right.description ?? '', undefined, {
+                sensitivity: 'base',
+            });
+        case 'po':
+            return Number(left.is_new_on_po) - Number(right.is_new_on_po);
+        case 'landed':
+            return compareNullableNumbers(
+                parseSortNumber(left.landed_unit_cost),
+                parseSortNumber(right.landed_unit_cost),
+            );
+        case 'current':
+            return compareNullableNumbers(
+                parseSortNumber(left.current_price),
+                parseSortNumber(right.current_price),
+            );
+        case 'mult':
+            return compareNullableNumbers(
+                parseSortNumber(effectiveMultiplier(left, multiplierFallback(left))),
+                parseSortNumber(effectiveMultiplier(right, multiplierFallback(right))),
+            );
+        case 'override':
+            return compareNullableNumbers(
+                parseSortNumber(overrideValue(left)),
+                parseSortNumber(overrideValue(right)),
+            );
+        default:
+            return 0;
+    }
+}
+
+function sortPreviewRows(
+    rows: PoSetPricePreviewRow[],
+    sortBy: PoSetPriceSortColumn | PoSetPriceSkippedSortColumn | null,
+    sortDir: 'asc' | 'desc',
+    multiplierFallback: (row: PoSetPricePreviewRow) => string | null,
+): PoSetPricePreviewRow[] {
+    if (sortBy === null) return rows;
+
+    const column = sortBy;
+    const direction = sortDir;
+
+    return [...rows].sort((left, right) => {
+        const result = compareRows(left, right, column, multiplierFallback);
+        return direction === 'asc' ? result : -result;
+    });
+}
+
+function useStableSortedPreviewRows<C extends PoSetPriceSortColumn | PoSetPriceSkippedSortColumn>(
+    rowsSource: () => PoSetPricePreviewRow[],
+    sortBy: Ref<C | null>,
+    sortDir: Ref<'asc' | 'desc'>,
+    multiplierFallback: (row: PoSetPricePreviewRow) => string | null,
+): Ref<PoSetPricePreviewRow[]> {
+    const sorted = shallowRef<PoSetPricePreviewRow[]>([]);
+
+    watch(
+        () => [rowsSource(), sortBy.value, sortDir.value] as const,
+        () => {
+            sorted.value = sortPreviewRows(
+                rowsSource(),
+                sortBy.value,
+                sortDir.value,
+                multiplierFallback,
+            );
+        },
+        { immediate: true },
+    );
+
+    return sorted;
+}
+
+function resetAllSorts(): void {
+    newPricesSort.reset();
+    updatesSort.reset();
+    unchangedSort.reset();
+    skippedSort.reset();
+}
+
+const sortedNewPrices = useStableSortedPreviewRows(
+    () => props.preview?.new_prices ?? [],
+    newPricesSort.sortBy,
+    newPricesSort.sortDir,
+    (row) => row.proposed_multiplier,
+);
+
+const sortedUpdates = useStableSortedPreviewRows(
+    () => props.preview?.updates ?? [],
+    updatesSort.sortBy,
+    updatesSort.sortDir,
+    (row) => row.proposed_multiplier,
+);
+
+const sortedUnchanged = useStableSortedPreviewRows(
+    () => props.preview?.unchanged ?? [],
+    unchangedSort.sortBy,
+    unchangedSort.sortDir,
+    (row) => row.current_multiplier,
+);
+
+const sortedSkippedNoCost = useStableSortedPreviewRows(
+    () => props.preview?.skipped_no_cost ?? [],
+    skippedSort.sortBy,
+    skippedSort.sortDir,
+    () => null,
+);
 
 function shouldShowMultiplierArrow(
     row: PoSetPricePreviewRow,
@@ -177,6 +352,7 @@ watch(
     () => props.preview,
     () => {
         unchangedHelpOpen.value = false;
+        resetAllSorts();
         for (const key of Object.keys(overridePrices)) {
             delete overridePrices[key];
         }
@@ -208,12 +384,21 @@ watch(
                         Set/review selling prices
                     </div>
                     <div v-if="preview" class="mt-1 text-xs text-slate-600">
-                        Formula: landed cost × {{ preview.multiplier }}, rounded to X.99 CAD.
+                        Formula: landed cost × {{ preview.multiplier }}, rounded up to the next X.99
+                        CAD at or above that target; we then suggest one X.99 tier lower only when
+                        that formula price is over 1.55× landed and the lower tier remains at least
+                        1.45×.
                         <span class="font-semibold text-slate-900">{{ preview.apply_count }}</span>
                         product(s) will change if you apply.
                         <span v-if="overrides.length" class="font-semibold text-amber-800">
                             {{ overrides.length }} manual override(s).
                         </span>
+                    </div>
+                    <div
+                        v-if="preview?.landed_cost_warning"
+                        class="mt-1 text-xs font-semibold text-amber-700"
+                    >
+                        {{ preview.landed_cost_warning }}
                     </div>
                 </div>
 
@@ -228,20 +413,59 @@ watch(
                                 New prices ({{ preview.new_prices.length }})
                             </div>
                             <table class="mt-2 w-full text-left text-xs">
-                                <thead class="text-slate-500">
+                                <thead
+                                    class="sticky top-0 z-10 bg-white text-slate-500 shadow-[0_1px_0_0_rgb(226_232_240)]"
+                                >
                                     <tr>
-                                        <th class="py-1 pr-2">SKU</th>
-                                        <th class="py-1 pr-2">Product</th>
-                                        <th class="py-1 pr-2">PO</th>
-                                        <th class="py-1 pr-2">Landed</th>
-                                        <th class="py-1 pr-2">Current</th>
-                                        <th class="py-1 pr-2">Mult.</th>
-                                        <th class="py-1">Proposed</th>
+                                        <PoSetPriceSortableTh
+                                            label="SKU"
+                                            :indicator="newPricesSort.sortIndicator('sku')"
+                                            :header-class="newPricesSort.headerClass('sku')"
+                                            :sort-action="() => newPricesSort.toggleSort('sku')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Product"
+                                            :indicator="newPricesSort.sortIndicator('product')"
+                                            :header-class="newPricesSort.headerClass('product')"
+                                            :sort-action="() => newPricesSort.toggleSort('product')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="PO"
+                                            :indicator="newPricesSort.sortIndicator('po')"
+                                            :header-class="newPricesSort.headerClass('po')"
+                                            :sort-action="() => newPricesSort.toggleSort('po')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Landed"
+                                            :indicator="newPricesSort.sortIndicator('landed')"
+                                            :header-class="newPricesSort.headerClass('landed')"
+                                            :sort-action="() => newPricesSort.toggleSort('landed')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Current"
+                                            :indicator="newPricesSort.sortIndicator('current')"
+                                            :header-class="newPricesSort.headerClass('current')"
+                                            :sort-action="() => newPricesSort.toggleSort('current')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Mult."
+                                            :indicator="newPricesSort.sortIndicator('mult')"
+                                            :header-class="newPricesSort.headerClass('mult')"
+                                            :sort-action="() => newPricesSort.toggleSort('mult')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Proposed"
+                                            :indicator="newPricesSort.sortIndicator('override')"
+                                            :header-class="newPricesSort.headerClass('override')"
+                                            :sort-action="
+                                                () => newPricesSort.toggleSort('override')
+                                            "
+                                        />
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr
-                                        v-for="row in preview.new_prices"
+                                        v-for="row in sortedNewPrices"
                                         :key="row.product_uuid"
                                         class="border-t border-slate-100 text-slate-800"
                                     >
@@ -263,10 +487,15 @@ watch(
                                         </td>
                                         <td class="py-1.5 pr-2 tabular-nums">
                                             <span
-                                                :class="{
-                                                    'font-semibold text-amber-700':
+                                                :class="
+                                                    multiplierClass(
+                                                        effectiveMultiplier(
+                                                            row,
+                                                            row.proposed_multiplier,
+                                                        ),
                                                         hasValidOverride(row),
-                                                }"
+                                                    )
+                                                "
                                             >
                                                 {{
                                                     formatMultiplier(
@@ -328,20 +557,57 @@ watch(
                                 Price updates ({{ preview.updates.length }})
                             </div>
                             <table class="mt-2 w-full text-left text-xs">
-                                <thead class="text-slate-500">
+                                <thead
+                                    class="sticky top-0 z-10 bg-white text-slate-500 shadow-[0_1px_0_0_rgb(226_232_240)]"
+                                >
                                     <tr>
-                                        <th class="py-1 pr-2">SKU</th>
-                                        <th class="py-1 pr-2">Product</th>
-                                        <th class="py-1 pr-2">PO</th>
-                                        <th class="py-1 pr-2">Landed</th>
-                                        <th class="py-1 pr-2">Current</th>
-                                        <th class="py-1 pr-2">Mult.</th>
-                                        <th class="py-1">Proposed</th>
+                                        <PoSetPriceSortableTh
+                                            label="SKU"
+                                            :indicator="updatesSort.sortIndicator('sku')"
+                                            :header-class="updatesSort.headerClass('sku')"
+                                            :sort-action="() => updatesSort.toggleSort('sku')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Product"
+                                            :indicator="updatesSort.sortIndicator('product')"
+                                            :header-class="updatesSort.headerClass('product')"
+                                            :sort-action="() => updatesSort.toggleSort('product')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="PO"
+                                            :indicator="updatesSort.sortIndicator('po')"
+                                            :header-class="updatesSort.headerClass('po')"
+                                            :sort-action="() => updatesSort.toggleSort('po')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Landed"
+                                            :indicator="updatesSort.sortIndicator('landed')"
+                                            :header-class="updatesSort.headerClass('landed')"
+                                            :sort-action="() => updatesSort.toggleSort('landed')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Current"
+                                            :indicator="updatesSort.sortIndicator('current')"
+                                            :header-class="updatesSort.headerClass('current')"
+                                            :sort-action="() => updatesSort.toggleSort('current')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Mult."
+                                            :indicator="updatesSort.sortIndicator('mult')"
+                                            :header-class="updatesSort.headerClass('mult')"
+                                            :sort-action="() => updatesSort.toggleSort('mult')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Proposed"
+                                            :indicator="updatesSort.sortIndicator('override')"
+                                            :header-class="updatesSort.headerClass('override')"
+                                            :sort-action="() => updatesSort.toggleSort('override')"
+                                        />
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr
-                                        v-for="row in preview.updates"
+                                        v-for="row in sortedUpdates"
                                         :key="row.product_uuid"
                                         class="border-t border-slate-100 text-slate-800"
                                     >
@@ -373,15 +639,21 @@ watch(
                                                     )
                                                 "
                                             >
-                                                <span>{{
-                                                    formatMultiplier(row.current_multiplier)
-                                                }}</span>
+                                                <span
+                                                    :class="multiplierClass(row.current_multiplier)"
+                                                >
+                                                    {{ formatMultiplier(row.current_multiplier) }}
+                                                </span>
                                                 <span class="text-slate-500"> → </span>
                                                 <span
                                                     :class="
-                                                        hasValidOverride(row)
-                                                            ? 'font-semibold text-amber-700'
-                                                            : ''
+                                                        multiplierClass(
+                                                            effectiveMultiplier(
+                                                                row,
+                                                                row.proposed_multiplier,
+                                                            ),
+                                                            hasValidOverride(row),
+                                                        )
                                                     "
                                                 >
                                                     {{
@@ -396,10 +668,15 @@ watch(
                                             </template>
                                             <span
                                                 v-else
-                                                :class="{
-                                                    'font-semibold text-amber-700':
+                                                :class="
+                                                    multiplierClass(
+                                                        effectiveMultiplier(
+                                                            row,
+                                                            row.proposed_multiplier,
+                                                        ),
                                                         hasValidOverride(row),
-                                                }"
+                                                    )
+                                                "
                                             >
                                                 {{
                                                     formatMultiplier(
@@ -441,6 +718,15 @@ watch(
                                                 >
                                                     Reset
                                                 </button>
+                                                <button
+                                                    v-else-if="row.proposed_price !== null"
+                                                    type="button"
+                                                    class="whitespace-nowrap rounded border border-slate-300 bg-white px-1.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                                                    :aria-label="`Use suggested price for ${row.sku}`"
+                                                    @click="useSuggestedPrice(row)"
+                                                >
+                                                    Use suggested
+                                                </button>
                                             </div>
                                             <div
                                                 v-if="hasInvalidOverride(row)"
@@ -461,17 +747,61 @@ watch(
                                 No price change ({{ preview.unchanged.length }})
                             </div>
                             <table class="mt-2 w-full text-left text-xs">
-                                <thead class="text-slate-500">
+                                <thead
+                                    class="sticky top-0 z-10 bg-white text-slate-500 shadow-[0_1px_0_0_rgb(226_232_240)]"
+                                >
                                     <tr>
-                                        <th class="py-1 pr-2">SKU</th>
-                                        <th class="py-1 pr-2">Product</th>
-                                        <th class="py-1 pr-2">PO</th>
-                                        <th class="py-1 pr-2">Landed</th>
-                                        <th class="py-1 pr-2">Current</th>
-                                        <th class="py-1 pr-2">Mult.</th>
+                                        <PoSetPriceSortableTh
+                                            label="SKU"
+                                            :indicator="unchangedSort.sortIndicator('sku')"
+                                            :header-class="unchangedSort.headerClass('sku')"
+                                            :sort-action="() => unchangedSort.toggleSort('sku')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Product"
+                                            :indicator="unchangedSort.sortIndicator('product')"
+                                            :header-class="unchangedSort.headerClass('product')"
+                                            :sort-action="() => unchangedSort.toggleSort('product')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="PO"
+                                            :indicator="unchangedSort.sortIndicator('po')"
+                                            :header-class="unchangedSort.headerClass('po')"
+                                            :sort-action="() => unchangedSort.toggleSort('po')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Landed"
+                                            test-id="po-set-prices-unchanged-landed"
+                                            :indicator="unchangedSort.sortIndicator('landed')"
+                                            :header-class="unchangedSort.headerClass('landed')"
+                                            :sort-action="() => unchangedSort.toggleSort('landed')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Current"
+                                            :indicator="unchangedSort.sortIndicator('current')"
+                                            :header-class="unchangedSort.headerClass('current')"
+                                            :sort-action="() => unchangedSort.toggleSort('current')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Mult."
+                                            :indicator="unchangedSort.sortIndicator('mult')"
+                                            :header-class="unchangedSort.headerClass('mult')"
+                                            :sort-action="() => unchangedSort.toggleSort('mult')"
+                                        />
                                         <th class="py-1">
                                             <span class="inline-flex items-center gap-1">
-                                                Override
+                                                <button
+                                                    type="button"
+                                                    class="hover:underline"
+                                                    :class="unchangedSort.headerClass('override')"
+                                                    @click="
+                                                        () => unchangedSort.toggleSort('override')
+                                                    "
+                                                >
+                                                    Override{{
+                                                        unchangedSort.sortIndicator('override')
+                                                    }}
+                                                </button>
                                                 <button
                                                     type="button"
                                                     class="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-slate-300 text-[10px] font-bold leading-none text-slate-500 hover:border-slate-400 hover:text-slate-700 focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
@@ -491,16 +821,16 @@ watch(
                                             colspan="7"
                                             class="pb-2 font-normal normal-case leading-relaxed text-slate-600"
                                         >
-                                            Apply won't update these SKUs unless you edit Override.
-                                            Current is the catalog price. Override shows the formula
-                                            price; when Current is higher than the formula, we keep
-                                            Current.
+                                            Apply won't update these SKUs unless you edit Override
+                                            or click Use suggested. Current is the catalog price.
+                                            Override shows the formula price; when Current is higher
+                                            than the formula, we keep Current.
                                         </th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr
-                                        v-for="row in preview.unchanged"
+                                        v-for="row in sortedUnchanged"
                                         :key="row.product_uuid"
                                         class="border-t border-slate-100 text-slate-700"
                                     >
@@ -527,27 +857,33 @@ watch(
                                                         row,
                                                         effectiveMultiplier(
                                                             row,
-                                                            row.current_multiplier,
+                                                            row.proposed_multiplier,
                                                         ),
                                                     )
                                                 "
                                             >
-                                                <span>{{
-                                                    formatMultiplier(row.current_multiplier)
-                                                }}</span>
+                                                <span
+                                                    :class="multiplierClass(row.current_multiplier)"
+                                                >
+                                                    {{ formatMultiplier(row.current_multiplier) }}
+                                                </span>
                                                 <span class="text-slate-500"> → </span>
                                                 <span
                                                     :class="
-                                                        hasValidOverride(row)
-                                                            ? 'font-semibold text-amber-700'
-                                                            : ''
+                                                        multiplierClass(
+                                                            effectiveMultiplier(
+                                                                row,
+                                                                row.proposed_multiplier,
+                                                            ),
+                                                            hasValidOverride(row),
+                                                        )
                                                     "
                                                 >
                                                     {{
                                                         formatMultiplier(
                                                             effectiveMultiplier(
                                                                 row,
-                                                                row.current_multiplier,
+                                                                row.proposed_multiplier,
                                                             ),
                                                         )
                                                     }}
@@ -555,16 +891,21 @@ watch(
                                             </template>
                                             <span
                                                 v-else
-                                                :class="{
-                                                    'font-semibold text-amber-700':
+                                                :class="
+                                                    multiplierClass(
+                                                        effectiveMultiplier(
+                                                            row,
+                                                            row.proposed_multiplier,
+                                                        ),
                                                         hasValidOverride(row),
-                                                }"
+                                                    )
+                                                "
                                             >
                                                 {{
                                                     formatMultiplier(
                                                         effectiveMultiplier(
                                                             row,
-                                                            row.current_multiplier,
+                                                            row.proposed_multiplier,
                                                         ),
                                                     )
                                                 }}
@@ -600,6 +941,15 @@ watch(
                                                 >
                                                     Reset
                                                 </button>
+                                                <button
+                                                    v-else-if="row.proposed_price !== null"
+                                                    type="button"
+                                                    class="whitespace-nowrap rounded border border-slate-300 bg-white px-1.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                                                    :aria-label="`Use suggested price for ${row.sku}`"
+                                                    @click="useSuggestedPrice(row)"
+                                                >
+                                                    Use suggested
+                                                </button>
                                             </div>
                                             <div
                                                 v-if="hasInvalidOverride(row)"
@@ -622,17 +972,39 @@ watch(
                                 }})
                             </div>
                             <table class="mt-2 w-full text-left text-xs">
-                                <thead class="text-slate-500">
+                                <thead
+                                    class="sticky top-0 z-10 bg-white text-slate-500 shadow-[0_1px_0_0_rgb(226_232_240)]"
+                                >
                                     <tr>
-                                        <th class="py-1 pr-2">SKU</th>
-                                        <th class="py-1 pr-2">Product</th>
-                                        <th class="py-1 pr-2">PO</th>
-                                        <th class="py-1">Override</th>
+                                        <PoSetPriceSortableTh
+                                            label="SKU"
+                                            :indicator="skippedSort.sortIndicator('sku')"
+                                            :header-class="skippedSort.headerClass('sku')"
+                                            :sort-action="() => skippedSort.toggleSort('sku')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Product"
+                                            :indicator="skippedSort.sortIndicator('product')"
+                                            :header-class="skippedSort.headerClass('product')"
+                                            :sort-action="() => skippedSort.toggleSort('product')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="PO"
+                                            :indicator="skippedSort.sortIndicator('po')"
+                                            :header-class="skippedSort.headerClass('po')"
+                                            :sort-action="() => skippedSort.toggleSort('po')"
+                                        />
+                                        <PoSetPriceSortableTh
+                                            label="Override"
+                                            :indicator="skippedSort.sortIndicator('override')"
+                                            :header-class="skippedSort.headerClass('override')"
+                                            :sort-action="() => skippedSort.toggleSort('override')"
+                                        />
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr
-                                        v-for="row in preview.skipped_no_cost"
+                                        v-for="row in sortedSkippedNoCost"
                                         :key="row.product_uuid"
                                         class="border-t border-slate-100 text-slate-700"
                                     >

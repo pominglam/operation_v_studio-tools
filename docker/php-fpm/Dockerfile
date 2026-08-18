@@ -16,12 +16,18 @@ RUN apt-get update \
     libicu-dev \
     libonig-dev \
     libsqlite3-dev \
+    libpng-dev \
+    libjpeg62-turbo-dev \
+    libwebp-dev \
+    libfreetype6-dev \
+  && docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp \
   && docker-php-ext-install -j$(nproc) \
     pdo_mysql \
     pdo_sqlite \
     mbstring \
     zip \
     intl \
+    gd \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer

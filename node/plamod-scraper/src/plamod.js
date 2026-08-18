@@ -32,6 +32,50 @@ function storageRoot() {
   return String(process.env.PLAMOD_STORAGE_ROOT || path.resolve(__dirname, '..', '..', '..', 'storage', 'app', 'private'));
 }
 
+function instockExportProgressPath() {
+  return path.join(storageRoot(), 'plamod', 'instock_export_progress.json');
+}
+
+function writeInstockExportProgress(patch) {
+  ensureDir(path.join(storageRoot(), 'plamod'));
+  let existing = {};
+  try {
+    if (fs.existsSync(instockExportProgressPath())) {
+      existing = JSON.parse(fs.readFileSync(instockExportProgressPath(), 'utf8'));
+    }
+  } catch {
+    existing = {};
+  }
+  const next = {
+    ...existing,
+    ...patch,
+    updated_at: new Date().toISOString(),
+  };
+  fs.writeFileSync(instockExportProgressPath(), JSON.stringify(next), 'utf8');
+}
+
+function readInstockExportProgress() {
+  try {
+    if (!fs.existsSync(instockExportProgressPath())) {
+      return { ok: true, active: false };
+    }
+    const data = JSON.parse(fs.readFileSync(instockExportProgressPath(), 'utf8'));
+    return { ok: true, active: Boolean(data.active), ...data };
+  } catch (e) {
+    return { ok: false, active: false, error_message: String(e?.message || 'progress read failed') };
+  }
+}
+
+function clearInstockExportProgress() {
+  try {
+    if (fs.existsSync(instockExportProgressPath())) {
+      fs.unlinkSync(instockExportProgressPath());
+    }
+  } catch {
+    // ignore
+  }
+}
+
 function safeSkuDir(sku) {
   return sku.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
@@ -164,7 +208,7 @@ async function looksLikeSignInPage(page) {
   const hasPass = await page.$('input[name="password"], input[type="password"]').then((x) => !!x).catch(() => false);
   if (hasCompany && hasUser && hasPass) return true;
 
-  const h1 = await page.textContent('h1').catch(() => '');
+  const h1 = await page.textContent('h1', { timeout: 500 }).catch(() => '');
   if (String(h1 || '').toLowerCase().includes('retailer sign in')) return true;
 
   return false;
@@ -600,12 +644,17 @@ async function ensureOnRetailerPdp(page, baseUrl, sku, context) {
     return;
   }
 
-  if (page.url().includes('/retailer-sign-in')) {
-    await ensureLoggedIn(page, baseUrl, context, sku);
+  if (await looksLikeSignInPage(page)) {
+    await ensureManufacturerSession(page, baseUrl, context);
   }
 
   const pdpUrl = `${baseUrl}/retailer/products/${encodeURIComponent(sku)}`;
   await gotoWithTimeout(page, pdpUrl, 20_000);
+
+  if (await looksLikeSignInPage(page)) {
+    await ensureManufacturerSession(page, baseUrl, context);
+    await gotoWithTimeout(page, pdpUrl, 20_000);
+  }
 
   if (page.url().includes('/retailer-sign-in')) {
     throw new Error('Plamod login failed: retailer PDP redirected back to sign-in.');
@@ -1156,6 +1205,8 @@ async function clearAllManufacturerFilters(page) {
     'button:has-text("Clear Categories")',
     'button:has-text("Clear Category")',
     'button:has-text("Clear Series")',
+    'button:has-text("Clear Brands")',
+    'button:has-text("Clear Brand")',
     'button:has-text("Clear Filters")',
     'button:has-text("Clear Filter")',
   ]) {
@@ -1191,6 +1242,62 @@ async function scrollManufacturerSidebarStep(page) {
   await page.waitForTimeout(220);
 }
 
+function manufacturerFilterIdPrefixes(filterTab) {
+  if (filterTab === 'SERIES') {
+    return ['series-', 'brand-', 'category-'];
+  }
+  if (filterTab === 'BRAND') {
+    return ['brand-', 'series-', 'category-'];
+  }
+  return ['category-', 'series-', 'brand-'];
+}
+
+async function tryPlaywrightManufacturerFilterSelect(page, targetName) {
+  const escaped = String(targetName || '')
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\s+/g, '\\s+');
+  const pattern = new RegExp(`^\\s*${escaped}(?:\\s+\\d+(?:\\s+\\d+)?)?\\s*$`, 'iu');
+
+  for (const sidebar of [
+    page.locator('[data-radix-scroll-area-viewport]').first(),
+    page.locator('.overflow-y-auto').first(),
+  ]) {
+    for (let round = 0; round < 52; round += 1) {
+      const checkbox = sidebar.getByRole('checkbox', { name: pattern }).first();
+      if ((await checkbox.count().catch(() => 0)) > 0) {
+        await checkbox.scrollIntoViewIfNeeded().catch(() => undefined);
+        const state = await checkbox.getAttribute('data-state').catch(() => null);
+        if (state !== 'checked') {
+          await checkbox.click({ timeout: 5000 }).catch(() => undefined);
+        }
+        await page.waitForTimeout(1200);
+        return true;
+      }
+
+      const label = sidebar.locator('label[title], span[title]').filter({ hasText: pattern }).first();
+      if ((await label.count().catch(() => 0)) > 0) {
+        await label.scrollIntoViewIfNeeded().catch(() => undefined);
+        const row = label.locator('xpath=ancestor::div[contains(@class,"flex")][1]');
+        const rowCheckbox = row.getByRole('checkbox').first();
+        if ((await rowCheckbox.count().catch(() => 0)) > 0) {
+          const state = await rowCheckbox.getAttribute('data-state').catch(() => null);
+          if (state !== 'checked') {
+            await rowCheckbox.click({ timeout: 5000 }).catch(() => undefined);
+          }
+        } else {
+          await label.click({ timeout: 5000 }).catch(() => undefined);
+        }
+        await page.waitForTimeout(1200);
+        return true;
+      }
+
+      await scrollManufacturerSidebarStep(page);
+    }
+  }
+
+  return false;
+}
+
 async function findAndSelectManufacturerFilter(page, filterTab, targetName) {
   const normalizedTarget = normalizeManufacturerFilterName(targetName);
   if (!normalizedTarget) {
@@ -1204,12 +1311,19 @@ async function findAndSelectManufacturerFilter(page, filterTab, targetName) {
 
   await resetManufacturerSidebarScroll(page);
   await page.waitForTimeout(400);
+  await scrollManufacturerSidebarFilters(page);
+  await resetManufacturerSidebarScroll(page);
+  await page.waitForTimeout(400);
 
-  const idPrefix = filterTab === 'SERIES' ? 'series-' : 'category-';
+  if (await tryPlaywrightManufacturerFilterSelect(page, targetName)) {
+    return true;
+  }
+
+  const idPrefixes = manufacturerFilterIdPrefixes(filterTab);
 
   for (let round = 0; round < 52; round += 1) {
     const selected = await page
-      .evaluate(({ normalizedTarget, idPrefix }) => {
+      .evaluate(({ normalizedTarget, idPrefixes }) => {
         const norm = (value) =>
           String(value || '')
             .replace(/\s+/g, ' ')
@@ -1218,13 +1332,43 @@ async function findAndSelectManufacturerFilter(page, filterTab, targetName) {
             .trim()
             .toLowerCase();
 
+        const namesMatch = (left, right) => {
+          if (!left || !right) {
+            return false;
+          }
+          if (left === right) {
+            return true;
+          }
+          return left.startsWith(right) || right.startsWith(left);
+        };
+
         const clickFilterControl = (control) => {
           if (!(control instanceof HTMLElement)) {
             return false;
           }
+
+          const row = control.closest('.flex.items-center.justify-between, .flex.items-center.space-x-2');
+          const radixCheckbox = row?.querySelector('button[role="checkbox"]');
+          if (radixCheckbox instanceof HTMLElement) {
+            if (
+              radixCheckbox.getAttribute('data-state') === 'checked' ||
+              radixCheckbox.getAttribute('aria-checked') === 'true'
+            ) {
+              return true;
+            }
+            radixCheckbox.click();
+            return true;
+          }
+
           const buttonId = control.getAttribute('for');
           const button = buttonId ? document.getElementById(buttonId) : null;
           if (button instanceof HTMLElement) {
+            if (
+              button.getAttribute('data-state') === 'checked' ||
+              button.getAttribute('aria-checked') === 'true'
+            ) {
+              return true;
+            }
             button.click();
             return true;
           }
@@ -1232,61 +1376,76 @@ async function findAndSelectManufacturerFilter(page, filterTab, targetName) {
           return true;
         };
 
-        const labels = Array.from(document.querySelectorAll(`label[for^="${idPrefix}"]`));
-        for (const label of labels) {
-          const candidates = [
-            norm(label.getAttribute('title') || ''),
-            norm(label.textContent || ''),
-          ].filter(Boolean);
-          if (candidates.some((candidate) => candidate === normalizedTarget)) {
-            return clickFilterControl(label);
+        const sidebars = Array.from(document.querySelectorAll('[data-radix-scroll-area-viewport], .overflow-y-auto'));
+
+        for (const idPrefix of idPrefixes) {
+          const labels = Array.from(document.querySelectorAll(`label[for^="${idPrefix}"]`));
+          for (const label of labels) {
+            const candidates = [
+              norm(label.getAttribute('title') || ''),
+              norm(label.textContent || ''),
+            ].filter(Boolean);
+            if (candidates.some((candidate) => namesMatch(candidate, normalizedTarget))) {
+              return clickFilterControl(label);
+            }
+          }
+
+          const buttons = Array.from(document.querySelectorAll(`button[id^="${idPrefix}"]`));
+          for (const button of buttons) {
+            const candidate = norm(button.id.replace(new RegExp(`^${idPrefix}`), ''));
+            if (namesMatch(candidate, normalizedTarget) && button instanceof HTMLElement) {
+              button.click();
+              return true;
+            }
           }
         }
 
-        const buttons = Array.from(document.querySelectorAll(`button[id^="${idPrefix}"]`));
-        for (const button of buttons) {
-          const candidate = norm(button.id.replace(new RegExp(`^${idPrefix}`), ''));
-          if (candidate === normalizedTarget && button instanceof HTMLElement) {
-            button.click();
+        for (const sidebar of sidebars) {
+          const checkboxRows = Array.from(sidebar.querySelectorAll('button[role="checkbox"], input[type="checkbox"]'));
+          for (const checkbox of checkboxRows) {
+            const row = checkbox.closest('.flex.items-center.space-x-2, .flex.items-center.justify-between, label');
+            if (!row) {
+              continue;
+            }
+            const label = row.querySelector('label[title], span[title], label, span.text-sm');
+            const candidates = [
+              norm(label?.getAttribute('title') || ''),
+              norm(label?.textContent || row.textContent || ''),
+            ].filter(Boolean);
+            if (!candidates.some((candidate) => namesMatch(candidate, normalizedTarget))) {
+              continue;
+            }
+            if (checkbox instanceof HTMLButtonElement) {
+              if (
+                checkbox.getAttribute('data-state') === 'checked' ||
+                checkbox.getAttribute('aria-checked') === 'true'
+              ) {
+                return true;
+              }
+              checkbox.click();
+              return true;
+            }
+            if (checkbox instanceof HTMLInputElement && !checkbox.checked) {
+              checkbox.click();
+            }
             return true;
           }
         }
 
-        const checkboxRows = Array.from(document.querySelectorAll('input[type="checkbox"]'));
-        for (const checkbox of checkboxRows) {
-          const row = checkbox.closest('.flex.items-center.space-x-2, .flex.items-center.justify-between, label');
-          if (!row) {
-            continue;
-          }
-          const label = row.querySelector('label[title], span[title], label, span.text-sm');
-          const candidates = [
-            norm(label?.getAttribute('title') || ''),
-            norm(label?.textContent || row.textContent || ''),
-          ].filter(Boolean);
-          if (!candidates.some((candidate) => candidate === normalizedTarget)) {
-            continue;
-          }
-          if (checkbox instanceof HTMLInputElement && !checkbox.checked) {
-            checkbox.click();
-          }
-          return true;
-        }
-
         return false;
-      }, { normalizedTarget, idPrefix })
+      }, { normalizedTarget, idPrefixes })
       .catch(() => false);
 
     if (selected) {
-      await page.keyboard.press('Escape').catch(() => undefined);
       await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => undefined);
-      await page.waitForTimeout(800);
+      await page.waitForTimeout(1200);
       return true;
     }
 
     await scrollManufacturerSidebarStep(page);
   }
 
-  return false;
+  return tryPlaywrightManufacturerFilterSelect(page, targetName);
 }
 
 async function ensureManufacturerCategoryLine(page, categoryName) {
@@ -1295,6 +1454,10 @@ async function ensureManufacturerCategoryLine(page, categoryName) {
 
 async function ensureManufacturerSeries(page, seriesName) {
   return findAndSelectManufacturerFilter(page, 'SERIES', seriesName);
+}
+
+async function ensureManufacturerBrand(page, brandName) {
+  return findAndSelectManufacturerFilter(page, 'BRAND', brandName);
 }
 
 async function ensureManufacturerPlasticModelKitsOnly(page) {
@@ -1308,7 +1471,7 @@ async function clickManufacturerSidebarFilterTab(page, tabLabel) {
       const buttons = Array.from(document.querySelectorAll('button'));
       const sidebarButtons = buttons.filter((button) => {
         const text = norm(button.textContent);
-        return text === 'CATEGORY' || text === 'SERIES';
+        return text === 'CATEGORY' || text === 'SERIES' || text === 'BRAND';
       });
       const hit = sidebarButtons.find((button) => norm(button.textContent) === label);
       if (!hit) {
@@ -1500,15 +1663,179 @@ function mergeManufacturerFilterItems(primary, secondary) {
   return merged;
 }
 
+async function waitForManufacturerStatusTabs(page, tabLabel, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const found = await page
+      .evaluate((label) => {
+        const norm = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+        return Array.from(document.querySelectorAll('button')).some((button) => {
+          const spans = Array.from(button.querySelectorAll('span'));
+          return spans.some((span) => norm(span.textContent) === label) || norm(button.textContent).startsWith(label);
+        });
+      }, tabLabel)
+      .catch(() => false);
+    if (found) {
+      return true;
+    }
+    await page.waitForTimeout(400);
+  }
+
+  return false;
+}
+
+async function clickManufacturerStatusTabWhenReady(page, tabLabel) {
+  await waitForManufacturerStatusTabs(page, tabLabel, 20_000);
+  return clickExactManufacturerStatusTabForFilters(page, tabLabel);
+}
+
+async function gotoManufacturerWithCategoryFilters(page, baseUrl, manufacturerId, categoryIds, tabLabel = 'In-Stock') {
+  const uniqueIds = [...new Set(categoryIds.map((id) => String(id || '').trim()).filter(Boolean))];
+  const query = uniqueIds.map((id) => `manufacturerCategoryId=${encodeURIComponent(id)}`).join('&');
+  const url = query
+    ? `${baseUrl}/retailer/manufacturers/${manufacturerId}?${query}`
+    : `${baseUrl}/retailer/manufacturers/${manufacturerId}`;
+
+  await gotoWithTimeout(page, url, 45_000);
+  await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => undefined);
+  await page.waitForTimeout(1200);
+
+  let tabClicked = await clickManufacturerStatusTabWhenReady(page, tabLabel);
+  if (!tabClicked) {
+    await gotoWithTimeout(page, `${baseUrl}/retailer/manufacturers/${manufacturerId}`, 45_000);
+    await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => undefined);
+    await page.waitForTimeout(800);
+    tabClicked = await clickManufacturerStatusTabWhenReady(page, tabLabel);
+    if (tabClicked && query) {
+      await gotoWithTimeout(page, url, 45_000);
+      await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => undefined);
+      await page.waitForTimeout(1200);
+      tabClicked = await clickManufacturerStatusTabWhenReady(page, tabLabel);
+    }
+  }
+
+  if (!tabClicked) {
+    throw new Error(`Could not find manufacturer status tab: ${tabLabel}`);
+  }
+
+  await page.waitForTimeout(800);
+}
+
+function parseManufacturerPmkCategoryIdFromHtml(html) {
+  const text = String(html || '');
+  const fromManufacturerCategory = text.match(
+    /"manufacturerCategoryId":(\d+),"manufacturerCategoryName":"Plastic Model Kits"/,
+  );
+  if (fromManufacturerCategory) {
+    return String(fromManufacturerCategory[1]);
+  }
+
+  const fromCategories = text.match(/\{"id":(\d+),"name":"Plastic Model Kits"/);
+  if (fromCategories) {
+    return String(fromCategories[1]);
+  }
+
+  return null;
+}
+
+async function resolveManufacturerPmkCategoryId(page) {
+  for (const filterTab of ['CATEGORY', 'BRAND', 'SERIES']) {
+    const items = await scrapeManufacturerSidebarFilterItems(page, filterTab);
+    const hit = items.find(
+      (item) => normalizeManufacturerFilterName(item.name) === normalizeManufacturerFilterName('Plastic Model Kits'),
+    );
+    if (hit?.category_id) {
+      return String(hit.category_id);
+    }
+  }
+
+  const html = await page.content().catch(() => '');
+  const fromHtml = parseManufacturerPmkCategoryIdFromHtml(html);
+  if (fromHtml) {
+    return fromHtml;
+  }
+
+  const selected = await findAndSelectManufacturerFilter(page, 'CATEGORY', 'Plastic Model Kits');
+  if (!selected) {
+    return null;
+  }
+
+  await page.waitForTimeout(1000);
+
+  const urlIds = [...page.url().matchAll(/manufacturerCategoryId=(\d+)/g)].map((match) => match[1]);
+  if (urlIds.length > 0) {
+    return String(urlIds[urlIds.length - 1]);
+  }
+
+  const fromChecked = await page
+    .evaluate(() => {
+      const checked = document.querySelector(
+        'button[role="checkbox"][data-state="checked"], button[role="checkbox"][aria-checked="true"], input[type="checkbox"]:checked',
+      );
+      const id = checked?.getAttribute('id') || '';
+      const match = id.match(/^(category|brand|series)-(\d+)$/);
+      return match ? match[2] : null;
+    })
+    .catch(() => null);
+  if (fromChecked) {
+    return String(fromChecked);
+  }
+
+  const htmlAfter = await page.content().catch(() => '');
+  return parseManufacturerPmkCategoryIdFromHtml(htmlAfter);
+}
+
+async function resolveManufacturerCategoryFilterId(page, filterName) {
+  for (const filterTab of ['CATEGORY', 'BRAND', 'SERIES']) {
+    const items = await scrapeManufacturerSidebarFilterItems(page, filterTab);
+    const hit = items.find(
+      (item) => normalizeManufacturerFilterName(item.name) === normalizeManufacturerFilterName(filterName),
+    );
+    if (hit?.category_id) {
+      return String(hit.category_id);
+    }
+  }
+
+  const selected = await findAndSelectManufacturerFilter(page, 'CATEGORY', filterName);
+  if (!selected) {
+    return null;
+  }
+
+  await page.waitForTimeout(600);
+  return page
+    .evaluate(() => {
+      const checked = document.querySelector(
+        'button[role="checkbox"][data-state="checked"], button[role="checkbox"][aria-checked="true"]',
+      );
+      const id = checked?.getAttribute('id') || '';
+      const match = id.match(/^(category|brand|series)-(\d+)$/);
+      return match ? match[2] : null;
+    })
+    .catch(() => null);
+}
+
 async function scrapeManufacturerSidebarFilterItems(page, filterTab) {
   const tabClicked = await clickManufacturerSidebarFilterTab(page, filterTab);
   if (!tabClicked) {
+    // eslint-disable-next-line no-console
+    console.log(`[plamod] sidebar filter tab click failed tab=${filterTab}`);
     return [];
   }
 
   await scrollManufacturerSidebarFilters(page);
 
   await page.waitForTimeout(500);
+
+  const labelCount = await page
+    .evaluate(
+      () =>
+        document.querySelectorAll(
+          'label[for^="category-"], label[for^="brand-"], label[for^="series-"], span[title]',
+        ).length,
+    )
+    .catch(() => 0);
+  // eslint-disable-next-line no-console
+  console.log(`[plamod] sidebar dom labels tab=${filterTab} count=${labelCount}`);
 
   return page
     .evaluate(() => {
@@ -1525,19 +1852,20 @@ async function scrapeManufacturerSidebarFilterItems(page, filterTab) {
           .map((node) => norm(node.textContent || ''))
           .filter((text) => /^\d+$/.test(text))
           .map((text) => Number.parseInt(text, 10));
+        const instockCount = Number.isFinite(badges[0]) ? badges[0] : null;
         return {
+          instock_count: instockCount,
           preorder_count: Number.isFinite(badges[0]) ? badges[0] : null,
           other_count: Number.isFinite(badges[1]) ? badges[1] : null,
         };
       };
 
-      const ingestSidebarRow = (rowRoot) => {
-        const sidebar = rowRoot?.closest('.overflow-y-auto');
-        if (!sidebar) {
-          return;
-        }
+      const idPrefixes = ['series-', 'category-', 'brand-'];
 
-        const label = rowRoot.querySelector('label[title], label[for^="series-"], label[for^="category-"]');
+      const ingestSidebarRow = (rowRoot) => {
+        const label = rowRoot.querySelector(
+          'label[title], label[for^="series-"], label[for^="category-"], label[for^="brand-"]',
+        );
         const span = rowRoot.querySelector('span[title], span.text-sm');
         let name = norm(label?.getAttribute('title') || span?.getAttribute('title') || label?.textContent || span?.textContent || '');
         name = name.replace(/\s+\d+(?:\s+\d+)?\s*$/u, '').trim();
@@ -1546,12 +1874,47 @@ async function scrapeManufacturerSidebarFilterItems(page, filterTab) {
         }
         seen.add(name);
 
+        const forAttr = String(label?.getAttribute('for') || '');
+        const idMatch = forAttr.match(/^(category|brand|series)-(\d+)$/);
         const rowWrap = rowRoot.closest('.flex.items-center.justify-between') || rowRoot.parentElement;
-        out.push({ name, ...parseBadgeNumbers(rowWrap) });
+        out.push({
+          name,
+          category_id: idMatch ? idMatch[2] : null,
+          id_prefix: idMatch ? idMatch[1] : null,
+          ...parseBadgeNumbers(rowWrap),
+        });
       };
 
-      document.querySelectorAll('label[for^="series-"], label[for^="category-"]').forEach((label) => {
+      for (const prefix of idPrefixes) {
+        document.querySelectorAll(`label[for^="${prefix}"]`).forEach((label) => {
+          ingestSidebarRow(label.closest('.flex.items-center') || label.parentElement);
+        });
+      }
+
+      document.querySelectorAll('label[for^="series-"], label[for^="category-"], label[for^="brand-"]').forEach((label) => {
         ingestSidebarRow(label.closest('.flex.items-center') || label.parentElement);
+      });
+
+      document.querySelectorAll('span[title]').forEach((span) => {
+        const row = span.closest('.flex.items-center.justify-between, .flex.items-center.space-x-2, .flex.items-center');
+        if (!row) {
+          return;
+        }
+        const name = norm(span.getAttribute('title') || span.textContent || '').replace(/\s+\d+(?:\s+\d+)?\s*$/u, '').trim();
+        if (!name || seen.has(name)) {
+          return;
+        }
+        seen.add(name);
+        const label = row.querySelector('label[for^="category-"], label[for^="brand-"], label[for^="series-"]');
+        const forAttr = String(label?.getAttribute('for') || '');
+        const idMatch = forAttr.match(/^(category|brand|series)-(\d+)$/);
+        const rowWrap = row.closest('.flex.items-center.justify-between') || row.parentElement;
+        out.push({
+          name,
+          category_id: idMatch ? idMatch[2] : null,
+          id_prefix: idMatch ? idMatch[1] : null,
+          ...parseBadgeNumbers(rowWrap),
+        });
       });
 
       document.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
@@ -1629,6 +1992,42 @@ function createManufacturerSkuCollector() {
       rowsBySku.set(sku, row);
     }
 
+    const pricedSkuMatches = [
+      ...text.matchAll(
+        /"sku"\s*:\s*"([^"]+)"[\s\S]{0,2000}?"(?:stockPrice|stock_price|priceStock|inStockPrice|in_stock_price|unitPrice|listPrice|retailPrice|price)"\s*:\s*"?([0-9]+(?:\.[0-9]{1,2})?)"?/gi,
+      ),
+    ];
+    for (const match of pricedSkuMatches) {
+      const sku = String(match[1] || '').trim();
+      const price = String(match[2] || '').trim();
+      if (!sku || !price) {
+        continue;
+      }
+      const row = rowsBySku.get(sku) || { sku };
+      if (!String(row.price_stock || '').trim()) {
+        row.price_stock = price;
+      }
+      rowsBySku.set(sku, row);
+    }
+
+    const stockPriceFieldMatches = [
+      ...text.matchAll(
+        /"(?:stockPrice|stock_price|inStockPrice|in_stock_price|priceStock)"\s*:\s*"?([0-9]+(?:\.[0-9]{1,2})?)"?[\s\S]{0,400}?"sku"\s*:\s*"([^"]+)"/gi,
+      ),
+    ];
+    for (const match of stockPriceFieldMatches) {
+      const price = String(match[1] || '').trim();
+      const sku = String(match[2] || '').trim();
+      if (!sku || !price) {
+        continue;
+      }
+      const row = rowsBySku.get(sku) || { sku };
+      if (!String(row.price_stock || '').trim()) {
+        row.price_stock = price;
+      }
+      rowsBySku.set(sku, row);
+    }
+
     const hrefMatches = [...text.matchAll(/\/retailer\/products\/([0-9A-Za-z_-]+)/g)];
     for (const match of hrefMatches) {
       const sku = String(match[1] || '').trim();
@@ -1657,6 +2056,7 @@ function attachPlamodNetworkCapture(page, skuCollector = null) {
 
     const contentType = response.headers()['content-type'] || '';
     let bodyPreview = '';
+    let bodyFull = '';
     try {
       if (
         contentType.includes('json') ||
@@ -1665,6 +2065,7 @@ function attachPlamodNetworkCapture(page, skuCollector = null) {
         contentType.includes('text/x-component')
       ) {
         const fullBody = await response.text();
+        bodyFull = fullBody.length <= 8_000_000 ? fullBody : '';
         skuCollector?.ingestBody(fullBody);
         bodyPreview = fullBody.slice(0, 1200);
       }
@@ -1677,6 +2078,7 @@ function attachPlamodNetworkCapture(page, skuCollector = null) {
       url,
       content_type: contentType,
       body_preview: bodyPreview,
+      body_full: bodyFull,
     });
   });
 
@@ -1705,15 +2107,25 @@ function extractManufacturerPreorderCardsFromDocument() {
     }
 
     let container = anchor;
-    for (let depth = 0; depth < 14; depth += 1) {
+    let cardContainer = anchor;
+    for (let depth = 0; depth < 18; depth += 1) {
       if (!container.parentElement) {
         break;
       }
       container = container.parentElement;
-      if ((container.textContent || '').includes('SKU:')) {
+      const containerText = norm(container.textContent || '');
+      if (containerText.includes('SKU:')) {
+        cardContainer = container;
+      }
+      if (containerText.includes('SKU:') && /IN[- ]?STOCK/i.test(containerText) && /PRICE/i.test(containerText)) {
+        cardContainer = container;
+        break;
+      }
+      if (container.tagName === 'MAIN' || container.tagName === 'BODY') {
         break;
       }
     }
+    container = cardContainer;
 
     const fields = {};
     container.querySelectorAll('.text-gray-500').forEach((labelNode) => {
@@ -1736,6 +2148,7 @@ function extractManufacturerPreorderCardsFromDocument() {
 
     let pricePreorder = '';
     let quantityPreorder = '';
+    let priceStock = '';
     const preorderHeader = Array.from(container.querySelectorAll('thead td, thead th, td, th')).find((node) =>
       /preorder/i.test(norm(node.textContent)),
     );
@@ -1749,6 +2162,81 @@ function extractManufacturerPreorderCardsFromDocument() {
       const qty = qtyCells.map((n) => norm(n.textContent)).find((v) => /^\d+$/.test(v));
       if (qty) {
         quantityPreorder = qty;
+      }
+    }
+
+    const stockHeader = Array.from(container.querySelectorAll('thead td, thead th, td, th, div, span')).find((node) =>
+      /(?:in[- ]?stock|^stock$|stock price)/i.test(norm(node.textContent)),
+    );
+    if (stockHeader) {
+      const table = stockHeader.closest('table') || stockHeader.closest('[class*="product"], article, li');
+      const priceNode = table?.querySelector('[class*="price"], .font-bold, .text-lg, .text-2xl');
+      if (priceNode) {
+        const parsed = norm(priceNode.textContent).match(/([0-9]+\.[0-9]{2})/);
+        if (parsed?.[1]) {
+          priceStock = parsed[1];
+        }
+      }
+    }
+
+    if (!priceStock) {
+      const inStockBlocks = Array.from(container.querySelectorAll('div, section, aside, td')).filter((el) => {
+        const blockText = norm(el.textContent || '');
+        return blockText.length > 0 && blockText.length < 900 && /IN[- ]?STOCK/i.test(blockText) && /PRICE/i.test(blockText);
+      });
+      for (const block of inStockBlocks) {
+        const hit = norm(block.textContent).match(/PRICE\s*:?\s*\$?\s*([0-9]+\.[0-9]{2})/i);
+        if (hit?.[1]) {
+          priceStock = hit[1];
+          break;
+        }
+      }
+    }
+
+    if (!priceStock) {
+      const containerText = norm(container.textContent || '');
+      const parsedFromCard = containerText.match(
+        /IN[- ]?STOCK[\s\S]{0,500}?PRICE\s*:?\s*\$?\s*([0-9]+\.[0-9]{2})/i,
+      );
+      if (parsedFromCard?.[1]) {
+        priceStock = parsedFromCard[1];
+      }
+    }
+
+    if (!priceStock) {
+      const containerText = norm(container.textContent || '');
+      const stockPriceField = containerText.match(/Stock Price\s*:?\s*\$?\s*([0-9]+\.[0-9]{2})/i);
+      if (stockPriceField?.[1]) {
+        priceStock = stockPriceField[1];
+      }
+    }
+
+    if (!priceStock) {
+      const priceLabels = Array.from(container.querySelectorAll('div, span, p, td, th, label')).filter((node) =>
+        /^PRICE:?$/i.test(norm(node.textContent)),
+      );
+      for (const label of priceLabels) {
+        const blockText = norm(label.closest('div')?.textContent || label.parentElement?.textContent || '');
+        if (/PO\s*PRICE|PREORDER OFFER/i.test(blockText) && !/IN[- ]?STOCK/i.test(blockText)) {
+          continue;
+        }
+        const parentHit = blockText.match(/PRICE\s*:?\s*\$?\s*([0-9]+\.[0-9]{2})/i);
+        if (parentHit?.[1]) {
+          priceStock = parentHit[1];
+          break;
+        }
+        let sibling = label.nextElementSibling;
+        for (let hop = 0; hop < 4 && sibling; hop += 1) {
+          const siblingHit = norm(sibling.textContent).match(/\$?\s*([0-9]+\.[0-9]{2})/);
+          if (siblingHit?.[1]) {
+            priceStock = siblingHit[1];
+            break;
+          }
+          sibling = sibling.nextElementSibling;
+        }
+        if (priceStock) {
+          break;
+        }
       }
     }
 
@@ -1766,8 +2254,8 @@ function extractManufacturerPreorderCardsFromDocument() {
       etaDate = norm(eta[1]);
     }
 
-    const stockPrice = fields['Stock Price'] || fields.Stock || '';
-    const priceStock = stockPrice ? norm(stockPrice).replace(/[^0-9.]/g, '') : '';
+    const stockPrice = fields['Stock Price'] || fields.Stock || priceStock || '';
+    const priceStockValue = stockPrice ? norm(stockPrice).replace(/[^0-9.]/g, '') : '';
 
     seen.add(sku);
     rows.push({
@@ -1778,7 +2266,7 @@ function extractManufacturerPreorderCardsFromDocument() {
       release_date: fields['Release Date'] || fields.Release || '',
       manufacturer,
       category,
-      price_stock: priceStock,
+      price_stock: priceStockValue,
       price_preorder: pricePreorder,
       quantity_preorder: quantityPreorder,
       po_due_date: poDueDate,
@@ -1794,12 +2282,19 @@ async function scrapeManufacturerPreorderRows(page, expectedCount = 0, networkRo
   /** @type {Map<string, Record<string, string>>} */
   const rowsBySku = networkRowsBySku || new Map();
   let staleRounds = 0;
+  const target = Math.max(0, Number(expectedCount) || 0);
+  const baseStaleRounds = target > 500 ? 40 : target > 100 ? 20 : 16;
 
   await page.evaluate(() => window.scrollTo(0, 0)).catch(() => undefined);
   await page.waitForTimeout(500);
 
+  let lastLinkCount = 0;
+
   for (let round = 0; round < 320; round += 1) {
     const batch = await page.evaluate(extractManufacturerPreorderCardsFromDocument);
+    const domLinkCount = await page
+      .evaluate(() => document.querySelectorAll('a[href*="/retailer/products/"]').length)
+      .catch(() => 0);
     let newRows = 0;
     for (const row of batch) {
       if (!row?.sku) {
@@ -1813,13 +2308,19 @@ async function scrapeManufacturerPreorderRows(page, expectedCount = 0, networkRo
       }
     }
 
-    if (expectedCount > 0 && rowsBySku.size >= expectedCount) {
+    if (target > 0 && rowsBySku.size >= target) {
       break;
     }
 
-    if (newRows === 0) {
+    const closeToTarget = target > 0 && rowsBySku.size >= Math.floor(target * 0.75) && rowsBySku.size < target;
+    const staleLimit = closeToTarget ? Math.max(baseStaleRounds, 64) : baseStaleRounds;
+
+    const linkDelta = domLinkCount - lastLinkCount;
+    lastLinkCount = domLinkCount;
+
+    if (newRows === 0 && linkDelta <= 0) {
       staleRounds += 1;
-      if (staleRounds >= 16) {
+      if (staleRounds >= staleLimit) {
         break;
       }
     } else {
@@ -1832,12 +2333,15 @@ async function scrapeManufacturerPreorderRows(page, expectedCount = 0, networkRo
         const nodes = document.querySelectorAll('[data-radix-scroll-area-viewport], .overflow-auto, main');
         nodes.forEach((node) => {
           if (node instanceof HTMLElement) {
-            node.scrollTop += Math.max(500, Math.floor(window.innerHeight * 0.85));
+            node.scrollTop += Math.max(800, Math.floor(window.innerHeight * 0.9));
           }
         });
       })
       .catch(() => undefined);
-    await page.waitForTimeout(500);
+    if (expectedCount > 500 && round % 4 === 3) {
+      await page.keyboard.press('End').catch(() => undefined);
+    }
+    await page.waitForTimeout(closeToTarget ? 900 : expectedCount > 500 ? 900 : 500);
   }
 
   return rowsBySku;
@@ -1899,11 +2403,53 @@ function simpleCsvRowsToRecordMap(parsed, csvHeader) {
   return map;
 }
 
-function manufacturerRowNeedsPdpEnrich(row) {
-  return (
-    !String(row?.price_preorder || '').trim() ||
-    !String(row?.image_url || '').trim()
+function manufacturerExportTabIsInStock(tabLabel) {
+  return String(tabLabel || '')
+    .trim()
+    .toLowerCase()
+    .includes('in-stock');
+}
+
+function parseInStockPriceFromCardText(text) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (normalized === '') {
+    return '';
+  }
+
+  const inStockMatch = normalized.match(
+    /IN[- ]?STOCK[\s\S]{0,500}?PRICE\s*:?\s*\$?\s*([0-9]+\.[0-9]{2})/i,
   );
+  if (inStockMatch?.[1]) {
+    return inStockMatch[1];
+  }
+
+  const stockPriceLabel = normalized.match(/Stock Price\s*:?\s*\$?\s*([0-9]+\.[0-9]{2})/i);
+  if (stockPriceLabel?.[1]) {
+    return stockPriceLabel[1];
+  }
+
+  return '';
+}
+
+function isPreorderOnlyPriceBlock(blockText) {
+  const normalized = String(blockText || '').replace(/\s+/g, ' ').trim();
+  if (/IN[- ]?STOCK/i.test(normalized)) {
+    return false;
+  }
+
+  return /PO\s*PRICE|PREORDER OFFER/i.test(normalized);
+}
+
+function manufacturerRowNeedsPdpEnrich(row, tabLabel = 'Preorder') {
+  const needsPrice = manufacturerExportTabIsInStock(tabLabel)
+    ? !String(row?.price_stock || '').trim()
+    : !String(row?.price_preorder || '').trim();
+
+  if (manufacturerExportTabIsInStock(tabLabel)) {
+    return needsPrice;
+  }
+
+  return needsPrice || !String(row?.image_url || '').trim();
 }
 
 function mergeManufacturerRow(existing, patch) {
@@ -1954,32 +2500,77 @@ async function scrapePreorderPdpFields(page, baseUrl, context, sku) {
 
     let pricePreorder = '';
     let quantityPreorder = '';
-    let offerBlock = null;
+    const preorderOffers = [];
+    const offerBlocks = [];
     for (const el of document.querySelectorAll('div')) {
       const blockText = norm(el.textContent || '');
-      if (/PREORDER OFFER/i.test(blockText) && /PO\s*PRICE/i.test(blockText) && blockText.length < 700) {
-        offerBlock = el;
-        break;
+      if (!/PREORDER OFFER/i.test(blockText) || !/PO\s*PRICE/i.test(blockText) || blockText.length >= 700) {
+        continue;
       }
+      const childAlsoMatches = Array.from(el.querySelectorAll('div')).some((child) => {
+        if (child === el) {
+          return false;
+        }
+        const childText = norm(child.textContent || '');
+        return /PREORDER OFFER/i.test(childText) && /PO\s*PRICE/i.test(childText) && childText.length < 700;
+      });
+      if (childAlsoMatches) {
+        continue;
+      }
+      offerBlocks.push(el);
     }
-    if (offerBlock) {
+
+    for (const offerBlock of offerBlocks) {
       const offerText = norm(offerBlock.textContent || '');
+      const offerIdMatch = offerText.match(/OFFER\s+(\d+)/i);
+      const orderedMatch = offerText.match(/ORDERED:\s*(\d+)/i);
+      const etaMatch = offerText.match(/ETA:\s*([A-Za-z]{3,9}\s+\d{1,2})/i);
       const poHit = offerText.match(/PO\s*PRICE\s*\$?\s*([0-9]+\.[0-9]{2})/i);
-      if (poHit?.[1]) {
-        pricePreorder = poHit[1];
-      }
-      const totalLabel = Array.from(offerBlock.querySelectorAll('div, span')).find(
-        (node) => norm(node.textContent) === 'TOTAL',
-      );
-      if (totalLabel) {
-        const qtyNode =
-          totalLabel.previousElementSibling ||
-          totalLabel.parentElement?.querySelector('.text-2xl, .text-xl, .text-3xl, .font-bold, .font-semibold');
-        const qtyText = norm(qtyNode?.textContent || '');
-        if (/^\d+$/.test(qtyText)) {
-          quantityPreorder = qtyText;
+      const closingMatch =
+        offerText.match(/Closing(?:\s+\w+)?\s*\(\s*([A-Za-z]{3,9}\s+\d{1,2})\s*\)/i) ||
+        offerText.match(/Closing(?:\s+\w+)?\s+([A-Za-z]{3,9}\s+\d{1,2})/i);
+      let quantity = orderedMatch?.[1] ? String(parseInt(orderedMatch[1], 10)) : '';
+      if (!quantity) {
+        const totalLabel = Array.from(offerBlock.querySelectorAll('div, span')).find(
+          (node) => norm(node.textContent) === 'TOTAL',
+        );
+        if (totalLabel) {
+          const qtyNode =
+            totalLabel.previousElementSibling ||
+            totalLabel.parentElement?.querySelector('.text-2xl, .text-xl, .text-3xl, .font-bold, .font-semibold');
+          const qtyText = norm(qtyNode?.textContent || '');
+          if (/^\d+$/.test(qtyText)) {
+            quantity = qtyText;
+          }
         }
       }
+      if (!/^\d+$/.test(quantity)) {
+        quantity = '0';
+      }
+      preorderOffers.push({
+        offer_id: offerIdMatch?.[1] || '',
+        quantity,
+        eta_date: etaMatch?.[1] || '',
+        po_due_date: closingMatch?.[1] || '',
+        price_preorder: poHit?.[1] || '',
+      });
+    }
+
+    const firstOffer = preorderOffers.find((offer) => Number(offer.quantity) > 0) || preorderOffers[0];
+    if (firstOffer) {
+      pricePreorder = String(firstOffer.price_preorder || '');
+      quantityPreorder = String(firstOffer.quantity || '');
+      if (!etaDate && firstOffer.eta_date) {
+        etaDate = firstOffer.eta_date;
+      }
+      if (!poDueDate && firstOffer.po_due_date) {
+        poDueDate = firstOffer.po_due_date;
+      }
+    }
+
+    const committedQty = preorderOffers.reduce((sum, offer) => sum + Number(offer.quantity || 0), 0);
+    if (committedQty > 0) {
+      quantityPreorder = String(committedQty);
     }
 
     if (!pricePreorder) {
@@ -2011,10 +2602,26 @@ async function scrapePreorderPdpFields(page, baseUrl, context, sku) {
       }
     }
 
+    let stockPrice = '';
+    const inStockBlocks = Array.from(document.querySelectorAll('div, section, aside')).filter((el) => {
+      const blockText = norm(el.textContent || '');
+      return blockText.length > 0 && blockText.length < 1200 && /IN[- ]?STOCK/i.test(blockText) && /PRICE/i.test(blockText);
+    });
+    for (const block of inStockBlocks) {
+      const hit = norm(block.textContent).match(/PRICE\s*:?\s*\$?\s*([0-9]+\.[0-9]{2})/i);
+      if (hit?.[1]) {
+        stockPrice = hit[1];
+        break;
+      }
+    }
+
     const stockMatch =
-      text.match(/Stock Price[^$]{0,40}\$\s*([0-9]+\.[0-9]{2})/i) || text.match(/Stock Price\s*\$?\s*([0-9]+(?:\.[0-9]{2})?)/i);
-    const stockPrice =
-      (stockMatch?.[1] || '') || (fields['Stock Price'] ? norm(fields['Stock Price']).replace(/[^0-9.]/g, '') : '');
+      stockPrice ||
+      (text.match(/IN[- ]?STOCK[\s\S]{0,500}?PRICE\s*:?\s*\$?\s*([0-9]+\.[0-9]{2})/i)?.[1] || '') ||
+      (text.match(/Stock Price[^$]{0,40}\$\s*([0-9]+\.[0-9]{2})/i)?.[1] || '') ||
+      (text.match(/Stock Price\s*\$?\s*([0-9]+(?:\.[0-9]{2})?)/i)?.[1] || '');
+    stockPrice =
+      stockMatch || (fields['Stock Price'] ? norm(fields['Stock Price']).replace(/[^0-9.]/g, '') : '');
     const releaseMatch = text.match(/Release Date\s+([A-Za-z]+\s+\d{1,2},?\s+\d{4})/i);
     const barcodeMatch = text.match(/Barcode\s+(\d{10,14})/i);
     const imageUrl = norm(document.querySelector('img[src*="plamod"], img[src*="images.plamod"]')?.getAttribute('src') || '');
@@ -2035,6 +2642,7 @@ async function scrapePreorderPdpFields(page, baseUrl, context, sku) {
       quantity_preorder: quantityPreorder,
       po_due_date: poDueDate,
       eta_date: etaDate,
+      preorder_offers: preorderOffers,
       image_url: imageUrl,
     };
   });
@@ -2048,9 +2656,10 @@ async function scrapePreorderPdpFields(page, baseUrl, context, sku) {
   return patch;
 }
 
-function manufacturerRowEnrichPriority(row) {
+function manufacturerRowEnrichPriority(row, tabLabel = 'Preorder') {
   let score = 0;
-  if (!String(row?.price_preorder || '').trim()) {
+  const priceField = manufacturerExportTabIsInStock(tabLabel) ? 'price_stock' : 'price_preorder';
+  if (!String(row?.[priceField] || '').trim()) {
     score += 10;
   }
   if (!String(row?.image_url || '').trim()) {
@@ -2065,12 +2674,24 @@ function manufacturerRowEnrichPriority(row) {
   return score;
 }
 
-async function enrichSparseManufacturerRowsFromPdp(page, baseUrl, context, rowsBySku) {
-  const maxEnrich = Number.parseInt(process.env.PLAMOD_MANUFACTURER_PDP_ENRICH_MAX || '30', 10);
+async function enrichSparseManufacturerRowsFromPdp(
+  page,
+  baseUrl,
+  context,
+  rowsBySku,
+  tabLabel = 'Preorder',
+  onProgress = null,
+  sessionRecovery = null,
+) {
+  const browser = { page, context };
+  const inStockTab = manufacturerExportTabIsInStock(tabLabel);
+  const maxEnrich = inStockTab
+    ? Number.parseInt(process.env.PLAMOD_INSTOCK_PDP_ENRICH_MAX || '120', 10)
+    : Number.parseInt(process.env.PLAMOD_MANUFACTURER_PDP_ENRICH_MAX || '30', 10);
   const candidates = [...rowsBySku.entries()]
-    .filter(([, row]) => manufacturerRowNeedsPdpEnrich(row))
+    .filter(([, row]) => manufacturerRowNeedsPdpEnrich(row, tabLabel))
     .sort(([skuA, rowA], [skuB, rowB]) => {
-      const scoreDiff = manufacturerRowEnrichPriority(rowB) - manufacturerRowEnrichPriority(rowA);
+      const scoreDiff = manufacturerRowEnrichPriority(rowB, tabLabel) - manufacturerRowEnrichPriority(rowA, tabLabel);
       if (scoreDiff !== 0) {
         return scoreDiff;
       }
@@ -2079,8 +2700,42 @@ async function enrichSparseManufacturerRowsFromPdp(page, baseUrl, context, rowsB
 
   let enriched = 0;
   let consecutiveLoginFailures = 0;
-  const enrichBudgetMs = Number.parseInt(process.env.PLAMOD_MANUFACTURER_PDP_ENRICH_BUDGET_MS || '120000', 10);
+  let consecutiveBrowserClosed = 0;
+  const enrichBudgetMs = inStockTab
+    ? Number.parseInt(process.env.PLAMOD_INSTOCK_PDP_ENRICH_BUDGET_MS || '600000', 10)
+    : Number.parseInt(process.env.PLAMOD_MANUFACTURER_PDP_ENRICH_BUDGET_MS || '120000', 10);
   const enrichStarted = Date.now();
+
+  async function reacquireBrowserSession() {
+    if (!sessionRecovery) {
+      return false;
+    }
+    // eslint-disable-next-line no-console
+    console.log('[plamod] pdp enrich reacquiring browser session after crash');
+    const session = await reacquireManufacturerInstockExportSession(
+      sessionRecovery.baseUrl,
+      sessionRecovery.profileDir,
+      sessionRecovery.manufacturerId,
+    );
+    browser.page = session.page;
+    browser.context = session.context;
+    consecutiveBrowserClosed = 0;
+    return true;
+  }
+
+  async function scrapePdpPatch(sku) {
+    return scrapePreorderPdpFields(browser.page, baseUrl, browser.context, sku);
+  }
+
+  if (candidates.length > 0 && (await looksLikeSignInPage(browser.page))) {
+    try {
+      await ensureManufacturerSession(browser.page, baseUrl, browser.context);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.log(`[plamod] pdp enrich pre-login failed msg=${String(e?.message || 'unknown')}`);
+    }
+  }
+
   for (const [sku, row] of candidates) {
     if (enriched >= maxEnrich) {
       break;
@@ -2090,28 +2745,82 @@ async function enrichSparseManufacturerRowsFromPdp(page, baseUrl, context, rowsB
       console.log(`[plamod] pdp enrich stopping early budget_ms=${enrichBudgetMs}`);
       break;
     }
+
     try {
-      const patch = await scrapePreorderPdpFields(page, baseUrl, context, sku);
+      let patch;
+      try {
+        patch = await scrapePdpPatch(sku);
+      } catch (firstError) {
+        const message = String(firstError?.message || 'unknown');
+        if (isPlaywrightBrowserClosedError(firstError)) {
+          consecutiveBrowserClosed += 1;
+          if (consecutiveBrowserClosed <= 3 && (await reacquireBrowserSession())) {
+            patch = await scrapePdpPatch(sku);
+          } else {
+            throw firstError;
+          }
+        } else if (/login failed|sign-in/i.test(message)) {
+          await ensureManufacturerSession(browser.page, baseUrl, browser.context);
+          patch = await scrapePdpPatch(sku);
+        } else {
+          await browser.page.waitForTimeout(800).catch(() => undefined);
+          patch = await scrapePdpPatch(sku);
+        }
+      }
+
       consecutiveLoginFailures = 0;
+      consecutiveBrowserClosed = 0;
       const merged = mergeManufacturerRow(row, patch);
       rowsBySku.set(sku, merged);
-      if (!manufacturerRowNeedsPdpEnrich(merged)) {
+      if (!manufacturerRowNeedsPdpEnrich(merged, tabLabel)) {
         enriched += 1;
+        if (typeof onProgress === 'function') {
+          onProgress(enriched, Math.min(candidates.length, maxEnrich));
+        }
+        const price = manufacturerExportTabIsInStock(tabLabel)
+          ? merged.price_stock || '-'
+          : merged.price_preorder || '-';
         // eslint-disable-next-line no-console
-        console.log(
-          `[plamod] pdp enrich ok sku=${sku} price=${merged.price_preorder || '-'} qty=${merged.quantity_preorder || '-'}`,
-        );
+        console.log(`[plamod] pdp enrich ok sku=${sku} price=${price} qty=${merged.quantity_preorder || '-'}`);
       } else {
+        const price = manufacturerExportTabIsInStock(tabLabel)
+          ? patch.price_stock || '-'
+          : patch.price_preorder || '-';
         // eslint-disable-next-line no-console
-        console.log(
-          `[plamod] pdp enrich sparse sku=${sku} price=${patch.price_preorder || '-'} qty=${patch.quantity_preorder || '-'}`,
-        );
+        console.log(`[plamod] pdp enrich sparse sku=${sku} price=${price} qty=${patch.quantity_preorder || '-'}`);
       }
     } catch (e) {
       const message = String(e?.message || 'unknown');
       // eslint-disable-next-line no-console
       console.log(`[plamod] pdp enrich failed sku=${sku} msg=${message}`);
-      if (/login failed|sign-in/i.test(message)) {
+      if (isPlaywrightBrowserClosedError(e)) {
+        consecutiveBrowserClosed += 1;
+        if (consecutiveBrowserClosed <= 3 && (await reacquireBrowserSession())) {
+          try {
+            const patch = await scrapePdpPatch(sku);
+            consecutiveBrowserClosed = 0;
+            const merged = mergeManufacturerRow(row, patch);
+            rowsBySku.set(sku, merged);
+            if (!manufacturerRowNeedsPdpEnrich(merged, tabLabel)) {
+              enriched += 1;
+              if (typeof onProgress === 'function') {
+                onProgress(enriched, Math.min(candidates.length, maxEnrich));
+              }
+              // eslint-disable-next-line no-console
+              console.log(`[plamod] pdp enrich ok sku=${sku} price=${merged.price_stock || merged.price_preorder || '-'} qty=${merged.quantity_preorder || '-'}`);
+            }
+            continue;
+          } catch (retryError) {
+            // eslint-disable-next-line no-console
+            console.log(`[plamod] pdp enrich failed sku=${sku} msg=${String(retryError?.message || 'unknown')}`);
+          }
+        }
+        if (consecutiveBrowserClosed >= 3) {
+          // eslint-disable-next-line no-console
+          console.log('[plamod] pdp enrich stopping early after browser crash cascade');
+          break;
+        }
+      } else if (/login failed|sign-in/i.test(message)) {
         consecutiveLoginFailures += 1;
         if (consecutiveLoginFailures >= 3) {
           // eslint-disable-next-line no-console
@@ -2128,6 +2837,8 @@ async function enrichSparseManufacturerRowsFromPdp(page, baseUrl, context, rowsB
   console.log(
     `[plamod] manufacturer pdp enrich done enriched=${enriched} candidates=${candidates.length} skipped=${Math.max(0, candidates.length - enriched)} total=${rowsBySku.size}`,
   );
+
+  return browser;
 }
 
 async function tryDownloadCsvViaCapturedResponses(page, captured, destPath) {
@@ -2135,13 +2846,14 @@ async function tryDownloadCsvViaCapturedResponses(page, captured, destPath) {
     if (!/csv|export/i.test(entry.url) && !entry.content_type.includes('csv')) {
       continue;
     }
-    if (!entry.body_preview || entry.body_preview.length < 20) {
+    const body = entry.body_full || entry.body_preview || '';
+    if (body.length < 20) {
       continue;
     }
-    if (!entry.body_preview.includes('SKU') && !entry.body_preview.includes('Product Name')) {
+    if (!body.includes('SKU') && !body.includes('Product Name')) {
       continue;
     }
-    fs.writeFileSync(destPath, entry.body_preview, 'utf8');
+    fs.writeFileSync(destPath, body, 'utf8');
     return true;
   }
   return false;
@@ -2586,6 +3298,7 @@ async function runManufacturerPreorderExportOnPage(page, context, opts) {
     seriesName,
     categoryLineName,
     categoryLabel,
+    filterTabHint = '',
     baseUrl,
     debugSku,
     csvPath,
@@ -2617,6 +3330,12 @@ async function runManufacturerPreorderExportOnPage(page, context, opts) {
   await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => undefined);
   await page.waitForTimeout(800);
   if (await looksLikeSignInPage(page)) {
+    await ensureLoggedIn(page, baseUrl, context, debugSku);
+    await gotoWithTimeout(page, manufacturerUrl, 45_000);
+    await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => undefined);
+    await page.waitForTimeout(800);
+  }
+  if (await looksLikeSignInPage(page)) {
     throw new Error('Plamod login failed on manufacturer page.');
   }
 
@@ -2633,20 +3352,37 @@ async function runManufacturerPreorderExportOnPage(page, context, opts) {
 
   await clearAllManufacturerFilters(page);
 
-  if (seriesName) {
-    const seriesOk = await ensureManufacturerSeries(page, seriesName);
-    if (!seriesOk) {
+  if (manufacturerExportTabIsInStock(tabLabel) && !seriesName && !categoryLineName) {
+    await ensureManufacturerPlasticModelKitsOnly(page);
+  }
+
+  if (seriesName || categoryLineName) {
+    let selected = false;
+    if (filterTabHint === 'BRAND') {
+      selected = await ensureManufacturerBrand(page, seriesName || categoryLineName);
+    } else if (filterTabHint === 'CATEGORY') {
+      selected = await ensureManufacturerCategoryLine(page, categoryLineName || seriesName);
+    } else if (seriesName) {
+      selected = await ensureManufacturerSeries(page, seriesName);
+      if (!selected) {
+        selected = await ensureManufacturerBrand(page, seriesName);
+      }
+      if (!selected) {
+        selected = await ensureManufacturerCategoryLine(page, seriesName);
+      }
+    } else if (categoryLineName) {
+      selected = await ensureManufacturerCategoryLine(page, categoryLineName);
+    }
+    if (!selected) {
       const debug = await writeDebugSnapshot(page, debugSku, 'missing-series');
       return {
         ok: false,
-        error_message: `Could not select manufacturer series filter: ${seriesName}`,
+        error_message: `Could not select manufacturer filter: ${seriesName || categoryLineName}`,
         debug,
         manufacturer_url: manufacturerUrl,
         duration_ms: Date.now() - started,
       };
     }
-  } else if (categoryLineName) {
-    await ensureManufacturerCategoryLine(page, categoryLineName);
   } else if (categoryLabel) {
     await ensureManufacturerCategoryLine(page, categoryLabel);
   }
@@ -2690,6 +3426,11 @@ async function runManufacturerPreorderExportOnPage(page, context, opts) {
     exportMode = 'captured_response';
   }
 
+  // eslint-disable-next-line no-console
+  console.log(
+    `[plamod] manufacturer export csv_rows=${parsed.rows.size} expected=${expectedCount} mode=${exportMode}`,
+  );
+
   /** @type {Map<string, Record<string, string>>} */
   let rowsBySku = new Map();
 
@@ -2715,10 +3456,47 @@ async function runManufacturerPreorderExportOnPage(page, context, opts) {
     rowsBySku = simpleCsvRowsToRecordMap(parsed, csvHeader);
   }
 
-  await enrichSparseManufacturerRowsFromPdp(page, baseUrl, context, rowsBySku);
+  for (const [sku, netRow] of skuCollector.rowsBySku.entries()) {
+    const existing = rowsBySku.get(sku) || { sku };
+    rowsBySku.set(sku, mergeManufacturerRow(existing, netRow));
+  }
+
+  if (expectedCount > 0 && rowsBySku.size < expectedCount) {
+    await scrapeManufacturerPreorderRows(page, expectedCount, rowsBySku);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[plamod] manufacturer listing scrape fill shortfall expected=${expectedCount} got=${rowsBySku.size}`,
+    );
+  }
+
+  if (manufacturerExportTabIsInStock(tabLabel)) {
+    const missingStockPrice = [...rowsBySku.values()].some((row) => !String(row?.price_stock || '').trim());
+    if (missingStockPrice) {
+      await scrapeManufacturerPreorderRows(page, expectedCount, rowsBySku);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[plamod] in-stock listing scrape merged rows=${rowsBySku.size} with_stock=${[...rowsBySku.values()].filter((row) => String(row?.price_stock || '').trim()).length}`,
+      );
+    }
+  }
+
+  const skipPdpEnrich =
+    String(process.env.PLAMOD_SKIP_PDP_ENRICH || '').toLowerCase() === 'true' ||
+    String(process.env.PLAMOD_SKIP_PDP_ENRICH || '') === '1';
+  const catalogIncomplete = expectedCount > 0 && rowsBySku.size < Math.floor(expectedCount * 0.95);
+
+  if (!skipPdpEnrich && !catalogIncomplete) {
+    await enrichSparseManufacturerRowsFromPdp(page, baseUrl, context, rowsBySku, tabLabel);
+    exportMode = `${exportMode}+pdp_enrich`;
+  } else if (catalogIncomplete) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[plamod] skipping pdp enrich until catalog complete got=${rowsBySku.size} expected=${expectedCount}`,
+    );
+  }
+
   fs.writeFileSync(csvPath, manufacturerRowsToCsv(csvHeader, rowsBySku), 'utf8');
   parsed = parseSimpleCsvFile(csvPath);
-  exportMode = `${exportMode}+pdp_enrich`;
 
   const visible = parsed.rows.size;
   if (parsed.rows.size === 0) {
@@ -2870,6 +3648,1334 @@ async function exportManufacturerPreordersCsv(opts = {}) {
         error_message: String(e?.message || 'Unknown error'),
         duration_ms: Date.now() - started,
       };
+    }
+  });
+}
+
+const MANUFACTURER_CSV_HEADER = [
+  'SKU',
+  'Barcode',
+  'Product Name',
+  'Series',
+  'Release Date',
+  'Manufacturer',
+  'Category',
+  'Price Stock',
+  'Price Preorder',
+  'Price Backorder',
+  'Quantity Preorder',
+  'PO Due Date',
+  'ETA Date',
+  'Image URL',
+];
+
+/**
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').BrowserContext} context
+ * @param {{
+ *   expectedCount?: number,
+ *   tempCsvPath: string,
+ *   captured?: Array<{url: string, content_type: string, body_preview: string, body_full?: string}>,
+ *   skuCollector?: ReturnType<typeof createManufacturerSkuCollector>,
+ *   tabLabel?: string,
+ * }} opts
+ * @returns {Promise<Map<string, Record<string, string>>>}
+ */
+/**
+ * Collect in-stock rows for one sidebar filter using the same path as per-series export.
+ *
+ * @param {import('playwright').Page} page
+ * @param {import('playwright').BrowserContext} context
+ * @param {{
+ *   baseUrl: string,
+ *   manufacturerId: string,
+ *   tabLabel: string,
+ *   filterName: string,
+ *   filterTabHint?: string,
+ *   filterCategoryId?: string|null,
+ *   pmkCategoryId?: string|null,
+ *   expectedCount: number,
+ *   tempCsvPath: string,
+ *   skuCollector: ReturnType<typeof createManufacturerSkuCollector>,
+ *   captured: Array<{url: string, content_type: string, body_preview: string, body_full?: string}>,
+ * }} opts
+ * @returns {Promise<Map<string, Record<string, string>>>}
+ */
+async function ensureManufacturerSession(page, baseUrl, context) {
+  if (!(await looksLikeSignInPage(page))) {
+    return;
+  }
+
+  await ensureLoggedInQuick(page, baseUrl, context);
+}
+
+async function scrapeManufacturerListingRowsFast(page, expectedCount = 0, networkRowsBySku = null) {
+  /** @type {Map<string, Record<string, string>>} */
+  const rowsBySku = networkRowsBySku || new Map();
+  let staleRounds = 0;
+  const target = Math.max(0, Number(expectedCount) || 0);
+  const maxRounds =
+    target > 0 ? Math.min(400, Math.ceil(target / 2) + 24) : 48;
+  const maxStaleRounds =
+    target > 500 ? 40 : target > 100 ? 20 : target > 0 ? 16 : 8;
+  const scrollWaitMs = target > 500 ? 500 : 400;
+
+  await page.evaluate(() => window.scrollTo(0, 0)).catch(() => undefined);
+  await page.waitForTimeout(300);
+
+  let lastLinkCount = 0;
+
+  for (let round = 0; round < maxRounds; round += 1) {
+    const batch = await page.evaluate(extractManufacturerPreorderCardsFromDocument);
+    const domLinkCount = await page
+      .evaluate(() => document.querySelectorAll('a[href*="/retailer/products/"]').length)
+      .catch(() => 0);
+    let newRows = 0;
+    for (const row of batch) {
+      if (!row?.sku) {
+        continue;
+      }
+      const hadSku = rowsBySku.has(row.sku);
+      const existing = rowsBySku.get(row.sku) || {};
+      rowsBySku.set(row.sku, { ...existing, ...row });
+      if (!hadSku) {
+        newRows += 1;
+      }
+    }
+
+    if (target > 0 && rowsBySku.size >= target) {
+      break;
+    }
+
+    const nearingPlateau = target > 100 && rowsBySku.size >= 80 && rowsBySku.size < target;
+    const closeToTarget = target > 0 && rowsBySku.size >= Math.floor(target * 0.75) && rowsBySku.size < target;
+    const staleLimit = closeToTarget
+      ? Math.max(maxStaleRounds, 64)
+      : nearingPlateau
+        ? Math.max(maxStaleRounds, 48)
+        : maxStaleRounds;
+
+    const linkDelta = domLinkCount - lastLinkCount;
+    lastLinkCount = domLinkCount;
+
+    if (newRows === 0 && linkDelta <= 0) {
+      staleRounds += 1;
+      if (staleRounds >= staleLimit) {
+        break;
+      }
+    } else {
+      staleRounds = 0;
+    }
+
+    const waitMs = closeToTarget ? Math.max(scrollWaitMs, 900) : nearingPlateau ? Math.max(scrollWaitMs, 800) : scrollWaitMs;
+
+    await page
+      .evaluate(() => {
+        window.scrollBy(0, Math.max(500, Math.floor(window.innerHeight * 0.85)));
+        document.querySelectorAll('[data-radix-scroll-area-viewport], .overflow-auto, main').forEach((node) => {
+          if (node instanceof HTMLElement) {
+            node.scrollTop += Math.max(700, Math.floor(window.innerHeight * 0.85));
+          }
+        });
+      })
+      .catch(() => undefined);
+    await page.waitForTimeout(waitMs);
+  }
+
+  return rowsBySku;
+}
+
+async function waitForListingApiResponse(page, timeoutMs = 6000) {
+  await page
+    .waitForResponse(
+      (response) =>
+        /plamod\.com/i.test(response.url()) &&
+        /(manufacturer|product|search|graphql|retailer)/i.test(response.url()) &&
+        response.status() === 200,
+      { timeout: timeoutMs },
+    )
+    .catch(() => undefined);
+  await page.waitForTimeout(350);
+}
+
+function manufacturerFilterElementId(filterTab, categoryId) {
+  const cid = String(categoryId || '').trim();
+  if (!cid) {
+    return null;
+  }
+  const prefix =
+    filterTab === 'BRAND' ? 'brand' : filterTab === 'SERIES' ? 'series' : 'category';
+  return `${prefix}-${cid}`;
+}
+
+async function clearActiveManufacturerFilters(page, filterTab = 'BRAND') {
+  const clearLabels =
+    filterTab === 'BRAND'
+      ? ['Clear Brands', 'Clear Brand', 'Clear Filters', 'Clear Filter']
+      : filterTab === 'SERIES'
+        ? ['Clear Series', 'Clear Filters', 'Clear Filter']
+        : ['Clear Categories', 'Clear Category', 'Clear Filters', 'Clear Filter'];
+
+  for (const label of clearLabels) {
+    const clicked = await clickFirst(page, [`button:has-text("${label}")`]);
+    if (clicked) {
+      await waitForListingApiResponse(page, 4000);
+      return;
+    }
+  }
+}
+
+async function selectManufacturerFilterByCategoryId(page, filterTab, categoryId) {
+  const elementId = manufacturerFilterElementId(filterTab, categoryId);
+  if (!elementId) {
+    return false;
+  }
+
+  const tabClicked = await clickManufacturerSidebarFilterTab(page, filterTab);
+  if (!tabClicked) {
+    return false;
+  }
+
+  await resetManufacturerSidebarScroll(page);
+  await page.waitForTimeout(150);
+
+  for (let round = 0; round < 12; round += 1) {
+    const clicked = await page
+      .evaluate((id) => {
+        const clickChecked = (node) => {
+          if (!(node instanceof HTMLElement)) {
+            return false;
+          }
+          if (
+            node.getAttribute('data-state') === 'checked' ||
+            node.getAttribute('aria-checked') === 'true'
+          ) {
+            return true;
+          }
+          node.click();
+          return true;
+        };
+
+        const direct = document.getElementById(id);
+        if (direct && clickChecked(direct)) {
+          return true;
+        }
+
+        const label = document.querySelector(`label[for="${id}"]`);
+        if (label instanceof HTMLElement) {
+          const row = label.closest('.flex.items-center') || label.parentElement;
+          const checkbox = row?.querySelector('button[role="checkbox"]');
+          if (checkbox instanceof HTMLElement && clickChecked(checkbox)) {
+            return true;
+          }
+          label.click();
+          return true;
+        }
+
+        return false;
+      }, elementId)
+      .catch(() => false);
+
+    if (clicked) {
+      await waitForListingApiResponse(page, 6000);
+      return true;
+    }
+
+    await scrollManufacturerSidebarStep(page);
+    await page.waitForTimeout(120);
+  }
+
+  return false;
+}
+
+function mergeManufacturerRowMaps(baseRows, extraRows) {
+  /** @type {Map<string, Record<string, string>>} */
+  const merged = new Map(baseRows);
+  for (const [sku, row] of extraRows.entries()) {
+    merged.set(sku, mergeManufacturerRow(merged.get(sku) || { sku }, row));
+  }
+  return merged;
+}
+
+async function collectRowsFromDom(page, seedRows = null) {
+  /** @type {Map<string, Record<string, string>>} */
+  let rows = seedRows ? new Map(seedRows) : new Map();
+  const batch = await page.evaluate(extractManufacturerPreorderCardsFromDocument);
+  for (const row of batch) {
+    if (!row?.sku) {
+      continue;
+    }
+    rows.set(row.sku, mergeManufacturerRow(rows.get(row.sku) || { sku: row.sku }, row));
+  }
+  return rows;
+}
+
+async function applyManufacturerInstockFilter(page, opts) {
+  const {
+    baseUrl,
+    manufacturerId,
+    filterTab = 'BRAND',
+    filterCategoryId = null,
+    filterName,
+    tabLabel = 'In-Stock',
+  } = opts;
+
+  if (filterCategoryId) {
+    const url = `${baseUrl}/retailer/manufacturers/${manufacturerId}?manufacturerCategoryId=${encodeURIComponent(String(filterCategoryId))}`;
+    await gotoWithTimeout(page, url, 30_000);
+    await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => undefined);
+    await waitForListingApiResponse(page, 4000);
+    await clickExactManufacturerStatusTabForFilters(page, tabLabel);
+    await page.waitForTimeout(650);
+    return true;
+  }
+
+  await clearActiveManufacturerFilters(page, filterTab);
+
+  if (filterTab === 'BRAND') {
+    return ensureManufacturerBrand(page, filterName);
+  }
+  if (filterTab === 'CATEGORY') {
+    return ensureManufacturerCategoryLine(page, filterName);
+  }
+  return ensureManufacturerSeries(page, filterName);
+}
+
+async function scrapeManufacturerListingRowsDeep(page, expectedCount = 0, seedRows = null) {
+  /** @type {Map<string, Record<string, string>>} */
+  let rows = seedRows ? new Map(seedRows) : new Map();
+  rows = await scrapeManufacturerListingRowsFast(page, expectedCount, rows);
+
+  const target = Math.max(0, Number(expectedCount) || 0);
+  const minRows = target <= 20 ? Math.max(1, target - 1) : Math.floor(target * 0.85);
+  if (target > 0 && rows.size < minRows) {
+    rows = await scrapeManufacturerPreorderRows(page, target, rows);
+  }
+
+  return rows;
+}
+
+async function tryManufacturerSliceCsvDownload(page, tempCsvPath) {
+  const csvHandle = await findFirstHandle(page, [
+    'a:has-text("CSV")',
+    'button:has-text("CSV")',
+    'a[href*="csv" i]',
+    'a[href*="export" i]',
+    '[data-testid="export-csv"]',
+    'text=/^CSV$/i',
+  ]);
+  if (!csvHandle) {
+    return null;
+  }
+
+  await downloadPreordersCsvFromPage(page, csvHandle, tempCsvPath);
+  const parsed = parseSimpleCsvFile(tempCsvPath);
+  return simpleCsvRowsToRecordMap(parsed, MANUFACTURER_CSV_HEADER);
+}
+
+async function recoverManufacturerInstockListingPage(page, baseUrl, manufacturerId, tabLabel = 'In-Stock') {
+  await gotoWithTimeout(page, `${baseUrl}/retailer/manufacturers/${manufacturerId}`, 20_000);
+  await page.waitForLoadState('domcontentloaded', { timeout: 10_000 }).catch(() => undefined);
+  await page.waitForTimeout(250);
+  await clickExactManufacturerStatusTabForFilters(page, tabLabel);
+  await clearAllManufacturerFilters(page);
+  await page.waitForTimeout(200);
+}
+
+function isPlaywrightBrowserClosedError(error) {
+  const message = String(error?.message || error || '');
+  return /target page, context or browser has been closed|browser has been closed|context or browser has been closed/i.test(
+    message,
+  );
+}
+
+async function reacquireManufacturerInstockExportSession(baseUrl, profileDir, manufacturerId) {
+  await closeWarmManufacturerSession();
+  const session = await acquireWarmManufacturerSession(baseUrl, profileDir, manufacturerId);
+  await ensureLoggedInQuick(session.page, baseUrl, session.context);
+  return session;
+}
+
+function manufacturerInstockFilterLooksBleeding(tabBadgeCount, targetCount) {
+  const badge = Math.max(0, Number(tabBadgeCount) || 0);
+  const target = Math.max(0, Number(targetCount) || 0);
+  if (target <= 0 || badge <= 0) {
+    return false;
+  }
+
+  return badge > Math.max(target * 3, target + 50);
+}
+
+async function recoverManufacturerInstockSliceAfterFilterBleed(page, context, opts) {
+  const {
+    baseUrl,
+    manufacturerId,
+    tabLabel,
+    filterName,
+    filterTab = 'BRAND',
+    filterCategoryId = null,
+    expectedCount = 0,
+  } = opts;
+  const targetCount = Math.max(0, Number(expectedCount) || 0);
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[plamod] instock slice filter bleed filter=${filterName} tab=${filterTab}; recovering listing + reapplying filter`,
+  );
+
+  await recoverManufacturerInstockListingPage(page, baseUrl, manufacturerId, tabLabel);
+  const selected = await applyManufacturerInstockFilter(page, {
+    baseUrl,
+    manufacturerId,
+    filterName,
+    filterTab,
+    filterCategoryId,
+    tabLabel,
+  });
+  if (!selected) {
+    throw new Error(`Could not re-select manufacturer filter after bleed: ${filterTab}/${filterName}`);
+  }
+
+  if (await looksLikeSignInPage(page)) {
+    await ensureManufacturerSession(page, baseUrl, context);
+    await recoverManufacturerInstockListingPage(page, baseUrl, manufacturerId, tabLabel);
+    await applyManufacturerInstockFilter(page, {
+      baseUrl,
+      manufacturerId,
+      filterName,
+      filterTab,
+      filterCategoryId,
+      tabLabel,
+    });
+  }
+
+  await page.waitForTimeout(1200);
+  const minRows =
+    targetCount <= 20 ? Math.max(1, targetCount - 1) : Math.floor(targetCount * 0.85);
+  let rows = await collectRowsFromDom(page);
+  if (rows.size < minRows) {
+    rows = await scrollManufacturerListingRowsToTarget(page, targetCount, targetCount > 50 ? null : rows);
+  }
+
+  const tabBadgeText = await readManufacturerTabBadge(page, tabLabel);
+  const tabBadgeCount = Number.parseInt(String(tabBadgeText || '').replace(/[^\d]/g, ''), 10) || 0;
+
+  return { rows, tabBadgeCount, strategy: 'bleed_recovery' };
+}
+
+async function scrollManufacturerListingRowsToTarget(page, expectedCount = 0, seedRows = null) {
+  const target = Math.max(0, Number(expectedCount) || 0);
+  /** @type {Map<string, Record<string, string>>} */
+  const rows = seedRows ? new Map(seedRows) : new Map();
+  let staleRounds = 0;
+  let lastLinkCount = 0;
+
+  for (let round = 0; round < 400; round += 1) {
+    const batch = await page.evaluate(extractManufacturerPreorderCardsFromDocument);
+    let newRows = 0;
+    for (const row of batch) {
+      if (!row?.sku) {
+        continue;
+      }
+      if (!rows.has(row.sku)) {
+        rows.set(row.sku, row);
+        newRows += 1;
+      } else {
+        rows.set(row.sku, mergeManufacturerRow(rows.get(row.sku) || { sku: row.sku }, row));
+      }
+    }
+
+    if (target > 0 && rows.size >= target) {
+      break;
+    }
+
+    const domLinkCount = await page
+      .evaluate(() => document.querySelectorAll('a[href*="/retailer/products/"]').length)
+      .catch(() => 0);
+    const linkDelta = domLinkCount - lastLinkCount;
+    lastLinkCount = domLinkCount;
+
+    if (newRows === 0 && linkDelta <= 0) {
+      staleRounds += 1;
+      if (staleRounds >= 60) {
+        break;
+      }
+    } else {
+      staleRounds = 0;
+    }
+
+    await page
+      .evaluate(() => {
+        window.scrollBy(0, Math.max(900, Math.floor(window.innerHeight * 0.95)));
+        document.querySelectorAll('[data-radix-scroll-area-viewport], .overflow-auto, main').forEach((node) => {
+          if (node instanceof HTMLElement) {
+            node.scrollTop += Math.max(1000, Math.floor(window.innerHeight * 0.95));
+          }
+        });
+      })
+      .catch(() => undefined);
+    await page.waitForTimeout(700);
+  }
+
+  return rows;
+}
+
+async function collectManufacturerInstockSliceRowsFast(page, context, opts) {
+  const {
+    baseUrl,
+    manufacturerId,
+    tabLabel,
+    filterName,
+    filterTab = 'BRAND',
+    filterCategoryId = null,
+    expectedCount = 0,
+    tempCsvPath = null,
+  } = opts;
+
+  const skuCollector = createManufacturerSkuCollector();
+  attachPlamodNetworkCapture(page, skuCollector);
+
+  const targetCount = Math.max(0, Number(expectedCount) || 0);
+  const minRows =
+    targetCount <= 20 ? Math.max(1, targetCount - 1) : Math.floor(targetCount * 0.85);
+
+  if (await looksLikeSignInPage(page)) {
+    await ensureManufacturerSession(page, baseUrl, context);
+  }
+
+  if (!filterCategoryId) {
+    await recoverManufacturerInstockListingPage(page, baseUrl, manufacturerId, tabLabel);
+  }
+
+  const selected = await applyManufacturerInstockFilter(page, {
+    baseUrl,
+    manufacturerId,
+    filterName,
+    filterTab,
+    filterCategoryId,
+    tabLabel,
+  });
+
+  if (!selected) {
+    await recoverManufacturerInstockListingPage(page, baseUrl, manufacturerId, tabLabel);
+    const retried = await applyManufacturerInstockFilter(page, {
+      baseUrl,
+      manufacturerId,
+      filterName,
+      filterTab,
+      filterCategoryId,
+      tabLabel,
+    });
+    if (!retried) {
+      throw new Error(`Could not select manufacturer filter: ${filterTab}/${filterName}`);
+    }
+  }
+
+  if (await looksLikeSignInPage(page)) {
+    await ensureManufacturerSession(page, baseUrl, context);
+    await recoverManufacturerInstockListingPage(page, baseUrl, manufacturerId, tabLabel);
+    await applyManufacturerInstockFilter(page, {
+      baseUrl,
+      manufacturerId,
+      filterName,
+      filterTab,
+      filterCategoryId,
+      tabLabel,
+    });
+  }
+
+  let rows = await collectRowsFromDom(page);
+  let strategy = 'dom';
+
+  if (targetCount > 0 && rows.size === 0) {
+    await page.waitForTimeout(1200);
+    rows = await collectRowsFromDom(page);
+    strategy = 'dom_retry';
+  }
+
+  if (rows.size < minRows) {
+    const scrolled = await scrollManufacturerListingRowsToTarget(
+      page,
+      targetCount,
+      targetCount > 50 ? null : rows,
+    );
+    rows = targetCount > 50 ? scrolled : mergeManufacturerRowMaps(rows, scrolled);
+    strategy = 'deep_scroll';
+  }
+
+  if (rows.size < minRows && tempCsvPath) {
+    try {
+      const csvRows = await tryManufacturerSliceCsvDownload(page, tempCsvPath);
+      if (csvRows && csvRows.size > 0) {
+        rows = mergeManufacturerRowMaps(rows, csvRows);
+        strategy = 'csv';
+      }
+    } catch (csvError) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[plamod] instock slice csv failed filter=${filterName} msg=${String(csvError?.message || csvError)}`,
+      );
+    }
+  }
+
+  if (rows.size === 0) {
+    await recoverManufacturerInstockListingPage(page, baseUrl, manufacturerId, tabLabel);
+  }
+
+  const tabBadgeText = await readManufacturerTabBadge(page, tabLabel);
+  let tabBadgeCount = Number.parseInt(String(tabBadgeText || '').replace(/[^\d]/g, ''), 10) || 0;
+
+  if (manufacturerInstockFilterLooksBleeding(tabBadgeCount, targetCount)) {
+    const recovered = await recoverManufacturerInstockSliceAfterFilterBleed(page, context, {
+      baseUrl,
+      manufacturerId,
+      tabLabel,
+      filterName,
+      filterTab,
+      filterCategoryId,
+      expectedCount: targetCount,
+    });
+    rows = recovered.rows;
+    tabBadgeCount = recovered.tabBadgeCount;
+    strategy = recovered.strategy;
+  }
+
+  for (const [sku, netRow] of skuCollector.rowsBySku.entries()) {
+    rows.set(sku, mergeManufacturerRow(rows.get(sku) || { sku }, netRow));
+  }
+
+  const countMissingPrices = (rowMap) =>
+    [...rowMap.values()].filter((row) => !String(row?.price_stock || '').trim()).length;
+
+  let missingPriceCount = countMissingPrices(rows);
+  if (instockSliceShouldRetryListingPrices(missingPriceCount, rows.size)) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[plamod] instock slice retry missing prices filter=${filterName} missing=${missingPriceCount}`,
+    );
+    await page.waitForTimeout(600);
+    const retryDomRows = await collectRowsFromDom(page);
+    rows = mergeManufacturerRowMaps(rows, retryDomRows);
+    for (const [sku, netRow] of skuCollector.rowsBySku.entries()) {
+      rows.set(sku, mergeManufacturerRow(rows.get(sku) || { sku }, netRow));
+    }
+    missingPriceCount = countMissingPrices(rows);
+  }
+
+  const pricedRows = [...rows.values()].filter((row) => String(row?.price_stock || '').trim()).length;
+  if (rows.size > 0 && pricedRows === 0) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[plamod] instock slice missing prices filter=${filterName} rows=${rows.size} network_rows=${skuCollector.rowsBySku.size}`,
+    );
+  } else if (pricedRows > 0) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[plamod] instock slice priced filter=${filterName} rows=${rows.size} with_stock=${pricedRows}`,
+    );
+  }
+
+  return { rows, listingExpected: targetCount, tabBadgeCount, strategy };
+}
+
+async function waitForManufacturerListingSettle(page, expectedCount = 0, skuCollector = null) {
+  const target = Math.max(0, Number(expectedCount) || 0);
+  const deadline = Date.now() + (target > 0 ? Math.min(12_000, 4000 + target * 40) : 8000);
+
+  while (Date.now() < deadline) {
+    await page
+      .waitForResponse(
+        (response) => /plamod\.com/i.test(response.url()) && response.status() === 200,
+        { timeout: 2500 },
+      )
+      .catch(() => undefined);
+
+    const snapshot = await page
+      .evaluate(() => ({
+        products: document.querySelectorAll('a[href*="/retailer/products/"]').length,
+        empty: /no products found/i.test(document.body?.textContent || ''),
+      }))
+      .catch(() => ({ products: 0, empty: true }));
+
+    const networkRows = skuCollector?.rowsBySku?.size ?? 0;
+    if (snapshot.products > 0 || networkRows > 0) {
+      await page.waitForTimeout(800);
+      return Math.max(snapshot.products, networkRows);
+    }
+
+    if (expectedCount > 0 && !snapshot.empty) {
+      await page.waitForTimeout(800);
+      return 0;
+    }
+
+    await page.waitForTimeout(750);
+  }
+
+  return skuCollector?.rowsBySku?.size ?? 0;
+}
+
+async function gatherManufacturerProductRowsFromCurrentView(page, context, opts) {
+  const expectedCount = Number(opts.expectedCount ?? 0);
+  const tempCsvPath = opts.tempCsvPath;
+  const tabLabel = String(opts.tabLabel ?? 'In-Stock');
+  const skuCollector = opts.skuCollector ?? createManufacturerSkuCollector();
+  const captured = opts.captured ?? attachPlamodNetworkCapture(page, skuCollector);
+  const csvHeader = MANUFACTURER_CSV_HEADER;
+
+  let parsed = { header: csvHeader, rows: new Map() };
+
+  const csvHandle = await findFirstHandle(page, [
+    'a:has-text("CSV")',
+    'button:has-text("CSV")',
+    'a[href*="csv" i]',
+    'a[href*="export" i]',
+    '[data-testid="export-csv"]',
+    'text=/^CSV$/i',
+  ]);
+
+  if (csvHandle) {
+    try {
+      await downloadPreordersCsvFromPage(page, csvHandle, tempCsvPath);
+      parsed = parseSimpleCsvFile(tempCsvPath);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.log(`[plamod] chunk csv download failed msg=${String(e?.message || 'unknown')}`);
+    }
+  }
+
+  if (parsed.rows.size === 0 && (await tryDownloadCsvViaCapturedResponses(page, captured, tempCsvPath))) {
+    parsed = parseSimpleCsvFile(tempCsvPath);
+  }
+
+  /** @type {Map<string, Record<string, string>>} */
+  let rowsBySku = new Map();
+
+  if (parsed.rows.size === 0) {
+    rowsBySku = await scrapeManufacturerPreorderRows(page, expectedCount, skuCollector.rowsBySku);
+  } else {
+    rowsBySku = simpleCsvRowsToRecordMap(parsed, csvHeader);
+  }
+
+  for (const [sku, netRow] of skuCollector.rowsBySku.entries()) {
+    const existing = rowsBySku.get(sku) || { sku };
+    rowsBySku.set(sku, mergeManufacturerRow(existing, netRow));
+  }
+
+  if (expectedCount > 0 && rowsBySku.size < expectedCount) {
+    await scrapeManufacturerPreorderRows(page, expectedCount, rowsBySku);
+  }
+
+  if (manufacturerExportTabIsInStock(tabLabel)) {
+    const missingStockPrice = [...rowsBySku.values()].some((row) => !String(row?.price_stock || '').trim());
+    if (missingStockPrice) {
+      await scrapeManufacturerPreorderRows(page, expectedCount, rowsBySku);
+    }
+  }
+
+  return rowsBySku;
+}
+
+function manufacturerInstockFilterCacheEnabled() {
+  const raw = process.env.PLAMOD_INSTOCK_FILTER_CACHE;
+  return raw !== '0' && raw !== 'false';
+}
+
+function manufacturerInstockFilterCachePath(root, manufacturerId) {
+  return path.join(root, 'plamod', 'instock_filter_cache', `mfr-${String(manufacturerId).trim()}.json`);
+}
+
+function readManufacturerInstockFilterCache(root, manufacturerId, expectedTotal, ttlMs) {
+  if (!manufacturerInstockFilterCacheEnabled()) {
+    return null;
+  }
+
+  const cachePath = manufacturerInstockFilterCachePath(root, manufacturerId);
+  if (!fs.existsSync(cachePath)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+    if (Number(parsed.expected_total) !== Number(expectedTotal)) {
+      return null;
+    }
+    if (!Array.isArray(parsed.filters) || parsed.filters.length === 0) {
+      return null;
+    }
+
+    const cachedAt = Date.parse(String(parsed.cached_at || ''));
+    const ageMs = Date.now() - cachedAt;
+    if (!Number.isFinite(cachedAt) || ageMs < 0 || ageMs > ttlMs) {
+      return null;
+    }
+
+    return parsed.filters;
+  } catch {
+    return null;
+  }
+}
+
+function writeManufacturerInstockFilterCache(root, manufacturerId, expectedTotal, filters) {
+  if (!manufacturerInstockFilterCacheEnabled()) {
+    return;
+  }
+
+  const cachePath = manufacturerInstockFilterCachePath(root, manufacturerId);
+  ensureDir(path.dirname(cachePath));
+  fs.writeFileSync(
+    cachePath,
+    JSON.stringify({
+      manufacturer_id: String(manufacturerId),
+      expected_total: expectedTotal,
+      cached_at: new Date().toISOString(),
+      filters,
+    }),
+    'utf8',
+  );
+}
+
+function instockSliceShouldRetryListingPrices(missingCount, totalRows) {
+  const missing = Math.max(0, Number(missingCount) || 0);
+  const total = Math.max(0, Number(totalRows) || 0);
+  if (missing <= 0 || total <= 0) {
+    return false;
+  }
+  if (missing === total) {
+    return true;
+  }
+
+  return missing / total >= 0.5;
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @returns {Promise<Array<{tab: string, name: string, instock_count: number}>>}
+ */
+async function discoverManufacturerInstockSidebarFilters(page) {
+  /** @type {Array<{tab: string, name: string, instock_count: number}>} */
+  let best = [];
+
+  for (const filterTab of ['BRAND', 'SERIES', 'CATEGORY']) {
+    const items = await scrapeManufacturerSidebarFilterItems(page, filterTab);
+    // eslint-disable-next-line no-console
+    console.log(
+      `[plamod] instock filter scrape tab=${filterTab} raw=${items.length} sample=${items[0]?.name || '-'} instock=${items[0]?.instock_count ?? 'null'} id=${items[0]?.category_id ?? 'null'}`,
+    );
+    const eligible = items
+      .map((item) => ({
+        tab: filterTab,
+        name: String(item.name || '').trim(),
+        category_id: item.category_id ? String(item.category_id) : null,
+        instock_count: Number(item.instock_count ?? item.preorder_count ?? item.other_count ?? 0),
+      }))
+      .filter((item) => item.name !== '' && item.instock_count > 0)
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    if (eligible.length >= 5 && filterTab === 'BRAND') {
+      return eligible;
+    }
+
+    if (eligible.length > best.length) {
+      best = eligible;
+    }
+    if (eligible.length >= 5) {
+      return eligible;
+    }
+  }
+
+  return best;
+}
+
+async function ensureManufacturerFilterSidebarReady(page, minLabels = 5) {
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const labelCount = await page
+      .evaluate(
+        () =>
+          document.querySelectorAll('label[for^="category-"], label[for^="brand-"], label[for^="series-"]').length,
+      )
+      .catch(() => 0);
+    if (labelCount >= minLabels) {
+      return labelCount;
+    }
+    await page.waitForTimeout(500);
+  }
+
+  return 0;
+}
+
+async function discoverManufacturerInstockFiltersWithFreshContext(baseUrl, profileDir, manufacturerId, tabLabel = 'In-Stock') {
+  // eslint-disable-next-line global-require
+  const { chromium } = require('playwright');
+  cleanupPersistentProfileLocks(profileDir);
+  const context = await chromium.launchPersistentContext(profileDir, {
+    timeout: 30_000,
+    headless: true,
+    viewport: { width: 1400, height: 900 },
+    locale: 'en-CA',
+    timezoneId: 'America/Toronto',
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    args: ['--disable-blink-features=AutomationControlled'],
+  });
+
+  try {
+    const page = await context.newPage();
+    await ensureLoggedIn(page, baseUrl, context, `manufacturer-${manufacturerId}-instock-discovery`);
+    await gotoWithTimeout(page, `${baseUrl}/retailer/manufacturers/${manufacturerId}`, 45_000);
+    await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => undefined);
+    await page.waitForTimeout(800);
+
+    const tabClicked = await clickExactManufacturerStatusTab(page, tabLabel);
+    if (!tabClicked) {
+      return { filters: [], pmkCategoryId: null };
+    }
+
+    await clearAllManufacturerFilters(page);
+    await page.waitForTimeout(1500);
+    await ensureManufacturerFilterSidebarReady(page);
+    const filters = await discoverManufacturerInstockSidebarFilters(page);
+    const pmkCategoryId = await resolveManufacturerPmkCategoryId(page);
+
+    return { filters, pmkCategoryId };
+  } finally {
+    await safeCloseContext(context);
+  }
+}
+
+async function prepareManufacturerInstockDiscoveryPage(page, baseUrl, manufacturerId, tabLabel = 'In-Stock') {
+  const manufacturerUrl = `${baseUrl}/retailer/manufacturers/${manufacturerId}`;
+  await gotoWithTimeout(page, manufacturerUrl, 45_000);
+  await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => undefined);
+  await page.waitForTimeout(600);
+
+  const tabClicked = await clickExactManufacturerStatusTabForFilters(page, tabLabel);
+  if (!tabClicked) {
+    throw new Error(`Could not find manufacturer status tab: ${tabLabel}`);
+  }
+
+  await clearAllManufacturerFilters(page);
+  await page.waitForTimeout(500);
+  const labelCount = await ensureManufacturerFilterSidebarReady(page, 5);
+  if (labelCount < 5) {
+    // eslint-disable-next-line no-console
+    console.log(`[plamod] filter sidebar sparse before PMK labels=${labelCount}`);
+  }
+
+  return labelCount;
+}
+
+async function prepareManufacturerInstockBasePage(page, baseUrl, manufacturerId, tabLabel = 'In-Stock') {
+  return prepareManufacturerInstockDiscoveryPage(page, baseUrl, manufacturerId, tabLabel);
+}
+
+async function prepareManufacturerInstockChunkPage(page, baseUrl, manufacturerId, tabLabel = 'In-Stock') {
+  await ensureOnManufacturerPage(page, baseUrl, manufacturerId);
+  const tabClicked = await clickExactManufacturerStatusTab(page, tabLabel);
+  if (!tabClicked) {
+    throw new Error(`Could not find manufacturer status tab: ${tabLabel}`);
+  }
+  await clearAllManufacturerFilters(page);
+  await page.waitForTimeout(600);
+}
+
+/**
+ * @param {import('playwright').Page} page
+ * @returns {Promise<Array<{tab: string, name: string, instock_count: number}>>}
+ */
+async function discoverManufacturerInstockSeriesFilters(page) {
+  const items = await scrapeManufacturerSidebarFilterItems(page, 'SERIES');
+
+  return items
+    .map((item) => ({
+      tab: 'SERIES',
+      name: String(item.name || '').trim(),
+      category_id: item.category_id ? String(item.category_id) : null,
+      instock_count: Number(item.instock_count ?? item.preorder_count ?? item.other_count ?? 0),
+    }))
+    .filter((item) => item.name !== '' && item.instock_count > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Export In-Stock Plastic Model Kits by iterating sidebar filters (SERIES first, BRAND/CATEGORY fallback).
+ *
+ * @param {{ manufacturerId?: number|string }} opts
+ */
+async function exportManufacturerInstockMerged(opts = {}) {
+  const manufacturerId = String(opts.manufacturerId ?? 1).trim();
+  const tabLabel = 'In-Stock';
+  const maxFilters = Number.parseInt(
+    String(opts.maxFilters ?? process.env.PLAMOD_INSTOCK_MERGED_MAX_FILTERS ?? '0'),
+    10,
+  );
+  const testMode = maxFilters > 0;
+  const baseUrl = String(process.env.PLAMOD_BASE_URL || 'https://plamod.com').replace(/\/+$/, '');
+  const profileDir = String(process.env.PLAMOD_PERSISTENT_PROFILE_DIR || path.resolve(__dirname, '..', '..', '.pw-user-data'));
+  const debugSku = `manufacturer-${manufacturerId}-instock-merged`;
+  const started = Date.now();
+
+  const root = storageRoot();
+  const rawDir = path.join(root, 'plamod', 'instock_merged_exports');
+  ensureDir(rawDir);
+  const csvFilename = `instock-mfr-${manufacturerId}-merged-${nowStamp()}.csv`;
+  const csvPath = path.join(rawDir, csvFilename);
+  const csvStoragePath = path.posix.join('plamod', 'instock_merged_exports', csvFilename);
+  const tempCsvPath = path.join(rawDir, `_chunk-${nowStamp()}.csv`);
+
+  // eslint-disable-next-line no-console
+  console.log(`[plamod] export manufacturer instock merged start id=${manufacturerId}`);
+
+  return withManufacturerSessionMutex(async () => {
+    try {
+      writeInstockExportProgress({
+        active: true,
+        phase: 'discover',
+        manufacturer_id: manufacturerId,
+        started_at: new Date().toISOString(),
+      });
+
+      const session = await acquireWarmManufacturerSession(baseUrl, profileDir, manufacturerId);
+      let page = session.page;
+      let context = session.context;
+
+      await prepareManufacturerInstockDiscoveryPage(page, baseUrl, manufacturerId, tabLabel);
+      if (await looksLikeSignInPage(page)) {
+        await ensureManufacturerSession(page, baseUrl, context);
+        await prepareManufacturerInstockDiscoveryPage(page, baseUrl, manufacturerId, tabLabel);
+      }
+
+      const tabBadgeText = await readManufacturerTabBadge(page, tabLabel);
+      const expectedTotal = Number.parseInt(String(tabBadgeText || '').replace(/[^\d]/g, ''), 10) || 0;
+
+      const filterCacheTtlMs = Number.parseInt(process.env.PLAMOD_INSTOCK_FILTER_CACHE_TTL_MS || '86400000', 10);
+      let filters = readManufacturerInstockFilterCache(root, manufacturerId, expectedTotal, filterCacheTtlMs);
+      let filtersFromCache = Boolean(filters);
+
+      if (!filters) {
+        filters = await discoverManufacturerInstockSidebarFilters(page);
+      } else {
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] instock merged using cached filters count=${filters.length} expected_total=${expectedTotal}`);
+      }
+
+      if (filters.length === 0) {
+        // eslint-disable-next-line no-console
+        console.log('[plamod] instock merged warm-session discovery empty; retrying with fresh browser context');
+        const fresh = await discoverManufacturerInstockFiltersWithFreshContext(
+          baseUrl,
+          profileDir,
+          manufacturerId,
+          tabLabel,
+        );
+        if (fresh.filters.length > 0) {
+          filters = fresh.filters;
+          filtersFromCache = false;
+        }
+      }
+
+      filters = filters.filter((filter) => Boolean(filter.category_id));
+      if (!filtersFromCache && filters.length > 0) {
+        writeManufacturerInstockFilterCache(root, manufacturerId, expectedTotal, filters);
+      }
+      if (maxFilters > 0) {
+        filters = filters.slice(0, maxFilters);
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] instock merged test mode limiting to ${filters.length} filters`);
+      }
+
+      const filtersWithIds = filters.filter((filter) => Boolean(filter.category_id)).length;
+      // eslint-disable-next-line no-console
+      console.log(
+        `[plamod] instock merged discovered ${filters.length} filters expected_total=${expectedTotal} first_tab=${filters[0]?.tab || '-'} filters_with_ids=${filtersWithIds}`,
+      );
+
+      if (filters.length === 0) {
+        clearInstockExportProgress();
+        return {
+          ok: false,
+          error_message: 'No sidebar filters with in-stock counts were discovered.',
+          expected_row_count: expectedTotal,
+          duration_ms: Date.now() - started,
+        };
+      }
+
+      writeInstockExportProgress({
+        active: true,
+        phase: 'export',
+        manufacturer_id: manufacturerId,
+        filters_total: filters.length,
+        filters_processed: 0,
+        rows_merged: 0,
+      });
+
+      const sliceTempCsvPath = path.join(rawDir, `_slice-${nowStamp()}.csv`);
+
+      /** @type {Map<string, Record<string, string>>} */
+      const merged = new Map();
+      /** @type {Array<Record<string, string|number|boolean|null>>} */
+      const chunkStats = [];
+
+      for (let filterIndex = 0; filterIndex < filters.length; filterIndex += 1) {
+        const filter = filters[filterIndex];
+        let chunkAttempt = 0;
+        let chunkRecorded = false;
+
+        while (!chunkRecorded && chunkAttempt < 2) {
+          chunkAttempt += 1;
+          const sliceStarted = Date.now();
+          try {
+            const sliceResult = await collectManufacturerInstockSliceRowsFast(page, context, {
+              baseUrl,
+              manufacturerId,
+              tabLabel,
+              filterName: filter.name,
+              filterTab: filter.tab,
+              filterCategoryId: filter.category_id,
+              expectedCount: filter.instock_count,
+              tempCsvPath: sliceTempCsvPath,
+            });
+            const sliceRows = sliceResult.rows;
+
+            let added = 0;
+            for (const [sku, row] of sliceRows.entries()) {
+              const had = merged.has(sku);
+              merged.set(sku, mergeManufacturerRow(merged.get(sku) || { sku }, row));
+              if (!had) {
+                added += 1;
+              }
+            }
+
+            const sliceMs = Date.now() - sliceStarted;
+            const sampleSku = sliceRows.keys().next().value || '-';
+            const sampleSeries = sampleSku !== '-' ? String(sliceRows.get(sampleSku)?.series || '-') : '-';
+
+            chunkStats.push({
+              tab: filter.tab,
+              filter: filter.name,
+              category_id: filter.category_id,
+              expected: filter.instock_count,
+              listing_expected: sliceResult.listingExpected,
+              tab_badge_count: sliceResult.tabBadgeCount,
+              rows: sliceRows.size,
+              added,
+              total: merged.size,
+              skipped: sliceRows.size === 0,
+              duration_ms: sliceMs,
+              sample_sku: sampleSku,
+              sample_series: sampleSeries,
+              strategy: sliceResult.strategy ?? null,
+              attempt: chunkAttempt,
+            });
+
+            writeInstockExportProgress({
+              active: true,
+              phase: 'export',
+              manufacturer_id: manufacturerId,
+              filters_total: filters.length,
+              filters_processed: filterIndex + 1,
+              current_filter: filter.name,
+              current_filter_tab: filter.tab,
+              rows_merged: merged.size,
+            });
+
+            // eslint-disable-next-line no-console
+            console.log(
+              `[plamod] instock chunk tab=${filter.tab} filter=${filter.name} expected=${filter.instock_count} slice=${sliceRows.size} added=${added} total=${merged.size} strategy=${sliceResult.strategy ?? '-'} ms=${sliceMs}`,
+            );
+            chunkRecorded = true;
+          } catch (chunkError) {
+            const sliceMs = Date.now() - sliceStarted;
+            const message = String(chunkError?.message || chunkError);
+            // eslint-disable-next-line no-console
+            console.log(
+              `[plamod] instock chunk error tab=${filter.tab} filter=${filter.name} attempt=${chunkAttempt} ms=${sliceMs} msg=${message}`,
+            );
+
+            if (chunkAttempt < 2 && isPlaywrightBrowserClosedError(chunkError)) {
+              // eslint-disable-next-line no-console
+              console.log(`[plamod] instock chunk reacquiring browser session after crash filter=${filter.name}`);
+              session = await reacquireManufacturerInstockExportSession(baseUrl, profileDir, manufacturerId);
+              page = session.page;
+              context = session.context;
+              continue;
+            }
+
+            chunkStats.push({
+              tab: filter.tab,
+              filter: filter.name,
+              category_id: filter.category_id,
+              expected: filter.instock_count,
+              rows: 0,
+              added: 0,
+              total: merged.size,
+              skipped: true,
+              duration_ms: sliceMs,
+              error: message,
+              attempt: chunkAttempt,
+            });
+            chunkRecorded = true;
+          }
+        }
+      }
+
+      const missingPriceCount = [...merged.values()].filter((row) => !String(row?.price_stock || '').trim()).length;
+
+      if (missingPriceCount > 0) {
+        const enrichMax = Math.min(
+          missingPriceCount,
+          Number.parseInt(process.env.PLAMOD_INSTOCK_PDP_ENRICH_MAX || '750', 10),
+        );
+        const enrichBudgetMs = Number.parseInt(process.env.PLAMOD_INSTOCK_PDP_ENRICH_BUDGET_MS || '3600000', 10);
+        const previousEnrichMax = process.env.PLAMOD_INSTOCK_PDP_ENRICH_MAX;
+        const previousEnrichBudget = process.env.PLAMOD_INSTOCK_PDP_ENRICH_BUDGET_MS;
+        process.env.PLAMOD_INSTOCK_PDP_ENRICH_MAX = String(enrichMax);
+        process.env.PLAMOD_INSTOCK_PDP_ENRICH_BUDGET_MS = String(enrichBudgetMs);
+        writeInstockExportProgress({
+          active: true,
+          phase: 'pdp_enrich',
+          manufacturer_id: manufacturerId,
+          pdp_enrich_total: enrichMax,
+          pdp_enrich_done: 0,
+        });
+        // eslint-disable-next-line no-console
+        console.log(`[plamod] instock merged pdp enrich starting missing_price=${missingPriceCount} max=${enrichMax}`);
+        const browserAfterEnrich = await enrichSparseManufacturerRowsFromPdp(page, baseUrl, context, merged, tabLabel, (done, total) => {
+          writeInstockExportProgress({
+            active: true,
+            phase: 'pdp_enrich',
+            manufacturer_id: manufacturerId,
+            pdp_enrich_total: total,
+            pdp_enrich_done: done,
+          });
+        }, {
+          baseUrl,
+          profileDir,
+          manufacturerId,
+        });
+        page = browserAfterEnrich.page;
+        context = browserAfterEnrich.context;
+        if (previousEnrichMax === undefined) {
+          delete process.env.PLAMOD_INSTOCK_PDP_ENRICH_MAX;
+        } else {
+          process.env.PLAMOD_INSTOCK_PDP_ENRICH_MAX = previousEnrichMax;
+        }
+        if (previousEnrichBudget === undefined) {
+          delete process.env.PLAMOD_INSTOCK_PDP_ENRICH_BUDGET_MS;
+        } else {
+          process.env.PLAMOD_INSTOCK_PDP_ENRICH_BUDGET_MS = previousEnrichBudget;
+        }
+      }
+
+      fs.writeFileSync(csvPath, manufacturerRowsToCsv(MANUFACTURER_CSV_HEADER, merged), 'utf8');
+      const stat = fs.statSync(csvPath);
+
+      session.lastUsed = Date.now();
+
+      const minAcceptable = testMode
+        ? 1
+        : expectedTotal > 0
+          ? Math.floor(expectedTotal * 0.85)
+          : 1;
+      const successThreshold = testMode ? Math.max(1, Math.floor(filters.length * 0.75)) : minAcceptable;
+      const successfulChunks = chunkStats.filter((chunk) => Number(chunk.rows ?? 0) > 0).length;
+
+      if (merged.size === 0 || (!testMode && expectedTotal > 0 && merged.size < minAcceptable)) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plamod] export manufacturer instock merged incomplete rows=${merged.size} expected=${expectedTotal} min=${minAcceptable}`,
+        );
+
+        return {
+          ok: false,
+          error_message: `In-stock merged export incomplete: got ${merged.size} rows, expected ~${expectedTotal}.`,
+          manufacturer_id: manufacturerId,
+          tab: tabLabel,
+          csv_storage_path: csvStoragePath,
+          bytes: stat.size,
+          row_count: merged.size,
+          expected_row_count: expectedTotal,
+          filter_mode: filters[0]?.tab ?? null,
+          filter_chunks: chunkStats,
+          test_mode: testMode,
+          duration_ms: Date.now() - started,
+        };
+      }
+
+      if (testMode && successfulChunks < successThreshold) {
+        return {
+          ok: false,
+          error_message: `In-stock merged test export: only ${successfulChunks}/${filters.length} chunks returned rows.`,
+          manufacturer_id: manufacturerId,
+          tab: tabLabel,
+          csv_storage_path: csvStoragePath,
+          bytes: stat.size,
+          row_count: merged.size,
+          expected_row_count: expectedTotal,
+          filter_mode: filters[0]?.tab ?? null,
+          filter_chunks: chunkStats,
+          test_mode: true,
+          duration_ms: Date.now() - started,
+        };
+      }
+
+      const inaccurateChunks = chunkStats.filter((chunk) => {
+        const expected = Number(chunk.listing_expected ?? chunk.expected ?? 0);
+        const rows = Number(chunk.rows ?? 0);
+        if (expected < 5 || chunk.error) {
+          return false;
+        }
+        const minRows = expected <= 20 ? Math.max(1, expected - 1) : Math.floor(expected * 0.85);
+        return rows < minRows;
+      });
+      if (testMode && inaccurateChunks.length > 0) {
+        const names = inaccurateChunks
+          .map((chunk) => `${chunk.filter}(${chunk.rows}/${chunk.listing_expected ?? chunk.expected})`)
+          .join(', ');
+        return {
+          ok: false,
+          error_message: `In-stock merged test export: chunk row counts below target: ${names}`,
+          manufacturer_id: manufacturerId,
+          tab: tabLabel,
+          csv_storage_path: csvStoragePath,
+          bytes: stat.size,
+          row_count: merged.size,
+          expected_row_count: expectedTotal,
+          filter_mode: filters[0]?.tab ?? null,
+          filter_chunks: chunkStats,
+          test_mode: true,
+          duration_ms: Date.now() - started,
+        };
+      }
+
+      // eslint-disable-next-line no-console
+      console.log(
+        `[plamod] export manufacturer instock merged done rows=${merged.size} expected=${expectedTotal} bytes=${stat.size}`,
+      );
+
+      return {
+        ok: true,
+        manufacturer_id: manufacturerId,
+        tab: tabLabel,
+        csv_storage_path: csvStoragePath,
+        bytes: stat.size,
+        row_count: merged.size,
+        expected_row_count: expectedTotal,
+        filter_mode: filters[0]?.tab ?? null,
+        filter_chunks: chunkStats,
+        test_mode: testMode,
+        duration_ms: Date.now() - started,
+      };
+    } catch (e) {
+      await closeWarmManufacturerSession();
+      // eslint-disable-next-line no-console
+      console.log(`[plamod] export manufacturer instock merged error msg=${String(e?.message || e)}`);
+      return {
+        ok: false,
+        error_message: String(e?.message || 'Unknown error'),
+        duration_ms: Date.now() - started,
+      };
+    } finally {
+      clearInstockExportProgress();
     }
   });
 }
@@ -3123,8 +5229,10 @@ async function enrichPreorderPdpFields(skus) {
         results[sku] = {
           image_url: String(fields?.image_url || '').trim(),
           product_name: String(fields?.product_name || '').trim(),
+          price_stock: String(fields?.price_stock || '').trim(),
           price_preorder: String(fields?.price_preorder || '').trim(),
           quantity_preorder: String(fields?.quantity_preorder || '').trim(),
+          preorder_offers: Array.isArray(fields?.preorder_offers) ? fields.preorder_offers : [],
         };
       } catch (e) {
         results[sku] = null;
@@ -3136,10 +5244,172 @@ async function enrichPreorderPdpFields(skus) {
     return {
       ok: true,
       results,
-      enriched: Object.values(results).filter((row) => row && String(row.image_url || '').trim() !== '').length,
+      enriched: Object.values(results).filter(
+        (row) =>
+          row &&
+          (String(row.price_stock || '').trim() !== '' ||
+            String(row.price_preorder || '').trim() !== '' ||
+            String(row.image_url || '').trim() !== ''),
+      ).length,
       duration_ms: Date.now() - started,
     };
   });
+}
+
+/**
+ * Diagnostic: scroll one manufacturer filter and log how many SKUs the DOM yields.
+ *
+ * @param {{
+ *   manufacturerId?: string|number,
+ *   categoryId?: string|number,
+ *   expectedCount?: number,
+ *   maxStaleRounds?: number,
+ * }} opts
+ */
+async function diagnoseManufacturerFilterScroll(opts = {}) {
+  const manufacturerId = String(opts.manufacturerId ?? 1).trim();
+  const categoryId = String(opts.categoryId ?? '1004').trim();
+  const expectedCount = Math.max(0, Number(opts.expectedCount ?? 191) || 0);
+  const maxStaleRounds = Math.max(8, Number(opts.maxStaleRounds ?? 60) || 60);
+  const baseUrl = String(process.env.PLAMOD_BASE_URL || 'https://plamod.com').replace(/\/+$/, '');
+  const profileDir = String(process.env.PLAMOD_PERSISTENT_PROFILE_DIR || path.resolve(__dirname, '..', '..', '.pw-user-data'));
+
+  /** @type {Array<{url: string, total?: number, bodyPreview: string}>} */
+  const apiHits = [];
+  const session = await acquireWarmManufacturerSession(baseUrl, profileDir, manufacturerId);
+  const page = session.page;
+  const context = session.context;
+
+  page.on('response', async (response) => {
+    const url = String(response.url() || '');
+    if (!/plamod\.com/i.test(url) || response.status() !== 200) {
+      return;
+    }
+    if (!/(manufacturer|product|search|graphql|retailer)/i.test(url)) {
+      return;
+    }
+    const contentType = String(response.headers()['content-type'] || '');
+    if (!/json/i.test(contentType)) {
+      return;
+    }
+    try {
+      const body = await response.text();
+      const totalMatch = body.match(/"total(?:Count)?"\s*:\s*(\d+)/i);
+      apiHits.push({
+        url,
+        total: totalMatch ? Number.parseInt(totalMatch[1], 10) : undefined,
+        bodyPreview: body.slice(0, 400),
+      });
+    } catch {
+      // ignore
+    }
+  });
+
+  await ensureLoggedInQuick(page, baseUrl, context);
+  await recoverManufacturerInstockListingPage(page, baseUrl, manufacturerId, 'In-Stock');
+  await applyManufacturerInstockFilter(page, {
+    baseUrl,
+    manufacturerId,
+    filterTab: 'BRAND',
+    filterCategoryId: categoryId,
+    filterName: '30 Minutes Label',
+  });
+  await page.waitForTimeout(1200);
+
+  const initialDom = await collectRowsFromDom(page);
+  // eslint-disable-next-line no-console
+  console.log(
+    `[diagnose] filter category=${categoryId} expected=${expectedCount} initial_dom=${initialDom.size} url=${page.url()}`,
+  );
+
+  /** @type {Map<string, Record<string, string>>} */
+  const rows = new Map(initialDom);
+  let staleRounds = 0;
+  let lastLinkCount = 0;
+
+  for (let round = 0; round < 400; round += 1) {
+    const batch = await page.evaluate(extractManufacturerPreorderCardsFromDocument);
+    let newRows = 0;
+    for (const row of batch) {
+      if (!row?.sku || rows.has(row.sku)) {
+        continue;
+      }
+      rows.set(row.sku, row);
+      newRows += 1;
+    }
+
+    const domStats = await page.evaluate(() => {
+      const viewports = Array.from(document.querySelectorAll('[data-radix-scroll-area-viewport]'));
+      return {
+        links: document.querySelectorAll('a[href*="/retailer/products/"]').length,
+        viewportCount: viewports.length,
+        maxViewportScrollTop: Math.max(0, ...viewports.map((n) => (n instanceof HTMLElement ? n.scrollTop : 0))),
+        maxViewportScrollHeight: Math.max(
+          0,
+          ...viewports.map((n) => (n instanceof HTMLElement ? n.scrollHeight : 0)),
+        ),
+        bodyScrollTop: document.documentElement.scrollTop || document.body.scrollTop || 0,
+        bodyScrollHeight: document.documentElement.scrollHeight || document.body.scrollHeight || 0,
+      };
+    });
+
+    const linkDelta = domStats.links - lastLinkCount;
+    lastLinkCount = domStats.links;
+
+    if (round < 10 || newRows > 0 || round % 15 === 0) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[diagnose] round=${round} skus=${rows.size} new=${newRows} dom_links=${domStats.links} link_delta=${linkDelta} stale=${staleRounds} vscroll=${domStats.maxViewportScrollTop}/${domStats.maxViewportScrollHeight} body=${domStats.bodyScrollTop}/${domStats.bodyScrollHeight}`,
+      );
+    }
+
+    if (expectedCount > 0 && rows.size >= expectedCount) {
+      // eslint-disable-next-line no-console
+      console.log(`[diagnose] reached expected ${expectedCount}`);
+      break;
+    }
+
+    if (newRows === 0 && linkDelta === 0) {
+      staleRounds += 1;
+      if (staleRounds >= maxStaleRounds) {
+        // eslint-disable-next-line no-console
+        console.log(`[diagnose] stopped after ${staleRounds} stale rounds`);
+        break;
+      }
+    } else {
+      staleRounds = 0;
+    }
+
+    await page
+      .evaluate(() => {
+        window.scrollBy(0, Math.max(900, Math.floor(window.innerHeight * 0.95)));
+        document.querySelectorAll('[data-radix-scroll-area-viewport], .overflow-auto, main').forEach((node) => {
+          if (node instanceof HTMLElement) {
+            node.scrollTop += Math.max(1000, Math.floor(window.innerHeight * 0.95));
+          }
+        });
+      })
+      .catch(() => undefined);
+    await page.waitForTimeout(700);
+  }
+
+  const apiTotals = apiHits
+    .map((hit) => hit.total)
+    .filter((value) => typeof value === 'number' && Number.isFinite(value) && value > 0);
+  const maxApiTotal = apiTotals.length > 0 ? Math.max(...apiTotals) : null;
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[diagnose] FINAL skus=${rows.size} expected=${expectedCount} max_api_total=${maxApiTotal ?? 'n/a'} api_hits=${apiHits.length}`,
+  );
+
+  return {
+    category_id: categoryId,
+    expected_count: expectedCount,
+    dom_sku_count: rows.size,
+    max_api_total: maxApiTotal,
+    api_hit_count: apiHits.length,
+  };
 }
 
 module.exports = {
@@ -3147,12 +5417,24 @@ module.exports = {
   exportPlamodPreordersCsv,
   listManufacturerPreorderFilters,
   exportManufacturerPreordersCsv,
+  exportManufacturerInstockMerged,
+  readInstockExportProgress,
+  diagnoseManufacturerFilterScroll,
   searchRetailerPreorders,
   resetPlamodScraperSessions,
   debugScrapePreorderPdpFields,
   enrichPreorderPdpFields,
   retailerPdpSkuFromUrl,
   isOnRetailerPdpForSku,
+  ensureLoggedInQuick,
+  ensureOnRetailerPdp,
+  manufacturerInstockFilterCacheEnabled,
+  manufacturerInstockFilterCachePath,
+  readManufacturerInstockFilterCache,
+  writeManufacturerInstockFilterCache,
+  instockSliceShouldRetryListingPrices,
+  parseInStockPriceFromCardText,
+  isPreorderOnlyPriceBlock,
 };
 
 

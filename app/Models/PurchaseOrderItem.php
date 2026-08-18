@@ -11,8 +11,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * @property int $id
  * @property int $purchase_order_id
- * @property int $product_id
+ * @property int|null $product_id
  * @property string $sku
+ * @property string|null $product_name
+ * @property string|null $barcode
  * @property string $vendor
  * @property string|null $unit_cost
  * @property string|null $vendor_unit_cost
@@ -27,6 +29,8 @@ final class PurchaseOrderItem extends Model
         'purchase_order_id',
         'product_id',
         'sku',
+        'product_name',
+        'barcode',
         'vendor',
         'unit_cost',
         'vendor_unit_cost',

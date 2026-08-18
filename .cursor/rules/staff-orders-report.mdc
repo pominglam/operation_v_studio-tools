@@ -1,0 +1,50 @@
+---
+description: Staff orders report SPA — test before done
+globs:
+  - "app/Services/Shopify/Admin/Orders/ShopifyStaffOrders*"
+  - "app/Services/Shopify/Admin/Orders/ShopifyOrderStaffAttribution*"
+  - "app/Console/Commands/ShopifyOrderStaffAttributionBackfillCommand.php"
+  - "app/Http/Controllers/Api/V1/StaffOrdersReport*"
+  - "resources/js/pages/StaffOrdersReportPage.vue"
+  - "resources/js/lib/staffOrdersReport.ts"
+  - "tests/**/StaffOrders*"
+  - "tests/e2e/staff-orders-report.spec.ts"
+  - "database/migrations/*staff_attribution*shopify_orders*"
+alwaysApply: false
+---
+
+# Staff orders report
+
+## Data source (required)
+
+The report reads **`shopify_orders`** mirror rows (`source_name`, `channel_name`, `pos_user_id`). It must **not** paginate Shopify live on page load.
+
+Attribution columns are filled by:
+
+- ongoing **order sync** / webhook upserts, and
+- one-time **`php artisan shopify:orders-backfill-staff-attribution YYYY-MM`** for months already mirrored before the columns existed.
+
+## Before marking done
+
+1. **Automated**
+   - `php artisan test tests/Feature/Api/V1/StaffOrdersReportTest.php`
+   - `npm run test -- --run resources/js/lib/__tests__/staffOrdersReport.spec.ts resources/js/pages/__tests__/StaffOrdersReportPage.spec.ts`
+   - `npm run test:e2e -- tests/e2e/staff-orders-report.spec.ts`
+
+2. **Browser (mirror populated)**
+   - Run migration + backfill for the test month if needed.
+   - Open `/reports/staff-orders` (hard refresh after `npm run build`).
+   - Assert **Showing N days** where `N` = days in month (not 0).
+   - Assert **Orders counted** > 0 for a month with store activity **after backfill**.
+   - Page load should complete in seconds (not minutes).
+
+3. **Failure signals (keep working)**
+   - “Showing 0 days” after load finished.
+   - High `orders_missing_attribution` with empty staff columns — run backfill command.
+   - Report still slow (>10s) — likely still hitting Shopify live; fix mirror read path.
+
+## API contract
+
+- `GET /api/v1/reports/staff-orders?month=YYYY-MM`
+- `data.data_source` = `shopify_orders_mirror`
+- `data.rows` = one row per calendar day in `America/Toronto`

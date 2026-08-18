@@ -19,6 +19,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
 
   php:
     build:
@@ -46,6 +47,7 @@ services:
       - "8020:8080"
     networks:
       - pricing_tool_net
+    restart: unless-stopped
     command: ["php", "-S", "0.0.0.0:8080", "-t", "public"]
 
   # Images-only HTTP entrypoint for Shopify CSV imports (exposed through cloudflared quick tunnel).
@@ -192,6 +194,7 @@ services:
       PORT: "3001"
       PLAMOD_BASE_URL: https://plamod.com
       PLAMOD_PERSISTENT_PROFILE_DIR: /app/.pw-user-data
+      PLAMOD_RESTOCK_CART_PROFILE_DIR: /app/.pw-user-data-cart
       # Shared with Laravel container for storing downloaded ZIPs.
       PLAMOD_STORAGE_ROOT: /var/www/html/storage/app/private
       PLAMOD_MANUFACTURER_PDP_ENRICH_MAX: "25"

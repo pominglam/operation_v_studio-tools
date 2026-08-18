@@ -9,8 +9,11 @@ namespace App\Services\Products;
  */
 final class ProductInboundOpenPoQtySql
 {
-    public static function expression(bool $includeDraftPurchaseOrders = true): string
-    {
+    public static function expression(
+        bool $includeDraftPurchaseOrders = true,
+        string $productIdColumn = 'products.id',
+        string $productSkuColumn = 'products.sku',
+    ): string {
         $draftClause = $includeDraftPurchaseOrders
             ? ''
             : ' and (po.ordered_date is not null or po.shipped_date is not null)';
@@ -21,8 +24,11 @@ final class ProductInboundOpenPoQtySql
             ), 0)
             from purchase_order_items poi
             inner join purchase_orders po on po.id = poi.purchase_order_id
-            where poi.product_id = products.id
-              and po.received_date is null'.$draftClause.'
+            where po.received_date is null'.$draftClause.'
+              and (
+                poi.product_id = '.$productIdColumn.'
+                or (poi.product_id is null and poi.sku = '.$productSkuColumn.')
+              )
         )';
     }
 }
