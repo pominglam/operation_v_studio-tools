@@ -27,7 +27,7 @@ it('imports products from a CSV and persists them', function (): void {
         'sku' => '5060358',
         'barcode' => '4573102603586',
         'vendor' => 'Plamod',
-        'type' => 'Orphans HG',
+        'type' => 'HGIBO',
     ]);
 
     $this->assertDatabaseHas('products', [

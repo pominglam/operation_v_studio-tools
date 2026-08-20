@@ -15,7 +15,16 @@ final class ProductTypeDerivationService
 
         // Specific vendor/product naming quirks.
         if (preg_match('/\bORPHANS\s+HG\b/i', $name) === 1) {
-            return 'Orphans HG';
+            return 'HGIBO';
+        }
+
+        if (preg_match('/\bHGIBO\b/i', $name) === 1) {
+            return 'HGIBO';
+        }
+
+        if (preg_match('/\bIRON[-\s]BLOODED\s+ORPHANS\b/i', $name) === 1
+            && preg_match('/\b(HG|HIGH\s+GRADE)\b/i', $name) === 1) {
+            return 'HGIBO';
         }
 
         if (preg_match('/^BB/i', $name) === 1) {
@@ -84,7 +93,7 @@ final class ProductTypeDerivationService
         }
 
         // Generic model-grade prefixes.
-        if (preg_match('/^(HGUC|HGBF|HGCE|HGAC|HG|MG|RG|RE|SDW?|SD|30MM|30MF|30MS)\b/i', $name, $m) === 1) {
+        if (preg_match('/^(HGUC|HGBF|HGCE|HGAC|HGIBO|HG|MG|RG|RE|SDW?|SD|30MM|30MF|30MS)\b/i', $name, $m) === 1) {
             return mb_strtoupper((string) $m[1]);
         }
 

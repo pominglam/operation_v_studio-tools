@@ -41,6 +41,7 @@ return [
         'ENTRY GRADE' => 8,
         'HG' => 3,
         'Orphans HG' => 3,
+        'HGIBO' => 3,
         'MACROSS' => 25,
         'EG' => 8,
         'SD' => 2,
@@ -87,6 +88,7 @@ return [
     'type_within_rank_order' => [
         3 => [
             'ORPHANS-HG' => 0,
+            'HGIBO' => 0,
             'HG' => 1,
         ],
         6 => [

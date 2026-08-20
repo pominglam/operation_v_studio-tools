@@ -7,7 +7,8 @@ use App\Services\Products\ProductTypeDerivationService;
 it('derives expected product types from name using mapping rules', function (): void {
     $svc = app(ProductTypeDerivationService::class);
 
-    expect($svc->deriveFromName('Orphans HG 1/144 Something'))->toBe('Orphans HG');
+    expect($svc->deriveFromName('Orphans HG 1/144 Something'))->toBe('HGIBO');
+    expect($svc->deriveFromName('High Grade (HG) Iron Blooded Orphans 1/144 Reginlaze Julia'))->toBe('HGIBO');
     expect($svc->deriveFromName('BB368 OO Gundam'))->toBe('SD');
     expect($svc->deriveFromName('FULL MECHANICS 1/100 Gundam'))->toBe('FM');
     expect($svc->deriveFromName('Bandai RE 1/100 Bawoo'))->toBe('RE');

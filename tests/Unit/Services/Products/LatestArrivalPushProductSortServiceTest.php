@@ -399,7 +399,7 @@ it('places Mega Size Model immediately after PG', function (): void {
     ]);
 });
 
-it('groups Orphans HG together before regular HG within rank 3', function (): void {
+it('groups HGIBO together before regular HG within rank 3', function (): void {
     $service = new LatestArrivalPushProductSortService(new ProductTypeDerivationService);
 
     $rows = [
@@ -412,13 +412,13 @@ it('groups Orphans HG together before regular HG within rank 3', function (): vo
         [
             'sku' => 'ORPHAN-2',
             'type_rank' => 3,
-            'type_label' => 'ORPHANS-HG',
+            'type_label' => 'HGIBO',
             'product_created_at' => '2026-05-01T12:00:00+00:00',
         ],
         [
             'sku' => 'ORPHAN-1',
             'type_rank' => 3,
-            'type_label' => 'ORPHANS-HG',
+            'type_label' => 'HGIBO',
             'product_created_at' => '2026-06-02T12:00:00+00:00',
         ],
         [

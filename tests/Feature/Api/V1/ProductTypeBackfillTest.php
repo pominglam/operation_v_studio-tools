@@ -56,7 +56,7 @@ it('backfills missing product types based on description', function (): void {
     $res = $this->postJson('/api/v1/products/backfill-types');
     $res->assertOk()->assertJson(['updated' => 3]);
 
-    $this->assertDatabaseHas('products', ['id' => $p1->id, 'type' => 'Orphans HG']);
+    $this->assertDatabaseHas('products', ['id' => $p1->id, 'type' => 'HGIBO']);
     $this->assertDatabaseHas('products', ['id' => $p2->id, 'type' => 'SD']);
     $this->assertDatabaseHas('products', ['id' => $p3->id, 'type' => 'RG']);
     $this->assertDatabaseHas('products', ['id' => $p4->id, 'type' => 'Others']);

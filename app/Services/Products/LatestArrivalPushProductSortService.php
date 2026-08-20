@@ -189,7 +189,7 @@ final class LatestArrivalPushProductSortService
             return 'ARMORED CORE';
         }
 
-        if (preg_match('/^(30MM|30MF|30MS|30MP|HGUC|HGBF|HGCE|HGAC|HGAW|HG|MGEX|MGSD|MG|RG|RE|SDW?|SD|EG|ENTRY\s+GRADE|POKEMON|FIGURE-?RISE)\b/i', $description, $match) === 1) {
+        if (preg_match('/^(30MM|30MF|30MS|30MP|HGUC|HGBF|HGCE|HGAC|HGAW|HGIBO|HG|MGEX|MGSD|MG|RG|RE|SDW?|SD|EG|ENTRY\s+GRADE|POKEMON|FIGURE-?RISE)\b/i', $description, $match) === 1) {
             $raw = mb_strtoupper(trim((string) $match[1]));
             if ($raw === 'ENTRY GRADE') {
                 return 'ENTRY GRADE';

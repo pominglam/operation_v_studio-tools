@@ -10,6 +10,7 @@ use App\DAL\Products\ProductRepository;
 use App\Models\Product;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\Products\ProductPdpSearchTermsService;
+use App\Support\Products\ProductGradeResolver;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
@@ -24,6 +25,7 @@ final class NewtypeContentSyncService
         private readonly ProductRepository $products,
         private readonly ProductExternalContentRepository $contents,
         private readonly ProductExternalAssetRepository $assets,
+        private readonly ProductGradeResolver $gradeResolver,
     ) {}
 
     /**
@@ -312,8 +314,9 @@ final class NewtypeContentSyncService
         }
 
         $line = is_string($parsed['line'] ?? null) ? trim((string) $parsed['line']) : '';
-        if ($line !== '') {
-            $product->grade = $this->gradeFromLine($line);
+        $grade = $this->gradeFromLine($line, $product->description);
+        if ($grade !== null) {
+            $product->grade = $grade;
         }
 
         $series = is_string($parsed['series'] ?? null) ? trim((string) $parsed['series']) : '';
@@ -327,19 +330,22 @@ final class NewtypeContentSyncService
         }
     }
 
-    private function gradeFromLine(string $line): string
+    private function gradeFromLine(string $line, ?string $description = null): ?string
     {
         $line = trim($line);
-        if ($line === '') {
-            return $line;
+        if ($line !== '') {
+            $fromLine = $this->gradeResolver->resolveFromDescription($line)
+                ?? $this->gradeResolver->resolveFromType($line);
+            if ($fromLine !== null) {
+                return $fromLine;
+            }
         }
-        if (preg_match('/^([A-Z0-9]+)/', $line, $m)) {
-            $g = trim((string) ($m[1] ?? ''));
 
-            return $g !== '' ? $g : $line;
+        if ($description !== null && trim($description) !== '') {
+            return $this->gradeResolver->resolveFromDescription($description);
         }
 
-        return $line;
+        return null;
     }
 
     private function titleScore(string $title, string $name): float

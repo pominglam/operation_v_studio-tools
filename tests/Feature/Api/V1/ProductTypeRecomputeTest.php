@@ -44,7 +44,7 @@ it('recomputes product types for all products and can overwrite existing types',
     $res = $this->postJson('/api/v1/products/recompute-types');
     $res->assertOk()->assertJson(['updated' => 2]);
 
-    $this->assertDatabaseHas('products', ['id' => $p1->id, 'type' => 'Orphans HG']);
+    $this->assertDatabaseHas('products', ['id' => $p1->id, 'type' => 'HGIBO']);
     $this->assertDatabaseHas('products', ['id' => $p2->id, 'type' => 'HG']);
     $this->assertDatabaseHas('products', ['id' => $p3->id, 'type' => 'Others']);
 
