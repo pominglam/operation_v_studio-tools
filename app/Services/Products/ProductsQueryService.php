@@ -41,6 +41,7 @@ final class ProductsQueryService
         ?int $availableMin = null,
         ?int $availableMax = null,
         ?int $notArrived = null,
+        ?int $notArrivedMin = null,
         ?int $reorder = null,
         bool $reorderGtOne = false,
         array $productFlags = [],
@@ -48,6 +49,8 @@ final class ProductsQueryService
         bool $notArrivedIncludeDraftOrders = true,
         ?float $sellingPriceMin = null,
         ?float $sellingPriceMax = null,
+        bool $missingLandedCost = false,
+        bool $hasLandedCost = false,
     ): LengthAwarePaginator {
         return $this->products->paginate(
             $perPage,
@@ -67,6 +70,7 @@ final class ProductsQueryService
             $availableMin,
             $availableMax,
             $notArrived,
+            $notArrivedMin,
             $reorder,
             $reorderGtOne,
             $productFlags,
@@ -74,6 +78,8 @@ final class ProductsQueryService
             $notArrivedIncludeDraftOrders,
             $sellingPriceMin,
             $sellingPriceMax,
+            $missingLandedCost,
+            $hasLandedCost,
         );
     }
 
@@ -104,6 +110,7 @@ final class ProductsQueryService
         ?int $availableMin = null,
         ?int $availableMax = null,
         ?int $notArrived = null,
+        ?int $notArrivedMin = null,
         ?int $reorder = null,
         bool $reorderGtOne = false,
         array $productFlags = [],
@@ -111,6 +118,8 @@ final class ProductsQueryService
         bool $notArrivedIncludeDraftOrders = true,
         ?float $sellingPriceMin = null,
         ?float $sellingPriceMax = null,
+        bool $missingLandedCost = false,
+        bool $hasLandedCost = false,
     ): Collection {
         return $this->products->listFiltered(
             $search,
@@ -129,6 +138,7 @@ final class ProductsQueryService
             $availableMin,
             $availableMax,
             $notArrived,
+            $notArrivedMin,
             $reorder,
             $reorderGtOne,
             $productFlags,
@@ -136,6 +146,8 @@ final class ProductsQueryService
             $notArrivedIncludeDraftOrders,
             $sellingPriceMin,
             $sellingPriceMax,
+            $missingLandedCost,
+            $hasLandedCost,
         );
     }
 

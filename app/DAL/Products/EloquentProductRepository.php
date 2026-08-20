@@ -6,7 +6,7 @@ namespace App\DAL\Products;
 
 use App\DTOs\Products\ProductImportRowDTO;
 use App\Models\Product;
-use App\Services\Products\ProductInboundOpenPoQtySql;
+use App\Services\Products\ProductNotArrivedQtyService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
@@ -18,6 +18,12 @@ use Illuminate\Support\Str;
 final class EloquentProductRepository implements ProductRepository
 {
     private const MAIN_TYPE_EMPTY_SENTINEL = '__empty__';
+
+    private const TYPE_EMPTY_SENTINEL = '__empty__';
+
+    public function __construct(
+        private readonly ProductNotArrivedQtyService $notArrivedQty,
+    ) {}
 
     private function resolveBarcodeCollationForTempTable(): string
     {
@@ -105,9 +111,35 @@ final class EloquentProductRepository implements ProductRepository
             $q->whereIn('main_type', $mainTypesForWhereIn);
         }
 
-        $types = array_values(array_filter(array_map('trim', $types), static fn (string $t): bool => $t !== ''));
-        if ($types !== []) {
-            $q->whereIn('type', $types);
+        $types = array_values(array_unique(array_filter(array_map(
+            static fn (string $t): string => trim($t),
+            $types,
+        ), static fn (string $t): bool => $t !== '')));
+
+        $wantEmptyType = false;
+        $typesForWhereIn = [];
+        foreach ($types as $type) {
+            if (strtolower($type) === self::TYPE_EMPTY_SENTINEL) {
+                $wantEmptyType = true;
+
+                continue;
+            }
+            $typesForWhereIn[] = $type;
+        }
+
+        if ($wantEmptyType && $typesForWhereIn !== []) {
+            $q->where(function ($sub) use ($typesForWhereIn): void {
+                $sub->whereIn('type', $typesForWhereIn)
+                    ->orWhereNull('type')
+                    ->orWhere('type', '=', '');
+            });
+        } elseif ($wantEmptyType) {
+            $q->where(function ($sub): void {
+                $sub->whereNull('type')
+                    ->orWhere('type', '=', '');
+            });
+        } elseif ($typesForWhereIn !== []) {
+            $q->whereIn('type', $typesForWhereIn);
         }
 
         $vendors = array_values(array_filter(array_map('trim', $vendors), static fn (string $v): bool => $v !== ''));
@@ -176,7 +208,7 @@ final class EloquentProductRepository implements ProductRepository
 
     private function inboundOpenPoQtyExpression(bool $includeDraftPurchaseOrders = true): string
     {
-        return ProductInboundOpenPoQtySql::expression($includeDraftPurchaseOrders);
+        return $this->notArrivedQty->sqlExpression($includeDraftPurchaseOrders);
     }
 
     private function reorderQtyExpression(string $inboundExpr): string
@@ -434,7 +466,7 @@ final class EloquentProductRepository implements ProductRepository
      * @param  array<int, string>  $productFlags
      * @param  array<int, string>  $shipmentMethods
      */
-    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null): LengthAwarePaginator
+    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false): LengthAwarePaginator
     {
         $q = $this->buildFilteredListQuery(
             $search,
@@ -451,6 +483,7 @@ final class EloquentProductRepository implements ProductRepository
             $availableMin,
             $availableMax,
             $notArrived,
+            $notArrivedMin,
             $reorder,
             $reorderGtOne,
             $productFlags,
@@ -458,6 +491,8 @@ final class EloquentProductRepository implements ProductRepository
             $notArrivedIncludeDraftOrders,
             $sellingPriceMin,
             $sellingPriceMax,
+            $missingLandedCost,
+            $hasLandedCost,
         );
 
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
@@ -466,7 +501,7 @@ final class EloquentProductRepository implements ProductRepository
         return $q->paginate(perPage: $perPage);
     }
 
-    public function listFiltered(?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null): Collection
+    public function listFiltered(?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false): Collection
     {
         $q = $this->buildFilteredListQuery(
             $search,
@@ -483,6 +518,7 @@ final class EloquentProductRepository implements ProductRepository
             $availableMin,
             $availableMax,
             $notArrived,
+            $notArrivedMin,
             $reorder,
             $reorderGtOne,
             $productFlags,
@@ -490,6 +526,8 @@ final class EloquentProductRepository implements ProductRepository
             $notArrivedIncludeDraftOrders,
             $sellingPriceMin,
             $sellingPriceMax,
+            $missingLandedCost,
+            $hasLandedCost,
         );
 
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
@@ -526,6 +564,7 @@ final class EloquentProductRepository implements ProductRepository
         ?int $availableMin,
         ?int $availableMax,
         ?int $notArrived,
+        ?int $notArrivedMin,
         ?int $reorder,
         bool $reorderGtOne,
         array $productFlags,
@@ -533,6 +572,8 @@ final class EloquentProductRepository implements ProductRepository
         bool $notArrivedIncludeDraftOrders,
         ?float $sellingPriceMin,
         ?float $sellingPriceMax,
+        bool $missingLandedCost,
+        bool $hasLandedCost,
     ) {
         $q = Product::query()
             ->with(['sellingPrice'])
@@ -595,6 +636,16 @@ final class EloquentProductRepository implements ProductRepository
         $this->applyAvailableRangeFilter($q, $availableMin, $availableMax);
         if ($notArrived !== null) {
             $q->whereRaw("{$inboundOpenPoQtyExpr} = ?", [$notArrived]);
+        }
+        if ($notArrivedMin !== null) {
+            $q->whereRaw("{$inboundOpenPoQtyExpr} >= ?", [$notArrivedMin]);
+        }
+        if ($missingLandedCost) {
+            $q->whereRaw('coalesce(products.available_qty, 0) > 0')
+                ->whereNull('products.latest_landed_unit_cost');
+        }
+        if ($hasLandedCost) {
+            $q->whereNotNull('products.latest_landed_unit_cost');
         }
         if ($reorder !== null) {
             $q->whereRaw("{$reorderQtyExpr} = ?", [$reorder]);

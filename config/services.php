@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'tracking_browser' => [
+        'url' => env('TRACKING_SCRAPER_URL', 'http://tracking_scraper:3002'),
+    ],
+
 ];

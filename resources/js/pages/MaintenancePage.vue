@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import { api } from '../lib/api';
 import ConfirmDialog from '../components/ui/ConfirmDialog.vue';
@@ -133,6 +133,9 @@ const shopifyHealth = ref<ShopifyHealthSnapshot>({});
 const shopifyMessage = ref<string | null>(null);
 const shopifyError = ref<string | null>(null);
 const shopifyActionBusy = ref(false);
+const SHOPIFY_STATUS_POLL_INTERVAL_MS = 5_000;
+let shopifyStatusPollTimer: ReturnType<typeof window.setInterval> | null = null;
+let shopifyStatusRequestInFlight = false;
 
 const shopifyTasks = computed(() => shopifyHealth.value.tasks ?? []);
 
@@ -381,7 +384,9 @@ function requestRefreshPlamodInstock(): void {
 function requestRestoreDb(): void {
     if (!selectedRestoreUuid.value) return;
     const b = dbBackups.value.find((x) => x.uuid === selectedRestoreUuid.value) ?? null;
-    const label = b ? `${b.filename} — ${b.description || 'No description'}` : selectedRestoreUuid.value;
+    const label = b
+        ? `${b.filename} — ${b.description || 'No description'}`
+        : selectedRestoreUuid.value;
     confirm.value = {
         kind: 'restore_db',
         title: 'Restore database from backup',
@@ -495,7 +500,9 @@ async function refreshLatestCosts(): Promise<void> {
     refreshLatestCostsError.value = null;
 
     try {
-        const res = await api.post<{ matched: number; updated: number }>('/api/v1/maintenance/refresh-latest-costs');
+        const res = await api.post<{ matched: number; updated: number }>(
+            '/api/v1/maintenance/refresh-latest-costs',
+        );
         refreshLatestCostsMessage.value = `Refreshed latest costs. Matched ${res.data.matched}, updated ${res.data.updated}.`;
     } catch {
         refreshLatestCostsError.value = 'Failed to refresh latest costs.';
@@ -586,8 +593,12 @@ async function loadProductFilterOptions(): Promise<void> {
         const r = await fetch('/api/v1/products/filter-options');
         if (!r.ok) return;
         const json = (await r.json()) as { data?: { types?: string[]; vendors?: string[] } };
-        productTypes.value = (json.data?.types ?? []).filter((t) => typeof t === 'string' && t.trim() !== '');
-        productVendors.value = (json.data?.vendors ?? []).filter((v) => typeof v === 'string' && v.trim() !== '');
+        productTypes.value = (json.data?.types ?? []).filter(
+            (t) => typeof t === 'string' && t.trim() !== '',
+        );
+        productVendors.value = (json.data?.vendors ?? []).filter(
+            (v) => typeof v === 'string' && v.trim() !== '',
+        );
     } catch {
         // ignore
     }
@@ -765,23 +776,53 @@ async function loadMaintenanceNotes(): Promise<void> {
     }
 }
 
-async function loadShopifySettings(): Promise<void> {
-    shopifySettingsLoading.value = true;
-    shopifyError.value = null;
+async function loadShopifySettings(silent = false): Promise<void> {
+    if (shopifyStatusRequestInFlight) return;
+
+    shopifyStatusRequestInFlight = true;
+    if (!silent) {
+        shopifySettingsLoading.value = true;
+        shopifyError.value = null;
+    }
+
     try {
         const res = await api.get<{ data: ShopifyHealthSnapshot }>('/api/v1/shopify/settings');
         shopifyHealth.value = res.data.data;
         const hours = Number(res.data.data.order_reconcile_interval_hours);
-        shopifyIntervalHours.value = Number.isFinite(hours) && hours > 0 ? hours : 12;
+        if (!silent) {
+            shopifyIntervalHours.value = Number.isFinite(hours) && hours > 0 ? hours : 12;
+        }
+        shopifyError.value = null;
     } catch {
-        shopifyError.value = 'Failed to load Shopify settings.';
+        if (!silent) {
+            shopifyError.value = 'Failed to load Shopify settings.';
+        }
     } finally {
-        shopifySettingsLoading.value = false;
+        shopifyStatusRequestInFlight = false;
+        if (!silent) {
+            shopifySettingsLoading.value = false;
+        }
     }
 }
 
 async function refreshShopifyStatus(): Promise<void> {
     await loadShopifySettings();
+}
+
+function startShopifyStatusPolling(): void {
+    if (shopifyStatusPollTimer !== null) return;
+
+    shopifyStatusPollTimer = window.setInterval(() => {
+        if (document.visibilityState === 'hidden') return;
+        void loadShopifySettings(true);
+    }, SHOPIFY_STATUS_POLL_INTERVAL_MS);
+}
+
+function stopShopifyStatusPolling(): void {
+    if (shopifyStatusPollTimer === null) return;
+
+    window.clearInterval(shopifyStatusPollTimer);
+    shopifyStatusPollTimer = null;
 }
 
 async function saveShopifyInterval(): Promise<void> {
@@ -805,7 +846,8 @@ function requestShopifyHistorical(): void {
     confirm.value = {
         kind: 'shopify_historical',
         title: 'Repull all historical orders',
-        message: 'Queue a full Shopify order backfill? This may take a long time and consume API quota.',
+        message:
+            'Queue a full Shopify order backfill? This may take a long time and consume API quota.',
         confirmText: 'Queue backfill',
         variant: 'danger',
     };
@@ -825,7 +867,8 @@ function requestShopifyInventoryPull(): void {
     confirm.value = {
         kind: 'shopify_inventory_pull',
         title: 'Pull Shopify inventory',
-        message: 'Sync inventory from Shopify and overwrite products.available_qty for matched SKUs?',
+        message:
+            'Sync inventory from Shopify and overwrite products.available_qty for matched SKUs?',
         confirmText: 'Pull inventory',
         variant: 'danger',
     };
@@ -883,7 +926,9 @@ async function loadExternalRateLimit(): Promise<void> {
     externalHitsLoading.value = true;
     externalHitsError.value = null;
     try {
-        const res = await api.get<{ data: { hits_per_minute: number } }>('/api/v1/maintenance/external-rate-limit');
+        const res = await api.get<{ data: { hits_per_minute: number } }>(
+            '/api/v1/maintenance/external-rate-limit',
+        );
         const v = Number(res.data.data.hits_per_minute);
         externalHitsPerMinute.value = Number.isFinite(v) && v > 0 ? v : 10;
     } catch {
@@ -927,15 +972,21 @@ async function setExternalAccessEnabled(enabled: boolean): Promise<void> {
         );
         if (res.status !== 200) {
             const err = (res.data as any)?.error;
-            externalAccessError.value = typeof err === 'string' && err.trim() !== '' ? err : 'Failed to update external access.';
+            externalAccessError.value =
+                typeof err === 'string' && err.trim() !== ''
+                    ? err
+                    : 'Failed to update external access.';
             return;
         }
         externalAccessEnabled.value = !!res.data.data.enabled;
         externalAccessTunnel.value = res.data.data.tunnel ?? null;
         if (enabled && !externalAccessTunnel.value?.tunnel_url) {
-            externalAccessMessage.value = 'External access enabled. Tunnel URL may take a few seconds — click Refresh.';
+            externalAccessMessage.value =
+                'External access enabled. Tunnel URL may take a few seconds — click Refresh.';
         } else {
-            externalAccessMessage.value = enabled ? 'External access enabled.' : 'External access disabled.';
+            externalAccessMessage.value = enabled
+                ? 'External access enabled.'
+                : 'External access disabled.';
         }
     } catch {
         // This action can take a bit (cloudflared startup / URL propagation).
@@ -963,9 +1014,12 @@ async function saveExternalRateLimit(): Promise<void> {
     externalHitsError.value = null;
     externalHitsMessage.value = null;
     try {
-        const res = await api.put<{ data: { hits_per_minute: number } }>('/api/v1/maintenance/external-rate-limit', {
-            hits_per_minute: externalHitsPerMinute.value,
-        });
+        const res = await api.put<{ data: { hits_per_minute: number } }>(
+            '/api/v1/maintenance/external-rate-limit',
+            {
+                hits_per_minute: externalHitsPerMinute.value,
+            },
+        );
         const v = Number(res.data.data.hits_per_minute);
         externalHitsPerMinute.value = Number.isFinite(v) && v > 0 ? v : externalHitsPerMinute.value;
         externalHitsMessage.value = 'Saved.';
@@ -1055,7 +1109,10 @@ async function createDbBackup(): Promise<void> {
     } catch (e: unknown) {
         const anyErr = e as any;
         const msg = typeof anyErr?.message === 'string' ? anyErr.message.trim() : '';
-        dbBackupError.value = msg !== '' ? `Failed to create DB + images backup. ${msg}` : 'Failed to create DB + images backup.';
+        dbBackupError.value =
+            msg !== ''
+                ? `Failed to create DB + images backup. ${msg}`
+                : 'Failed to create DB + images backup.';
     } finally {
         creatingDbBackup.value = false;
     }
@@ -1086,7 +1143,8 @@ async function restoreDb(): Promise<void> {
             dbRestoreError.value = `Failed to restore DB + images (HTTP ${res.status}).${details ? ` ${details}` : ''}`;
             return;
         }
-        dbRestoreMessage.value = 'Restore started/completed (DB + images). Refresh the page if things look stale.';
+        dbRestoreMessage.value =
+            'Restore started/completed (DB + images). Refresh the page if things look stale.';
         confirm.value = null;
     } catch {
         dbRestoreError.value = 'Failed to restore DB + images.';
@@ -1132,6 +1190,11 @@ onMounted(() => {
     void loadExternalRateLimit();
     void loadExternalAccess();
     void loadShopifySettings();
+    startShopifyStatusPolling();
+});
+
+onBeforeUnmount(() => {
+    stopShopifyStatusPolling();
 });
 
 watch(
@@ -1166,7 +1229,9 @@ watch(
                     <div class="text-sm font-medium text-slate-900">Shopify sync & demand</div>
                     <div class="mt-1 text-sm text-slate-600">
                         Order webhooks + scheduled reconcile, demand rollups, and inventory pull.
-                        <RouterLink to="/shopify/webhooks" class="ml-1 underline">Webhook logs</RouterLink>
+                        <RouterLink to="/shopify/webhooks" class="ml-1 underline"
+                            >Webhook logs</RouterLink
+                        >
                     </div>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -1229,7 +1294,10 @@ watch(
                 </button>
             </div>
 
-            <div v-if="shopifyError" class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+            <div
+                v-if="shopifyError"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
                 {{ shopifyError }}
             </div>
             <div
@@ -1241,22 +1309,33 @@ watch(
 
             <div class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3">
                 <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-600">Sync status</div>
-                    <div v-if="shopifyHasActiveWork" class="text-xs text-sky-700">Work in progress — refresh to update</div>
+                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Sync status
+                    </div>
+                    <div class="text-xs text-sky-700">
+                        {{ shopifyHasActiveWork ? 'Work in progress' : 'Status current' }} —
+                        auto-updates every 5 seconds
+                    </div>
                 </div>
 
                 <dl class="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
                     <div>
                         <dt class="font-medium text-slate-700">Last order sync</dt>
-                        <dd class="font-mono">{{ formatLocalDateTime(shopifyHealth.orders_last_success_at) }}</dd>
+                        <dd class="font-mono">
+                            {{ formatLocalDateTime(shopifyHealth.orders_last_success_at) }}
+                        </dd>
                     </div>
                     <div>
                         <dt class="font-medium text-slate-700">Next reconcile due</dt>
-                        <dd class="font-mono">{{ formatLocalDateTime(shopifyHealth.next_order_reconcile_due_at) }}</dd>
+                        <dd class="font-mono">
+                            {{ formatLocalDateTime(shopifyHealth.next_order_reconcile_due_at) }}
+                        </dd>
                     </div>
                     <div>
                         <dt class="font-medium text-slate-700">Last webhook</dt>
-                        <dd class="font-mono">{{ formatLocalDateTime(shopifyHealth.last_webhook_received_at) }}</dd>
+                        <dd class="font-mono">
+                            {{ formatLocalDateTime(shopifyHealth.last_webhook_received_at) }}
+                        </dd>
                     </div>
                     <div v-if="shopifyHealth.orders_last_error">
                         <dt class="font-medium text-rose-700">Last order error</dt>
@@ -1275,7 +1354,11 @@ watch(
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="task in shopifyTasks" :key="task.key" class="border-b border-slate-100">
+                            <tr
+                                v-for="task in shopifyTasks"
+                                :key="task.key"
+                                class="border-b border-slate-100"
+                            >
                                 <td class="py-2 pr-3 text-slate-900">{{ task.label }}</td>
                                 <td class="py-2 pr-3">
                                     <span
@@ -1286,11 +1369,19 @@ watch(
                                     </span>
                                 </td>
                                 <td class="py-2 pr-3 font-mono text-slate-600">
-                                    {{ formatLocalDateTime(task.last_finished_at ?? task.last_started_at) }}
+                                    {{
+                                        formatLocalDateTime(
+                                            task.last_finished_at ?? task.last_started_at,
+                                        )
+                                    }}
                                 </td>
                                 <td class="py-2 text-slate-600">
-                                    <span v-if="shopifyTaskDetail(task)">{{ shopifyTaskDetail(task) }}</span>
-                                    <span v-else-if="task.error_summary" class="text-rose-700">{{ task.error_summary }}</span>
+                                    <span v-if="shopifyTaskDetail(task)">{{
+                                        shopifyTaskDetail(task)
+                                    }}</span>
+                                    <span v-else-if="task.error_summary" class="text-rose-700">{{
+                                        task.error_summary
+                                    }}</span>
                                     <span v-else>—</span>
                                 </td>
                             </tr>
@@ -1305,7 +1396,8 @@ watch(
                 <div class="flex-1">
                     <div class="text-sm font-medium text-slate-900">External crawl rate limit</div>
                     <div class="mt-1 text-sm text-slate-600">
-                        Global throttle applied to external crawls (Bandai, HLJ, competitor sites). Approx hits per minute.
+                        Global throttle applied to external crawls (Bandai, HLJ, competitor sites).
+                        Approx hits per minute.
                     </div>
                 </div>
 
@@ -1319,7 +1411,10 @@ watch(
                 </button>
             </div>
 
-            <div v-if="externalHitsError" class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+            <div
+                v-if="externalHitsError"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
                 {{ externalHitsError }}
             </div>
             <div
@@ -1330,7 +1425,9 @@ watch(
             </div>
 
             <div class="mt-3 max-w-sm">
-                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Hits per minute</label>
+                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                    >Hits per minute</label
+                >
                 <input
                     v-model.number="externalHitsPerMinute"
                     class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
@@ -1347,8 +1444,10 @@ watch(
                 <div class="flex-1">
                     <div class="text-sm font-medium text-slate-900">External access</div>
                     <div class="mt-1 text-sm text-slate-600">
-                        Expose the full app through a Cloudflare quick tunnel (<span class="font-mono text-xs">trycloudflare.com</span>)
-                        protected by a simple password. Local access is unaffected.
+                        Expose the full app through a Cloudflare quick tunnel (<span
+                            class="font-mono text-xs"
+                            >trycloudflare.com</span
+                        >) protected by a simple password. Local access is unaffected.
                     </div>
                     <div class="mt-2 text-xs text-amber-800">
                         Warning: this is not a full auth system. Use only for temporary access.
@@ -1367,7 +1466,11 @@ watch(
                     <button
                         class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                         type="button"
-                        :disabled="externalAccessLoading || externalAccessBusy || !canStartExternalAccessTunnel"
+                        :disabled="
+                            externalAccessLoading ||
+                            externalAccessBusy ||
+                            !canStartExternalAccessTunnel
+                        "
                         @click="setExternalAccessEnabled(true)"
                     >
                         {{
@@ -1381,7 +1484,9 @@ watch(
                     <button
                         class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                         type="button"
-                        :disabled="externalAccessLoading || externalAccessBusy || !externalAccessEnabled"
+                        :disabled="
+                            externalAccessLoading || externalAccessBusy || !externalAccessEnabled
+                        "
                         @click="setExternalAccessEnabled(false)"
                     >
                         Disable
@@ -1389,11 +1494,18 @@ watch(
                 </div>
             </div>
 
-            <div v-if="!externalAccessPasswordConfigured" class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
-                Missing <span class="font-mono text-xs">EXTERNAL_ACCESS_PASSWORD</span> in <span class="font-mono text-xs">.env</span>. Configure it to enable external access.
+            <div
+                v-if="!externalAccessPasswordConfigured"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
+                Missing <span class="font-mono text-xs">EXTERNAL_ACCESS_PASSWORD</span> in
+                <span class="font-mono text-xs">.env</span>. Configure it to enable external access.
             </div>
 
-            <div v-if="externalAccessError" class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+            <div
+                v-if="externalAccessError"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
                 {{ externalAccessError }}
             </div>
             <div
@@ -1407,22 +1519,33 @@ watch(
                 <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
                     <div class="text-slate-700">
                         Status:
-                        <span class="font-semibold text-slate-900">{{ externalAccessEnabled ? 'Enabled' : 'Disabled' }}</span>
-                        <span v-if="externalAccessTunnel?.running" class="text-emerald-700"> · Tunnel running</span>
+                        <span class="font-semibold text-slate-900">{{
+                            externalAccessEnabled ? 'Enabled' : 'Disabled'
+                        }}</span>
+                        <span v-if="externalAccessTunnel?.running" class="text-emerald-700">
+                            · Tunnel running</span
+                        >
                         <span v-else class="text-slate-600"> · Tunnel stopped</span>
-                        <span v-if="externalAccessTunnel?.error" class="text-rose-700"> · {{ externalAccessTunnel.error }}</span>
+                        <span v-if="externalAccessTunnel?.error" class="text-rose-700">
+                            · {{ externalAccessTunnel.error }}</span
+                        >
                     </div>
 
                     <div v-if="externalAccessTunnel?.tunnel_url" class="text-slate-700">
                         URL:
-                        <a class="font-mono text-xs text-slate-900 underline" :href="externalAccessTunnel.tunnel_url" target="_blank">
+                        <a
+                            class="font-mono text-xs text-slate-900 underline"
+                            :href="externalAccessTunnel.tunnel_url"
+                            target="_blank"
+                        >
                             {{ externalAccessTunnel.tunnel_url }}
                         </a>
                     </div>
                 </div>
 
                 <div v-if="externalAccessTunnel?.tunnel_url" class="mt-1 text-xs text-slate-600">
-                    Quick tunnel URLs rotate; if you use an older URL it may show <span class="font-mono">404</span>. Always use the URL shown here.
+                    Quick tunnel URLs rotate; if you use an older URL it may show
+                    <span class="font-mono">404</span>. Always use the URL shown here.
                 </div>
             </div>
         </div>
@@ -1485,7 +1608,9 @@ watch(
                 <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
                     <div class="text-sm font-semibold text-slate-900">Create backup</div>
                     <div class="mt-2">
-                        <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        <label
+                            class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                        >
                             Description
                         </label>
                         <textarea
@@ -1523,7 +1648,9 @@ watch(
                 <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
                     <div class="text-sm font-semibold text-slate-900">Restore backup</div>
                     <div class="mt-2">
-                        <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        <label
+                            class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                        >
                             Select backup
                         </label>
                         <select
@@ -1533,11 +1660,14 @@ watch(
                         >
                             <option value="" disabled>Select…</option>
                             <option v-for="b in dbBackups" :key="b.uuid" :value="b.uuid">
-                                {{ b.created_at ?? '' }} — {{ b.description || 'No description' }} ({{ b.filename }})
+                                {{ b.created_at ?? '' }} —
+                                {{ b.description || 'No description' }} ({{ b.filename }})
                             </option>
                         </select>
                         <div class="mt-2 text-xs text-slate-600">
-                            Loaded <span class="font-semibold text-slate-900">{{ dbBackups.length }}</span> backups.
+                            Loaded
+                            <span class="font-semibold text-slate-900">{{ dbBackups.length }}</span>
+                            backups.
                         </div>
                     </div>
                     <div class="mt-3 flex justify-end">
@@ -1603,9 +1733,12 @@ watch(
         <div class="rounded-lg border border-slate-200 bg-white p-4">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                    <div class="text-sm font-medium text-slate-900">Refresh latest product costs</div>
+                    <div class="text-sm font-medium text-slate-900">
+                        Refresh latest product costs
+                    </div>
                     <div class="mt-1 text-sm text-slate-600">
-                        Recompute cached latest unit and landed costs for all products based on purchase orders.
+                        Recompute cached latest unit and landed costs for all products based on
+                        purchase orders.
                     </div>
                 </div>
 
@@ -1637,10 +1770,15 @@ watch(
         <div class="rounded-lg border border-slate-200 bg-white p-4">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                    <div class="text-sm font-medium text-slate-900">Refresh PLAMOD in-stock catalog</div>
+                    <div class="text-sm font-medium text-slate-900">
+                        Refresh PLAMOD in-stock catalog
+                    </div>
                     <div class="mt-1 text-sm text-slate-600">
                         Export Bandai Hobby Plastic Model Kits (In-Stock) for the
-                        <RouterLink to="/restocking/plamod" class="font-medium text-blue-700 hover:underline">
+                        <RouterLink
+                            to="/restocking/plamod"
+                            class="font-medium text-blue-700 hover:underline"
+                        >
                             restock proposal
                         </RouterLink>
                         page.
@@ -1680,9 +1818,9 @@ watch(
                         Clear stale latest arrival flags
                     </div>
                     <div class="mt-1 text-sm text-slate-600">
-                        Step 1 before marking a new PO: remove latest arrival from products on
-                        POs older than 4 weeks (by received date, or created date if not set).
-                        Does not change published on Shopify.
+                        Step 1 before marking a new PO: remove latest arrival from products on POs
+                        older than 4 weeks (by received date, or created date if not set). Does not
+                        change published on Shopify.
                     </div>
                 </div>
 
@@ -1693,11 +1831,7 @@ watch(
                     :disabled="clearingStaleLatestArrival"
                     @click="requestClearStaleLatestArrival"
                 >
-                    {{
-                        clearingStaleLatestArrival
-                            ? 'Clearing…'
-                            : 'Clear stale latest arrival'
-                    }}
+                    {{ clearingStaleLatestArrival ? 'Clearing…' : 'Clear stale latest arrival' }}
                 </button>
             </div>
 
@@ -1874,10 +2008,12 @@ watch(
         <div class="rounded-lg border border-slate-200 bg-white p-4">
             <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div class="flex-1">
-                    <div class="text-sm font-medium text-slate-900">AliExpress cookies (optional)</div>
+                    <div class="text-sm font-medium text-slate-900">
+                        AliExpress cookies (optional)
+                    </div>
                     <div class="mt-1 text-sm text-slate-600">
-                        AliExpress blocks automated browsing. Paste your browser cookies JSON here to
-                        allow the scraper to use your session.
+                        AliExpress blocks automated browsing. Paste your browser cookies JSON here
+                        to allow the scraper to use your session.
                     </div>
                     <textarea
                         v-model="aliCookiesJson"

@@ -4,10 +4,15 @@ import { useRoute, useRouter } from 'vue-router';
 import { api } from '../lib/api';
 import { formatTorontoDateTime } from '../lib/datetime';
 import { formatMoney2, formatMoney2OrEmpty, parseMoney } from '../lib/money';
-import { build17TrackUrl, parseShipmentTrackingNumbers } from '../lib/shipmentTracking';
+import { mergeVendorOption, vendorChoicesIncludingDraft } from '../lib/productVendorOptions';
+import { parseShipmentTrackingNumbers } from '../lib/shipmentTracking';
+import { useShipmentTrackingResolution } from '../composables/useShipmentTrackingResolution';
 import BulkUpdatePoItemsDialog, {
     type PoItemsBulkChanges,
 } from '../components/purchaseOrders/BulkUpdatePoItemsDialog.vue';
+import PoWaterDecalPromoteDialog, {
+    type WaterDecalPromoteRow,
+} from '../components/purchaseOrders/PoWaterDecalPromoteDialog.vue';
 import PoWorkflowSetPricesDialog, {
     type PoSetPriceOverride,
     type PoSetPricePreview,
@@ -130,6 +135,14 @@ const id = computed(() => String(route.params.id ?? ''));
 const loading = ref(false);
 const error = ref<string | null>(null);
 const po = ref<PurchaseOrder | null>(null);
+const { resolutionFor, isTrackingPending, resolveTrackingNumbers } =
+    useShipmentTrackingResolution();
+
+function poTrackingNumbers(): string[] {
+    return (po.value?.shipment_tracking_numbers ?? [])
+        .map((trackingNumber) => trackingNumber.trim())
+        .filter((trackingNumber) => trackingNumber !== '');
+}
 const productsGridHref = computed<string>(() => {
     if (!po.value) return '';
 
@@ -185,6 +198,12 @@ const savingProductVendorProductId = ref<string | null>(null);
 const editingProductVendorItemId = ref<number | null>(null);
 const productVendorDrafts = reactive<Record<number, string>>({});
 const productVendorOptions = ref<string[]>([]);
+const productVendorDatalistOptions = computed<string[]>(() => {
+    const draftItemId = editingProductVendorItemId.value;
+    const draft =
+        draftItemId !== null ? (productVendorDrafts[draftItemId] ?? '') : '';
+    return vendorChoicesIncludingDraft(productVendorOptions.value, draft);
+});
 
 const savingUnitCost = ref<number | null>(null);
 const editingUnitCostId = ref<number | null>(null);
@@ -200,6 +219,12 @@ const selectedItemIds = ref<Set<number>>(new Set());
 const bulkUpdateOpen = ref(false);
 const bulkUpdating = ref(false);
 const bulkError = ref<string | null>(null);
+
+const waterDecalPromoteOpen = ref(false);
+const waterDecalPromoteBusy = ref(false);
+const waterDecalPreviewBusy = ref(false);
+const waterDecalPromoteError = ref<string | null>(null);
+const waterDecalPromoteRows = ref<WaterDecalPromoteRow[]>([]);
 
 const poProductUuids = computed<string[]>(() => {
     const items = po.value?.items ?? [];
@@ -2095,13 +2120,6 @@ async function loadProductVendorOptions(): Promise<void> {
     }
 }
 
-function vendorChoicesIncludingDraft(draft: string): string[] {
-    const base = productVendorOptions.value.map((v) => v.trim()).filter((v) => v !== '');
-    const cur = draft.trim();
-    const merged = cur !== '' ? [...base, cur] : base;
-    return Array.from(new Set(merged)).sort((a, b) => a.localeCompare(b));
-}
-
 async function loadSellingPriceHistory(): Promise<void> {
     if (!po.value) return;
     sellingPriceHistoryLoading.value = true;
@@ -2150,6 +2168,7 @@ async function load(): Promise<void> {
     } finally {
         loading.value = false;
         if (po.value) {
+            void resolveTrackingNumbers(poTrackingNumbers());
             await Promise.all([runWorkflowVerify(), loadSellingPriceHistory()]);
         }
     }
@@ -2222,6 +2241,7 @@ async function save(): Promise<void> {
         );
         po.value = res.data.data;
         editOpen.value = false;
+        void resolveTrackingNumbers(poTrackingNumbers());
     } catch {
         error.value = 'Failed to save purchase order.';
     } finally {
@@ -2406,12 +2426,10 @@ function startProductVendorEdit(itemId: number, current: string | null): void {
 
 function updateProductVendorDraft(itemId: number, value: string): void {
     productVendorDrafts[itemId] = value;
-    const trimmed = value.trim();
-    if (trimmed !== '' && !productVendorOptions.value.includes(trimmed)) {
-        productVendorOptions.value = [...productVendorOptions.value, trimmed].sort((a, b) =>
-            a.localeCompare(b),
-        );
-    }
+}
+
+function registerProductVendorOption(vendor: string | null | undefined): void {
+    productVendorOptions.value = mergeVendorOption(productVendorOptions.value, vendor);
 }
 
 function commitProductVendorEdit(itemId: number): void {
@@ -2440,6 +2458,10 @@ async function saveProductVendor(itemId: number, value: string): Promise<void> {
 
     const previous = row.product_vendor ?? null;
     const vendor = value.trim() === '' ? null : value.trim();
+    if (vendor === previous) {
+        return;
+    }
+
     savingProductVendorProductId.value = productId;
 
     try {
@@ -2459,6 +2481,7 @@ async function saveProductVendor(itemId: number, value: string): Promise<void> {
 
         const saved = (res.data as any)?.data?.vendor as string | null | undefined;
         setProductVendorLocal(productId, saved ?? null);
+        registerProductVendorOption(saved ?? vendor);
     } catch {
         setProductVendorLocal(productId, previous);
         itemQtyError.value = 'Failed to save product vendor.';
@@ -2749,6 +2772,136 @@ async function confirmBulkUpdate(payload: { changes: PoItemsBulkChanges }): Prom
     }
 }
 
+function mapWaterDecalPreviewRows(raw: unknown[]): WaterDecalPromoteRow[] {
+    return raw.map((row) => {
+        const r = row as WaterDecalPromoteRow;
+        return {
+            ...r,
+            confirm_merge: false,
+        };
+    });
+}
+
+async function loadWaterDecalPreview(
+    rowsOverride?: WaterDecalPromoteRow[],
+): Promise<void> {
+    if (!po.value) return;
+
+    const ids = Array.from(selectedItemIds.value);
+    if (ids.length === 0) {
+        waterDecalPromoteError.value = 'No items selected.';
+        return;
+    }
+
+    waterDecalPreviewBusy.value = true;
+    waterDecalPromoteError.value = null;
+
+    try {
+        const proposed =
+            rowsOverride?.map((row) => ({
+                item_id: row.item_id,
+                proposed_sku: row.proposed_sku,
+            })) ?? [];
+
+        const res = await api.post(
+            `/api/v1/purchase-orders/${po.value.id}/water-decals/preview`,
+            {
+                item_ids: ids,
+                ...(proposed.length > 0 ? { proposed } : {}),
+            },
+            { validateStatus: () => true },
+        );
+
+        if (res.status < 200 || res.status >= 300) {
+            waterDecalPromoteError.value =
+                (res.data as { message?: string })?.message ?? 'Preview failed.';
+            return;
+        }
+
+        const payload = res.data as { rows?: unknown[] };
+        const mapped = mapWaterDecalPreviewRows(payload.rows ?? []);
+        if (rowsOverride !== undefined) {
+            const byId = new Map(rowsOverride.map((row) => [row.item_id, row]));
+            waterDecalPromoteRows.value = mapped.map((row) => {
+                const prior = byId.get(row.item_id);
+                if (prior === undefined) {
+                    return row;
+                }
+
+                return {
+                    ...row,
+                    proposed_description: prior.proposed_description,
+                    proposed_vendor: prior.proposed_vendor,
+                    proposed_type: prior.proposed_type,
+                    confirm_merge: prior.confirm_merge,
+                };
+            });
+        } else {
+            waterDecalPromoteRows.value = mapped;
+        }
+    } catch {
+        waterDecalPromoteError.value = 'Preview failed.';
+    } finally {
+        waterDecalPreviewBusy.value = false;
+    }
+}
+
+async function openWaterDecalPromote(): Promise<void> {
+    waterDecalPromoteOpen.value = true;
+    waterDecalPromoteRows.value = [];
+    await loadWaterDecalPreview();
+}
+
+async function refreshWaterDecalPreview(rows: WaterDecalPromoteRow[]): Promise<void> {
+    waterDecalPromoteRows.value = rows;
+    await loadWaterDecalPreview(rows);
+}
+
+async function confirmWaterDecalPromote(rows: WaterDecalPromoteRow[]): Promise<void> {
+    if (!po.value) return;
+
+    waterDecalPromoteBusy.value = true;
+    waterDecalPromoteError.value = null;
+
+    try {
+        const res = await api.post(
+            `/api/v1/purchase-orders/${po.value.id}/water-decals/apply`,
+            {
+                rows: rows.map((row) => ({
+                    item_id: row.item_id,
+                    sku: row.proposed_sku,
+                    description: row.proposed_description,
+                    vendor: row.proposed_vendor,
+                    type: row.proposed_type,
+                    confirm_merge: row.confirm_merge,
+                })),
+            },
+            { validateStatus: () => true },
+        );
+
+        if (res.status < 200 || res.status >= 300) {
+            waterDecalPromoteError.value =
+                (res.data as { message?: string; water_decals?: { errors?: Record<number, string> } })
+                    ?.message ??
+                Object.values(
+                    (res.data as { water_decals?: { errors?: Record<number, string> } })?.water_decals
+                        ?.errors ?? {},
+                ).join(' ') ??
+                'Apply failed.';
+            return;
+        }
+
+        po.value = (res.data as { data?: PurchaseOrder })?.data ?? po.value;
+        waterDecalPromoteOpen.value = false;
+        selectedItemIds.value = new Set();
+        await load();
+    } catch {
+        waterDecalPromoteError.value = 'Apply failed.';
+    } finally {
+        waterDecalPromoteBusy.value = false;
+    }
+}
+
 function startQtyReceivedEdit(itemId: number, current: number | null): void {
     editingQtyReceivedId.value = itemId;
     if (qtyReceivedDrafts[itemId] === undefined) {
@@ -3019,18 +3172,62 @@ onMounted(() => {
                         </div>
                         <div>
                             <span class="font-medium">Tracking:</span>
-                            <a
+                            <span
                                 v-for="(trackingNumber, index) in po.shipment_tracking_numbers ??
                                 []"
                                 :key="trackingNumber"
-                                :href="build17TrackUrl(trackingNumber) ?? undefined"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="ml-1 inline-block text-indigo-700 underline underline-offset-2"
+                                class="ml-1 inline-flex max-w-full items-center gap-1 text-xs"
                                 :data-testid="`po-tracking-link-${index}`"
                             >
-                                {{ trackingNumber }}
-                            </a>
+                                <a
+                                    v-if="
+                                        resolutionFor(trackingNumber)?.status === 'resolved' &&
+                                        resolutionFor(trackingNumber)?.tracking_url
+                                    "
+                                    :href="
+                                        resolutionFor(trackingNumber)?.tracking_url ?? undefined
+                                    "
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="truncate text-indigo-700 underline underline-offset-2"
+                                    :title="`Open in ${resolutionFor(trackingNumber)?.provider ?? 'tracking provider'}`"
+                                >
+                                    {{ trackingNumber }}
+                                </a>
+                                <span
+                                    v-else
+                                    class="truncate text-slate-600"
+                                    :title="
+                                        isTrackingPending(trackingNumber)
+                                            ? 'Finding a tracking provider…'
+                                            : 'No tracking provider found yet'
+                                    "
+                                >
+                                    {{ trackingNumber }}
+                                </span>
+                                <svg
+                                    v-if="isTrackingPending(trackingNumber)"
+                                    data-testid="tracking-resolution-spinner"
+                                    class="h-3 w-3 shrink-0 animate-spin text-slate-400"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    aria-label="Finding tracking provider"
+                                >
+                                    <circle
+                                        class="opacity-25"
+                                        cx="12"
+                                        cy="12"
+                                        r="9"
+                                        stroke="currentColor"
+                                        stroke-width="3"
+                                    />
+                                    <path
+                                        class="opacity-75"
+                                        fill="currentColor"
+                                        d="M12 3a9 9 0 0 1 9 9h-3a6 6 0 0 0-6-6V3Z"
+                                    />
+                                </svg>
+                            </span>
                             <span v-if="(po.shipment_tracking_numbers ?? []).length === 0">—</span>
                         </div>
                     </div>
@@ -3953,6 +4150,15 @@ onMounted(() => {
                             Clear
                         </button>
                         <button
+                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
+                            type="button"
+                            :disabled="bulkUpdating || waterDecalPromoteBusy"
+                            data-testid="po-turn-into-water-decals"
+                            @click="openWaterDecalPromote"
+                        >
+                            Turn into water decals
+                        </button>
+                        <button
                             class="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-50"
                             type="button"
                             :disabled="bulkUpdating"
@@ -4624,7 +4830,7 @@ onMounted(() => {
                     </table>
                     <datalist id="po-item-vendor-options">
                         <option
-                            v-for="v in vendorChoicesIncludingDraft('')"
+                            v-for="v in productVendorDatalistOptions"
                             :key="`vendor-opt-${v}`"
                             :value="v"
                         />
@@ -4641,6 +4847,17 @@ onMounted(() => {
         :vendor-options="productVendorOptions"
         @cancel="bulkUpdateOpen = false"
         @confirm="confirmBulkUpdate"
+    />
+
+    <PoWaterDecalPromoteDialog
+        :open="waterDecalPromoteOpen"
+        :busy="waterDecalPromoteBusy"
+        :preview-busy="waterDecalPreviewBusy"
+        :rows="waterDecalPromoteRows"
+        :error="waterDecalPromoteError"
+        @cancel="waterDecalPromoteOpen = false"
+        @confirm="confirmWaterDecalPromote"
+        @refresh="refreshWaterDecalPreview"
     />
 
     <BulkExportDialog

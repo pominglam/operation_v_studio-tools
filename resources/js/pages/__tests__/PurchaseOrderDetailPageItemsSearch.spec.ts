@@ -57,6 +57,35 @@ describe('PurchaseOrderDetailPage items search', () => {
     it('filters rows by SKU, barcode, and product name', async () => {
         const poId = '00000000-0000-0000-0000-000000123456';
 
+        const postMock = api.post as unknown as ReturnType<typeof vi.fn>;
+        postMock.mockImplementation(async (url: string) => {
+            if (url === '/api/v1/shipment-tracking/resolutions') {
+                return {
+                    status: 200,
+                    data: {
+                        data: [
+                            {
+                                tracking_number: '1Z999AA10123456784',
+                                status: 'resolved',
+                                provider: '17track',
+                                tracking_url: 'https://t.17track.net/en#nums=1Z999AA10123456784',
+                                retry_after: null,
+                            },
+                            {
+                                tracking_number: 'RR123456789CN',
+                                status: 'resolved',
+                                provider: '17track',
+                                tracking_url: 'https://t.17track.net/en#nums=RR123456789CN',
+                                retry_after: null,
+                            },
+                        ],
+                    },
+                };
+            }
+
+            throw new Error(`unexpected POST ${url}`);
+        });
+
         const getMock = api.get as unknown as ReturnType<typeof vi.fn>;
         getMock.mockImplementation(async (url: string) => {
             if (url === `/api/v1/purchase-orders/${poId}`) {
@@ -161,13 +190,13 @@ describe('PurchaseOrderDetailPage items search', () => {
             'Total quantity: 9',
         );
         const firstTrackingLink = wrapper.get('[data-testid="po-tracking-link-0"]');
-        expect(firstTrackingLink.text()).toBe('1Z999AA10123456784');
-        expect(firstTrackingLink.attributes('href')).toBe(
+        expect(firstTrackingLink.text()).toContain('1Z999AA10123456784');
+        expect(firstTrackingLink.get('a').attributes('href')).toBe(
             'https://t.17track.net/en#nums=1Z999AA10123456784',
         );
         const secondTrackingLink = wrapper.get('[data-testid="po-tracking-link-1"]');
-        expect(secondTrackingLink.text()).toBe('RR123456789CN');
-        expect(secondTrackingLink.attributes('href')).toBe(
+        expect(secondTrackingLink.text()).toContain('RR123456789CN');
+        expect(secondTrackingLink.get('a').attributes('href')).toBe(
             'https://t.17track.net/en#nums=RR123456789CN',
         );
 

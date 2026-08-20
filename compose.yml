@@ -141,6 +141,39 @@ services:
         "--max-time=0",
       ]
 
+  tracking_queue:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: pricing-tool-tracking-queue
+    environment:
+      TZ: America/Toronto
+      QUEUE_CONNECTION: database
+      TRACKING_SCRAPER_URL: http://tracking_scraper:3002
+    depends_on:
+      mysql:
+        condition: service_healthy
+      tracking_scraper:
+        condition: service_started
+    volumes:
+      - .:/var/www/html
+    working_dir: /var/www/html
+    user: "1000:1000"
+    networks:
+      - pricing_tool_net
+    restart: unless-stopped
+    command:
+      [
+        "php",
+        "artisan",
+        "queue:work",
+        "--queue=shipment_tracking",
+        "--sleep=1",
+        "--tries=1",
+        "--timeout=180",
+        "--max-time=0",
+      ]
+
   scheduler:
     build:
       context: .
@@ -160,6 +193,19 @@ services:
       - pricing_tool_net
     restart: unless-stopped
     command: ["php", "artisan", "schedule:work"]
+
+  tracking_scraper:
+    build:
+      context: ./node/tracking-scraper
+      dockerfile: Dockerfile
+    container_name: pricing-tool-tracking-scraper
+    environment:
+      TZ: America/Toronto
+      PORT: "3002"
+      TRACKING_SCRAPER_REQUEST_TIMEOUT_MS: "150000"
+    networks:
+      - pricing_tool_net
+    restart: unless-stopped
 
   aliexpress_scraper:
     image: mcr.microsoft.com/playwright:v1.49.1-jammy

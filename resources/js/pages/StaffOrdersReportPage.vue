@@ -155,7 +155,7 @@ onMounted(() => void load());
     <section class="space-y-4">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <h1 class="text-xl font-semibold text-slate-900">Staff orders</h1>
+                <h2 class="text-lg font-semibold text-slate-900">Staff orders</h2>
                 <p class="mt-1 text-sm text-slate-600">
                     Daily order counts and revenue before tax by POS staff and sales channel for
                     one calendar month.

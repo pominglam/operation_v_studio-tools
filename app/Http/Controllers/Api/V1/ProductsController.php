@@ -73,6 +73,8 @@ final class ProductsController extends Controller
         $availableMax = is_numeric($availableMax) ? (int) $availableMax : null;
         $notArrivedFilter = $request->validated('not_arrived');
         $notArrivedFilter = is_numeric($notArrivedFilter) ? (int) $notArrivedFilter : null;
+        $notArrivedMinFilter = $request->validated('not_arrived_min');
+        $notArrivedMinFilter = is_numeric($notArrivedMinFilter) ? (int) $notArrivedMinFilter : null;
         $reorderFilter = $request->validated('reorder');
         $reorderFilter = is_numeric($reorderFilter) ? (int) $reorderFilter : null;
         $reorderGtOne = (bool) ($request->validated('reorder_gt_one') ?? false);
@@ -101,6 +103,9 @@ final class ProductsController extends Controller
         $sellingPriceMax = $request->validated('selling_price_max');
         $sellingPriceMax = is_numeric($sellingPriceMax) ? (float) $sellingPriceMax : null;
 
+        $missingLandedCost = (bool) ($request->validated('missing_landed_cost') ?? false);
+        $hasLandedCost = (bool) ($request->validated('has_landed_cost') ?? false);
+
         return ProductResource::collection(
             $this->products->paginate(
                 $perPage,
@@ -120,6 +125,7 @@ final class ProductsController extends Controller
                 $availableMin,
                 $availableMax,
                 $notArrivedFilter,
+                $notArrivedMinFilter,
                 $reorderFilter,
                 $reorderGtOne,
                 $productFlags,
@@ -127,6 +133,8 @@ final class ProductsController extends Controller
                 $notArrivedIncludeDraftOrders,
                 $sellingPriceMin,
                 $sellingPriceMax,
+                $missingLandedCost,
+                $hasLandedCost,
             ),
         );
     }

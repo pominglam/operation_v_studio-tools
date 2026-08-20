@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Products;
 
 /**
- * SQL subquery for qty on open PO lines (not yet received) used as "not arrived".
+ * SQL subquery for PO quantities not yet added to shelf inventory.
  */
 final class ProductInboundOpenPoQtySql
 {
@@ -24,7 +24,7 @@ final class ProductInboundOpenPoQtySql
             ), 0)
             from purchase_order_items poi
             inner join purchase_orders po on po.id = poi.purchase_order_id
-            where po.received_date is null'.$draftClause.'
+            where po.fully_on_shelves_date is null'.$draftClause.'
               and (
                 poi.product_id = '.$productIdColumn.'
                 or (poi.product_id is null and poi.sku = '.$productSkuColumn.')

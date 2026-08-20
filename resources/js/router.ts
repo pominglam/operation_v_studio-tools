@@ -6,6 +6,8 @@ import PriceResearchPage from './pages/PriceResearchPage.vue';
 import PriceResearchRunLogsPage from './pages/PriceResearchRunLogsPage.vue';
 import PriceResearchReportsPage from './pages/PriceResearchReportsPage.vue';
 import StaffOrdersReportPage from './pages/StaffOrdersReportPage.vue';
+import ReportsLayoutPage from './pages/ReportsLayoutPage.vue';
+import InventoryByMainTypeReportPage from './pages/InventoryByMainTypeReportPage.vue';
 import SyncProgressPage from './pages/SyncProgressPage.vue';
 import InventoryCheckPage from './pages/InventoryCheckPage.vue';
 import InventoryCheckDetailPage from './pages/InventoryCheckDetailPage.vue';
@@ -53,9 +55,21 @@ const routes: RouteRecordRaw[] = [
         component: PriceResearchRunLogsPage,
     },
     {
-        path: '/reports/staff-orders',
-        name: 'staff-orders-report',
-        component: StaffOrdersReportPage,
+        path: '/reports',
+        component: ReportsLayoutPage,
+        children: [
+            { path: '', redirect: { name: 'reports-staff-orders' } },
+            {
+                path: 'staff-orders',
+                name: 'reports-staff-orders',
+                component: StaffOrdersReportPage,
+            },
+            {
+                path: 'inventory-by-main-type',
+                name: 'reports-inventory-by-main-type',
+                component: InventoryByMainTypeReportPage,
+            },
+        ],
     },
     { path: '/sync-progress', name: 'sync-progress', component: SyncProgressPage },
     { path: '/tcg-events', name: 'tcg-events', component: TcgEventsPage },

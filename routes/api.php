@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\ExternalAccessShowController;
 use App\Http\Controllers\Api\V1\ExternalAccessUpdateController;
 use App\Http\Controllers\Api\V1\ExternalRateLimitShowController;
 use App\Http\Controllers\Api\V1\ExternalRateLimitUpdateController;
+use App\Http\Controllers\Api\V1\InventoryByMainTypeReportShowController;
 use App\Http\Controllers\Api\V1\InventoryCheckApplyController;
 use App\Http\Controllers\Api\V1\InventoryCheckDeleteController;
 use App\Http\Controllers\Api\V1\InventoryCheckDownloadController;
@@ -134,10 +135,12 @@ use App\Http\Controllers\Api\V1\PurchaseOrderItemUpdateController;
 use App\Http\Controllers\Api\V1\PurchaseOrderSellingPriceHistoryController;
 use App\Http\Controllers\Api\V1\PurchaseOrderShowController;
 use App\Http\Controllers\Api\V1\PurchaseOrderUpdateController;
+use App\Http\Controllers\Api\V1\PurchaseOrderWaterDecalPromoteController;
 use App\Http\Controllers\Api\V1\PurchaseOrderWorkflowActionController;
 use App\Http\Controllers\Api\V1\PurchaseOrderWorkflowChecklistUpdateController;
 use App\Http\Controllers\Api\V1\PurchaseOrderWorkflowVerifyController;
 use App\Http\Controllers\Api\V1\RebuildProductDemandRollupsController;
+use App\Http\Controllers\Api\V1\ShipmentTrackingResolutionController;
 use App\Http\Controllers\Api\V1\ShopifyContentExportDownloadController;
 use App\Http\Controllers\Api\V1\ShopifyContentExportPrepareController;
 use App\Http\Controllers\Api\V1\ShopifyContentNoInventoryExportPrepareController;
@@ -220,12 +223,15 @@ Route::prefix('v1')
         Route::post('/purchase-orders/combined-payments', PurchaseOrderCombinedPaymentCreateController::class);
         Route::get('/purchase-orders/filter-options', PurchaseOrderFilterOptionsController::class);
         Route::get('/purchase-orders', PurchaseOrderIndexController::class);
+        Route::post('/shipment-tracking/resolutions', ShipmentTrackingResolutionController::class);
         Route::get('/purchase-orders/{id}', PurchaseOrderShowController::class)->whereUuid('id');
         Route::get('/purchase-orders/{id}/selling-price-history', PurchaseOrderSellingPriceHistoryController::class)->whereUuid('id');
         Route::get('/purchase-orders/{id}/draft-lines-export', PurchaseOrderDraftLinesExportController::class)->whereUuid('id');
         Route::patch('/purchase-orders/{id}', PurchaseOrderUpdateController::class)->whereUuid('id');
         Route::post('/purchase-orders/{id}/draft-products', PurchaseOrderDraftAddProductsController::class)->whereUuid('id');
         Route::patch('/purchase-orders/{id}/items', PurchaseOrderItemsBulkUpdateController::class)->whereUuid('id');
+        Route::post('/purchase-orders/{id}/water-decals/preview', [PurchaseOrderWaterDecalPromoteController::class, 'preview'])->whereUuid('id');
+        Route::post('/purchase-orders/{id}/water-decals/apply', [PurchaseOrderWaterDecalPromoteController::class, 'apply'])->whereUuid('id');
         Route::patch('/purchase-orders/{id}/workflow-checklist', PurchaseOrderWorkflowChecklistUpdateController::class)->whereUuid('id');
         Route::post('/purchase-orders/{id}/workflow-verify', PurchaseOrderWorkflowVerifyController::class)->whereUuid('id');
         Route::get('/purchase-orders/{id}/workflow-actions/export-shopify-content/preview', [PurchaseOrderWorkflowActionController::class, 'previewExportShopifyContent'])->whereUuid('id');
@@ -309,6 +315,7 @@ Route::prefix('v1')
         Route::put('/maintenance/external-access', ExternalAccessUpdateController::class);
 
         Route::get('/reports/staff-orders', StaffOrdersReportShowController::class);
+        Route::get('/reports/inventory-by-main-type', InventoryByMainTypeReportShowController::class);
 
         Route::get('/price-research/filter-options', PriceResearchFilterOptionsController::class);
         Route::get('/price-research/products', PriceResearchProductsController::class);

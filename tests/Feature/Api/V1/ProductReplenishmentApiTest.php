@@ -13,11 +13,12 @@ it('returns replenishment preview rows using maintain available and not-arrived 
         'vendor_currency_code' => 'CAD',
         'received_date' => null,
     ]);
-    $poArrived = PurchaseOrder::query()->create([
+    $poShelved = PurchaseOrder::query()->create([
         'uuid' => '00000000-0000-0000-0000-000000130002',
         'vendor' => 'Plamod',
         'vendor_currency_code' => 'CAD',
         'received_date' => '2026-01-01',
+        'fully_on_shelves_date' => '2026-01-02',
     ]);
 
     $include = Product::query()->create([
@@ -55,7 +56,7 @@ it('returns replenishment preview rows using maintain available and not-arrived 
         'qty_received' => 2,
     ]);
     PurchaseOrderItem::query()->create([
-        'purchase_order_id' => $poArrived->id,
+        'purchase_order_id' => $poShelved->id,
         'product_id' => $include->id,
         'sku' => 'REP-1',
         'vendor' => 'Plamod',
@@ -136,11 +137,12 @@ it('includes not-arrived and reorder columns on products list rows', function ()
         'vendor_currency_code' => 'CAD',
         'received_date' => null,
     ]);
-    $poArrived = PurchaseOrder::query()->create([
+    $poShelved = PurchaseOrder::query()->create([
         'uuid' => '00000000-0000-0000-0000-000000130033',
         'vendor' => 'Plamod',
         'vendor_currency_code' => 'CAD',
         'received_date' => '2026-01-10',
+        'fully_on_shelves_date' => '2026-01-11',
     ]);
     $p = Product::query()->create([
         'uuid' => '00000000-0000-0000-0000-000000130032',
@@ -159,7 +161,7 @@ it('includes not-arrived and reorder columns on products list rows', function ()
         'qty_received' => 3,
     ]);
     PurchaseOrderItem::query()->create([
-        'purchase_order_id' => $poArrived->id,
+        'purchase_order_id' => $poShelved->id,
         'product_id' => $p->id,
         'sku' => 'REP-LIST',
         'vendor' => 'Plamod',

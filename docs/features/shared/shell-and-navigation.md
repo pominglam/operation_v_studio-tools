@@ -26,7 +26,7 @@ When `currentAccessRole() !== 'employee'`, links appear in this order:
 5. **Preorders** → `/preorders`
 6. **Restock** → `/restocking/plamod` (PLAMOD in-stock restock proposal)
 7. **TCG Events** → `/tcg-events`
-8. **Reports** → `/reports/staff-orders` (active for any `/reports/*`)
+8. **Reports** → `/reports/staff-orders` (active for any `/reports/*`; sidebar lists all reports — see [screens/reports.md](../screens/reports.md))
 9. **Maintenance** → `/maintenance`
 
 ## Top navigation (employee)

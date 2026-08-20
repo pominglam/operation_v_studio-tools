@@ -135,6 +135,8 @@ Below, **verbs** reflect Laravel router methods. **`{id}` on products** uses **U
 | PATCH  | `/products/{id}`           | Partial update (`ProductsController::update`).                                                        |
 | GET    | `/products/filter-options` | Facets for filters (types, vendors, etc.).                                                            |
 
+`GET /products` exposes computed **`not_arrived`** and **`reorder`** fields and accepts `not_arrived`, `not_arrived_min`, `not_arrived_include_draft_orders`, and `sort_by=not_arrived`. `ProductNotArrivedQtyService` / `ProductInboundOpenPoQtySql` define **Not arrived** as the sum of positive PO-line `qty_ordered` until the parent PO has `fully_on_shelves_date`; received-but-not-shelved quantities remain included. Products/report/replenishment defaults include draft POs, while PO-detail metrics and PLAMOD restock exclude drafts.
+
 ### Products — barcode, availability, editorial flags
 
 | Method | Path                                                       | Purpose                                                                                                                                                                                 |
@@ -221,8 +223,8 @@ Two **different orchestrations** deliberately exist:
 | GET    | `/products/export/missing-barcode`       | Operational export of barcode gaps.                                                                                                                                              |
 | GET    | `/products/export/missing-selling-price` | Operational export before pricing work.                                                                                                                                          |
 | GET    | `/products/export/barcoded`              | Inventory-friendly UTF‑8 BOM CSV for barcoded SKUs (**Handle first** ordering for inventory check export—requirements).                                                          |
-| GET    | `/products/replenishment/preview`        | Read-only replenishment projections for UI/export planning.                                                                                                                      |
-| GET    | `/products/replenishment/export`         | Replenishment CSV download.                                                                                                                                                      |
+| GET    | `/products/replenishment/preview`        | Read-only replenishment projections; inbound/not-arrived quantity remains counted until the PO is fully on shelves.                                                              |
+| GET    | `/products/replenishment/export`         | Replenishment CSV with the same shelf-based inbound/not-arrived quantity.                                                                                                        |
 
 ### Product maintenance & crawling
 
@@ -274,6 +276,7 @@ Two **different orchestrations** deliberately exist:
 | POST   | `/purchase-orders/combined-payments`         | Persists the combined-payment header and per-PO snapshots, updates each PO's suggested or exact CAD product/shipping allocation, and converts line CAD unit costs using each PO's product FX without changing original vendor-currency values.                                                                                  |
 | GET    | `/purchase-orders`                           | Indexed list filters/sorts (**vendor**, arrival-derived fields tested).                                                                                                                                                                                                                                                         |
 | GET    | `/purchase-orders/filter-options`            | Dropdown facets.                                                                                                                                                                                                                                                                                                                |
+| POST   | `/shipment-tracking/resolutions`             | Bulk status/dispatch endpoint for credential-free shipment tracking. Normalizes and caches one row per tracking number, queues `ResolveShipmentTrackingJob` on the isolated `shipment_tracking` worker without waiting for public providers, and returns `queued`, `resolving`, `resolved`, `not_found`, or `failed` plus the verified provider URL when available. |
 | GET    | `/purchase-orders/{id}`                      | Detailed PO projection including FX-derived CAD unit economics where imported (`PurchaseOrderResource`).                                                                                                                                                                                                                        |
 | PATCH  | `/purchase-orders/{id}`                      | Header updates (dates, totals, **`shipment_method`** (`air` \| `sea` \| null), **`shipment_tracking_numbers`** array (up to 40 strings, max 255 each), checklist container, **`is_done`**, notes…).                                                                                                                             |
 | DELETE | `/purchase-orders/{id}`                      | Controlled delete with referential safeguards (`PurchaseOrderDeleteService`).                                                                                                                                                                                                                                                   |
@@ -287,6 +290,8 @@ Two **different orchestrations** deliberately exist:
 | Line updates | Purpose |
 | ------------ | ----------------------------- | -------------------------------------------------------------------------------------------- |
 | PATCH | `/purchase-orders/{id}/items` | Bulk update selected line ids (qty ordered/received/unit cost fields—see bulk request). |
+| POST | `/purchase-orders/{id}/water-decals/preview` | Preview promoting selected PO lines to water decals (`item_ids`, optional `proposed[]` SKU overrides). |
+| POST | `/purchase-orders/{id}/water-decals/apply` | Apply promote/merge rows from preview (`rows[]` with SKU, description, vendor, type, `confirm_merge`). |
 | PATCH | `/purchase-order-items/{id}` | Numeric line id PATCH for granular edits (**validation** avoids inconsistent states tested). |
 
 | Applicators | Behavior summary |
@@ -391,12 +396,14 @@ Two **different orchestrations** deliberately exist:
 | GET/POST | `/price-research/reports` | List/create “quote issue” reports surfaced in UI workflow. |
 | PATCH | `/price-research/reports/{id}/handled` | Numeric id resolution + handled flag bookkeeping. |
 | GET | `/reports/staff-orders` | Monthly POS staff / channel order counts (`month=YYYY-MM`). |
+| GET | `/reports/inventory-by-main-type` | On-hand inventory stats grouped by `products.main_type`. |
 
 ### Staff orders report (`app/Services/Shopify/Admin/Orders`)
 
 | Method | Path                                                  | Purpose                                                                                                                                                  |
 | ------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/reports/staff-orders`                               | `ShopifyStaffOrdersMonthlyReportService` — aggregates **`shopify_orders`** mirror (`source_name`, `channel_name`, `pos_user_id`) for one calendar month. |
+| GET    | `/reports/inventory-by-main-type`                     | `InventoryByMainTypeReportService` — on-hand `available_qty` stats grouped by `products.main_type`.                                                      |
 | CLI    | `shopify:orders-backfill-staff-attribution {YYYY-MM}` | Backfill staff attribution columns on existing mirror rows for one month.                                                                                |
 
 ### TCG events (`app/Services/TcgEvents`)

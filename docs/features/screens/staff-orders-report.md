@@ -1,8 +1,8 @@
 # Staff orders report
 
-**Route:** `/reports/staff-orders`  
+**Route:** `/reports/staff-orders` (nested under [Reports hub](reports.md))  
 **Page:** `resources/js/pages/StaffOrdersReportPage.vue`  
-**Nav:** **Reports** (admin only)
+**Nav:** **Reports** → **Staff orders** (admin only)
 
 ## Purpose
 

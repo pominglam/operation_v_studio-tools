@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Contracts\ShipmentTracking\TrackingBrowser;
 use App\DAL\Inventory\EloquentInventoryRepository;
 use App\DAL\Inventory\InventoryRepository;
 use App\DAL\InventoryChecks\EloquentInventoryCheckRepository;
@@ -34,6 +35,8 @@ use App\DAL\PurchaseOrders\EloquentPurchaseOrderRepository;
 use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\DAL\RuntimeSettings\EloquentRuntimeSettingRepository;
 use App\DAL\RuntimeSettings\RuntimeSettingRepository;
+use App\DAL\ShipmentTracking\EloquentShipmentTrackingResolutionRepository;
+use App\DAL\ShipmentTracking\ShipmentTrackingResolutionRepository;
 use App\DAL\TcgEvents\EloquentTcgEventRepository;
 use App\DAL\TcgEvents\TcgEventRepository;
 use App\Services\Maintenance\CloudflareQuickTunnelVerifier as MaintenanceQuickTunnelVerifier;
@@ -60,6 +63,7 @@ use App\Services\Products\Hlj\HljContentSync;
 use App\Services\Products\Hlj\HljContentSyncService;
 use App\Services\Products\Http\PlamodScraper;
 use App\Services\Products\Http\PlamodScraperClient;
+use App\Services\ShipmentTracking\HttpTrackingBrowserClient;
 use App\Services\Shopify\CloudflaredTunnel;
 use App\Services\Shopify\CloudflaredTunnelService;
 use App\Services\Shopify\CloudflareQuickTunnelVerifier;
@@ -89,6 +93,10 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(PurchaseOrderRepository::class, EloquentPurchaseOrderRepository::class);
         $this->app->bind(InventoryRepository::class, EloquentInventoryRepository::class);
         $this->app->bind(TcgEventRepository::class, EloquentTcgEventRepository::class);
+        $this->app->bind(
+            ShipmentTrackingResolutionRepository::class,
+            EloquentShipmentTrackingResolutionRepository::class,
+        );
 
         $this->app->bind(ProductLookupRepository::class, EloquentProductLookupRepository::class);
         $this->app->bind(ProductPriceQuoteRepository::class, EloquentProductPriceQuoteRepository::class);
@@ -120,6 +128,11 @@ class AppServiceProvider extends ServiceProvider
             return new CloudflaredTunnelService($app->make(CloudflareQuickTunnelVerifier::class));
         });
         $this->app->bind(BandaiTcgPlusApi::class, HttpBandaiTcgPlusApi::class);
+        $this->app->singleton(TrackingBrowser::class, function (): TrackingBrowser {
+            return new HttpTrackingBrowserClient(
+                (string) config('services.tracking_browser.url', 'http://tracking_scraper:3002'),
+            );
+        });
 
         $this->app->tag([
             AliExpressProvider::class,

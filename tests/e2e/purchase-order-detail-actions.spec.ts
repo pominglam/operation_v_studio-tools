@@ -74,27 +74,60 @@ test('saves shipment tracking numbers and links each from PO detail and history'
     expect(poUuid).toBeTruthy();
     trackE2EPurchaseOrderId(poUuid);
 
+    let resolutionCalls = 0;
+    await page.route('**/api/v1/shipment-tracking/resolutions', async (route) => {
+        resolutionCalls += 1;
+        const requestBody = route.request().postDataJSON() as { tracking_numbers?: string[] };
+        const status = resolutionCalls === 1 ? 'queued' : 'resolved';
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+                data: (requestBody.tracking_numbers ?? []).map((trackingNumber) => ({
+                    tracking_number: trackingNumber,
+                    status,
+                    provider: status === 'resolved' ? '17track' : null,
+                    tracking_url:
+                        status === 'resolved'
+                            ? `https://t.17track.net/en#nums=${trackingNumber}`
+                            : null,
+                    retry_after: null,
+                })),
+            }),
+        });
+    });
+
     await page.goto(`/purchase-orders/${poUuid}`);
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     await page.getByTestId('po-tracking-input').fill(trackingNumbers.join('\n'));
     await page.getByRole('button', { name: 'Save', exact: true }).click();
 
     for (const [index, trackingNumber] of trackingNumbers.entries()) {
-        const detailLink = page.getByTestId(`po-tracking-link-${index}`);
-        await expect(detailLink).toHaveText(trackingNumber);
-        await expect(detailLink).toHaveAttribute(
+        const detailTracking = page.getByTestId(`po-tracking-link-${index}`);
+        await expect(detailTracking).toContainText(trackingNumber);
+        await expect(detailTracking.getByTestId('tracking-resolution-spinner')).toBeVisible();
+    }
+    for (const [index, trackingNumber] of trackingNumbers.entries()) {
+        const detailTracking = page.getByTestId(`po-tracking-link-${index}`);
+        await expect(detailTracking.locator('a')).toHaveAttribute(
             'href',
             `https://t.17track.net/en#nums=${trackingNumber}`,
+            { timeout: 5_000 },
         );
     }
 
     await page.goto('/purchase-orders');
     for (const [index, trackingNumber] of trackingNumbers.entries()) {
-        const historyLink = page.getByTestId(`po-history-tracking-${poUuid}-${index}`);
-        await expect(historyLink).toContainText(trackingNumber);
-        await expect(historyLink).toHaveAttribute(
+        const historyTracking = page.getByTestId(`po-history-tracking-${poUuid}-${index}`);
+        await expect(historyTracking).toContainText(trackingNumber);
+        await expect(historyTracking.getByTestId('tracking-resolution-spinner')).toBeVisible();
+    }
+    for (const [index, trackingNumber] of trackingNumbers.entries()) {
+        const historyTracking = page.getByTestId(`po-history-tracking-${poUuid}-${index}`);
+        await expect(historyTracking.locator('a')).toHaveAttribute(
             'href',
             `https://t.17track.net/en#nums=${trackingNumber}`,
+            { timeout: 5_000 },
         );
     }
 });

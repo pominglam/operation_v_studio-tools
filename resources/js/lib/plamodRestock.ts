@@ -181,7 +181,7 @@ export const MAINTAIN_TOOLTIP =
     'Target stock level in ERP. Edit here to update maintain qty; suggested reorder recalculates on save.';
 
 export const NOT_ARRIVED_TOOLTIP =
-    'Qty on open purchase orders not yet received. Draft POs are excluded (ordered or shipped POs only).';
+    'Qty ordered on purchase orders not yet fully on shelves. Received-but-not-shelved quantities remain included. Draft POs are excluded (ordered or shipped POs only).';
 
 export const PREORDER_COMMITTED_TOOLTIP =
     'Qty already committed on PLAMOD preorders (your PLAMOD account). Hover or click the number to see ETA breakdown by offer. Distinct from Not arrived (ERP open POs).';

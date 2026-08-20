@@ -17,14 +17,14 @@ Persisted snapshot key: **`purchase-orders:history-filters:v2`** (`clearPageStat
 
 Derived **status labels** mapping internal enum → human copy (`poStatusLabel`).
 
-**History table columns** (after filters): ID (+ supplier order ID subline), **Status**, **Shipment** (method plus one 17TRACK link per stored tracking number), **Created** / **Ordered** / **Estimated arrival** / **Received** / **On shelves**, **Vendor**, **Items**, **Product total**, **Shipping total**, **Surcharge total**, **Total**, **Actions** (**Delete** per row).
+**History table columns** (after filters): ID (+ supplier order ID subline; optional note subline when `notes` is set), **Status**, **Shipment** (method plus asynchronously resolved tracking numbers), **Created** / **Ordered** / **Estimated arrival** / **Received** / **On shelves**, **Vendor**, **Items**, **Product total**, **Shipping total**, **Surcharge total**, **Total**, **Actions** (**Delete** per row).
 
 - **Delete** opens a destructive **`ConfirmDialog`**; on confirm calls **`DELETE /api/v1/purchase-orders/{uuid}`** (same guards as PO detail — blocked when received inventory or FIFO lots exist). Reloads the history table on success.
 
 | Column       | API / logic                                                                                                                                                                                                                                   |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Shipment** | `shipment_method` on **`purchase_orders`** (`air` \| `sea` \| null). Set on import/create form, PO header edit, or inferred once from line products when unset (unambiguous air-only or sea-only).                                            |
-| **Tracking** | `shipment_tracking_numbers` JSON array on **`purchase_orders`** (up to 40 values, 255 characters each). The list and detail render one `https://t.17track.net/en#nums={encoded number}` link per number so 17TRACK auto-detects each carrier. |
+| **Tracking** | `shipment_tracking_numbers` JSON array on **`purchase_orders`** (up to 40 values, 255 characters each). After the list or detail header renders, visible numbers post to **`POST /api/v1/shipment-tracking/resolutions`**. The worker tries **17TRACK** first, then Kuaidi100, AfterShip, Ship24, and ParcelsApp. Queued/resolving numbers remain plain text with a spinner; the UI polls the same bulk endpoint and creates one external link only after the credential-free browser worker finds real shipment events. Successful provider URLs are cached globally in `shipment_tracking_resolutions`; no-match/failed checks remain plain text and use cooldowns before retry. |
 
 ### Pagination
 
@@ -104,7 +104,7 @@ the original vendor-currency freight and the allocated/current CAD shipping tota
 
 ### Header / metadata editor
 
-Loads **`GET /api/v1/purchase-orders/{uuid}`** (`PurchaseOrderResource` projection). The read-only header summary shows the line-item count and **Total quantity**, calculated as the sum of every line's **`qty_ordered`** (null quantities count as zero), plus every saved shipment tracking number as its own carrier-auto-detect 17TRACK link. **Edit** accepts up to 40 **Shipment tracking numbers**, entered one per line (commas are also accepted), through **`PATCH /api/v1/purchase-orders/{uuid}`**.
+Loads **`GET /api/v1/purchase-orders/{uuid}`** (`PurchaseOrderResource` projection). The read-only header summary shows the line-item count and **Total quantity**, calculated as the sum of every line's **`qty_ordered`** (null quantities count as zero), plus every saved shipment tracking number using the same async resolution flow as the history grid (spinner while queued/resolving; one verified provider link when cached or newly resolved). **Edit** accepts up to 40 **Shipment tracking numbers**, entered one per line (commas are also accepted), through **`PATCH /api/v1/purchase-orders/{uuid}`**.
 
 **View products in grid** opens `/products?purchase_order_uuid={uuid}` in a new browser tab, with the Products grid PO filter preselected for the current purchase order.
 
@@ -146,11 +146,11 @@ Other vendors: direct re-import / import more (no preview dialog).
 
 Columns include SKU, **product vendor** (catalog `products.vendor`), qty **ordered/shipped/received**, **unit_cost** editable, linkages to **`product_id` UUID**, optional **available / maintain / not_arrived / reorder** aggregates, **`latest_landed_unit_cost`**, **`selling_price`**, multiplier display, etc.
 
-**Product vendor (Other/multi and mixed broker POs):** **Other/multi** imports create new catalog rows with **`product.vendor` null** (PO header stays **Other/multi**). An amber alert shows **`counts.unassigned_product_vendor`** when any line’s catalog product has no vendor. Assign per row in the **Product vendor** column (**`PATCH /api/v1/products/{uuid}/vendor`**) or bulk-update selected lines (**`changes.product_vendor`** on **`PATCH /api/v1/purchase-orders/{uuid}/items`**). Vendor picker uses **`GET /api/v1/products/filter-options`**; typing a new name adds it on the fly. **Dspiae** / **Stedi** single-vendor imports still set vendor on **new** products only; re-import never overwrites an existing **`product.vendor`**.
+**Product vendor (Other/multi and mixed broker POs):** **Other/multi** imports create new catalog rows with **`product.vendor` null** (PO header stays **Other/multi**). An amber alert shows **`counts.unassigned_product_vendor`** when any line’s catalog product has no vendor. Assign per row in the **Product vendor** column (**`PATCH /api/v1/products/{uuid}/vendor`**) or bulk-update selected lines (**`changes.product_vendor`** on **`PATCH /api/v1/purchase-orders/{uuid}/items`**). Vendor picker uses **`GET /api/v1/products/filter-options`**; a new name is added to suggestions only after you save (blur/Enter), not on each keystroke. **Dspiae** / **Stedi** single-vendor imports still set vendor on **new** products only; re-import never overwrites an existing **`product.vendor`**.
 
 **Items table sorting:** Click any data column header (except checkbox and **PO Lines**) to sort visible rows client-side. First click sorts ascending; clicking the active column toggles descending. Sort applies after the **Search** filter. Default sort: **SKU ascending**.
 
-**Not arrived / reorder on line grid:** Matches the PLAMOD restock proposal and Products reorder formula — sums **qty ordered** on open POs (`received_date` null) that are **not draft** (must have **ordered** or **shipped** date). Draft PO lines (including the PO you are viewing) are excluded from **Not arrived**. **Reorder** = `max(0, Maintain − Available − Not arrived)`.
+**Not arrived / reorder on line grid:** Matches the PLAMOD restock proposal and Products reorder formula — sums **qty ordered** on POs that are **not fully on shelves** (`fully_on_shelves_date` null) and are **not draft** (must have **ordered** or **shipped** date). Received-but-not-shelved lines remain included. Draft PO lines (including the PO you are viewing) are excluded from **Not arrived**. **Reorder** = `max(0, Maintain − Available − Not arrived)`.
 
 Interactions:
 
@@ -161,6 +161,7 @@ Interactions:
 | Edit barcode column (when surfaced)                       | product-level barcode patch proxied via item row workflows                                                                        |
 | Edit unit cost                                            | item PATCH validations                                                                                                            |
 | **Bulk update selected rows** (`BulkUpdatePoItemsDialog`) | **`PATCH /api/v1/purchase-orders/{uuid}/items`** with selected IDs payload                                                        |
+| **Turn into water decals** (`PoWaterDecalPromoteDialog`)  | **`POST /api/v1/purchase-orders/{uuid}/water-decals/preview`** then **`POST .../water-decals/apply`** — preview shows intention per row (merge / promote / blocked); operator can override SKU, title, vendor, grade; merge requires checkbox confirm; all promoted SKUs get **`WD-`** prefix; vendor defaults to **`Water Decals`** |
 
 ### Apply received quantities → available inventory
 

@@ -3,6 +3,11 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../lib/api';
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
+import {
+    isProductsFiltersFromUrl,
+    parseProductsUrlFilterState,
+    type ProductsUrlFilterState,
+} from '../lib/productsUrlFilters';
 import { splitBulkSearchTerms } from '../lib/productsBulkSearch';
 import AddProductForm, {
     type CreateProductPayload,
@@ -401,6 +406,9 @@ const archivedFilter = ref<ArchivedFilter>('active');
 const availableMinFilter = ref('');
 const availableMaxFilter = ref('');
 const notArrivedFilter = ref('');
+const notArrivedMinFilter = ref('');
+const missingLandedCostFilter = ref(false);
+const hasLandedCostFilter = ref(false);
 const notArrivedIncludeDraftOrders = ref(true);
 const reorderFilter = ref('');
 const reorderGtOne = ref(false);
@@ -581,7 +589,10 @@ const selectionScopeKey = computed<string>(() => {
         available_min: parseNonNegativeIntegerFilter(availableMinFilter.value) ?? null,
         available_max: parseNonNegativeIntegerFilter(availableMaxFilter.value) ?? null,
         not_arrived: parseNonNegativeIntegerFilter(notArrivedFilter.value) ?? null,
+        not_arrived_min: parseNonNegativeIntegerFilter(notArrivedMinFilter.value) ?? null,
         not_arrived_include_draft_orders: notArrivedIncludeDraftOrders.value,
+        missing_landed_cost: missingLandedCostFilter.value,
+        has_landed_cost: hasLandedCostFilter.value,
         reorder: parseNonNegativeIntegerFilter(reorderFilter.value) ?? null,
         reorder_gt_one: reorderGtOne.value,
         selling_price_min: parseNonNegativeDecimalFilter(sellingPriceMinFilter.value) ?? null,
@@ -612,7 +623,10 @@ function productsListParams(per_page: number, pageNum: number): Record<string, u
         available_min: parseNonNegativeIntegerFilter(availableMinFilter.value),
         available_max: parseNonNegativeIntegerFilter(availableMaxFilter.value),
         not_arrived: parseNonNegativeIntegerFilter(notArrivedFilter.value),
+        not_arrived_min: parseNonNegativeIntegerFilter(notArrivedMinFilter.value),
         not_arrived_include_draft_orders: notArrivedIncludeDraftOrders.value ? 1 : 0,
+        missing_landed_cost: missingLandedCostFilter.value ? 1 : undefined,
+        has_landed_cost: hasLandedCostFilter.value ? 1 : undefined,
         reorder: parseNonNegativeIntegerFilter(reorderFilter.value),
         reorder_gt_one: reorderGtOne.value ? 1 : undefined,
         selling_price_min: parseNonNegativeDecimalFilter(sellingPriceMinFilter.value),
@@ -706,6 +720,10 @@ function buildLoadKey(): string {
         available_min: parseNonNegativeIntegerFilter(availableMinFilter.value) ?? null,
         available_max: parseNonNegativeIntegerFilter(availableMaxFilter.value) ?? null,
         not_arrived: parseNonNegativeIntegerFilter(notArrivedFilter.value) ?? null,
+        not_arrived_min: parseNonNegativeIntegerFilter(notArrivedMinFilter.value) ?? null,
+        not_arrived_include_draft_orders: notArrivedIncludeDraftOrders.value,
+        missing_landed_cost: missingLandedCostFilter.value,
+        has_landed_cost: hasLandedCostFilter.value,
         reorder: parseNonNegativeIntegerFilter(reorderFilter.value) ?? null,
         reorder_gt_one: reorderGtOne.value,
         selling_price_min: parseNonNegativeDecimalFilter(sellingPriceMinFilter.value) ?? null,
@@ -1642,7 +1660,10 @@ watch(
         availableMinFilter,
         availableMaxFilter,
         notArrivedFilter,
+        notArrivedMinFilter,
         notArrivedIncludeDraftOrders,
+        missingLandedCostFilter,
+        hasLandedCostFilter,
         reorderFilter,
         reorderGtOne,
         sellingPriceMinFilter,
@@ -1679,8 +1700,59 @@ watch(page, () => {
     void load();
 });
 
+function applyDefaultListFilters(): void {
+    search.value = '';
+    searchMode.value = 'single';
+    bulkSearchText.value = '';
+    page.value = 1;
+    sortBy.value = 'received_date';
+    sortDir.value = 'desc';
+    selectedMainTypes.value = [];
+    selectedTypes.value = [];
+    selectedVendors.value = [];
+    selectedMissing.value = [];
+    selectedProductFlags.value = [];
+    selectedShipmentMethods.value = [];
+    readyFilter.value = 'all';
+    publishedFilter.value = 'all';
+    archivedFilter.value = 'active';
+    availableMinFilter.value = '';
+    availableMaxFilter.value = '';
+    notArrivedFilter.value = '';
+    notArrivedMinFilter.value = '';
+    notArrivedIncludeDraftOrders.value = true;
+    missingLandedCostFilter.value = false;
+    hasLandedCostFilter.value = false;
+    reorderFilter.value = '';
+    reorderGtOne.value = false;
+    sellingPriceMinFilter.value = '';
+    sellingPriceMaxFilter.value = '';
+    purchaseOrderUuids.value = [];
+    poProductNovelty.value = 'all';
+}
+
+function applyProductsUrlFilterState(state: ProductsUrlFilterState): void {
+    applyDefaultListFilters();
+    activeTab.value = 'list';
+    selectedMainTypes.value = [...state.mainTypes];
+    selectedTypes.value = [...state.types];
+    archivedFilter.value = state.archived;
+    availableMinFilter.value = state.availableMin;
+    availableMaxFilter.value = state.availableMax;
+    notArrivedFilter.value = state.notArrived;
+    notArrivedMinFilter.value = state.notArrivedMin;
+    notArrivedIncludeDraftOrders.value = state.notArrivedIncludeDraftOrders;
+    missingLandedCostFilter.value = state.missingLandedCost;
+    hasLandedCostFilter.value = state.hasLandedCost;
+}
+
 onMounted(() => {
-    const saved = loadPageState<{
+    const urlFilters = parseProductsUrlFilterState(route.query);
+
+    if (urlFilters) {
+        applyProductsUrlFilterState(urlFilters);
+    } else {
+        const saved = loadPageState<{
         activeTab?: ProductsToolTab;
         search?: string;
         searchMode?: SearchMode;
@@ -1795,17 +1867,18 @@ onMounted(() => {
         }
     }
 
-    const qPo = route.query.purchase_order_uuid;
-    if (typeof qPo === 'string' && qPo.trim() !== '') {
-        purchaseOrderUuids.value = [qPo.trim()];
-    }
-    const qNovelty = route.query.po_product_novelty;
-    if (qNovelty === 'all' || qNovelty === 'new' || qNovelty === 'existing') {
-        poProductNovelty.value = qNovelty;
-    }
-    const qSearch = route.query.search;
-    if (typeof qSearch === 'string' && qSearch.trim() !== '') {
-        search.value = qSearch.trim();
+        const qPo = route.query.purchase_order_uuid;
+        if (typeof qPo === 'string' && qPo.trim() !== '') {
+            purchaseOrderUuids.value = [qPo.trim()];
+        }
+        const qNovelty = route.query.po_product_novelty;
+        if (qNovelty === 'all' || qNovelty === 'new' || qNovelty === 'existing') {
+            poProductNovelty.value = qNovelty;
+        }
+        const qSearch = route.query.search;
+        if (typeof qSearch === 'string' && qSearch.trim() !== '') {
+            search.value = qSearch.trim();
+        }
     }
 
     hydrating.value = false;
@@ -1867,7 +1940,10 @@ watch(
         availableMinFilter,
         availableMaxFilter,
         notArrivedFilter,
+        notArrivedMinFilter,
         notArrivedIncludeDraftOrders,
+        missingLandedCostFilter,
+        hasLandedCostFilter,
         reorderFilter,
         reorderGtOne,
         sellingPriceMinFilter,
@@ -1879,6 +1955,7 @@ watch(
     ],
     () => {
         if (hydrating.value) return;
+        if (isProductsFiltersFromUrl(route.query)) return;
         savePageState(STATE_KEY, {
             activeTab: activeTab.value,
             search: search.value,
@@ -1914,32 +1991,8 @@ watch(
 
 function resetListState(): void {
     clearPageState(STATE_KEY);
-    search.value = '';
-    searchMode.value = 'single';
-    bulkSearchText.value = '';
+    applyDefaultListFilters();
     perPage.value = 200;
-    page.value = 1;
-    sortBy.value = 'received_date';
-    sortDir.value = 'desc';
-    selectedMainTypes.value = [];
-    selectedTypes.value = [];
-    selectedVendors.value = [];
-    selectedMissing.value = [];
-    selectedProductFlags.value = [];
-    selectedShipmentMethods.value = [];
-    readyFilter.value = 'all';
-    publishedFilter.value = 'all';
-    archivedFilter.value = 'active';
-    availableMinFilter.value = '';
-    availableMaxFilter.value = '';
-    notArrivedFilter.value = '';
-    notArrivedIncludeDraftOrders.value = true;
-    reorderFilter.value = '';
-    reorderGtOne.value = false;
-    sellingPriceMinFilter.value = '';
-    sellingPriceMaxFilter.value = '';
-    purchaseOrderUuids.value = [];
-    poProductNovelty.value = 'all';
     void load();
 }
 </script>

@@ -13,8 +13,8 @@ import { api } from '../lib/api';
 import { formatTorontoDate } from '../lib/datetime';
 import { formatMoney2OrEmpty, parseMoney } from '../lib/money';
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
-import { build17TrackUrl } from '../lib/shipmentTracking';
 import { isPmBrokerVendor } from '../composables/purchaseOrders/pmBrokerVendor';
+import { useShipmentTrackingResolution } from '../composables/useShipmentTrackingResolution';
 
 type PurchaseOrderListRow = {
     id: string;
@@ -88,6 +88,9 @@ type FilterOptions = {
         vendors: string[];
     };
 };
+
+const { resolutionFor, isTrackingPending, resolveTrackingNumbers } =
+    useShipmentTrackingResolution();
 
 const DEFAULT_VENDOR_OPTIONS = [
     'Plamod',
@@ -325,11 +328,23 @@ async function loadHistory(): Promise<void> {
         mergeVendorOptions(
             pos.value.map((x) => String(x.vendor ?? '').trim()).filter((x) => x !== ''),
         );
+        void resolveTrackingNumbers(visibleTrackingNumbers());
     } catch {
         error.value = 'Failed to load purchase orders.';
     } finally {
         loading.value = false;
     }
+}
+
+function visibleTrackingNumbers(): string[] {
+    const unique = new Map<string, string>();
+    for (const po of pos.value) {
+        for (const trackingNumber of po.shipment_tracking_numbers ?? []) {
+            const trimmed = trackingNumber.trim();
+            if (trimmed !== '') unique.set(trimmed.replace(/\s+/g, '').toUpperCase(), trimmed);
+        }
+    }
+    return [...unique.values()];
 }
 
 function toggleCreatedSort(): void {
@@ -1019,22 +1034,71 @@ onMounted(() => {
                                 <div class="mt-0.5 text-[11px] text-slate-500">
                                     Supplier order ID: {{ po.supplier_order_id ?? '—' }}
                                 </div>
+                                <div
+                                    v-if="po.notes && po.notes.trim() !== ''"
+                                    class="mt-0.5 text-[11px] text-slate-500"
+                                >
+                                    Note: {{ po.notes }}
+                                </div>
                             </td>
                             <td class="px-2 py-2">{{ poStatusLabel(po.status) }}</td>
                             <td class="px-2 py-2">
                                 <div>{{ poShipmentMethodLabel(po.shipment_method) }}</div>
-                                <a
+                                <div
                                     v-for="(trackingNumber, index) in po.shipment_tracking_numbers"
                                     :key="trackingNumber"
-                                    :href="build17TrackUrl(trackingNumber) ?? undefined"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    class="mt-0.5 block max-w-36 truncate text-xs text-indigo-700 underline underline-offset-2"
-                                    :title="trackingNumber"
+                                    class="mt-0.5 flex max-w-36 items-center gap-1 text-xs"
                                     :data-testid="`po-history-tracking-${po.id}-${index}`"
                                 >
-                                    Track {{ trackingNumber }}
-                                </a>
+                                    <a
+                                        v-if="
+                                            resolutionFor(trackingNumber)?.status === 'resolved' &&
+                                            resolutionFor(trackingNumber)?.tracking_url
+                                        "
+                                        :href="
+                                            resolutionFor(trackingNumber)?.tracking_url ?? undefined
+                                        "
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        class="truncate text-indigo-700 underline underline-offset-2"
+                                        :title="`Open in ${resolutionFor(trackingNumber)?.provider ?? 'tracking provider'}`"
+                                    >
+                                        {{ trackingNumber }}
+                                    </a>
+                                    <span
+                                        v-else
+                                        class="truncate text-slate-600"
+                                        :title="
+                                            isTrackingPending(trackingNumber)
+                                                ? 'Finding a tracking provider…'
+                                                : 'No tracking provider found yet'
+                                        "
+                                    >
+                                        {{ trackingNumber }}
+                                    </span>
+                                    <svg
+                                        v-if="isTrackingPending(trackingNumber)"
+                                        data-testid="tracking-resolution-spinner"
+                                        class="h-3 w-3 shrink-0 animate-spin text-slate-400"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        aria-label="Finding tracking provider"
+                                    >
+                                        <circle
+                                            class="opacity-25"
+                                            cx="12"
+                                            cy="12"
+                                            r="9"
+                                            stroke="currentColor"
+                                            stroke-width="3"
+                                        />
+                                        <path
+                                            class="opacity-75"
+                                            fill="currentColor"
+                                            d="M12 3a9 9 0 0 1 9 9h-3a6 6 0 0 0-6-6V3Z"
+                                        />
+                                    </svg>
+                                </div>
                             </td>
                             <td class="px-2 py-2 text-slate-600">
                                 {{ formatTorontoDate(po.created_at) }}

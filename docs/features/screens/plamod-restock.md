@@ -29,7 +29,7 @@ An item is an **existing product** whenever its SKU already exists in the active
 - Draft PO creation still **skips existing lines with order qty 0**; restock totals include only lines with qty &gt; 0
 - **Maintain** is editable inline (`PATCH /api/v1/products/{uuid}/maintain`); saves on change and reloads proposal
 - Column headers use **ⓘ help buttons** (click to open tooltip popover) for Available, Maintain, Not arrived, Preorders, Suggested, Order qty, New cost
-- **Not arrived** = sum of `qty_ordered` on open PO lines (received date null) for that product; **draft POs excluded** (must have ordered or shipped date)
+- **Not arrived** = sum of `qty_ordered` on PO lines until the PO is fully on shelves (`fully_on_shelves_date` null); received-but-not-shelved quantities remain included; **draft POs excluded** (must have ordered or shipped date)
 - **Preorders** = qty already committed on your PLAMOD account (`plamod_preorders` / `plamod_preorder_offers`); hover or click the cell to see per-offer ETA breakdown (distinct from Not arrived)
 - **Product type** comes from canonical ERP `products.type` (the same values operators use in PLAMOD’s Type facet); it is exposed as a sortable column
 - **Search existing products** filters only the existing-products grid by SKU, barcode, or product name; it can be combined with Product type and persists in `plamod_restock_page_state`
