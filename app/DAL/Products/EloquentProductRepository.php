@@ -149,6 +149,33 @@ final class EloquentProductRepository implements ProductRepository
     }
 
     /**
+     * @param  array<string, array<int, string>>  $filters
+     */
+    private function applyCanonicalTaxonomyFilters($query, array $filters): void
+    {
+        $columns = [
+            'departments' => 'department',
+            'manufacturers' => 'manufacturer',
+            'franchises' => 'franchise',
+            'product_lines' => 'product_line',
+            'sublines' => 'subline',
+            'grades' => 'grade',
+            'series_values' => 'series',
+            'scales' => 'scale',
+        ];
+
+        foreach ($columns as $filterKey => $column) {
+            $values = array_values(array_unique(array_filter(array_map(
+                static fn (string $value): string => trim($value),
+                $filters[$filterKey] ?? [],
+            ), static fn (string $value): bool => $value !== '')));
+            if ($values !== []) {
+                $query->whereIn($column, $values);
+            }
+        }
+    }
+
+    /**
      * @return array{0:string,1:string}
      */
     private function resolveSort(?string $sortBy, string $sortDir): array
@@ -162,6 +189,11 @@ final class EloquentProductRepository implements ProductRepository
             'description' => 'description',
             'main_type' => 'main_type',
             'type' => 'type',
+            'department' => 'department',
+            'manufacturer' => 'manufacturer',
+            'franchise' => 'franchise',
+            'product_line' => 'product_line',
+            'subline' => 'subline',
             'grade' => 'grade',
             'series' => 'series',
             'scale' => 'scale',
@@ -466,7 +498,7 @@ final class EloquentProductRepository implements ProductRepository
      * @param  array<int, string>  $productFlags
      * @param  array<int, string>  $shipmentMethods
      */
-    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false): LengthAwarePaginator
+    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false, array $canonicalTaxonomyFilters = []): LengthAwarePaginator
     {
         $q = $this->buildFilteredListQuery(
             $search,
@@ -493,6 +525,7 @@ final class EloquentProductRepository implements ProductRepository
             $sellingPriceMax,
             $missingLandedCost,
             $hasLandedCost,
+            $canonicalTaxonomyFilters,
         );
 
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
@@ -501,7 +534,7 @@ final class EloquentProductRepository implements ProductRepository
         return $q->paginate(perPage: $perPage);
     }
 
-    public function listFiltered(?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false): Collection
+    public function listFiltered(?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false, array $canonicalTaxonomyFilters = []): Collection
     {
         $q = $this->buildFilteredListQuery(
             $search,
@@ -528,6 +561,7 @@ final class EloquentProductRepository implements ProductRepository
             $sellingPriceMax,
             $missingLandedCost,
             $hasLandedCost,
+            $canonicalTaxonomyFilters,
         );
 
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
@@ -574,6 +608,7 @@ final class EloquentProductRepository implements ProductRepository
         ?float $sellingPriceMax,
         bool $missingLandedCost,
         bool $hasLandedCost,
+        array $canonicalTaxonomyFilters,
     ) {
         $q = Product::query()
             ->with(['sellingPrice'])
@@ -628,6 +663,7 @@ final class EloquentProductRepository implements ProductRepository
             $this->applyPurchaseOrderNoveltyFilter($q, $purchaseOrderUuids, $poProductNovelty);
         }
         $this->applyListQueryFilters($q, $search, $mainTypes, $types, $vendors, $searchTerms);
+        $this->applyCanonicalTaxonomyFilters($q, $canonicalTaxonomyFilters);
         $this->applyMissingFilters($q, $missing);
         $this->applyReadyFilter($q, $ready);
         $this->applyPublishedFilter($q, $published);
@@ -1173,6 +1209,14 @@ final class EloquentProductRepository implements ProductRepository
         return Product::query()->get();
     }
 
+    public function listAllWithTaxonomySources(): Collection
+    {
+        return Product::query()
+            ->with(['externalContents'])
+            ->orderBy('id')
+            ->get();
+    }
+
     /**
      * @return array<int, string>
      */
@@ -1289,6 +1333,55 @@ final class EloquentProductRepository implements ProductRepository
         sort($series);
 
         return $series;
+    }
+
+    public function distinctDepartments(): array
+    {
+        return $this->distinctCanonicalValues('department');
+    }
+
+    public function distinctManufacturers(): array
+    {
+        return $this->distinctCanonicalValues('manufacturer');
+    }
+
+    public function distinctFranchises(): array
+    {
+        return $this->distinctCanonicalValues('franchise');
+    }
+
+    public function distinctProductLines(): array
+    {
+        return $this->distinctCanonicalValues('product_line');
+    }
+
+    public function distinctSublines(): array
+    {
+        return $this->distinctCanonicalValues('subline');
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function distinctCanonicalValues(string $column): array
+    {
+        /** @var array<int, string|null> $values */
+        $values = Product::query()
+            ->select($column)
+            ->whereNotNull($column)
+            ->distinct()
+            ->orderBy($column)
+            ->pluck($column)
+            ->all();
+
+        $normalized = array_map(static fn (?string $value): string => trim((string) $value), $values);
+        $normalized = array_values(array_unique(array_filter(
+            $normalized,
+            static fn (string $value): bool => $value !== '',
+        )));
+        sort($normalized);
+
+        return $normalized;
     }
 
     public function findBySkus(array $skus): Collection

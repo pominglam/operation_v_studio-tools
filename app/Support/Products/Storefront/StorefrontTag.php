@@ -96,6 +96,68 @@ final class StorefrontTag
 
     public const string SAND_GRIT_POLISH = 'ts:sand:grit:polish';
 
+    public const string MK_DEPT_MODEL_KITS = 'mk:dept:model-kits';
+
+    public const string MK_GRADE_PREFIX = 'mk:grade:';
+
+    public const string MK_SUBLINE_PREFIX = 'mk:subline:';
+
+    /** Standard MG kits (grade MG, no Ver.Ka / MGEX / MGSD subline). */
+    public const string MK_LINE_MG_STANDARD = 'mk:line:mg-standard';
+
+    public const string MK_LINE_GUNPLA = 'mk:line:gunpla';
+
+    public const string MK_LINE_MODEROID = 'mk:line:moderoid';
+
+    public const string MK_LINE_30MM_ARMORED_CORE = 'mk:line:30mm_armored_core';
+
+    public const string MK_LINE_30MM_ACCESSORIES = 'mk:line:30mm_accessories';
+
+    public const string MK_LINE_SNAA = 'mk:line:snaa';
+
+    public const string MK_LINE_ONE_PIECE = 'mk:line:one_piece';
+
+    public const string MK_LINE_EUREKA_SEVEN = 'mk:line:eureka_seven';
+
+    public const string MK_LINE_MECHATROWEGO = 'mk:line:mechatrowego';
+
+    public const string MK_LINE_PLAMAX = 'mk:line:plamax';
+
+    public const string MK_LINE_EVANGELION = 'mk:line:evangelion';
+
+    public const string MK_SERIES_PREFIX = 'mk:series:';
+
+    public static function mkGrade(string $grade): string
+    {
+        return self::MK_GRADE_PREFIX.$grade;
+    }
+
+    public static function mkSubline(string $subline): string
+    {
+        return self::MK_SUBLINE_PREFIX.$subline;
+    }
+
+    public static function mkSeries(string $series): string
+    {
+        return self::MK_SERIES_PREFIX.$series;
+    }
+
+    public static function slugify(?string $value): ?string
+    {
+        $value = $value !== null ? trim($value) : '';
+        if ($value === '') {
+            return null;
+        }
+
+        $slug = mb_strtolower($value);
+        $slug = str_replace('.', '_', $slug);
+        $slug = preg_replace('/\s+/', '_', $slug) ?? '';
+        $slug = preg_replace('/[^a-z0-9_]+/', '_', $slug) ?? '';
+        $slug = trim($slug, '_');
+
+        return $slug !== '' ? $slug : null;
+    }
+
     public static function tapeWidth(int $widthMm): string
     {
         return self::TAPE_WIDTH_PREFIX.$widthMm;

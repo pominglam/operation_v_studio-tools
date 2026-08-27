@@ -119,12 +119,8 @@ Require contract tests for public interfaces. Use OpenAPI schema for API contrac
 
 ## New Feature Requirements (TDD Guardrails)
 
-- **Mandatory**: For all new features, you must implement:
-  - At least one **happy-path test**.
-  - At least one **failure-case test** (validation, error handling, or permission denial).
-- **Mandatory (coverage depth)**: Always write enough tests to cover different real-world cases, not only the happy path.
-- **For external integrations/crawlers**: Include multiple non-happy-path tests (for example: one upstream exception path and one partial-success path where one step fails but processing continues).
-- **Timing**: Tests must be implemented and passing **before** requesting review or merging.
-- **AI Generated Code**: All AI-generated logic must be explicitly covered by tests to ensure reliability.
+- **Agent default**: Do **not** add or modify tests unless the user explicitly requests — see **`agent-test-cleanup.mdc`**. Verify via browser/API instead.
+- **When the user asks for tests**: Implement happy path + at least one failure case; run them before handoff.
+- **Human / PR workflow**: TDD and coverage targets still apply when the team opens PRs with tests; agents do not auto-add that debt.
 
-Testing rules apply to all test files. TDD is mandatory for new features. 100% coverage target for units/features.
+Testing rules apply when the user or PR workflow requires test files. Agents must clean up unsolicited test changes before handoff.

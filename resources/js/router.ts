@@ -13,9 +13,12 @@ import InventoryCheckPage from './pages/InventoryCheckPage.vue';
 import InventoryCheckDetailPage from './pages/InventoryCheckDetailPage.vue';
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage.vue';
 import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage.vue';
+import PurchaseOrderDetailBetaPage from './pages/PurchaseOrderDetailBetaPage.vue';
 import TcgEventsPage from './pages/TcgEventsPage.vue';
 import PreordersPage from './pages/PreordersPage.vue';
 import PlamodRestockPage from './pages/PlamodRestockPage.vue';
+import CustomAsiaOrdersPage from './pages/CustomAsiaOrdersPage.vue';
+import CustomAsiaOrderDetailPage from './pages/CustomAsiaOrderDetailPage.vue';
 import EmployeeInventoryCountPage from './pages/EmployeeInventoryCountPage.vue';
 import { currentAccessRole } from './lib/accessRole';
 
@@ -31,7 +34,24 @@ const routes: RouteRecordRaw[] = [
         component: EmployeeInventoryCountPage,
     },
     { path: '/products', name: 'products', component: ProductsPage },
+    {
+        path: '/products/taxonomy',
+        name: 'product-taxonomy',
+        component: () => import('./pages/ProductTaxonomyReviewPage.vue'),
+    },
     { path: '/purchase-orders', name: 'purchase-orders', component: PurchaseOrdersPage },
+    { path: '/custom-orders/asia', name: 'custom-asia-orders', component: CustomAsiaOrdersPage },
+    { path: '/custom-orders/asia/new', name: 'custom-asia-order-new', component: CustomAsiaOrderDetailPage },
+    {
+        path: '/custom-orders/asia/:id',
+        name: 'custom-asia-order-detail',
+        component: CustomAsiaOrderDetailPage,
+    },
+    {
+        path: '/purchase-orders/:id/beta',
+        name: 'purchase-order-detail-beta',
+        component: PurchaseOrderDetailBetaPage,
+    },
     {
         path: '/purchase-orders/:id',
         name: 'purchase-order-detail',

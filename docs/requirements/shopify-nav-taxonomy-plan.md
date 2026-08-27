@@ -5,7 +5,7 @@
 **Detailed spec:** [tools-supplies-classification.md](./tools-supplies-classification.md) (navbar, per-page filters, `ts:*` tags, cleanup queue)  
 **Related stores:** ERP (`pricing-tool`) → Shopify (`operationvstudio.com` / theme `ovs-shopify-theme`)
 
-This doc captures where planning left off for merging workshop categories, flattening nav, and using tags + filters. **Getting started content pages are a separate task.**
+This doc captures where planning left off for merging workshop categories, flattening nav, and using tags + filters. **Getting started content pages are a separate task** — see **[storefront-content-hierarchy.md](./storefront-content-hierarchy.md)** for page registry, placement matrix, and mega menu CTA wiring phases.
 
 ---
 
@@ -192,7 +192,7 @@ Plan **new structured tags** (or ERP fields) on push; avoid relying only on `sup
 2. Exact tag prefix and allowed values (`pm:product:paint`, etc.).
 3. Whether **Miscellaneous** stays fourth or is shortened to **Misc** for bar width.
 4. Model kits filter set (separate doc pass).
-5. Getting started page handles (`/pages/new-to-the-shop`, etc.) — names TBD when content task starts.
+5. Getting started page handles (`/pages/new-to-the-shop`, etc.) — **see [storefront-content-hierarchy.md](./storefront-content-hierarchy.md)** for approved handles and placement.
 
 ---
 

@@ -4,6 +4,30 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Api\V1\AliExpressCookiesController;
 use App\Http\Controllers\Api\V1\ClearStaleLatestArrivalController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderCompetitorPricesRefreshController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderCustomerMessageTemplateShowController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderCustomerMessageTemplateUpdateController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderCustomerVisualUploadController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderDeleteController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderDepositReceivedController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderFilterOptionsController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderIndexController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderLockOfferController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderMerchandiserOrderedController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderProductReceivedController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderMerchandiserOrderProofUploadController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderPricingCapsShowController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderPricingCapsUpdateController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderProductNameSuggestController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderProductVisualUploadController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderRejectController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderReviveController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderShowController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderStoreController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderUnlockOfferController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderUpdateController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderVisualDeleteController;
+use App\Http\Controllers\Api\V1\CustomAsiaOrderVisualViewController;
 use App\Http\Controllers\Api\V1\DatabaseBackupCreateController;
 use App\Http\Controllers\Api\V1\DatabaseBackupIndexController;
 use App\Http\Controllers\Api\V1\DatabaseBackupRestoreController;
@@ -114,6 +138,15 @@ use App\Http\Controllers\Api\V1\ProductsExportSelectedController;
 use App\Http\Controllers\Api\V1\ProductsFilteredExportController;
 use App\Http\Controllers\Api\V1\ProductShipmentMethodController;
 use App\Http\Controllers\Api\V1\ProductsRecrawlSelectedController;
+use App\Http\Controllers\Api\V1\ProductTaxonomyApproveController;
+use App\Http\Controllers\Api\V1\ProductTaxonomyBulkApproveController;
+use App\Http\Controllers\Api\V1\ProductTaxonomyBulkUpdateController;
+use App\Http\Controllers\Api\V1\ProductTaxonomyConfirmationExportController;
+use App\Http\Controllers\Api\V1\ProductTaxonomyFilterOptionsController;
+use App\Http\Controllers\Api\V1\ProductTaxonomyResearchDispatchController;
+use App\Http\Controllers\Api\V1\ProductTaxonomyResearchShowController;
+use App\Http\Controllers\Api\V1\ProductTaxonomySummaryController;
+use App\Http\Controllers\Api\V1\ProductTaxonomyVerificationIndexController;
 use App\Http\Controllers\Api\V1\ProductTypeBackfillController;
 use App\Http\Controllers\Api\V1\ProductTypeRecomputeController;
 use App\Http\Controllers\Api\V1\ProductVendorController;
@@ -173,6 +206,24 @@ Route::prefix('v1')
         Route::get('/products/export/barcoded', ProductsExportBarcodedController::class);
         Route::get('/products/export/missing-selling-price', ProductsExportMissingSellingPriceController::class);
         Route::get('/products/filter-options', ProductFilterOptionsController::class);
+        Route::get('/products/taxonomy/verifications', ProductTaxonomyVerificationIndexController::class);
+        Route::get('/products/taxonomy/filter-options', ProductTaxonomyFilterOptionsController::class);
+        Route::get('/products/taxonomy/summary', ProductTaxonomySummaryController::class);
+        Route::post('/products/taxonomy/research', ProductTaxonomyResearchDispatchController::class);
+        Route::get('/products/taxonomy/research/{id}', ProductTaxonomyResearchShowController::class)->whereUuid('id');
+        Route::patch(
+            '/products/taxonomy/verifications/{id}/approve',
+            ProductTaxonomyApproveController::class,
+        )->whereUuid('id');
+        Route::post(
+            '/products/taxonomy/verifications/bulk-approve',
+            ProductTaxonomyBulkApproveController::class,
+        );
+        Route::post(
+            '/products/taxonomy/verifications/bulk-update',
+            ProductTaxonomyBulkUpdateController::class,
+        );
+        Route::get('/products/taxonomy/export', ProductTaxonomyConfirmationExportController::class);
         Route::get('/products/replenishment/preview', ProductReplenishmentPreviewController::class);
         Route::get('/products/replenishment/export', ProductReplenishmentExportController::class);
         Route::post('/products', [ProductsController::class, 'store']);
@@ -304,6 +355,10 @@ Route::prefix('v1')
 
         Route::get('/maintenance/notes', MaintenanceNoteController::class);
         Route::put('/maintenance/notes', MaintenanceNoteUpsertController::class);
+        Route::get('/maintenance/custom-asia-order-customer-message-template', CustomAsiaOrderCustomerMessageTemplateShowController::class);
+        Route::put('/maintenance/custom-asia-order-customer-message-template', CustomAsiaOrderCustomerMessageTemplateUpdateController::class);
+        Route::get('/maintenance/custom-asia-order-pricing-caps', CustomAsiaOrderPricingCapsShowController::class);
+        Route::put('/maintenance/custom-asia-order-pricing-caps', CustomAsiaOrderPricingCapsUpdateController::class);
         Route::get('/maintenance/db-backups', DatabaseBackupIndexController::class);
         Route::post('/maintenance/db-backups', DatabaseBackupCreateController::class);
         Route::post('/maintenance/db-backups/restore', DatabaseBackupRestoreController::class);
@@ -332,6 +387,31 @@ Route::prefix('v1')
 
         Route::get('/tcg/events', TcgEventsIndexController::class);
         Route::post('/tcg/events/refresh', TcgEventsRefreshController::class);
+
+        Route::get('/custom-asia-orders/filter-options', CustomAsiaOrderFilterOptionsController::class);
+        Route::get('/custom-asia-orders/product-name-suggestions', CustomAsiaOrderProductNameSuggestController::class);
+        Route::get('/custom-asia-orders', CustomAsiaOrderIndexController::class);
+        Route::post('/custom-asia-orders', CustomAsiaOrderStoreController::class);
+        Route::get('/custom-asia-orders/{id}', CustomAsiaOrderShowController::class)->whereUuid('id');
+        Route::patch('/custom-asia-orders/{id}', CustomAsiaOrderUpdateController::class)->whereUuid('id');
+        Route::post('/custom-asia-orders/{id}/competitor-prices/refresh', CustomAsiaOrderCompetitorPricesRefreshController::class)->whereUuid('id');
+        Route::post('/custom-asia-orders/{id}/lock-offer', CustomAsiaOrderLockOfferController::class)->whereUuid('id');
+        Route::post('/custom-asia-orders/{id}/unlock-offer', CustomAsiaOrderUnlockOfferController::class)->whereUuid('id');
+        Route::post('/custom-asia-orders/{id}/reject', CustomAsiaOrderRejectController::class)->whereUuid('id');
+        Route::post('/custom-asia-orders/{id}/revive', CustomAsiaOrderReviveController::class)->whereUuid('id');
+        Route::post('/custom-asia-orders/{id}/deposit-received', CustomAsiaOrderDepositReceivedController::class)->whereUuid('id');
+        Route::post('/custom-asia-orders/{id}/merchandiser-ordered', CustomAsiaOrderMerchandiserOrderedController::class)->whereUuid('id');
+        Route::post('/custom-asia-orders/{id}/product-received', CustomAsiaOrderProductReceivedController::class)->whereUuid('id');
+        Route::delete('/custom-asia-orders/{id}', CustomAsiaOrderDeleteController::class)->whereUuid('id');
+        Route::post('/custom-asia-orders/{id}/customer-visual', CustomAsiaOrderCustomerVisualUploadController::class)->whereUuid('id');
+        Route::post('/custom-asia-orders/{id}/product-visual', CustomAsiaOrderProductVisualUploadController::class)->whereUuid('id');
+        Route::post('/custom-asia-orders/{id}/merchandiser-order-proof', CustomAsiaOrderMerchandiserOrderProofUploadController::class)->whereUuid('id');
+        Route::get('/custom-asia-orders/{id}/visuals/{kind}', CustomAsiaOrderVisualViewController::class)
+            ->whereUuid('id')
+            ->where('kind', 'customer|product|merchandiser-order-proof');
+        Route::delete('/custom-asia-orders/{id}/visuals/{kind}', CustomAsiaOrderVisualDeleteController::class)
+            ->whereUuid('id')
+            ->where('kind', 'customer|product|merchandiser-order-proof');
 
         Route::get('/preorders', PlamodPreordersIndexController::class);
         Route::post('/preorders/sync', PlamodPreordersSyncController::class);

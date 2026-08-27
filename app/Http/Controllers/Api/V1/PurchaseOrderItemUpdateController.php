@@ -19,7 +19,7 @@ final class PurchaseOrderItemUpdateController extends Controller
 
     public function __invoke(PurchaseOrderItemUpdateRequest $request, int $id): JsonResponse|PurchaseOrderItemResource
     {
-        /** @var array{unit_cost?:int|float|string|null, qty_ordered?:int|null, qty_shipped?:int|null, qty_received?:int|null} $v */
+        /** @var array{unit_cost?:int|float|string|null, qty_ordered?:int|null, qty_shipped?:int|null, qty_received?:int|null, qty_damaged?:int} $v */
         $v = $request->validated();
 
         try {
@@ -33,11 +33,15 @@ final class PurchaseOrderItemUpdateController extends Controller
                 qtyShipped: array_key_exists('qty_shipped', $v) ? $v['qty_shipped'] : null,
                 hasQtyReceived: array_key_exists('qty_received', $v),
                 qtyReceived: array_key_exists('qty_received', $v) ? $v['qty_received'] : null,
+                hasQtyDamaged: array_key_exists('qty_damaged', $v),
+                qtyDamaged: array_key_exists('qty_damaged', $v) ? $v['qty_damaged'] : 0,
             );
 
             return PurchaseOrderItemResource::make($item);
         } catch (PurchaseOrderItemUpdateException $e) {
-            $status = collect($e->issues)->contains(fn ($x) => ($x['kind'] ?? null) === 'qty_received_has_lots') ? 409 : 422;
+            $status = collect($e->issues)->contains(
+                fn ($x) => in_array(($x['kind'] ?? null), ['qty_received_has_lots', 'receipt_quantities_have_lots'], true),
+            ) ? 409 : 422;
 
             return response()->json(
                 [

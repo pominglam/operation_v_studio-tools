@@ -51,6 +51,7 @@ final class ProductsQueryService
         ?float $sellingPriceMax = null,
         bool $missingLandedCost = false,
         bool $hasLandedCost = false,
+        array $canonicalTaxonomyFilters = [],
     ): LengthAwarePaginator {
         return $this->products->paginate(
             $perPage,
@@ -80,6 +81,7 @@ final class ProductsQueryService
             $sellingPriceMax,
             $missingLandedCost,
             $hasLandedCost,
+            $canonicalTaxonomyFilters,
         );
     }
 
@@ -120,6 +122,7 @@ final class ProductsQueryService
         ?float $sellingPriceMax = null,
         bool $missingLandedCost = false,
         bool $hasLandedCost = false,
+        array $canonicalTaxonomyFilters = [],
     ): Collection {
         return $this->products->listFiltered(
             $search,
@@ -148,6 +151,7 @@ final class ProductsQueryService
             $sellingPriceMax,
             $missingLandedCost,
             $hasLandedCost,
+            $canonicalTaxonomyFilters,
         );
     }
 
@@ -197,5 +201,35 @@ final class ProductsQueryService
     public function distinctSeries(): array
     {
         return $this->products->distinctSeries();
+    }
+
+    /** @return array<int, string> */
+    public function distinctDepartments(): array
+    {
+        return $this->products->distinctDepartments();
+    }
+
+    /** @return array<int, string> */
+    public function distinctManufacturers(): array
+    {
+        return $this->products->distinctManufacturers();
+    }
+
+    /** @return array<int, string> */
+    public function distinctFranchises(): array
+    {
+        return $this->products->distinctFranchises();
+    }
+
+    /** @return array<int, string> */
+    public function distinctProductLines(): array
+    {
+        return $this->products->distinctProductLines();
+    }
+
+    /** @return array<int, string> */
+    public function distinctSublines(): array
+    {
+        return $this->products->distinctSublines();
     }
 }

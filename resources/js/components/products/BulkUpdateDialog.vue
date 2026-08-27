@@ -13,6 +13,10 @@ const props = defineProps<{
     mainTypeOptions?: string[];
     vendorOptions?: string[];
     typeOptions?: string[];
+    departmentOptions?: string[];
+    manufacturerOptions?: string[];
+    franchiseOptions?: string[];
+    productLineOptions?: string[];
     gradeOptions?: string[];
     scaleOptions?: string[];
     seriesOptions?: string[];
@@ -39,6 +43,10 @@ const description = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const handle = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const mainType = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const type = ref<BulkFieldState<string>>({ apply: false, value: '' });
+const department = ref<BulkFieldState<string>>({ apply: false, value: '' });
+const manufacturer = ref<BulkFieldState<string>>({ apply: false, value: '' });
+const franchise = ref<BulkFieldState<string>>({ apply: false, value: '' });
+const productLine = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const grade = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const scale = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const series = ref<BulkFieldState<string>>({ apply: false, value: '' });
@@ -92,6 +100,10 @@ const hasAnyApply = computed<boolean>(() => {
         handle.value.apply ||
         mainType.value.apply ||
         type.value.apply ||
+        department.value.apply ||
+        manufacturer.value.apply ||
+        franchise.value.apply ||
+        productLine.value.apply ||
         grade.value.apply ||
         scale.value.apply ||
         series.value.apply ||
@@ -118,6 +130,10 @@ function reset(): void {
     handle.value = { apply: false, value: '' };
     mainType.value = { apply: false, value: '' };
     type.value = { apply: false, value: '' };
+    department.value = { apply: false, value: '' };
+    manufacturer.value = { apply: false, value: '' };
+    franchise.value = { apply: false, value: '' };
+    productLine.value = { apply: false, value: '' };
     grade.value = { apply: false, value: '' };
     scale.value = { apply: false, value: '' };
     series.value = { apply: false, value: '' };
@@ -150,6 +166,10 @@ watch(
         handle,
         mainType,
         type,
+        department,
+        manufacturer,
+        franchise,
+        productLine,
         grade,
         scale,
         series,
@@ -234,6 +254,19 @@ function onConfirm(): void {
     if (type.value.apply) {
         const nextType = type.value.value.trim();
         changes.type = nextType === '' ? null : nextType;
+    }
+
+    if (department.value.apply) {
+        changes.department = department.value.value.trim() || null;
+    }
+    if (manufacturer.value.apply) {
+        changes.manufacturer = manufacturer.value.value.trim() || null;
+    }
+    if (franchise.value.apply) {
+        changes.franchise = franchise.value.value.trim() || null;
+    }
+    if (productLine.value.apply) {
+        changes.product_line = productLine.value.value.trim() || null;
     }
 
     if (grade.value.apply) {
@@ -525,18 +558,101 @@ function onConfirm(): void {
 
                     <div class="md:col-span-2">
                         <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
-                            <input v-model="type.apply" type="checkbox" class="h-4 w-4 rounded" />
-                            Type
+                            <input
+                                v-model="department.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                            />
+                            Department
                         </label>
                         <input
-                            v-model="type.value"
+                            v-model="department.value"
                             class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                             type="text"
-                            list="bulk-update-type-options"
-                            :disabled="!type.apply || busy"
+                            list="bulk-update-department-options"
+                            :disabled="!department.apply || busy"
                         />
-                        <datalist id="bulk-update-type-options">
-                            <option v-for="v in typeChoices" :key="v" :value="v" />
+                        <datalist id="bulk-update-department-options">
+                            <option
+                                v-for="v in normalizeOptions(departmentOptions, department.value)"
+                                :key="v"
+                                :value="v"
+                            />
+                        </datalist>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="manufacturer.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                            />
+                            Manufacturer
+                        </label>
+                        <input
+                            v-model="manufacturer.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            type="text"
+                            list="bulk-update-manufacturer-options"
+                            :disabled="!manufacturer.apply || busy"
+                        />
+                        <datalist id="bulk-update-manufacturer-options">
+                            <option
+                                v-for="v in normalizeOptions(
+                                    manufacturerOptions,
+                                    manufacturer.value,
+                                )"
+                                :key="v"
+                                :value="v"
+                            />
+                        </datalist>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="franchise.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                            />
+                            Franchise
+                        </label>
+                        <input
+                            v-model="franchise.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            type="text"
+                            list="bulk-update-franchise-options"
+                            :disabled="!franchise.apply || busy"
+                        />
+                        <datalist id="bulk-update-franchise-options">
+                            <option
+                                v-for="v in normalizeOptions(franchiseOptions, franchise.value)"
+                                :key="v"
+                                :value="v"
+                            />
+                        </datalist>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="productLine.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                            />
+                            Product line
+                        </label>
+                        <input
+                            v-model="productLine.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            type="text"
+                            list="bulk-update-product-line-options"
+                            :disabled="!productLine.apply || busy"
+                        />
+                        <datalist id="bulk-update-product-line-options">
+                            <option
+                                v-for="v in normalizeOptions(productLineOptions, productLine.value)"
+                                :key="v"
+                                :value="v"
+                            />
                         </datalist>
                     </div>
 

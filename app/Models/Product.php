@@ -19,10 +19,18 @@ use Illuminate\Support\Str;
  * @property string|null $preferred_description_source
  * @property string|null $handle
  * @property string $main_type
+ * @property string|null $department
  * @property string|null $type
+ * @property string|null $manufacturer
+ * @property string|null $franchise
+ * @property string|null $product_line
+ * @property string|null $subline
  * @property string|null $grade
  * @property string|null $series
  * @property string|null $scale
+ * @property string|null $workshop_shelf
+ * @property array<string, string|array<int, string>>|null $workshop_facets
+ * @property string|null $accessory_kind
  * @property int|null $yen_price
  * @property \Illuminate\Support\Carbon|null $bandai_launch_date
  * @property string|null $vendor
@@ -56,10 +64,18 @@ final class Product extends Model
         'preferred_description_source',
         'handle',
         'main_type',
+        'department',
         'type',
+        'manufacturer',
+        'franchise',
+        'product_line',
+        'subline',
         'grade',
         'series',
         'scale',
+        'workshop_shelf',
+        'workshop_facets',
+        'accessory_kind',
         'yen_price',
         'bandai_launch_date',
         'vendor',
@@ -102,6 +118,7 @@ final class Product extends Model
         'latest_unit_cost' => 'decimal:2',
         'latest_landed_unit_cost' => 'decimal:2',
         'price_researched_at' => 'datetime',
+        'workshop_facets' => 'array',
     ];
 
     protected static function booted(): void
@@ -154,6 +171,12 @@ final class Product extends Model
     public function externalAssets(): HasMany
     {
         return $this->hasMany(ProductExternalAsset::class);
+    }
+
+    /** @return HasMany<ProductTaxonomyVerification> */
+    public function taxonomyVerifications(): HasMany
+    {
+        return $this->hasMany(ProductTaxonomyVerification::class);
     }
 
     /** @return HasOne<ProductExternalContent> */

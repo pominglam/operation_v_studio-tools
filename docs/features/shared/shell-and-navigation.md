@@ -10,10 +10,11 @@
 ## Vue root layout
 
 - **Background:** `employeeInventoryScanNotFoundBg` reactive flag can force **full-page red background** during employee scanning when last scan resolves to an “unknown barcode” issue row (paired with **`AppNav`** red header).
-- **Nav:** **`AppNav`** is always rendered above page content (except SPA routes still mount inside same tree).
+- **Nav:** **`AppNav`** is rendered above page content except on standalone chrome routes (`/purchase-orders/:id/beta`).
 - **Content width:**
   - **Default:** `main` is `max-w-screen-2xl` with horizontal padding (`px-4 py-6`).
   - **Pricing / price research:** `route.path.startsWith('/price-research')` → **`max-w-none`** so the competitor table can use full viewport width.
+  - **PO beta workspace:** `isStandaloneAppChromePath` → no `AppNav`, `main` has no padding (`max-w-none px-0 py-0`).
 
 ## Top navigation (admin)
 
@@ -43,3 +44,4 @@ When `currentAccessRole() !== 'employee'`, links appear in this order:
 
 - **`/sync-progress`** — opened from in-page links (Products “Sync progress”, batch deep links) and after some bulk flows (see [`screens/sync-progress.md`](../screens/sync-progress.md)).
 - **`/price-research/reports`** and **`/price-research/runs/:id/logs`** — linked from the Pricing page UI.
+- **`/purchase-orders/:id/beta`** — opt-in PO workspace; hides `AppNav` and uses its own masthead. Classic `/purchase-orders/:id` stays the default.

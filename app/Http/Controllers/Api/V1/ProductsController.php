@@ -135,6 +135,7 @@ final class ProductsController extends Controller
                 $sellingPriceMax,
                 $missingLandedCost,
                 $hasLandedCost,
+                $request->canonicalTaxonomyFilters(),
             ),
         );
     }

@@ -635,6 +635,7 @@ final class PurchaseOrderImportService
                     $this->inventory->deleteMovementsAndLotsForPurchaseOrderItems($itemIds);
                     foreach ($po->items as $line) {
                         $line->qty_received = null;
+                        $line->qty_damaged = 0;
                         $this->purchaseOrders->saveItem($line);
                     }
                     $po->load('items');

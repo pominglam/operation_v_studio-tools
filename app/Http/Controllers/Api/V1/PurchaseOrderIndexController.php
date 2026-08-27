@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Api\V1\PurchaseOrderResource;
 use App\Services\PurchaseOrders\PurchaseOrderQueryService;
+use App\Support\PurchaseOrders\PurchaseOrderIndexSort;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -21,16 +22,8 @@ final class PurchaseOrderIndexController extends Controller
         $perPage = (int) ($request->query('per_page') ?? 50);
         $perPage = max(1, min($perPage, 200));
 
-        /** @var string $sortBy */
-        $sortBy = (string) ($request->query('sort_by') ?? 'ordered');
-        $sortBy = strtolower(trim($sortBy));
-        if (! in_array($sortBy, ['created', 'ordered', 'received', 'filter'], true)) {
-            $sortBy = 'ordered';
-        }
-
-        /** @var string $sortDir */
-        $sortDir = (string) ($request->query('sort_dir') ?? 'desc');
-        $sortDir = strtolower(trim($sortDir)) === 'asc' ? 'asc' : 'desc';
+        $sortBy = PurchaseOrderIndexSort::normalize((string) ($request->query('sort_by') ?? PurchaseOrderIndexSort::DEFAULT));
+        $sortDir = PurchaseOrderIndexSort::normalizeDir((string) ($request->query('sort_dir') ?? 'desc'));
 
         /** @var array<int, string> $vendorFilters */
         $vendorFilters = [];

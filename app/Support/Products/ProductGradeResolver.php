@@ -72,6 +72,7 @@ final class ProductGradeResolver
 
     public function __construct(
         private readonly ProductTypeDerivationService $typeDerivation,
+        private readonly ProductGunplaMgClassificationResolver $mgClassification,
     ) {}
 
     public function resolveFromProduct(Product $product): ?string
@@ -79,6 +80,11 @@ final class ProductGradeResolver
         $storedGrade = $this->normalizeStoredGrade($product->grade);
         if ($storedGrade === 'NG') {
             return 'NG';
+        }
+
+        $fromMgFamily = $this->mgClassification->classify($product->description);
+        if ($fromMgFamily !== null) {
+            return $fromMgFamily['grade'];
         }
 
         $fromType = $this->resolveFromType($product->type);

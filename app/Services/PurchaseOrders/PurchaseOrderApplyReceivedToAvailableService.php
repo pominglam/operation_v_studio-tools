@@ -19,6 +19,7 @@ final class PurchaseOrderApplyReceivedToAvailableService
      * @return array{
      *   products_updated:int,
      *   total_added:int,
+     *   total_damaged:int,
      *   lines_considered:int,
      *   skipped_missing_product_id:int,
      *   skipped_non_positive_qty:int
@@ -34,17 +35,27 @@ final class PurchaseOrderApplyReceivedToAvailableService
 
             $byProductId = [];
             $skippedMissingProductId = 0;
+            $skippedNonPositiveQty = 0;
+            $totalDamaged = 0;
 
             foreach ($items as $item) {
-                $qty = (int) ($item->qty_received ?? 0);
+                $qtyReceived = (int) ($item->qty_received ?? 0);
+                $qtyDamaged = (int) ($item->qty_damaged ?? 0);
+                $qtyToAdd = max(0, $qtyReceived - $qtyDamaged);
                 $productId = (int) ($item->product_id ?? 0);
+                $totalDamaged += $qtyDamaged;
                 if ($productId <= 0) {
                     $skippedMissingProductId++;
 
                     continue;
                 }
+                if ($qtyToAdd <= 0) {
+                    $skippedNonPositiveQty++;
 
-                $byProductId[$productId] = (int) ($byProductId[$productId] ?? 0) + $qty;
+                    continue;
+                }
+
+                $byProductId[$productId] = (int) ($byProductId[$productId] ?? 0) + $qtyToAdd;
             }
 
             $productsUpdated = 0;
@@ -67,9 +78,10 @@ final class PurchaseOrderApplyReceivedToAvailableService
             return [
                 'products_updated' => $productsUpdated,
                 'total_added' => $totalAdded,
+                'total_damaged' => $totalDamaged,
                 'lines_considered' => count($items),
                 'skipped_missing_product_id' => $skippedMissingProductId,
-                'skipped_non_positive_qty' => 0,
+                'skipped_non_positive_qty' => $skippedNonPositiveQty,
             ];
         });
     }

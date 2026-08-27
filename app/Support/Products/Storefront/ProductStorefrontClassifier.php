@@ -20,6 +20,7 @@ final class ProductStorefrontClassifier
         private readonly AirbrushProductResolver $airbrushProductResolver,
         private readonly WeatheringProductResolver $weatheringProductResolver,
         private readonly ToolFamilyProductResolver $toolFamilyProductResolver,
+        private readonly ModelKitStorefrontTagResolver $modelKitTagResolver,
     ) {}
 
     public function classify(Product $product): StorefrontClassification
@@ -32,12 +33,14 @@ final class ProductStorefrontClassifier
             ? $this->storefrontTagsForDepartment($product, $department)
             : [];
 
-        $shopifyTags = $this->shopifyTagsForPush($product, $storefrontTags);
+        $modelKitTags = $this->modelKitTagResolver->tagsForProduct($product);
+
+        $shopifyTags = $this->shopifyTagsForPush($product, $storefrontTags, $modelKitTags);
 
         return new StorefrontClassification(
             department: $department,
             legacyTags: $legacyTags,
-            storefrontTags: $storefrontTags,
+            storefrontTags: [...$storefrontTags, ...$modelKitTags],
             shopifyTags: $shopifyTags,
             warnings: $warnings,
         );
@@ -419,14 +422,15 @@ final class ProductStorefrontClassifier
      * @return array<int, string>
      */
     /**
-     * Shopify push tags: ts:* storefront tags only (never legacy main_type/type).
+     * Shopify push tags: ts:* and mk:* storefront tags (never legacy main_type/type).
      *
      * @param  array<int, string>  $storefrontTags
+     * @param  array<int, string>  $modelKitTags
      * @return array<int, string>
      */
-    private function shopifyTagsForPush(Product $product, array $storefrontTags): array
+    private function shopifyTagsForPush(Product $product, array $storefrontTags, array $modelKitTags = []): array
     {
-        $tags = $this->mergeTags([], $storefrontTags);
+        $tags = $this->mergeTags([], [...$storefrontTags, ...$modelKitTags]);
 
         if ($product->latest_arrival) {
             $tags = $this->mergeTags($tags, [ProductExportService::LATEST_ARRIVAL_TAG]);

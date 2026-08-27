@@ -128,6 +128,7 @@ final class ProductsFilteredExportController extends Controller
                 $sellingPriceMax,
                 $missingLandedCost,
                 $hasLandedCost,
+                $request->canonicalTaxonomyFilters(),
             );
 
             $tmp = fopen('php://temp', 'w+b');

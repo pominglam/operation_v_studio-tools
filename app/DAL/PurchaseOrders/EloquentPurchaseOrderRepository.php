@@ -8,6 +8,7 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderCombinedPayment;
 use App\Models\PurchaseOrderCombinedPaymentLine;
 use App\Models\PurchaseOrderItem;
+use App\Support\PurchaseOrders\PurchaseOrderIndexSort;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -77,11 +78,8 @@ final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
      */
     public function paginate(int $perPage, string $sortDir = 'desc', string $sortBy = 'ordered', array $vendors = [], array $statuses = []): LengthAwarePaginator
     {
-        $sortDir = strtolower(trim($sortDir)) === 'asc' ? 'asc' : 'desc';
-        $sortBy = strtolower(trim($sortBy));
-        if (! in_array($sortBy, ['created', 'ordered', 'received', 'filter'], true)) {
-            $sortBy = 'ordered';
-        }
+        $sortDir = PurchaseOrderIndexSort::normalizeDir($sortDir);
+        $sortBy = PurchaseOrderIndexSort::normalize($sortBy);
 
         $vendorFilters = [];
         foreach ($vendors as $v) {
@@ -161,20 +159,114 @@ final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
             return $q->paginate(perPage: $perPage);
         }
 
-        if ($sortBy === 'ordered') {
-            // Keep undated orders at the end for both directions.
-            $q->orderByRaw('ordered_date is null asc')
-                ->orderBy('ordered_date', $sortDir)
-                ->orderBy('created_at', 'desc');
-        } elseif ($sortBy === 'received') {
-            $q->orderByRaw('received_date is null asc')
-                ->orderBy('received_date', $sortDir)
-                ->orderBy('created_at', 'desc');
-        } else {
-            $q->orderBy('created_at', $sortDir);
-        }
+        $this->applyIndexSort($q, $sortBy, $sortDir);
 
         return $q->paginate(perPage: $perPage);
+    }
+
+    /**
+     * @param  Builder<PurchaseOrder>  $q
+     */
+    private function applyIndexSort(Builder $q, string $sortBy, string $sortDir): void
+    {
+        $nullableColumns = [
+            'shipment' => 'shipment_method',
+            'ordered' => 'ordered_date',
+            'estimated_arrival' => 'estimated_arrival_date',
+            'received' => 'received_date',
+            'on_shelves' => 'fully_on_shelves_date',
+            'vendor' => 'vendor',
+            'product_total' => 'product_total',
+            'shipping_total' => 'shipping_total',
+            'surcharge_total' => 'surcharge_total',
+        ];
+
+        if (isset($nullableColumns[$sortBy])) {
+            $this->orderByNullableColumn($q, $nullableColumns[$sortBy], $sortDir);
+
+            return;
+        }
+
+        if ($sortBy === 'id') {
+            $q->orderBy('uuid', $sortDir)->orderBy('id', $sortDir);
+
+            return;
+        }
+
+        if ($sortBy === 'status') {
+            $this->orderByDerivedStatus($q, $sortDir);
+
+            return;
+        }
+
+        if ($sortBy === 'items') {
+            $q->orderBy('items_count', $sortDir)->orderBy('created_at', 'desc');
+
+            return;
+        }
+
+        if ($sortBy === 'total') {
+            $this->orderByComputedTotal($q, $sortDir);
+
+            return;
+        }
+
+        $q->orderBy('created_at', $sortDir);
+    }
+
+    /**
+     * @param  Builder<PurchaseOrder>  $q
+     */
+    private function orderByNullableColumn(Builder $q, string $column, string $sortDir): void
+    {
+        $allowed = [
+            'shipment_method',
+            'ordered_date',
+            'estimated_arrival_date',
+            'received_date',
+            'fully_on_shelves_date',
+            'vendor',
+            'product_total',
+            'shipping_total',
+            'surcharge_total',
+        ];
+        if (! in_array($column, $allowed, true)) {
+            $q->orderBy('created_at', $sortDir);
+
+            return;
+        }
+
+        $q->orderByRaw($column.' is null asc')
+            ->orderBy($column, $sortDir)
+            ->orderBy('created_at', 'desc');
+    }
+
+    /**
+     * @param  Builder<PurchaseOrder>  $q
+     */
+    private function orderByDerivedStatus(Builder $q, string $sortDir): void
+    {
+        $q->orderByRaw(
+            'CASE
+                WHEN fully_on_shelves_date IS NOT NULL THEN 5
+                WHEN received_date IS NOT NULL THEN 4
+                WHEN shipped_date IS NOT NULL THEN 3
+                WHEN ordered_date IS NOT NULL THEN 2
+                ELSE 1
+            END '.$sortDir,
+        )->orderBy('created_at', 'desc');
+    }
+
+    /**
+     * @param  Builder<PurchaseOrder>  $q
+     */
+    private function orderByComputedTotal(Builder $q, string $sortDir): void
+    {
+        $q->orderByRaw('(product_total IS NULL AND shipping_total IS NULL AND surcharge_total IS NULL) ASC')
+            ->orderByRaw(
+                '(COALESCE(product_total, 0) + COALESCE(shipping_total, 0) + COALESCE(surcharge_total, 0)) '.$sortDir,
+            )
+            ->orderBy('created_at', 'desc');
     }
 
     /**

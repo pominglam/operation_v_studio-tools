@@ -107,8 +107,13 @@ final class CuttingProductResolver
             return true;
         }
 
-        if (in_array($sku, ['MS-21', 'MS-21B', 'MS-22', 'MS-24', 'MS-27'], true)) {
+        if (in_array($sku, ['MS-21', 'MS-21B', 'MS-22', 'MS-24'], true)) {
             return true;
+        }
+
+        if ($sku === 'MS-27') {
+            return str_contains($description, 'push knife')
+                || str_contains($description, 'pen knife');
         }
 
         return str_contains($description, 'pen knife')

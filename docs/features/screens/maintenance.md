@@ -67,6 +67,45 @@ Operators use this as running log / procedure hints.
 
 ---
 
+## Custom Asia order customer message template
+
+Editable DM template used on **`/custom-orders/asia/:id`** (**Copy message**). Stored in **`maintenance_notes`** key **`custom_asia_customer_message`**.
+
+| Placeholder | Replaced with |
+| --- | --- |
+| `{product_name}` | Order product name |
+| `{price}` | Customer price formatted e.g. `$580 CAD` |
+| `{deposit_percent}` | Deposit % (e.g. `20`) |
+
+| Action | Endpoint |
+| --- | --- |
+| Load template + default + preview metadata | **`GET /api/v1/maintenance/custom-asia-order-customer-message-template`** |
+| Save template (all three placeholders required) | **`PUT`** same path **`{ body }`** |
+| Reset to built-in default | **`PUT`** same path **`{ reset: true }`** |
+
+Maintenance card includes live preview with sample **CCSTOYS EVA 02 / $580 / 20%**.
+
+---
+
+## Custom Asia order pricing caps
+
+Maximum CAD amounts for **formula-derived** merchandiser commission and OPV margin on **`/custom-orders/asia/:id`**. Stored in **`maintenance_notes`** key **`custom_asia_pricing_caps`** (JSON).
+
+| Cap | Built-in default |
+| --- | --- |
+| Merchandiser commission | **$50.00 CAD** |
+| OPV margin | **$150.00 CAD** |
+
+Explicit **CAD overrides** on an individual order bypass caps; multiplier-only pricing is capped on load and when multipliers change.
+
+| Action | Endpoint |
+| --- | --- |
+| Load caps + defaults + `is_default` | **`GET /api/v1/maintenance/custom-asia-order-pricing-caps`** |
+| Save caps | **`PUT`** same path **`{ merchandiser_commission_cap_cad, opv_margin_cap_cad }`** |
+| Reset to built-in defaults | **`PUT`** same path **`{ reset: true }`** |
+
+---
+
 ## Database backups & restore
 
 | Step                      | Endpoint                                                                | UX guard                                               |

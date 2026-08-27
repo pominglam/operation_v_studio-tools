@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Product;
 use App\Services\PriceResearch\FxRateService;
+use App\Services\PriceResearch\GoogleFinanceFxRateProvider;
 use App\Services\PriceResearch\Http\AliExpressScraperClient;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\PriceResearch\Providers\AliExpressProvider;
@@ -22,6 +23,11 @@ it('normalizes non-CAD AliExpress prices into CAD using FX rates', function (): 
             'availability' => 'in_stock',
             'product_url' => 'https://www.aliexpress.com/item/123.html',
         ], 200),
+        'https://www.google.com/finance/quote/USD-CAD' => Http::response(
+            '"USD / CAD",3,null,[1,2,3,4,5,2],null,1.25',
+            200,
+            ['Content-Type' => 'text/html'],
+        ),
         'https://api.frankfurter.app/*' => Http::response([
             'rates' => [
                 'CAD' => 1.25,
@@ -37,7 +43,7 @@ it('normalizes non-CAD AliExpress prices into CAD using FX rates', function (): 
 
     $provider = new AliExpressProvider(
         new AliExpressScraperClient('http://scraper.test'),
-        new FxRateService(new ExternalHtmlClient),
+        new FxRateService(new ExternalHtmlClient, new GoogleFinanceFxRateProvider(new ExternalHtmlClient)),
     );
 
     $result = $provider->lookup($product);
@@ -65,7 +71,7 @@ it('treats blocked_by_antibot from the scraper as an error result (no crash)', f
 
     $provider = new AliExpressProvider(
         new AliExpressScraperClient('http://scraper.test'),
-        new FxRateService(new ExternalHtmlClient),
+        new FxRateService(new ExternalHtmlClient, new GoogleFinanceFxRateProvider(new ExternalHtmlClient)),
     );
 
     $result = $provider->lookup($product);

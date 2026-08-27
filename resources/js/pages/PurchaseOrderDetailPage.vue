@@ -66,6 +66,7 @@ type PurchaseOrderItem = {
     qty_ordered: number | null;
     qty_shipped: number | null;
     qty_received: number | null;
+    qty_damaged: number;
     available: number | null;
     maintain: number | null;
     not_arrived: number | null;
@@ -190,6 +191,10 @@ const savingQtyReceived = ref<number | null>(null);
 const editingQtyReceivedId = ref<number | null>(null);
 const qtyReceivedDrafts = reactive<Record<number, string>>({});
 
+const savingQtyDamaged = ref<number | null>(null);
+const editingQtyDamagedId = ref<number | null>(null);
+const qtyDamagedDrafts = reactive<Record<number, string>>({});
+
 const savingBarcodeProductId = ref<string | null>(null);
 const editingBarcodeItemId = ref<number | null>(null);
 const barcodeDrafts = reactive<Record<number, string>>({});
@@ -200,8 +205,7 @@ const productVendorDrafts = reactive<Record<number, string>>({});
 const productVendorOptions = ref<string[]>([]);
 const productVendorDatalistOptions = computed<string[]>(() => {
     const draftItemId = editingProductVendorItemId.value;
-    const draft =
-        draftItemId !== null ? (productVendorDrafts[draftItemId] ?? '') : '';
+    const draft = draftItemId !== null ? (productVendorDrafts[draftItemId] ?? '') : '';
     return vendorChoicesIncludingDraft(productVendorOptions.value, draft);
 });
 
@@ -262,6 +266,9 @@ const applyingInventoryCheck = ref(false);
 const applyInventoryCheckError = ref<string | null>(null);
 const applyInventoryCheckSummary = ref<string | null>(null);
 const applyInventoryCheckWarnings = ref<ApplyInventoryCheckWarning[]>([]);
+const usingShippedAsReceived = ref(false);
+const useShippedAsReceivedError = ref<string | null>(null);
+const useShippedAsReceivedSummary = ref<string | null>(null);
 
 const checklistBusy = ref(false);
 const checklistError = ref<string | null>(null);
@@ -539,6 +546,42 @@ async function bulkSetReceivedToShipped(itemIds: number[]): Promise<boolean> {
 
     po.value = (res.data as { data?: PurchaseOrder })?.data ?? po.value;
     return true;
+}
+
+async function useShippedQuantitiesAsReceived(): Promise<void> {
+    if (!po.value) return;
+
+    useShippedAsReceivedError.value = null;
+    useShippedAsReceivedSummary.value = null;
+    const items = po.value.items;
+    const missingShipped = items.filter((item) => (item.qty_shipped ?? 0) <= 0);
+    if (missingShipped.length > 0) {
+        useShippedAsReceivedError.value =
+            `${missingShipped.length} PO line(s) have no positive Qty shipped. ` +
+            'Enter shipped quantities before using this exception.';
+        return;
+    }
+
+    const confirmed = window.confirm(
+        `Skip receiving-kit scanning for this PO?\n\nThis will overwrite Qty received with Qty shipped on all ${items.length} line(s). Damaged quantities remain separate and will be subtracted when inventory is applied.`,
+    );
+    if (!confirmed) return;
+
+    usingShippedAsReceived.value = true;
+    try {
+        const updated = await bulkSetReceivedToShipped(items.map((item) => item.id));
+        if (!updated) {
+            useShippedAsReceivedError.value =
+                workflowActionError.value ?? 'Failed to use shipped quantities.';
+            return;
+        }
+        useShippedAsReceivedSummary.value = `Copied Qty shipped to Qty received on ${items.length} PO line(s).`;
+    } catch (e: unknown) {
+        useShippedAsReceivedError.value =
+            e instanceof Error ? e.message : 'Failed to use shipped quantities.';
+    } finally {
+        usingShippedAsReceived.value = false;
+    }
 }
 
 async function maybeFillReceivedFromShippedBeforePrepare(
@@ -1819,6 +1862,7 @@ async function applyReceivedQtyToAvailable(): Promise<void> {
                 lines_considered: number;
                 skipped_missing_product_id: number;
                 skipped_non_positive_qty: number;
+                total_damaged: number;
             };
         }>(
             `/api/v1/purchase-orders/${po.value.id}/apply-received-to-available`,
@@ -1833,11 +1877,12 @@ async function applyReceivedQtyToAvailable(): Promise<void> {
         const apply = data.apply ?? data;
         const productsUpdated = Number(apply.products_updated ?? 0);
         const totalAdded = Number(apply.total_added ?? 0);
+        const totalDamaged = Number(apply.total_damaged ?? 0);
         const skippedNonPositive = Number(apply.skipped_non_positive_qty ?? 0);
         const skippedMissingProductId = Number(apply.skipped_missing_product_id ?? 0);
         applyReceivedSummary.value =
-            `Added ${totalAdded} to available qty across ${productsUpdated} product(s). ` +
-            `Skipped ${skippedNonPositive} line(s) with qty_received <= 0 and ${skippedMissingProductId} line(s) missing linked product.`;
+            `Added ${totalAdded} sellable unit(s) to available qty across ${productsUpdated} product(s), excluding ${totalDamaged} damaged unit(s). ` +
+            `Skipped ${skippedNonPositive} line(s) with no sellable received units and ${skippedMissingProductId} line(s) missing linked product.`;
         applyWorkflowPoResponse(data);
         await load();
     } catch (e: unknown) {
@@ -1902,6 +1947,10 @@ const totalQtyShipped = computed<number>(() => {
 
 const totalQtyReceived = computed<number>(() => {
     return po.value?.items.reduce((sum, it) => sum + (it.qty_received ?? 0), 0) ?? 0;
+});
+
+const totalQtyDamaged = computed<number>(() => {
+    return po.value?.items.reduce((sum, it) => sum + it.qty_damaged, 0) ?? 0;
 });
 
 const totalSkuCount = computed<number>(() => {
@@ -2782,9 +2831,7 @@ function mapWaterDecalPreviewRows(raw: unknown[]): WaterDecalPromoteRow[] {
     });
 }
 
-async function loadWaterDecalPreview(
-    rowsOverride?: WaterDecalPromoteRow[],
-): Promise<void> {
+async function loadWaterDecalPreview(rowsOverride?: WaterDecalPromoteRow[]): Promise<void> {
     if (!po.value) return;
 
     const ids = Array.from(selectedItemIds.value);
@@ -2881,11 +2928,15 @@ async function confirmWaterDecalPromote(rows: WaterDecalPromoteRow[]): Promise<v
 
         if (res.status < 200 || res.status >= 300) {
             waterDecalPromoteError.value =
-                (res.data as { message?: string; water_decals?: { errors?: Record<number, string> } })
-                    ?.message ??
+                (
+                    res.data as {
+                        message?: string;
+                        water_decals?: { errors?: Record<number, string> };
+                    }
+                )?.message ??
                 Object.values(
-                    (res.data as { water_decals?: { errors?: Record<number, string> } })?.water_decals
-                        ?.errors ?? {},
+                    (res.data as { water_decals?: { errors?: Record<number, string> } })
+                        ?.water_decals?.errors ?? {},
                 ).join(' ') ??
                 'Apply failed.';
             return;
@@ -2954,6 +3005,62 @@ async function saveQtyReceived(itemId: number, value: string): Promise<void> {
         itemQtyError.value = 'Failed to save qty received.';
     } finally {
         savingQtyReceived.value = null;
+    }
+}
+
+function startQtyDamagedEdit(itemId: number, current: number): void {
+    editingQtyDamagedId.value = itemId;
+    if (qtyDamagedDrafts[itemId] === undefined) {
+        qtyDamagedDrafts[itemId] = String(current);
+    }
+}
+
+function updateQtyDamagedDraft(itemId: number, value: string): void {
+    qtyDamagedDrafts[itemId] = value;
+}
+
+function commitQtyDamagedEdit(itemId: number): void {
+    if (editingQtyDamagedId.value !== itemId) return;
+    editingQtyDamagedId.value = null;
+    const value = qtyDamagedDrafts[itemId] ?? '0';
+    delete qtyDamagedDrafts[itemId];
+    void saveQtyDamaged(itemId, value);
+}
+
+async function saveQtyDamaged(itemId: number, value: string): Promise<void> {
+    if (!po.value) return;
+    itemQtyError.value = null;
+    savingQtyDamaged.value = itemId;
+
+    const next = parseQtyOrNull(value) ?? 0;
+    const row = po.value.items.find((it) => it.id === itemId);
+    const previous = row?.qty_damaged ?? 0;
+
+    try {
+        if (row) row.qty_damaged = next;
+
+        const res = await api.patch(
+            `/api/v1/purchase-order-items/${itemId}`,
+            { qty_damaged: next },
+            { validateStatus: () => true },
+        );
+
+        if (res.status < 200 || res.status >= 300) {
+            if (row) row.qty_damaged = previous;
+            itemQtyError.value =
+                (res.data as { message?: string })?.message ?? 'Failed to save damaged quantity.';
+            return;
+        }
+
+        const saved = (res.data as { data?: PurchaseOrderItem })?.data;
+        if (saved && row) {
+            row.qty_damaged = saved.qty_damaged ?? 0;
+        }
+    } catch {
+        if (row) row.qty_damaged = previous;
+        itemQtyError.value = 'Failed to save damaged quantity.';
+    } finally {
+        savingQtyDamaged.value = null;
     }
 }
 
@@ -3184,9 +3291,7 @@ onMounted(() => {
                                         resolutionFor(trackingNumber)?.status === 'resolved' &&
                                         resolutionFor(trackingNumber)?.tracking_url
                                     "
-                                    :href="
-                                        resolutionFor(trackingNumber)?.tracking_url ?? undefined
-                                    "
+                                    :href="resolutionFor(trackingNumber)?.tracking_url ?? undefined"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     class="truncate text-indigo-700 underline underline-offset-2"
@@ -3232,6 +3337,13 @@ onMounted(() => {
                         </div>
                     </div>
                     <div class="flex flex-wrap items-center justify-end gap-2">
+                        <router-link
+                            :to="`/purchase-orders/${id}/beta`"
+                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                            data-testid="po-try-beta-ui"
+                        >
+                            Try beta UI
+                        </router-link>
                         <a
                             :href="productsGridHref"
                             target="_blank"
@@ -3541,6 +3653,34 @@ onMounted(() => {
                                 </li>
                             </ul>
                         </div>
+                    </div>
+
+                    <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+                        <div class="text-xs font-semibold text-amber-950">
+                            Skip receiving-kit scanning
+                        </div>
+                        <p class="mt-1 text-xs text-amber-900">
+                            Exception only: copy each line's Qty shipped into Qty received. Review
+                            and enter any damaged quantities before applying inventory.
+                        </p>
+                        <button
+                            type="button"
+                            class="mt-3 inline-flex items-center justify-center rounded-md border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-950 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            :disabled="usingShippedAsReceived || po.items.length === 0"
+                            @click="useShippedQuantitiesAsReceived"
+                        >
+                            {{
+                                usingShippedAsReceived
+                                    ? 'Copying…'
+                                    : 'Use shipped quantities as received'
+                            }}
+                        </button>
+                        <p v-if="useShippedAsReceivedError" class="mt-2 text-sm text-rose-700">
+                            {{ useShippedAsReceivedError }}
+                        </p>
+                        <p v-if="useShippedAsReceivedSummary" class="mt-2 text-sm text-emerald-800">
+                            {{ useShippedAsReceivedSummary }}
+                        </p>
                     </div>
 
                     <p v-if="exportError" class="mt-3 text-sm text-rose-700">{{ exportError }}</p>
@@ -4514,12 +4654,29 @@ onMounted(() => {
                                         }}
                                     </button>
                                 </th>
+                                <th class="px-2 py-1 text-right">
+                                    <button
+                                        type="button"
+                                        class="w-full text-right hover:underline"
+                                        :class="poItemSortHeaderClass(itemsSortBy, 'qty_damaged')"
+                                        data-testid="po-items-sort-qty-damaged"
+                                        @click="toggleItemsSort('qty_damaged')"
+                                    >
+                                        Damaged{{
+                                            poItemSortIndicator(
+                                                itemsSortBy,
+                                                itemsSortDir,
+                                                'qty_damaged',
+                                            )
+                                        }}
+                                    </button>
+                                </th>
                             </tr>
                         </thead>
                         <tbody class="text-slate-800">
                             <tr v-if="filteredPoItems.length === 0">
                                 <td
-                                    colspan="21"
+                                    colspan="22"
                                     class="px-2 py-4 text-center text-sm text-slate-500"
                                     data-testid="po-items-search-empty"
                                 >
@@ -4787,6 +4944,26 @@ onMounted(() => {
                                         @blur="commitQtyReceivedEdit(it.id)"
                                     />
                                 </td>
+                                <td class="px-2 py-1 text-right">
+                                    <input
+                                        class="w-20 rounded-md border border-slate-200 bg-white px-2 py-1 text-right text-xs tabular-nums text-slate-900 disabled:bg-slate-50 disabled:text-slate-400"
+                                        type="text"
+                                        inputmode="numeric"
+                                        :data-testid="`qty-damaged-input-${it.id}`"
+                                        :value="qtyDamagedDrafts[it.id] ?? String(it.qty_damaged)"
+                                        :disabled="savingQtyDamaged === it.id"
+                                        placeholder="0"
+                                        @focus="startQtyDamagedEdit(it.id, it.qty_damaged)"
+                                        @input="
+                                            updateQtyDamagedDraft(
+                                                it.id,
+                                                ($event.target as HTMLInputElement).value,
+                                            )
+                                        "
+                                        @keydown.enter.prevent="commitQtyDamagedEdit(it.id)"
+                                        @blur="commitQtyDamagedEdit(it.id)"
+                                    />
+                                </td>
                             </tr>
                         </tbody>
                         <tfoot>
@@ -4824,6 +5001,9 @@ onMounted(() => {
                                 </td>
                                 <td class="px-2 py-2 text-right font-semibold tabular-nums">
                                     {{ totalQtyReceived }}
+                                </td>
+                                <td class="px-2 py-2 text-right font-semibold tabular-nums">
+                                    {{ totalQtyDamaged }}
                                 </td>
                             </tr>
                         </tfoot>

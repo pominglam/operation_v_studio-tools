@@ -59,6 +59,7 @@ final class PurchaseOrderItemResource extends JsonResource
             'qty_ordered' => $item->qty_ordered,
             'qty_shipped' => $item->qty_shipped,
             'qty_received' => $item->qty_received,
+            'qty_damaged' => $item->qty_damaged,
             'available' => $item->getAttribute('product_available') !== null
                 ? (int) $item->getAttribute('product_available')
                 : $item->product?->available_qty,

@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Contracts\ShipmentTracking\TrackingBrowser;
+use App\DAL\CustomOrders\CustomAsiaOrderRepository;
+use App\DAL\CustomOrders\EloquentCustomAsiaOrderRepository;
 use App\DAL\Inventory\EloquentInventoryRepository;
 use App\DAL\Inventory\InventoryRepository;
 use App\DAL\InventoryChecks\EloquentInventoryCheckRepository;
@@ -27,10 +29,12 @@ use App\DAL\Products\EloquentProductExternalAssetRepository;
 use App\DAL\Products\EloquentProductExternalContentRepository;
 use App\DAL\Products\EloquentProductRepository;
 use App\DAL\Products\EloquentProductSellingPriceRepository;
+use App\DAL\Products\EloquentProductTaxonomyRepository;
 use App\DAL\Products\ProductExternalAssetRepository;
 use App\DAL\Products\ProductExternalContentRepository;
 use App\DAL\Products\ProductRepository;
 use App\DAL\Products\ProductSellingPriceRepository;
+use App\DAL\Products\ProductTaxonomyRepository;
 use App\DAL\PurchaseOrders\EloquentPurchaseOrderRepository;
 use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\DAL\RuntimeSettings\EloquentRuntimeSettingRepository;
@@ -39,6 +43,7 @@ use App\DAL\ShipmentTracking\EloquentShipmentTrackingResolutionRepository;
 use App\DAL\ShipmentTracking\ShipmentTrackingResolutionRepository;
 use App\DAL\TcgEvents\EloquentTcgEventRepository;
 use App\DAL\TcgEvents\TcgEventRepository;
+use App\Services\CustomOrders\CustomAsiaOrderCompetitorPriceLookupService;
 use App\Services\Maintenance\CloudflareQuickTunnelVerifier as MaintenanceQuickTunnelVerifier;
 use App\Services\Maintenance\DatabaseBackupManager;
 use App\Services\Maintenance\DatabaseBackupManagerService;
@@ -87,12 +92,14 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(ProductSellingPriceRepository::class, EloquentProductSellingPriceRepository::class);
         $this->app->bind(ProductExternalContentRepository::class, EloquentProductExternalContentRepository::class);
         $this->app->bind(ProductExternalAssetRepository::class, EloquentProductExternalAssetRepository::class);
+        $this->app->bind(ProductTaxonomyRepository::class, EloquentProductTaxonomyRepository::class);
         $this->app->bind(JobBatchItemRepository::class, EloquentJobBatchItemRepository::class);
         $this->app->bind(RuntimeSettingRepository::class, EloquentRuntimeSettingRepository::class);
         $this->app->bind(InventoryCheckRepository::class, EloquentInventoryCheckRepository::class);
         $this->app->bind(PurchaseOrderRepository::class, EloquentPurchaseOrderRepository::class);
         $this->app->bind(InventoryRepository::class, EloquentInventoryRepository::class);
         $this->app->bind(TcgEventRepository::class, EloquentTcgEventRepository::class);
+        $this->app->bind(CustomAsiaOrderRepository::class, EloquentCustomAsiaOrderRepository::class);
         $this->app->bind(
             ShipmentTrackingResolutionRepository::class,
             EloquentShipmentTrackingResolutionRepository::class,
@@ -153,6 +160,12 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(ProductPriceQuoteRepository::class),
                 $app->make(PriceResearchRunRepository::class),
                 $app->make(PriceResearchRunLogRepository::class),
+                $app->tagged(CompetitorPriceProvider::class),
+            );
+        });
+
+        $this->app->bind(CustomAsiaOrderCompetitorPriceLookupService::class, function ($app): CustomAsiaOrderCompetitorPriceLookupService {
+            return new CustomAsiaOrderCompetitorPriceLookupService(
                 $app->tagged(CompetitorPriceProvider::class),
             );
         });

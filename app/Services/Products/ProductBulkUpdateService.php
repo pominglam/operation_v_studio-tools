@@ -51,6 +51,10 @@ final class ProductBulkUpdateService
      *   handle?: string|null,
      *   main_type?: string|null,
      *   type?: string|null,
+     *   department?: string|null,
+     *   manufacturer?: string|null,
+     *   franchise?: string|null,
+     *   product_line?: string|null,
      *   vendor?: string|null,
      *   published_on_shopify?: bool,
      *   latest_arrival?: bool,
@@ -101,6 +105,15 @@ final class ProductBulkUpdateService
             $type = $changes['type'];
             $type = $type !== null ? trim($type) : null;
             $updates['type'] = $type !== '' ? $type : null;
+        }
+
+        foreach (['department', 'manufacturer', 'franchise', 'product_line'] as $field) {
+            if (! array_key_exists($field, $changes)) {
+                continue;
+            }
+            $value = $changes[$field];
+            $value = is_string($value) ? trim($value) : null;
+            $updates[$field] = $value !== '' ? $value : null;
         }
 
         if (array_key_exists('grade', $changes)) {

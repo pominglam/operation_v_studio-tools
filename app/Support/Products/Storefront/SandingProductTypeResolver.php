@@ -9,7 +9,7 @@ use App\Models\Product;
 final class SandingProductTypeResolver
 {
     /**
-     * @return 'sheet'|'stick-sponge'|'glass-file'|'board-plate'
+     * @return 'sheet'|'stick'|'sponge'|'glass-file'|'board-plate'
      */
     public function resolve(Product $product): string
     {
@@ -28,8 +28,12 @@ final class SandingProductTypeResolver
             return 'board-plate';
         }
 
-        if ($this->isStickSpongeSku($sku)) {
-            return 'stick-sponge';
+        if ($this->isStickSku($sku)) {
+            return 'stick';
+        }
+
+        if ($this->isSpongeSku($sku)) {
+            return 'sponge';
         }
 
         if (preg_match('/^MS-B/', $sku) === 1) {
@@ -42,10 +46,13 @@ final class SandingProductTypeResolver
 
         if (
             str_contains($description, 'sanding stick')
-            || str_contains($description, 'sponge')
             || str_contains($description, 'kamiyasu-sanding stick')
         ) {
-            return 'stick-sponge';
+            return 'stick';
+        }
+
+        if (str_contains($description, 'sponge')) {
+            return 'sponge';
         }
 
         if (str_contains($description, 'adhesive sandpaper')) {
@@ -59,16 +66,14 @@ final class SandingProductTypeResolver
         return 'sheet';
     }
 
-    private function isStickSpongeSku(string $sku): bool
+    private function isStickSku(string $sku): bool
     {
-        if (preg_match('/^MS-E/', $sku) === 1) {
-            return true;
-        }
+        return preg_match('/^MS-E/', $sku) === 1
+            || preg_match('/^GH-KS3-/', $sku) === 1;
+    }
 
-        if (preg_match('/^GH-KS3-/', $sku) === 1) {
-            return true;
-        }
-
+    private function isSpongeSku(string $sku): bool
+    {
         if (
             preg_match('/^MS-A/', $sku) === 1
             || preg_match('/^MS-AT/', $sku) === 1
@@ -78,11 +83,7 @@ final class SandingProductTypeResolver
             return true;
         }
 
-        if ($this->isSpongeGritSku($sku)) {
-            return true;
-        }
-
-        return false;
+        return $this->isSpongeGritSku($sku);
     }
 
     private function isSpongeGritSku(string $sku): bool

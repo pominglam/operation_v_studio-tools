@@ -62,6 +62,11 @@ final class ProductsIndexRequest extends FormRequest
                     'description',
                     'main_type',
                     'type',
+                    'department',
+                    'manufacturer',
+                    'franchise',
+                    'product_line',
+                    'subline',
                     'grade',
                     'series',
                     'scale',
@@ -91,7 +96,47 @@ final class ProductsIndexRequest extends FormRequest
             'types.*' => ['string', 'max:40'],
             'vendors' => ['sometimes', 'array'],
             'vendors.*' => ['string', 'max:128'],
+            'departments' => ['sometimes', 'array'],
+            'departments.*' => ['string', 'max:64'],
+            'manufacturers' => ['sometimes', 'array'],
+            'manufacturers.*' => ['string', 'max:128'],
+            'franchises' => ['sometimes', 'array'],
+            'franchises.*' => ['string', 'max:128'],
+            'product_lines' => ['sometimes', 'array'],
+            'product_lines.*' => ['string', 'max:128'],
+            'sublines' => ['sometimes', 'array'],
+            'sublines.*' => ['string', 'max:128'],
+            'grades' => ['sometimes', 'array'],
+            'grades.*' => ['string', 'max:128'],
+            'series_values' => ['sometimes', 'array'],
+            'series_values.*' => ['string', 'max:255'],
+            'scales' => ['sometimes', 'array'],
+            'scales.*' => ['string', 'max:64'],
         ];
+    }
+
+    /**
+     * @return array<string, array<int, string>>
+     */
+    public function canonicalTaxonomyFilters(): array
+    {
+        $filters = [];
+        foreach ([
+            'departments',
+            'manufacturers',
+            'franchises',
+            'product_lines',
+            'sublines',
+            'grades',
+            'series_values',
+            'scales',
+        ] as $key) {
+            /** @var array<int, string> $values */
+            $values = $this->validated($key) ?? [];
+            $filters[$key] = $values;
+        }
+
+        return $filters;
     }
 
     public function archivedFilter(): string

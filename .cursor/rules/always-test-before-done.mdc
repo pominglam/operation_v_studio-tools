@@ -10,9 +10,8 @@ A task is **not complete** until behavior is verified the way a real user/system
 ## Required for every change
 
 1. **Automated tests**
-   - New features: add or extend tests that cover the happy path and at least one failure path.
-   - Bug fixes: add a **regression test** that fails before the fix and passes after.
-   - Run the **targeted test file(s)** for the area you changed; report command + pass/fail in the final reply.
+   - **Do not add or modify test files** unless the user explicitly asks — see **`agent-test-cleanup.mdc`**. Delete/revert any tests you created before handoff.
+   - Run **existing** targeted tests when helpful; report command + pass/fail in the final reply.
 
 2. **User-visible flows**
    - UI/storefront changes: follow **`verify-ui-before-done.mdc`** and **`rigorous-qa-before-handoff.mdc`** — filter combinations, full action flows, Playwright e2e when applicable; open the real page and confirm outcomes on real/seeded data.

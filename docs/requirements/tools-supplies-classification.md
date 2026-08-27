@@ -259,7 +259,7 @@ Six masking widths plus 6 mm scribing; 3 mm appears on both families.
 | Filter          | Values                                                          |
 | --------------- | --------------------------------------------------------------- |
 | **Product**     | Paint · Surfacer · Top coat · Panel line · Thinner · **Bundle** |
-| **Application** | Airbrush paint · Hand paint                                     |
+| **Application** | Pre-thinned airbrush paint · Airbrush paint · Hand paint · **Spray can** |
 | **Paint type**  | Solid · Metallic · Fluorescent · Clear                          |
 
 

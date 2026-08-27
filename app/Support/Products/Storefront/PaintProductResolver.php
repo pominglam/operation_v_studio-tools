@@ -24,7 +24,7 @@ final class PaintProductResolver
             return 'bundle';
         }
 
-        if (str_starts_with($sku, 'XPS-')) {
+        if (str_starts_with($sku, 'XPS-') || $sku === 'B515') {
             return 'surfacer';
         }
 
@@ -48,12 +48,17 @@ final class PaintProductResolver
      */
     public function resolveApplications(Product $product): array
     {
+        $sku = strtoupper(trim((string) $product->sku));
+        $description = strtolower(trim((string) $product->description));
+
+        if ($this->isSprayCan($sku, $description)) {
+            return ['spray-can'];
+        }
+
         if ($this->resolveProduct($product) !== 'paint') {
             return [];
         }
 
-        $sku = strtoupper(trim((string) $product->sku));
-        $description = strtolower(trim((string) $product->description));
         $applications = [];
 
         if (preg_match('/^MC-(?:0[1-9]|1[0-8])$/', $sku) === 1 || preg_match('/^MMC-\d+$/', $sku) === 1) {
@@ -129,6 +134,10 @@ final class PaintProductResolver
             return true;
         }
 
+        if ($this->isMrHobbySpraySku($sku) || $this->isSprayCan($sku, $description)) {
+            return true;
+        }
+
         if (preg_match('/^T\d+$/', $sku) === 1 && str_contains($description, 'thinner')) {
             return true;
         }
@@ -153,13 +162,37 @@ final class PaintProductResolver
 
     private function isTopCoat(string $sku, string $description): bool
     {
-        if (in_array($sku, ['XG-901', 'XG-902', 'XG-903', 'MC-21'], true)) {
+        if (in_array($sku, ['XG-901', 'XG-902', 'XG-903', 'MC-21', 'B513', 'B522', 'B523'], true)) {
+            return true;
+        }
+
+        if ($this->isMrHobbyClearSpraySku($sku)) {
             return true;
         }
 
         return str_contains($description, 'topcoat')
             || str_contains($description, 'top coat')
-            || str_contains($description, 'top-coat');
+            || str_contains($description, 'top-coat')
+            || str_contains($description, 'super clear');
+    }
+
+    private function isMrHobbySpraySku(string $sku): bool
+    {
+        return $this->isMrHobbyClearSpraySku($sku) || $sku === 'B515';
+    }
+
+    private function isMrHobbyClearSpraySku(string $sku): bool
+    {
+        return in_array($sku, ['B513', 'B522', 'B523'], true);
+    }
+
+    private function isSprayCan(string $sku, string $description): bool
+    {
+        if ($this->isMrHobbySpraySku($sku)) {
+            return true;
+        }
+
+        return str_contains($description, 'spray');
     }
 
     private function isThinner(string $sku, string $description): bool

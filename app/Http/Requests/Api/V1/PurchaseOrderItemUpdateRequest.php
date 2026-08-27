@@ -18,6 +18,7 @@ final class PurchaseOrderItemUpdateRequest extends FormRequest
             'qty_ordered' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'qty_shipped' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'qty_received' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'qty_damaged' => ['sometimes', 'integer', 'min:0'],
         ];
     }
 
@@ -28,8 +29,8 @@ final class PurchaseOrderItemUpdateRequest extends FormRequest
     {
         return [
             function (\Illuminate\Validation\Validator $validator): void {
-                if (! $this->has('unit_cost') && ! $this->has('qty_ordered') && ! $this->has('qty_shipped') && ! $this->has('qty_received')) {
-                    $validator->errors()->add('unit_cost', 'Provide unit_cost, qty_ordered, qty_shipped, or qty_received.');
+                if (! $this->has('unit_cost') && ! $this->has('qty_ordered') && ! $this->has('qty_shipped') && ! $this->has('qty_received') && ! $this->has('qty_damaged')) {
+                    $validator->errors()->add('unit_cost', 'Provide unit_cost, qty_ordered, qty_shipped, qty_received, or qty_damaged.');
                 }
             },
         ];

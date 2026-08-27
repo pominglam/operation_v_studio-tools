@@ -12,7 +12,7 @@ This workspace uses layered rule files located in `.cursor/rules/`. All rules in
 ## Automatic Application
 
 Rules are automatically applied based on their configuration:
-- **Always Apply**: `project.mdc`, `formatting.mdc`, `typesafety.mdc`, `versioning.mdc`, `infra.mdc`, `architecture.mdc`, `workspace.mdc`, `features-documentation-catalog.mdc`, `shopify-erp-integration.mdc`, `always-test-before-done.mdc`, `bug-check-before-return.mdc`, `rigorous-qa-before-handoff.mdc`, `verify-ui-before-done.mdc`, `definition_of_done.mdc`, `data-column-discipline.mdc`
+- **Always Apply**: `project.mdc`, `formatting.mdc`, `typesafety.mdc`, `versioning.mdc`, `infra.mdc`, `architecture.mdc`, `workspace.mdc`, `features-documentation-catalog.mdc`, `shopify-erp-integration.mdc`, `agent-test-cleanup.mdc`, `always-test-before-done.mdc`, `bug-check-before-return.mdc`, `rigorous-qa-before-handoff.mdc`, `verify-ui-before-done.mdc`, `definition_of_done.mdc`, `data-column-discipline.mdc`
 - **Targeted**: Rules matching specific file patterns (controllers, services, DAL, frontend, tests)
 
 ## Key Rules Summary
@@ -26,7 +26,7 @@ Rules are automatically applied based on their configuration:
 - Pest: 3.x, Vitest: 2.x
 
 ### Workflow Rules
-- **TDD First**: Specs ΓåÆ Tests ΓåÆ Implement ΓåÆ Review ΓåÆ Commit (after approval)
+- **Agent tests**: Do not add/modify test files unless asked — delete/revert before handoff (`agent-test-cleanup.mdc`)
 - **Verify UI before done**: Real browser, click filters/controls, match customer expectations (`verify-ui-before-done.mdc`)
 - **Rigorous QA before handoff**: Agent owns QA — filter combos, full flows, Playwright e2e, real data; user is not QA (`rigorous-qa-before-handoff.mdc`)
 - **Bug check before return**: Reproduce reported bugs, verify on real data/logs, no "should work" handoffs (`bug-check-before-return.mdc`)

@@ -166,6 +166,9 @@ final class PurchaseOrderLineMergeService
         $survivor->qty_received = $this->mergeQtyReceivedForDedup(
             ...array_map(static fn (PurchaseOrderItem $i): ?int => $i->qty_received !== null ? (int) $i->qty_received : null, $all),
         );
+        $survivor->qty_damaged = array_sum(
+            array_map(static fn (PurchaseOrderItem $i): int => (int) $i->qty_damaged, $all),
+        );
 
         $survivor->unit_cost = $this->weightedAverageDecimal($unitCostPairs);
         $survivor->vendor_unit_cost = $this->weightedAverageDecimal($vendorCostPairs);

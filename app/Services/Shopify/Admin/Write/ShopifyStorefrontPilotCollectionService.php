@@ -8,6 +8,7 @@ use App\Contracts\Shopify\ShopifyAdminGraphQlClientInterface;
 use App\Exceptions\Shopify\ShopifyGraphQlException;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlMutations;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlQueries;
+use App\Support\Products\Storefront\ModelKitShelfCatalog;
 use App\Support\Products\Storefront\StorefrontTag;
 use Illuminate\Support\Facades\Log;
 
@@ -185,7 +186,101 @@ final class ShopifyStorefrontPilotCollectionService
     }
 
     /**
+     * @return array<string, array{gid: string, handle: string, title: string, product_count: int, url: string}>
+     */
+    public function ensureModelKitShelfCollections(): array
+    {
+        $this->scopeGuard->assertWriteProductsScope();
+
+        $baseUrl = rtrim((string) config('storefront_classification.storefront_base_url', 'https://operationvstudio.com'), '/');
+        $out = [];
+
+        foreach (ModelKitShelfCatalog::shelves() as $key => $meta) {
+            $handle = $meta['handle'];
+            if (($meta['disjunctive'] ?? false) && isset($meta['tags'])) {
+                /** @var list<string> $tags */
+                $tags = $meta['tags'];
+                $gid = $this->upsertSmartCollectionOrTags($handle, $meta['title'], $tags, true);
+            } else {
+                $gid = $this->upsertSmartCollection($handle, $meta['title'], (string) $meta['tag']);
+            }
+
+            $this->publishAllChannels->publishToAllChannels($gid, 'collection:'.$handle);
+            $preview = $this->collectionPreview($gid);
+            $count = is_int($preview['productsCount']['count'] ?? null)
+                ? (int) $preview['productsCount']['count']
+                : 0;
+
+            $out[$key] = [
+                'gid' => $gid,
+                'handle' => $handle,
+                'title' => $meta['title'],
+                'product_count' => $count,
+                'url' => $baseUrl.'/collections/'.$handle,
+            ];
+
+            Log::channel('shopify')->info('shopify.write.model_kit_shelf_collection.ready', [
+                'shelf' => $key,
+                'handle' => $handle,
+                'gid' => $gid,
+                'product_count' => $count,
+            ]);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Model kits at or below the beginner price cap (Shopify variant price rule + mk dept tag).
+     *
      * @return array{gid: string, handle: string, title: string, product_count: int, url: string}
+     */
+    public function ensureBeginnerKitsCollection(float $maxPriceCad = 35.0): array
+    {
+        $this->scopeGuard->assertWriteProductsScope();
+
+        $baseUrl = rtrim((string) config('storefront_classification.storefront_base_url', 'https://operationvstudio.com'), '/');
+        $handle = 'beginner-kits';
+        $title = 'Beginner Kits';
+        $priceCap = number_format($maxPriceCad + 0.01, 2, '.', '');
+
+        $gid = $this->upsertSmartCollectionWithRules($handle, $title, [
+            [
+                'column' => 'TAG',
+                'relation' => 'EQUALS',
+                'condition' => StorefrontTag::MK_DEPT_MODEL_KITS,
+            ],
+            [
+                'column' => 'VARIANT_PRICE',
+                'relation' => 'LESS_THAN',
+                'condition' => $priceCap,
+            ],
+        ], false);
+
+        $this->publishAllChannels->publishToAllChannels($gid, 'collection:'.$handle);
+        $preview = $this->collectionPreview($gid);
+        $count = is_int($preview['productsCount']['count'] ?? null)
+            ? (int) $preview['productsCount']['count']
+            : 0;
+
+        Log::channel('shopify')->info('shopify.write.beginner_kits_collection.ready', [
+            'handle' => $handle,
+            'gid' => $gid,
+            'product_count' => $count,
+            'max_price_cad' => $maxPriceCad,
+        ]);
+
+        return [
+            'gid' => $gid,
+            'handle' => $handle,
+            'title' => $title,
+            'product_count' => $count,
+            'url' => $baseUrl.'/collections/'.$handle,
+        ];
+    }
+
+    /**
+     * @return array<string, array{gid: string, handle: string, title: string, product_count: int, url: string}>
      */
     public function ensureToolsAndSuppliesHubCollection(): array
     {
@@ -238,6 +333,34 @@ final class ShopifyStorefrontPilotCollectionService
             ];
         }
 
+        $existing = $this->collectionByHandle($handle);
+        $input = [
+            'title' => $title,
+            'handle' => $handle,
+            'ruleSet' => [
+                'appliedDisjunctively' => $appliedDisjunctively,
+                'rules' => $rules,
+            ],
+        ];
+
+        if ($existing !== null) {
+            $input['id'] = $existing;
+
+            return $this->mutateCollection(ShopifyAdminGraphQlMutations::COLLECTION_UPDATE, $input, 'collectionUpdate');
+        }
+
+        return $this->mutateCollection(ShopifyAdminGraphQlMutations::COLLECTION_CREATE, $input, 'collectionCreate');
+    }
+
+    /**
+     * @param  list<array{column: string, relation: string, condition: string}>  $rules
+     */
+    private function upsertSmartCollectionWithRules(
+        string $handle,
+        string $title,
+        array $rules,
+        bool $appliedDisjunctively,
+    ): string {
         $existing = $this->collectionByHandle($handle);
         $input = [
             'title' => $title,

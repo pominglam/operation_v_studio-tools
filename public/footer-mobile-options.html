@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Footer — mobile layout options</title>
+        <style>
+            :root {
+                color-scheme: light;
+            }
+            body {
+                margin: 0;
+                padding: 32px;
+                background: #f4f5f7;
+                font-family:
+                    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                color: #14161a;
+            }
+            h1 {
+                margin: 0 0 4px;
+                font-size: 22px;
+            }
+            p.lede {
+                margin: 0 0 28px;
+                color: #5b6270;
+                font-size: 14px;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 24px;
+                align-items: start;
+            }
+            .card {
+                background: #fff;
+                border: 1px solid #e2e5ea;
+                border-radius: 10px;
+                overflow: hidden;
+            }
+            .card header {
+                padding: 14px 16px;
+                border-bottom: 1px solid #e2e5ea;
+            }
+            .card h2 {
+                margin: 0 0 4px;
+                font-size: 15px;
+            }
+            .card p {
+                margin: 0;
+                font-size: 13px;
+                line-height: 1.5;
+                color: #5b6270;
+            }
+            .card img {
+                display: block;
+                width: 100%;
+                height: auto;
+            }
+            .tag {
+                display: inline-block;
+                margin-left: 6px;
+                padding: 1px 7px;
+                border-radius: 99px;
+                font-size: 11px;
+                font-weight: 600;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+            .tag--now {
+                background: #fdecec;
+                color: #b3261e;
+            }
+            .tag--rec {
+                background: #e6f4ea;
+                color: #146c2e;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Storefront footer — mobile layout options</h1>
+        <p class="lede">
+            Rendered at 390&nbsp;px from the live theme with the real fonts and icons. Nothing is
+            published; pick one and it gets implemented.
+        </p>
+
+        <div class="grid">
+            <div class="card">
+                <header>
+                    <h2>Current <span class="tag tag--now">Live now</span></h2>
+                    <p>
+                        Ragged left edge (icons at 15px, their text at 51px, "Chat with us" back at
+                        15px), hours stretched the full width, no separation between blocks.
+                    </p>
+                </header>
+                <img src="/mobile-footer-current.png" alt="Current mobile footer" />
+            </div>
+
+            <div class="card">
+                <header>
+                    <h2>Option A — centered stack</h2>
+                    <p>
+                        One centre axis shared with the newsletter. Icons sit above each block;
+                        hours narrowed so times stay close to their days.
+                    </p>
+                </header>
+                <img src="/mobile-footer-a.png" alt="Option A centered stack" />
+            </div>
+
+            <div class="card">
+                <header>
+                    <h2>Option B — labelled sections <span class="tag tag--rec">Suggested</span></h2>
+                    <p>
+                        One clean left edge. Small caps label with inline icon per block, hairline
+                        dividers between them, hours read as a schedule.
+                    </p>
+                </header>
+                <img src="/mobile-footer-b.png" alt="Option B labelled sections" />
+            </div>
+
+            <div class="card">
+                <header>
+                    <h2>Option C — store info card</h2>
+                    <p>
+                        Centred like A, but the three blocks sit in a bordered card that separates
+                        store info from the newsletter and payment icons.
+                    </p>
+                </header>
+                <img src="/mobile-footer-c.png" alt="Option C store info card" />
+            </div>
+        </div>
+    </body>
+</html>

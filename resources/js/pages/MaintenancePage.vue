@@ -6,6 +6,14 @@ import ConfirmDialog from '../components/ui/ConfirmDialog.vue';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
 import { formatLocalDateTime } from '../lib/datetime';
+import {
+    CUSTOM_ASIA_ORDER_CUSTOMER_MESSAGE_PLACEHOLDERS,
+    previewCustomAsiaOrderCustomerMessage,
+} from '../lib/customAsiaOrderCustomerMessage';
+import {
+    DEFAULT_MERCHANDISER_COMMISSION_CAP_CAD,
+    DEFAULT_OPV_MARGIN_CAP_CAD,
+} from '../lib/customAsiaOrderPricingCaps';
 
 type DbBackupRow = {
     uuid: string;
@@ -53,6 +61,30 @@ const refreshPlamodInstockError = ref<string | null>(null);
 const notesMessage = ref<string | null>(null);
 const notesError = ref<string | null>(null);
 const notesBody = ref<string>('');
+const customAsiaMessageTemplateLoading = ref(false);
+const customAsiaMessageTemplateSaving = ref(false);
+const customAsiaMessageTemplateBody = ref('');
+const customAsiaMessageTemplateDefaultBody = ref('');
+const customAsiaMessageTemplateMessage = ref<string | null>(null);
+const customAsiaMessageTemplateError = ref<string | null>(null);
+const customAsiaMessageTemplatePreview = computed(() =>
+    previewCustomAsiaOrderCustomerMessage(customAsiaMessageTemplateBody.value),
+);
+const customAsiaPricingCapsLoading = ref(false);
+const customAsiaPricingCapsSaving = ref(false);
+const customAsiaMerchandiserCommissionCapCad = ref(DEFAULT_MERCHANDISER_COMMISSION_CAP_CAD);
+const customAsiaOpvMarginCapCad = ref(DEFAULT_OPV_MARGIN_CAP_CAD);
+const customAsiaDefaultMerchandiserCommissionCapCad = ref(DEFAULT_MERCHANDISER_COMMISSION_CAP_CAD);
+const customAsiaDefaultOpvMarginCapCad = ref(DEFAULT_OPV_MARGIN_CAP_CAD);
+const customAsiaPricingCapsMessage = ref<string | null>(null);
+const customAsiaPricingCapsError = ref<string | null>(null);
+const customAsiaPricingCapsIsDefault = ref(true);
+const customAsiaPricingCapsAtDefaults = computed(
+    () =>
+        customAsiaMerchandiserCommissionCapCad.value ===
+            customAsiaDefaultMerchandiserCommissionCapCad.value &&
+        customAsiaOpvMarginCapCad.value === customAsiaDefaultOpvMarginCapCad.value,
+);
 const externalHitsLoading = ref(false);
 const externalHitsSaving = ref(false);
 const externalHitsPerMinute = ref<number>(10);
@@ -1055,6 +1087,195 @@ async function saveMaintenanceNotes(): Promise<void> {
     }
 }
 
+async function loadCustomAsiaMessageTemplate(): Promise<void> {
+    customAsiaMessageTemplateLoading.value = true;
+    customAsiaMessageTemplateError.value = null;
+    try {
+        const res = await api.get<{
+            data: { body: string; default_body: string };
+        }>('/api/v1/maintenance/custom-asia-order-customer-message-template', {
+            validateStatus: () => true,
+        });
+        if (res.status !== 200) {
+            customAsiaMessageTemplateError.value = 'Failed to load custom order message template.';
+            return;
+        }
+        customAsiaMessageTemplateBody.value = res.data.data.body ?? '';
+        customAsiaMessageTemplateDefaultBody.value = res.data.data.default_body ?? '';
+    } catch {
+        customAsiaMessageTemplateError.value = 'Failed to load custom order message template.';
+    } finally {
+        customAsiaMessageTemplateLoading.value = false;
+    }
+}
+
+async function saveCustomAsiaMessageTemplate(): Promise<void> {
+    customAsiaMessageTemplateSaving.value = true;
+    customAsiaMessageTemplateMessage.value = null;
+    customAsiaMessageTemplateError.value = null;
+
+    try {
+        const res = await api.put<{ data: { body: string } }>(
+            '/api/v1/maintenance/custom-asia-order-customer-message-template',
+            { body: customAsiaMessageTemplateBody.value },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const anyData = res.data as { message?: string; errors?: { body?: string[] } };
+            customAsiaMessageTemplateError.value =
+                anyData?.errors?.body?.[0] ??
+                anyData?.message ??
+                'Failed to save custom order message template.';
+            return;
+        }
+
+        customAsiaMessageTemplateBody.value = res.data.data.body;
+        customAsiaMessageTemplateMessage.value = 'Template saved.';
+    } catch {
+        customAsiaMessageTemplateError.value = 'Failed to save custom order message template.';
+    } finally {
+        customAsiaMessageTemplateSaving.value = false;
+    }
+}
+
+async function resetCustomAsiaMessageTemplate(): Promise<void> {
+    customAsiaMessageTemplateSaving.value = true;
+    customAsiaMessageTemplateMessage.value = null;
+    customAsiaMessageTemplateError.value = null;
+
+    try {
+        const res = await api.put<{ data: { body: string } }>(
+            '/api/v1/maintenance/custom-asia-order-customer-message-template',
+            { reset: true },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            customAsiaMessageTemplateError.value = 'Failed to reset template.';
+            return;
+        }
+
+        customAsiaMessageTemplateBody.value = res.data.data.body;
+        customAsiaMessageTemplateMessage.value = 'Template reset to default.';
+    } catch {
+        customAsiaMessageTemplateError.value = 'Failed to reset template.';
+    } finally {
+        customAsiaMessageTemplateSaving.value = false;
+    }
+}
+
+async function loadCustomAsiaPricingCaps(): Promise<void> {
+    customAsiaPricingCapsLoading.value = true;
+    customAsiaPricingCapsError.value = null;
+    try {
+        const res = await api.get<{
+            data: {
+                merchandiser_commission_cap_cad: string;
+                opv_margin_cap_cad: string;
+                default_merchandiser_commission_cap_cad: string;
+                default_opv_margin_cap_cad: string;
+                is_default: boolean;
+            };
+        }>('/api/v1/maintenance/custom-asia-order-pricing-caps', {
+            validateStatus: () => true,
+        });
+        if (res.status !== 200) {
+            customAsiaPricingCapsError.value = 'Failed to load custom order pricing caps.';
+            return;
+        }
+        customAsiaMerchandiserCommissionCapCad.value =
+            res.data.data.merchandiser_commission_cap_cad ?? DEFAULT_MERCHANDISER_COMMISSION_CAP_CAD;
+        customAsiaOpvMarginCapCad.value =
+            res.data.data.opv_margin_cap_cad ?? DEFAULT_OPV_MARGIN_CAP_CAD;
+        customAsiaDefaultMerchandiserCommissionCapCad.value =
+            res.data.data.default_merchandiser_commission_cap_cad ??
+            DEFAULT_MERCHANDISER_COMMISSION_CAP_CAD;
+        customAsiaDefaultOpvMarginCapCad.value =
+            res.data.data.default_opv_margin_cap_cad ?? DEFAULT_OPV_MARGIN_CAP_CAD;
+        customAsiaPricingCapsIsDefault.value = res.data.data.is_default ?? true;
+    } catch {
+        customAsiaPricingCapsError.value = 'Failed to load custom order pricing caps.';
+    } finally {
+        customAsiaPricingCapsLoading.value = false;
+    }
+}
+
+async function saveCustomAsiaPricingCaps(): Promise<void> {
+    customAsiaPricingCapsSaving.value = true;
+    customAsiaPricingCapsMessage.value = null;
+    customAsiaPricingCapsError.value = null;
+
+    try {
+        const res = await api.put<{
+            data: {
+                merchandiser_commission_cap_cad: string;
+                opv_margin_cap_cad: string;
+                is_default: boolean;
+            };
+        }>(
+            '/api/v1/maintenance/custom-asia-order-pricing-caps',
+            {
+                merchandiser_commission_cap_cad: customAsiaMerchandiserCommissionCapCad.value,
+                opv_margin_cap_cad: customAsiaOpvMarginCapCad.value,
+            },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const anyData = res.data as {
+                message?: string;
+                errors?: Record<string, string[]>;
+            };
+            customAsiaPricingCapsError.value =
+                anyData?.errors?.merchandiser_commission_cap_cad?.[0] ??
+                anyData?.errors?.opv_margin_cap_cad?.[0] ??
+                anyData?.message ??
+                'Failed to save custom order pricing caps.';
+            return;
+        }
+
+        customAsiaMerchandiserCommissionCapCad.value = res.data.data.merchandiser_commission_cap_cad;
+        customAsiaOpvMarginCapCad.value = res.data.data.opv_margin_cap_cad;
+        customAsiaPricingCapsIsDefault.value = res.data.data.is_default;
+        customAsiaPricingCapsMessage.value = 'Pricing caps saved.';
+    } catch {
+        customAsiaPricingCapsError.value = 'Failed to save custom order pricing caps.';
+    } finally {
+        customAsiaPricingCapsSaving.value = false;
+    }
+}
+
+async function resetCustomAsiaPricingCaps(): Promise<void> {
+    customAsiaPricingCapsSaving.value = true;
+    customAsiaPricingCapsMessage.value = null;
+    customAsiaPricingCapsError.value = null;
+
+    try {
+        const res = await api.put<{
+            data: {
+                merchandiser_commission_cap_cad: string;
+                opv_margin_cap_cad: string;
+                is_default: boolean;
+            };
+        }>(
+            '/api/v1/maintenance/custom-asia-order-pricing-caps',
+            { reset: true },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            customAsiaPricingCapsError.value = 'Failed to reset pricing caps.';
+            return;
+        }
+
+        customAsiaMerchandiserCommissionCapCad.value = res.data.data.merchandiser_commission_cap_cad;
+        customAsiaOpvMarginCapCad.value = res.data.data.opv_margin_cap_cad;
+        customAsiaPricingCapsIsDefault.value = res.data.data.is_default;
+        customAsiaPricingCapsMessage.value = 'Pricing caps reset to defaults.';
+    } catch {
+        customAsiaPricingCapsError.value = 'Failed to reset pricing caps.';
+    } finally {
+        customAsiaPricingCapsSaving.value = false;
+    }
+}
+
 async function loadDbBackups(): Promise<void> {
     dbBackupsLoading.value = true;
     dbBackupError.value = null;
@@ -1186,6 +1407,8 @@ onMounted(() => {
     void loadPriceResearchSites();
     void loadProductFilterOptions();
     void loadMaintenanceNotes();
+    void loadCustomAsiaMessageTemplate();
+    void loadCustomAsiaPricingCaps();
     void loadDbBackups();
     void loadExternalRateLimit();
     void loadExternalAccess();
@@ -1547,6 +1770,165 @@ watch(
                     Quick tunnel URLs rotate; if you use an older URL it may show
                     <span class="font-mono">404</span>. Always use the URL shown here.
                 </div>
+            </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div class="flex-1">
+                    <div class="text-sm font-medium text-slate-900">
+                        Custom Asia order — customer message template
+                    </div>
+                    <div class="mt-1 text-sm text-slate-600">
+                        DM template for custom orders. Placeholders:
+                        <span
+                            v-for="placeholder in CUSTOM_ASIA_ORDER_CUSTOMER_MESSAGE_PLACEHOLDERS"
+                            :key="placeholder"
+                            class="ml-1 font-mono text-xs text-slate-700"
+                        >{{ placeholder }}</span>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                    <button
+                        class="inline-flex items-center justify-center rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        type="button"
+                        :disabled="
+                            customAsiaMessageTemplateSaving ||
+                            customAsiaMessageTemplateLoading ||
+                            customAsiaMessageTemplateBody === customAsiaMessageTemplateDefaultBody
+                        "
+                        @click="resetCustomAsiaMessageTemplate"
+                    >
+                        Reset to default
+                    </button>
+                    <button
+                        class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        type="button"
+                        :disabled="customAsiaMessageTemplateSaving || customAsiaMessageTemplateLoading"
+                        @click="saveCustomAsiaMessageTemplate"
+                    >
+                        {{ customAsiaMessageTemplateSaving ? 'Saving…' : 'Save template' }}
+                    </button>
+                </div>
+            </div>
+
+            <div class="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div>
+                    <textarea
+                        v-model="customAsiaMessageTemplateBody"
+                        class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900"
+                        :disabled="customAsiaMessageTemplateLoading"
+                        rows="14"
+                    />
+                </div>
+                <div>
+                    <div class="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Preview (sample order)
+                    </div>
+                    <pre
+                        class="mt-2 max-h-[320px] overflow-auto rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm whitespace-pre-wrap text-slate-800"
+                    >{{ customAsiaMessageTemplatePreview }}</pre>
+                </div>
+            </div>
+
+            <div
+                v-if="customAsiaMessageTemplateError"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
+                {{ customAsiaMessageTemplateError }}
+            </div>
+
+            <div
+                v-if="customAsiaMessageTemplateMessage"
+                class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+                {{ customAsiaMessageTemplateMessage }}
+            </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div class="flex-1">
+                    <div class="text-sm font-medium text-slate-900">
+                        Custom Asia order — pricing caps
+                    </div>
+                    <div class="mt-1 text-sm text-slate-600">
+                        Maximum CAD amounts applied to formula-derived merchandiser commission and OPV
+                        margin on custom order detail. Explicit CAD overrides on an order bypass these
+                        caps.
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                    <button
+                        class="inline-flex items-center justify-center rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        type="button"
+                        :disabled="
+                            customAsiaPricingCapsSaving ||
+                            customAsiaPricingCapsLoading ||
+                            customAsiaPricingCapsAtDefaults
+                        "
+                        @click="resetCustomAsiaPricingCaps"
+                    >
+                        Reset to defaults
+                    </button>
+                    <button
+                        class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        type="button"
+                        :disabled="customAsiaPricingCapsSaving || customAsiaPricingCapsLoading"
+                        @click="saveCustomAsiaPricingCaps"
+                    >
+                        {{ customAsiaPricingCapsSaving ? 'Saving…' : 'Save caps' }}
+                    </button>
+                </div>
+            </div>
+
+            <div class="mt-4 grid max-w-xl grid-cols-1 gap-4 sm:grid-cols-2">
+                <label class="block text-sm text-slate-700">
+                    <span class="font-medium text-slate-900">Merchandiser commission cap (CAD)</span>
+                    <input
+                        v-model="customAsiaMerchandiserCommissionCapCad"
+                        class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                        :disabled="customAsiaPricingCapsLoading"
+                        inputmode="decimal"
+                        type="text"
+                    />
+                    <span class="mt-1 block text-xs text-slate-500">
+                        Default: {{ customAsiaDefaultMerchandiserCommissionCapCad }}
+                    </span>
+                </label>
+                <label class="block text-sm text-slate-700">
+                    <span class="font-medium text-slate-900">OPV margin cap (CAD)</span>
+                    <input
+                        v-model="customAsiaOpvMarginCapCad"
+                        class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                        :disabled="customAsiaPricingCapsLoading"
+                        inputmode="decimal"
+                        type="text"
+                    />
+                    <span class="mt-1 block text-xs text-slate-500">
+                        Default: {{ customAsiaDefaultOpvMarginCapCad }}
+                    </span>
+                </label>
+            </div>
+
+            <div v-if="!customAsiaPricingCapsIsDefault" class="mt-3 text-xs text-slate-600">
+                Custom caps are in effect (stored in maintenance notes).
+            </div>
+
+            <div
+                v-if="customAsiaPricingCapsError"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
+                {{ customAsiaPricingCapsError }}
+            </div>
+
+            <div
+                v-if="customAsiaPricingCapsMessage"
+                class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+                {{ customAsiaPricingCapsMessage }}
             </div>
         </div>
 

@@ -32,8 +32,10 @@ final class PurchaseOrderItemUpdateService
         ?int $qtyShipped,
         bool $hasQtyReceived,
         ?int $qtyReceived,
+        bool $hasQtyDamaged,
+        int $qtyDamaged,
     ): PurchaseOrderItem {
-        return DB::transaction(function () use ($purchaseOrderItemId, $hasUnitCost, $unitCost, $hasQtyOrdered, $qtyOrdered, $hasQtyShipped, $qtyShipped, $hasQtyReceived, $qtyReceived): PurchaseOrderItem {
+        return DB::transaction(function () use ($purchaseOrderItemId, $hasUnitCost, $unitCost, $hasQtyOrdered, $qtyOrdered, $hasQtyShipped, $qtyShipped, $hasQtyReceived, $qtyReceived, $hasQtyDamaged, $qtyDamaged): PurchaseOrderItem {
             $item = $this->purchaseOrders->findItemByIdOrFail($purchaseOrderItemId);
             $item->loadMissing('purchaseOrder');
 
@@ -41,6 +43,7 @@ final class PurchaseOrderItemUpdateService
             $ordered = $hasQtyOrdered ? $qtyOrdered : $item->qty_ordered;
             $shipped = $hasQtyShipped ? $qtyShipped : $item->qty_shipped;
             $received = $hasQtyReceived ? $qtyReceived : $item->qty_received;
+            $damaged = $hasQtyDamaged ? $qtyDamaged : (int) $item->qty_damaged;
 
             if ($hasQtyOrdered && $qtyOrdered !== null) {
                 if ($shipped !== null && $shipped > $qtyOrdered) {
@@ -52,14 +55,6 @@ final class PurchaseOrderItemUpdateService
                     ];
                 }
 
-                if ($received !== null && $received > $qtyOrdered) {
-                    $issues[] = [
-                        'kind' => 'qty_received_exceeds_ordered',
-                        'purchase_order_item_id' => $purchaseOrderItemId,
-                        'qty_received' => $received,
-                        'qty_ordered' => $qtyOrdered,
-                    ];
-                }
             }
 
             if ($hasQtyShipped) {
@@ -75,37 +70,32 @@ final class PurchaseOrderItemUpdateService
                 }
             }
 
-            if ($hasQtyReceived) {
+            if ($hasQtyReceived || $hasQtyDamaged) {
                 $hasLots = $this->inventory->countLotsForPurchaseOrderItems([$item->id]) > 0;
                 if ($hasLots) {
-                    throw new PurchaseOrderItemUpdateException('Cannot edit qty_received when inventory lots exist for this item.', [
+                    throw new PurchaseOrderItemUpdateException('Cannot edit received or damaged quantities when inventory lots exist for this item.', [
                         [
-                            'kind' => 'qty_received_has_lots',
+                            'kind' => 'receipt_quantities_have_lots',
                             'purchase_order_item_id' => $purchaseOrderItemId,
                         ],
                     ]);
                 }
+            }
 
-                if ($qtyReceived !== null && $ordered !== null && $qtyReceived > $ordered) {
-                    $issues[] = [
-                        'kind' => 'qty_received_exceeds_ordered',
-                        'purchase_order_item_id' => $purchaseOrderItemId,
-                        'qty_received' => $qtyReceived,
-                        'qty_ordered' => $ordered,
-                    ];
-                }
-                if ($qtyReceived !== null && $shipped !== null && $qtyReceived > $shipped) {
-                    $issues[] = [
-                        'kind' => 'qty_received_exceeds_shipped',
-                        'purchase_order_item_id' => $purchaseOrderItemId,
-                        'qty_received' => $qtyReceived,
-                        'qty_shipped' => $shipped,
-                    ];
-                }
+            if ($damaged > (int) ($received ?? 0)) {
+                $issues[] = [
+                    'kind' => 'qty_damaged_exceeds_received',
+                    'purchase_order_item_id' => $purchaseOrderItemId,
+                    'qty_damaged' => $damaged,
+                    'qty_received' => $received,
+                ];
+            }
 
-                if ($issues === []) {
-                    $item->qty_received = $qtyReceived;
-                }
+            if ($hasQtyReceived) {
+                $item->qty_received = $qtyReceived;
+            }
+            if ($hasQtyDamaged) {
+                $item->qty_damaged = $qtyDamaged;
             }
 
             if ($issues !== []) {
@@ -276,11 +266,11 @@ final class PurchaseOrderItemUpdateService
                 $productVendor = null;
             }
 
-            if ($applyQtyReceived) {
+            if ($setReceivedToShipped || $applyQtyReceived) {
                 $countLots = $this->inventory->countLotsForPurchaseOrderItems($items->pluck('id')->all());
                 if ($countLots > 0) {
-                    throw new PurchaseOrderItemUpdateException('Cannot bulk edit qty_received when inventory lots exist for one or more selected items.', [
-                        ['kind' => 'qty_received_has_lots'],
+                    throw new PurchaseOrderItemUpdateException('Cannot bulk edit received quantities when inventory lots exist for one or more selected items.', [
+                        ['kind' => 'receipt_quantities_have_lots'],
                     ]);
                 }
             }
@@ -306,27 +296,16 @@ final class PurchaseOrderItemUpdateService
                 if ($setReceivedToShipped) {
                     $it->qty_received = $it->qty_shipped;
                 } elseif ($applyQtyReceived) {
-                    if ($qtyReceived !== null && $ordered !== null && $qtyReceived > $ordered) {
-                        $issues[] = [
-                            'kind' => 'qty_received_exceeds_ordered',
-                            'purchase_order_item_id' => $it->id,
-                            'qty_received' => $qtyReceived,
-                            'qty_ordered' => $ordered,
-                        ];
-                    }
-                    $shipped = $it->qty_shipped;
-                    if ($qtyReceived !== null && $shipped !== null && $qtyReceived > $shipped) {
-                        $issues[] = [
-                            'kind' => 'qty_received_exceeds_shipped',
-                            'purchase_order_item_id' => $it->id,
-                            'qty_received' => $qtyReceived,
-                            'qty_shipped' => $shipped,
-                        ];
-                    }
+                    $it->qty_received = $qtyReceived;
+                }
 
-                    if ($issues === []) {
-                        $it->qty_received = $qtyReceived;
-                    }
+                if ((int) $it->qty_damaged > (int) ($it->qty_received ?? 0)) {
+                    $issues[] = [
+                        'kind' => 'qty_damaged_exceeds_received',
+                        'purchase_order_item_id' => $it->id,
+                        'qty_damaged' => (int) $it->qty_damaged,
+                        'qty_received' => $it->qty_received,
+                    ];
                 }
 
                 $this->purchaseOrders->saveItem($it);

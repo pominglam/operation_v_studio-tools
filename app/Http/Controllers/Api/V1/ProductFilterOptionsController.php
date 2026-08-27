@@ -20,6 +20,11 @@ final class ProductFilterOptionsController extends Controller
             'data' => [
                 'main_types' => $this->products->distinctMainTypes(),
                 'types' => $this->products->distinctTypes(),
+                'departments' => $this->products->distinctDepartments(),
+                'manufacturers' => $this->products->distinctManufacturers(),
+                'franchises' => $this->products->distinctFranchises(),
+                'product_lines' => $this->products->distinctProductLines(),
+                'sublines' => $this->products->distinctSublines(),
                 'vendors' => $this->products->distinctVendors(),
                 'grades' => $this->products->distinctGrades(),
                 'scales' => $this->products->distinctScales(),

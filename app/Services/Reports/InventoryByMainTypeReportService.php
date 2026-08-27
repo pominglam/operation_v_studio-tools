@@ -22,6 +22,9 @@ final class InventoryByMainTypeReportService
      *         type: string,
      *         type_label: string,
      *         main_type: string,
+     *         department: string,
+     *         product_line: string,
+     *         subline: string,
      *         catalog_skus: int,
      *         skus_on_hand: int,
      *         quantity_on_hand: int,
@@ -57,6 +60,9 @@ final class InventoryByMainTypeReportService
         /** @var list<object{
          *     type: string,
          *     main_type: string,
+         *     department: string,
+         *     product_line: string,
+         *     subline: string,
          *     catalog_skus: int|string,
          *     skus_on_hand: int|string,
          *     quantity_on_hand: int|string,
@@ -70,8 +76,20 @@ final class InventoryByMainTypeReportService
          * }> $rawRows */
         $rawRows = DB::table('products')
             ->whereNull('archived_at')
-            ->selectRaw("COALESCE(NULLIF(TRIM(type), ''), '') as type")
-            ->selectRaw("COALESCE(NULLIF(TRIM(main_type), ''), '') as main_type")
+            ->selectRaw(
+                "COALESCE(NULLIF(TRIM(subline), ''), NULLIF(TRIM(product_line), ''), "
+                ."NULLIF(TRIM(type), ''), '') as type",
+            )
+            ->selectRaw(
+                "COALESCE(NULLIF(TRIM(department), ''), NULLIF(TRIM(main_type), ''), '') as main_type",
+            )
+            ->selectRaw(
+                "COALESCE(NULLIF(TRIM(department), ''), NULLIF(TRIM(main_type), ''), '') as department",
+            )
+            ->selectRaw(
+                "COALESCE(NULLIF(TRIM(product_line), ''), NULLIF(TRIM(type), ''), '') as product_line",
+            )
+            ->selectRaw("COALESCE(NULLIF(TRIM(subline), ''), '') as subline")
             ->selectRaw('COUNT(*) as catalog_skus')
             ->selectRaw('SUM(CASE WHEN available_qty > 0 THEN 1 ELSE 0 END) as skus_on_hand')
             ->selectRaw('SUM(CASE WHEN available_qty > 0 THEN available_qty ELSE 0 END) as quantity_on_hand')
@@ -93,7 +111,7 @@ final class InventoryByMainTypeReportService
             ->selectRaw(
                 "SUM(({$receivedQtyExpr}) - coalesce(products.available_qty, 0)) as units_sold",
             )
-            ->groupBy('type', 'main_type')
+            ->groupBy('type', 'main_type', 'department', 'product_line', 'subline')
             ->orderByDesc('quantity_on_hand')
             ->orderBy('type')
             ->orderBy('main_type')
@@ -120,6 +138,9 @@ final class InventoryByMainTypeReportService
         foreach ($rawRows as $rawRow) {
             $type = (string) $rawRow->type;
             $mainType = (string) $rawRow->main_type;
+            $department = (string) $rawRow->department;
+            $productLine = (string) $rawRow->product_line;
+            $subline = (string) $rawRow->subline;
             $catalogSkus = (int) $rawRow->catalog_skus;
             $skusOnHand = (int) $rawRow->skus_on_hand;
             $quantityOnHand = (int) $rawRow->quantity_on_hand;
@@ -135,6 +156,9 @@ final class InventoryByMainTypeReportService
                 'type' => $type,
                 'type_label' => $this->labelForType($type),
                 'main_type' => $mainType,
+                'department' => $department,
+                'product_line' => $productLine,
+                'subline' => $subline,
                 'catalog_skus' => $catalogSkus,
                 'skus_on_hand' => $skusOnHand,
                 'quantity_on_hand' => $quantityOnHand,

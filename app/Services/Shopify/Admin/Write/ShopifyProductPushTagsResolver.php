@@ -64,6 +64,10 @@ final class ShopifyProductPushTagsResolver
                 continue;
             }
 
+            if (str_starts_with(strtolower($tag), 'mk:')) {
+                continue;
+            }
+
             $kept[] = $tag;
         }
 

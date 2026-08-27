@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Operation V PO Overview — v8 mock (65% color bar)</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: #111;
+      overflow: hidden;
+    }
+    .design {
+      position: relative;
+      width: 1024px;
+      height: 683px;
+      margin: 0 auto;
+      overflow: hidden;
+      background: #fff;
+    }
+    .design__screen {
+      display: block;
+      width: 1024px;
+      height: 683px;
+    }
+    .design__top-mask {
+      position: absolute;
+      inset: 0 0 auto;
+      height: 12px;
+      border-top: 1px solid #111;
+      background: #fff;
+    }
+    .design__color-bar {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 65%;
+      height: 8px;
+      object-fit: fill;
+    }
+  </style>
+</head>
+<body>
+  <div class="design">
+    <img
+      class="design__screen"
+      src="/po-v7-mock.jpg"
+      alt="Operation V purchase order overview"
+    >
+    <div class="design__top-mask" aria-hidden="true"></div>
+    <img
+      class="design__color-bar"
+      src="/po-v8-colorBar.png"
+      alt=""
+      aria-hidden="true"
+    >
+  </div>
+</body>
+</html>

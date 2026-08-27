@@ -116,7 +116,38 @@ const pos = ref<PurchaseOrderListRow[]>([]);
 const meta = ref<Paginated<PurchaseOrderListRow>['meta'] | null>(null);
 const hydrating = ref(true);
 
-type PurchaseOrderSortBy = 'created' | 'ordered' | 'received';
+type PurchaseOrderSortBy =
+    | 'id'
+    | 'status'
+    | 'shipment'
+    | 'created'
+    | 'ordered'
+    | 'estimated_arrival'
+    | 'received'
+    | 'on_shelves'
+    | 'vendor'
+    | 'items'
+    | 'product_total'
+    | 'shipping_total'
+    | 'surcharge_total'
+    | 'total';
+type HistorySortColumn = { key: PurchaseOrderSortBy; label: string; align?: 'right' };
+const HISTORY_SORT_COLUMNS: HistorySortColumn[] = [
+    { key: 'id', label: 'ID' },
+    { key: 'status', label: 'Status' },
+    { key: 'shipment', label: 'Shipment' },
+    { key: 'created', label: 'Created' },
+    { key: 'ordered', label: 'Ordered' },
+    { key: 'estimated_arrival', label: 'Estimated arrival' },
+    { key: 'received', label: 'Received' },
+    { key: 'on_shelves', label: 'On shelves' },
+    { key: 'vendor', label: 'Vendor' },
+    { key: 'items', label: 'Items', align: 'right' },
+    { key: 'product_total', label: 'Product total', align: 'right' },
+    { key: 'shipping_total', label: 'Shipping total', align: 'right' },
+    { key: 'surcharge_total', label: 'Surcharge total', align: 'right' },
+    { key: 'total', label: 'Total', align: 'right' },
+];
 const sortBy = ref<PurchaseOrderSortBy>('ordered');
 const sortDir = ref<'asc' | 'desc'>('desc');
 const selectedVendors = ref<string[]>([]);
@@ -347,9 +378,9 @@ function visibleTrackingNumbers(): string[] {
     return [...unique.values()];
 }
 
-function toggleCreatedSort(): void {
-    if (sortBy.value !== 'created') {
-        sortBy.value = 'created';
+function toggleSort(key: PurchaseOrderSortBy): void {
+    if (sortBy.value !== key) {
+        sortBy.value = key;
         sortDir.value = 'desc';
         void loadHistory();
         return;
@@ -358,41 +389,13 @@ function toggleCreatedSort(): void {
     void loadHistory();
 }
 
-function createdSortIndicator(): string {
-    if (sortBy.value !== 'created') return '';
+function sortIndicator(key: PurchaseOrderSortBy): string {
+    if (sortBy.value !== key) return '';
     return sortDir.value === 'asc' ? ' ▲' : ' ▼';
 }
 
-function toggleOrderedSort(): void {
-    if (sortBy.value !== 'ordered') {
-        sortBy.value = 'ordered';
-        sortDir.value = 'desc';
-        void loadHistory();
-        return;
-    }
-    sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc';
-    void loadHistory();
-}
-
-function orderedSortIndicator(): string {
-    if (sortBy.value !== 'ordered') return '';
-    return sortDir.value === 'asc' ? ' ▲' : ' ▼';
-}
-
-function toggleReceivedSort(): void {
-    if (sortBy.value !== 'received') {
-        sortBy.value = 'received';
-        sortDir.value = 'desc';
-        void loadHistory();
-        return;
-    }
-    sortDir.value = sortDir.value === 'desc' ? 'asc' : 'desc';
-    void loadHistory();
-}
-
-function receivedSortIndicator(): string {
-    if (sortBy.value !== 'received') return '';
-    return sortDir.value === 'asc' ? ' ▲' : ' ▼';
+function historySortHeaderClass(column: HistorySortColumn): string {
+    return column.align === 'right' ? 'px-2 py-2 text-right' : 'px-2 py-2';
 }
 
 function poTotal(po: PurchaseOrderListRow): string | null {
@@ -966,47 +969,20 @@ onMounted(() => {
                                     @change="toggleAllVisible"
                                 />
                             </th>
-                            <th class="px-2 py-2">ID</th>
-                            <th class="px-2 py-2">Status</th>
-                            <th class="px-2 py-2">Shipment</th>
-                            <th class="px-2 py-2">
+                            <th
+                                v-for="column in HISTORY_SORT_COLUMNS"
+                                :key="column.key"
+                                :class="historySortHeaderClass(column)"
+                            >
                                 <button
                                     type="button"
                                     class="hover:underline"
-                                    data-testid="po-history-sort-created"
-                                    @click="toggleCreatedSort"
+                                    :data-testid="`po-history-sort-${column.key}`"
+                                    @click="toggleSort(column.key)"
                                 >
-                                    Created{{ createdSortIndicator() }}
+                                    {{ column.label }}{{ sortIndicator(column.key) }}
                                 </button>
                             </th>
-                            <th class="px-2 py-2">
-                                <button
-                                    type="button"
-                                    class="hover:underline"
-                                    data-testid="po-history-sort-ordered"
-                                    @click="toggleOrderedSort"
-                                >
-                                    Ordered{{ orderedSortIndicator() }}
-                                </button>
-                            </th>
-                            <th class="px-2 py-2">Estimated arrival</th>
-                            <th class="px-2 py-2">
-                                <button
-                                    type="button"
-                                    class="hover:underline"
-                                    data-testid="po-history-sort-received"
-                                    @click="toggleReceivedSort"
-                                >
-                                    Received{{ receivedSortIndicator() }}
-                                </button>
-                            </th>
-                            <th class="px-2 py-2">On shelves</th>
-                            <th class="px-2 py-2">Vendor</th>
-                            <th class="px-2 py-2 text-right">Items</th>
-                            <th class="px-2 py-2 text-right">Product total</th>
-                            <th class="px-2 py-2 text-right">Shipping total</th>
-                            <th class="px-2 py-2 text-right">Surcharge total</th>
-                            <th class="px-2 py-2 text-right">Total</th>
                             <th class="px-2 py-2 text-right">Actions</th>
                         </tr>
                     </thead>

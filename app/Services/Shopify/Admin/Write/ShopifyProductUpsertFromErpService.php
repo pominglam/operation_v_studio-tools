@@ -14,6 +14,7 @@ use App\Services\Products\ProductExportService;
 use App\Services\Products\ShopifyContentExportService;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlMutations;
 use App\Support\Products\ProductHoldQty;
+use App\Support\Shopify\ShopifyProductTaxonomyMetafields;
 use Illuminate\Support\Facades\Log;
 
 final class ShopifyProductUpsertFromErpService
@@ -337,6 +338,13 @@ final class ShopifyProductUpsertFromErpService
         );
         if ($pushTags !== null) {
             $productSet['tags'] = $pushTags;
+        }
+
+        if ($options->info || ! $isUpdate) {
+            $metafields = ShopifyProductTaxonomyMetafields::forProductSet($product);
+            if ($metafields !== []) {
+                $productSet['metafields'] = $metafields;
+            }
         }
 
         if ($options->publishStatus || ! $isUpdate) {

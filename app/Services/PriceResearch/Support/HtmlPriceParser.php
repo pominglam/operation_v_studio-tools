@@ -100,6 +100,14 @@ final class HtmlPriceParser
             }
         }
 
+        // PrestaShop PDP (e.g. Canadian Gundam): availability lives outside microdata Offer nodes.
+        if ($availability === null) {
+            $presta = $this->extractPrestaShopOfferFromHtml($htmlForExtraction);
+            if ($presta['availability'] !== null) {
+                $availability = $presta['availability'];
+            }
+        }
+
         // Magento (HobbyWholesale) fast-path: extract from structured price/stock blocks inside product-info-main.
         if ($price === null) {
             $magento = $this->extractMagentoOfferFromHtml($htmlForExtraction);
@@ -166,15 +174,7 @@ final class HtmlPriceParser
 
         // Availability fallback (only if Panda didn't already supply it)
         if ($availability === null) {
-            if (preg_match('/\\bSold\\s+Out\\b/i', $htmlForExtraction)) {
-                $availability = 'sold_out';
-            } elseif (preg_match('/\\bOut\\s+of\\s+Stock\\b/i', $htmlForExtraction)) {
-                $availability = 'sold_out';
-            } elseif (preg_match('/\\bAdd\\s+to\\s+cart\\b/i', $htmlForExtraction)) {
-                $availability = 'in_stock';
-            } elseif (preg_match('/\\bIn\\s+Stock\\b/i', $htmlForExtraction)) {
-                $availability = 'in_stock';
-            }
+            $availability = $this->inferAvailabilityFromHtmlFallback($htmlForExtraction);
         }
 
         return [
@@ -451,6 +451,89 @@ final class HtmlPriceParser
             'original_price' => $originalPrice,
             'availability' => $availability,
         ];
+    }
+
+    /**
+     * PrestaShop PDP extraction (e.g. Canadian Gundam).
+     *
+     * @return array{availability: string|null}
+     */
+    private function extractPrestaShopOfferFromHtml(string $html): array
+    {
+        if (! str_contains($html, 'box-info-product') && ! str_contains($html, 'availability_statut')) {
+            return ['availability' => null];
+        }
+
+        if (preg_match('/id=["\']availability_value["\'][^>]*class=["\'][^"\']*label-danger[^"\']*["\']/i', $html) === 1) {
+            return ['availability' => 'sold_out'];
+        }
+
+        if (preg_match('/\bno\s+longer\s+in\s+stock\b/i', $html) === 1) {
+            return ['availability' => 'sold_out'];
+        }
+
+        if (preg_match('/\bnotify\s+me\s+when\s+available\b/i', $html) === 1) {
+            return ['availability' => 'sold_out'];
+        }
+
+        if (preg_match('/id=["\']quantityAvailable["\'][^>]*>\s*0\s*</i', $html) === 1) {
+            return ['availability' => 'sold_out'];
+        }
+
+        if (preg_match('/id=["\']add_to_cart["\'][^>]*class=["\'][^"\']*unvisible\b/i', $html) === 1) {
+            return ['availability' => 'sold_out'];
+        }
+
+        if (preg_match('/itemprop=["\']availability["\'][^>]*href=["\'][^"\']*OutOfStock[^"\']*["\']/i', $html) === 1) {
+            return ['availability' => 'sold_out'];
+        }
+
+        if (preg_match('/itemprop=["\']availability["\'][^>]*href=["\'][^"\']*InStock[^"\']*["\']/i', $html) === 1) {
+            return ['availability' => 'in_stock'];
+        }
+
+        if (preg_match('/class=["\'][^"\']*label-success[^"\']*["\'][^>]*>\s*In\s+Stock\s*</i', $html) === 1) {
+            return ['availability' => 'in_stock'];
+        }
+
+        return ['availability' => null];
+    }
+
+    private function inferAvailabilityFromHtmlFallback(string $html): ?string
+    {
+        if (preg_match('/\bSold\s+Out\b/i', $html) === 1) {
+            return 'sold_out';
+        }
+
+        if (preg_match('/\bOut\s+of\s+Stock\b/i', $html) === 1) {
+            return 'sold_out';
+        }
+
+        if (preg_match('/\bno\s+longer\s+in\s+stock\b/i', $html) === 1) {
+            return 'sold_out';
+        }
+
+        if (preg_match('/\bnotify\s+me\s+when\s+available\b/i', $html) === 1) {
+            return 'sold_out';
+        }
+
+        // PrestaShop keeps a hidden add-to-cart button on OOS PDPs inside .unvisible.
+        if (preg_match('/\bAdd\s+to\s+cart\b/i', $html) === 1) {
+            $hiddenAddToCart = preg_match(
+                '/class=["\'][^"\']*unvisible[^"\']*["\'][\s\S]{0,800}?\bAdd\s+to\s+cart\b/i',
+                $html,
+            ) === 1;
+
+            if (! $hiddenAddToCart) {
+                return 'in_stock';
+            }
+        }
+
+        if (preg_match('/\bIn\s+Stock\b/i', $html) === 1) {
+            return 'in_stock';
+        }
+
+        return null;
     }
 
     /**

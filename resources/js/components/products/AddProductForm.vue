@@ -8,6 +8,10 @@ export type CreateProductPayload = {
     handle: string | null;
     main_type: string | null;
     type: string | null;
+    department: string | null;
+    manufacturer: string | null;
+    franchise: string | null;
+    product_line: string | null;
     vendor: string | null;
     available: number | null;
     maintain: number | null;
@@ -22,6 +26,10 @@ const props = defineProps<{
     vendorOptions?: string[];
     mainTypeOptions?: string[];
     typeOptions?: string[];
+    departmentOptions?: string[];
+    manufacturerOptions?: string[];
+    franchiseOptions?: string[];
+    productLineOptions?: string[];
     embedded?: boolean;
     initialValues?: Partial<CreateProductPayload>;
     resetKey?: string | number;
@@ -37,6 +45,10 @@ function defaultForm(): CreateProductPayload {
         handle: null,
         main_type: 'model kit',
         type: null,
+        department: 'model kits',
+        manufacturer: null,
+        franchise: null,
+        product_line: null,
         vendor: 'Plamod',
         available: null,
         maintain: null,
@@ -84,6 +96,10 @@ async function submit(): Promise<void> {
         handle: form.value.handle?.trim() || null,
         main_type: form.value.main_type?.trim() || null,
         type: form.value.type?.trim() || null,
+        department: form.value.department?.trim() || null,
+        manufacturer: form.value.manufacturer?.trim() || null,
+        franchise: form.value.franchise?.trim() || null,
+        product_line: form.value.product_line?.trim() || null,
         vendor: form.value.vendor?.trim() || null,
         available: form.value.available,
         maintain: form.value.maintain,
@@ -164,31 +180,59 @@ async function submit(): Promise<void> {
             </div>
             <div class="md:col-span-3">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
-                    >Main type</label
+                    >Department</label
                 >
                 <input
-                    v-model="form.main_type"
+                    v-model="form.department"
                     class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                     type="text"
-                    :list="`${datalistId}-main-types`"
-                    placeholder="model kit"
+                    :list="`${datalistId}-departments`"
+                    placeholder="model kits"
                 />
-                <datalist :id="`${datalistId}-main-types`">
-                    <option v-for="t in mainTypeOptions ?? []" :key="t" :value="t" />
+                <datalist :id="`${datalistId}-departments`">
+                    <option v-for="t in departmentOptions ?? []" :key="t" :value="t" />
                 </datalist>
             </div>
             <div class="md:col-span-3">
                 <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
-                    >Type</label
+                    >Manufacturer</label
                 >
                 <input
-                    v-model="form.type"
+                    v-model="form.manufacturer"
                     class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
                     type="text"
-                    :list="`${datalistId}-types`"
+                    :list="`${datalistId}-manufacturers`"
                 />
-                <datalist :id="`${datalistId}-types`">
-                    <option v-for="t in typeOptions ?? []" :key="t" :value="t" />
+                <datalist :id="`${datalistId}-manufacturers`">
+                    <option v-for="t in manufacturerOptions ?? []" :key="t" :value="t" />
+                </datalist>
+            </div>
+            <div class="md:col-span-3">
+                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                    >Franchise</label
+                >
+                <input
+                    v-model="form.franchise"
+                    class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    type="text"
+                    :list="`${datalistId}-franchises`"
+                />
+                <datalist :id="`${datalistId}-franchises`">
+                    <option v-for="t in franchiseOptions ?? []" :key="t" :value="t" />
+                </datalist>
+            </div>
+            <div class="md:col-span-3">
+                <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                    >Product line</label
+                >
+                <input
+                    v-model="form.product_line"
+                    class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                    type="text"
+                    :list="`${datalistId}-product-lines`"
+                />
+                <datalist :id="`${datalistId}-product-lines`">
+                    <option v-for="t in productLineOptions ?? []" :key="t" :value="t" />
                 </datalist>
             </div>
 

@@ -47,7 +47,9 @@ final class PurchaseOrderItemsBulkUpdateController extends Controller
 
             return PurchaseOrderResource::make($po);
         } catch (PurchaseOrderItemUpdateException $e) {
-            $status = collect($e->issues)->contains(fn ($x) => ($x['kind'] ?? null) === 'qty_received_has_lots') ? 409 : 422;
+            $status = collect($e->issues)->contains(
+                fn ($x) => in_array(($x['kind'] ?? null), ['qty_received_has_lots', 'receipt_quantities_have_lots'], true),
+            ) ? 409 : 422;
 
             return response()->json(
                 [

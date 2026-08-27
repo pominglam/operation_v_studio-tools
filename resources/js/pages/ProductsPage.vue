@@ -392,6 +392,10 @@ const sortBy = ref<ProductSortKey>('received_date');
 const sortDir = ref<'asc' | 'desc'>('desc');
 const selectedMainTypes = ref<string[]>([]);
 const selectedTypes = ref<string[]>([]);
+const selectedDepartments = ref<string[]>([]);
+const selectedManufacturers = ref<string[]>([]);
+const selectedFranchises = ref<string[]>([]);
+const selectedProductLines = ref<string[]>([]);
 const selectedVendors = ref<string[]>([]);
 const selectedMissing = ref<string[]>([]);
 const purchaseOrderUuids = ref<string[]>([]);
@@ -464,6 +468,10 @@ const syncMissingMessage = ref<string | null>(null);
 
 const mainTypeOptions = ref<MultiSelectOption[]>([]);
 const typeOptions = ref<MultiSelectOption[]>([]);
+const departmentOptions = ref<MultiSelectOption[]>([]);
+const manufacturerOptions = ref<MultiSelectOption[]>([]);
+const franchiseOptions = ref<MultiSelectOption[]>([]);
+const productLineOptions = ref<MultiSelectOption[]>([]);
 const vendorOptions = ref<MultiSelectOption[]>([]);
 const gradeOptions = ref<MultiSelectOption[]>([]);
 const scaleOptions = ref<MultiSelectOption[]>([]);
@@ -578,6 +586,22 @@ const selectionScopeKey = computed<string>(() => {
         sort_dir: sortDir.value,
         main_types: mainTypes,
         types,
+        departments: [...selectedDepartments.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
+        manufacturers: [...selectedManufacturers.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
+        franchises: [...selectedFranchises.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
+        product_lines: [...selectedProductLines.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
         vendors,
         missing,
         product_flags: productFlags,
@@ -612,6 +636,12 @@ function productsListParams(per_page: number, pageNum: number): Record<string, u
         sort_dir: sortDir.value,
         main_types: selectedMainTypes.value.length > 0 ? selectedMainTypes.value : undefined,
         types: selectedTypes.value.length > 0 ? selectedTypes.value : undefined,
+        departments: selectedDepartments.value.length > 0 ? selectedDepartments.value : undefined,
+        manufacturers:
+            selectedManufacturers.value.length > 0 ? selectedManufacturers.value : undefined,
+        franchises: selectedFranchises.value.length > 0 ? selectedFranchises.value : undefined,
+        product_lines:
+            selectedProductLines.value.length > 0 ? selectedProductLines.value : undefined,
         vendors: selectedVendors.value.length > 0 ? selectedVendors.value : undefined,
         missing: selectedMissing.value.length > 0 ? selectedMissing.value : undefined,
         product_flags:
@@ -709,6 +739,22 @@ function buildLoadKey(): string {
         sort_dir: sortDir.value,
         main_types: mainTypes,
         types,
+        departments: [...selectedDepartments.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
+        manufacturers: [...selectedManufacturers.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
+        franchises: [...selectedFranchises.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
+        product_lines: [...selectedProductLines.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
         vendors,
         missing,
         product_flags: productFlags,
@@ -856,6 +902,11 @@ const PRODUCT_SORT_KEYS: readonly ProductSortKey[] = [
     'description',
     'main_type',
     'type',
+    'department',
+    'manufacturer',
+    'franchise',
+    'product_line',
+    'subline',
     'grade',
     'series',
     'scale',
@@ -978,6 +1029,11 @@ function mergeProductRowFromApi(existing: ProductRow, api: ProductRow): ProductR
         handle: api.handle,
         main_type: api.main_type,
         type: api.type,
+        department: api.department ?? null,
+        manufacturer: api.manufacturer ?? null,
+        franchise: api.franchise ?? null,
+        product_line: api.product_line ?? null,
+        subline: api.subline ?? null,
         grade: api.grade ?? null,
         scale: api.scale ?? null,
         series: api.series ?? null,
@@ -993,6 +1049,10 @@ async function loadFilterOptions(): Promise<void> {
             data: {
                 types: string[];
                 main_types?: string[];
+                departments?: string[];
+                manufacturers?: string[];
+                franchises?: string[];
+                product_lines?: string[];
                 vendors?: string[];
                 grades?: string[];
                 scales?: string[];
@@ -1011,6 +1071,22 @@ async function loadFilterOptions(): Promise<void> {
             ...mainTypes.map((t) => ({ value: t, label: t })),
         ];
         typeOptions.value = res.data.data.types.map((t) => ({ value: t, label: t }));
+        departmentOptions.value = (res.data.data.departments ?? []).map((v) => ({
+            value: v,
+            label: v,
+        }));
+        manufacturerOptions.value = (res.data.data.manufacturers ?? []).map((v) => ({
+            value: v,
+            label: v,
+        }));
+        franchiseOptions.value = (res.data.data.franchises ?? []).map((v) => ({
+            value: v,
+            label: v,
+        }));
+        productLineOptions.value = (res.data.data.product_lines ?? []).map((v) => ({
+            value: v,
+            label: v,
+        }));
         vendorOptions.value = (res.data.data.vendors ?? []).map((v) => ({ value: v, label: v }));
         gradeOptions.value = (res.data.data.grades ?? []).map((v) => ({ value: v, label: v }));
         scaleOptions.value = (res.data.data.scales ?? []).map((v) => ({ value: v, label: v }));
@@ -1650,6 +1726,10 @@ watch(
         perPage,
         selectedMainTypes,
         selectedTypes,
+        selectedDepartments,
+        selectedManufacturers,
+        selectedFranchises,
+        selectedProductLines,
         selectedVendors,
         selectedMissing,
         selectedProductFlags,
@@ -1709,6 +1789,10 @@ function applyDefaultListFilters(): void {
     sortDir.value = 'desc';
     selectedMainTypes.value = [];
     selectedTypes.value = [];
+    selectedDepartments.value = [];
+    selectedManufacturers.value = [];
+    selectedFranchises.value = [];
+    selectedProductLines.value = [];
     selectedVendors.value = [];
     selectedMissing.value = [];
     selectedProductFlags.value = [];
@@ -1753,119 +1837,132 @@ onMounted(() => {
         applyProductsUrlFilterState(urlFilters);
     } else {
         const saved = loadPageState<{
-        activeTab?: ProductsToolTab;
-        search?: string;
-        searchMode?: SearchMode;
-        bulkSearchText?: string;
-        perPage?: number;
-        page?: number;
-        sortBy?: ProductSortKey;
-        sortDir?: 'asc' | 'desc';
-        selectedMainTypes?: string[];
-        selectedTypes?: string[];
-        selectedVendors?: string[];
-        selectedMissing?: string[];
-        selectedProductFlags?: string[];
-        selectedShipmentMethods?: string[];
-        readyFilter?: ReadyFilter;
-        publishedFilter?: PublishedFilter;
-        archivedFilter?: ArchivedFilter;
-        availableFilter?: string;
-        availableMinFilter?: string;
-        availableMaxFilter?: string;
-        notArrivedFilter?: string;
-        notArrivedIncludeDraftOrders?: boolean;
-        reorderFilter?: string;
-        reorderGtOne?: boolean;
-        sellingPriceMinFilter?: string;
-        sellingPriceMaxFilter?: string;
-        purchaseOrderUuid?: string; // legacy
-        purchaseOrderUuids?: string[];
-        poProductNovelty?: PoProductNovelty;
-    }>(STATE_KEY);
+            activeTab?: ProductsToolTab;
+            search?: string;
+            searchMode?: SearchMode;
+            bulkSearchText?: string;
+            perPage?: number;
+            page?: number;
+            sortBy?: ProductSortKey;
+            sortDir?: 'asc' | 'desc';
+            selectedMainTypes?: string[];
+            selectedTypes?: string[];
+            selectedDepartments?: string[];
+            selectedManufacturers?: string[];
+            selectedFranchises?: string[];
+            selectedProductLines?: string[];
+            selectedVendors?: string[];
+            selectedMissing?: string[];
+            selectedProductFlags?: string[];
+            selectedShipmentMethods?: string[];
+            readyFilter?: ReadyFilter;
+            publishedFilter?: PublishedFilter;
+            archivedFilter?: ArchivedFilter;
+            availableFilter?: string;
+            availableMinFilter?: string;
+            availableMaxFilter?: string;
+            notArrivedFilter?: string;
+            notArrivedIncludeDraftOrders?: boolean;
+            reorderFilter?: string;
+            reorderGtOne?: boolean;
+            sellingPriceMinFilter?: string;
+            sellingPriceMaxFilter?: string;
+            purchaseOrderUuid?: string; // legacy
+            purchaseOrderUuids?: string[];
+            poProductNovelty?: PoProductNovelty;
+        }>(STATE_KEY);
 
-    if (saved) {
-        if (saved.activeTab) activeTab.value = saved.activeTab;
-        if (typeof saved.search === 'string') search.value = saved.search;
-        if (saved.searchMode === 'single' || saved.searchMode === 'bulk')
-            searchMode.value = saved.searchMode;
-        if (typeof saved.bulkSearchText === 'string') bulkSearchText.value = saved.bulkSearchText;
-        if (typeof saved.perPage === 'number') perPage.value = saved.perPage;
-        if (typeof saved.page === 'number') page.value = saved.page;
-        if (isProductSortKey(saved.sortBy)) sortBy.value = saved.sortBy;
-        if (saved.sortDir) sortDir.value = saved.sortDir;
-        if (Array.isArray(saved.selectedMainTypes))
-            selectedMainTypes.value = saved.selectedMainTypes;
-        if (Array.isArray(saved.selectedTypes)) selectedTypes.value = saved.selectedTypes;
-        if (Array.isArray(saved.selectedVendors)) selectedVendors.value = saved.selectedVendors;
-        if (Array.isArray(saved.selectedMissing)) selectedMissing.value = saved.selectedMissing;
-        if (Array.isArray(saved.selectedProductFlags)) {
-            selectedProductFlags.value = saved.selectedProductFlags.filter((f) =>
-                productFlagOptions.some((o) => o.value === f),
-            );
+        if (saved) {
+            if (saved.activeTab) activeTab.value = saved.activeTab;
+            if (typeof saved.search === 'string') search.value = saved.search;
+            if (saved.searchMode === 'single' || saved.searchMode === 'bulk')
+                searchMode.value = saved.searchMode;
+            if (typeof saved.bulkSearchText === 'string')
+                bulkSearchText.value = saved.bulkSearchText;
+            if (typeof saved.perPage === 'number') perPage.value = saved.perPage;
+            if (typeof saved.page === 'number') page.value = saved.page;
+            if (isProductSortKey(saved.sortBy)) sortBy.value = saved.sortBy;
+            if (saved.sortDir) sortDir.value = saved.sortDir;
+            if (Array.isArray(saved.selectedMainTypes))
+                selectedMainTypes.value = saved.selectedMainTypes;
+            if (Array.isArray(saved.selectedTypes)) selectedTypes.value = saved.selectedTypes;
+            if (Array.isArray(saved.selectedDepartments))
+                selectedDepartments.value = saved.selectedDepartments;
+            if (Array.isArray(saved.selectedManufacturers))
+                selectedManufacturers.value = saved.selectedManufacturers;
+            if (Array.isArray(saved.selectedFranchises))
+                selectedFranchises.value = saved.selectedFranchises;
+            if (Array.isArray(saved.selectedProductLines))
+                selectedProductLines.value = saved.selectedProductLines;
+            if (Array.isArray(saved.selectedVendors)) selectedVendors.value = saved.selectedVendors;
+            if (Array.isArray(saved.selectedMissing)) selectedMissing.value = saved.selectedMissing;
+            if (Array.isArray(saved.selectedProductFlags)) {
+                selectedProductFlags.value = saved.selectedProductFlags.filter((f) =>
+                    productFlagOptions.some((o) => o.value === f),
+                );
+            }
+            if (Array.isArray(saved.selectedShipmentMethods)) {
+                selectedShipmentMethods.value = saved.selectedShipmentMethods.filter((m) =>
+                    shipmentMethodOptions.some((o) => o.value === m),
+                );
+            }
+            if (
+                saved.readyFilter === 'all' ||
+                saved.readyFilter === 'ready' ||
+                saved.readyFilter === 'not_ready'
+            ) {
+                readyFilter.value = saved.readyFilter;
+            }
+            if (
+                saved.publishedFilter === 'all' ||
+                saved.publishedFilter === 'published' ||
+                saved.publishedFilter === 'not_published'
+            ) {
+                publishedFilter.value = saved.publishedFilter;
+            }
+            if (
+                saved.archivedFilter === 'active' ||
+                saved.archivedFilter === 'all' ||
+                saved.archivedFilter === 'archived'
+            ) {
+                archivedFilter.value = saved.archivedFilter;
+            }
+            if (typeof saved.availableMinFilter === 'string') {
+                availableMinFilter.value = saved.availableMinFilter;
+            } else if (typeof saved.availableFilter === 'string') {
+                availableMinFilter.value = saved.availableFilter;
+            }
+            if (typeof saved.availableMaxFilter === 'string') {
+                availableMaxFilter.value = saved.availableMaxFilter;
+            }
+            if (typeof saved.notArrivedFilter === 'string')
+                notArrivedFilter.value = saved.notArrivedFilter;
+            if (typeof saved.notArrivedIncludeDraftOrders === 'boolean') {
+                notArrivedIncludeDraftOrders.value = saved.notArrivedIncludeDraftOrders;
+            }
+            if (typeof saved.reorderFilter === 'string') reorderFilter.value = saved.reorderFilter;
+            if (typeof saved.reorderGtOne === 'boolean') reorderGtOne.value = saved.reorderGtOne;
+            if (typeof saved.sellingPriceMinFilter === 'string') {
+                sellingPriceMinFilter.value = saved.sellingPriceMinFilter;
+            }
+            if (typeof saved.sellingPriceMaxFilter === 'string') {
+                sellingPriceMaxFilter.value = saved.sellingPriceMaxFilter;
+            }
+            if (Array.isArray(saved.purchaseOrderUuids))
+                purchaseOrderUuids.value = saved.purchaseOrderUuids;
+            else if (
+                typeof saved.purchaseOrderUuid === 'string' &&
+                saved.purchaseOrderUuid.trim() !== ''
+            )
+                purchaseOrderUuids.value = [saved.purchaseOrderUuid.trim()];
+            if (
+                saved.poProductNovelty === 'all' ||
+                saved.poProductNovelty === 'new' ||
+                saved.poProductNovelty === 'existing'
+            ) {
+                poProductNovelty.value = saved.poProductNovelty;
+            }
         }
-        if (Array.isArray(saved.selectedShipmentMethods)) {
-            selectedShipmentMethods.value = saved.selectedShipmentMethods.filter((m) =>
-                shipmentMethodOptions.some((o) => o.value === m),
-            );
-        }
-        if (
-            saved.readyFilter === 'all' ||
-            saved.readyFilter === 'ready' ||
-            saved.readyFilter === 'not_ready'
-        ) {
-            readyFilter.value = saved.readyFilter;
-        }
-        if (
-            saved.publishedFilter === 'all' ||
-            saved.publishedFilter === 'published' ||
-            saved.publishedFilter === 'not_published'
-        ) {
-            publishedFilter.value = saved.publishedFilter;
-        }
-        if (
-            saved.archivedFilter === 'active' ||
-            saved.archivedFilter === 'all' ||
-            saved.archivedFilter === 'archived'
-        ) {
-            archivedFilter.value = saved.archivedFilter;
-        }
-        if (typeof saved.availableMinFilter === 'string') {
-            availableMinFilter.value = saved.availableMinFilter;
-        } else if (typeof saved.availableFilter === 'string') {
-            availableMinFilter.value = saved.availableFilter;
-        }
-        if (typeof saved.availableMaxFilter === 'string') {
-            availableMaxFilter.value = saved.availableMaxFilter;
-        }
-        if (typeof saved.notArrivedFilter === 'string')
-            notArrivedFilter.value = saved.notArrivedFilter;
-        if (typeof saved.notArrivedIncludeDraftOrders === 'boolean') {
-            notArrivedIncludeDraftOrders.value = saved.notArrivedIncludeDraftOrders;
-        }
-        if (typeof saved.reorderFilter === 'string') reorderFilter.value = saved.reorderFilter;
-        if (typeof saved.reorderGtOne === 'boolean') reorderGtOne.value = saved.reorderGtOne;
-        if (typeof saved.sellingPriceMinFilter === 'string') {
-            sellingPriceMinFilter.value = saved.sellingPriceMinFilter;
-        }
-        if (typeof saved.sellingPriceMaxFilter === 'string') {
-            sellingPriceMaxFilter.value = saved.sellingPriceMaxFilter;
-        }
-        if (Array.isArray(saved.purchaseOrderUuids))
-            purchaseOrderUuids.value = saved.purchaseOrderUuids;
-        else if (
-            typeof saved.purchaseOrderUuid === 'string' &&
-            saved.purchaseOrderUuid.trim() !== ''
-        )
-            purchaseOrderUuids.value = [saved.purchaseOrderUuid.trim()];
-        if (
-            saved.poProductNovelty === 'all' ||
-            saved.poProductNovelty === 'new' ||
-            saved.poProductNovelty === 'existing'
-        ) {
-            poProductNovelty.value = saved.poProductNovelty;
-        }
-    }
 
         const qPo = route.query.purchase_order_uuid;
         if (typeof qPo === 'string' && qPo.trim() !== '') {
@@ -1930,6 +2027,10 @@ watch(
         page,
         selectedMainTypes,
         selectedTypes,
+        selectedDepartments,
+        selectedManufacturers,
+        selectedFranchises,
+        selectedProductLines,
         selectedVendors,
         selectedMissing,
         selectedProductFlags,
@@ -1967,6 +2068,10 @@ watch(
             sortDir: sortDir.value,
             selectedMainTypes: selectedMainTypes.value,
             selectedTypes: selectedTypes.value,
+            selectedDepartments: selectedDepartments.value,
+            selectedManufacturers: selectedManufacturers.value,
+            selectedFranchises: selectedFranchises.value,
+            selectedProductLines: selectedProductLines.value,
             selectedVendors: selectedVendors.value,
             selectedMissing: selectedMissing.value,
             selectedProductFlags: selectedProductFlags.value,
@@ -2188,19 +2293,35 @@ function resetListState(): void {
                             </div>
 
                             <MultiSelectFilter
-                                v-model="selectedMainTypes"
-                                label="Main type"
-                                :options="mainTypeOptions"
-                                placeholder="All main types"
-                                test-id="products-filter-main-type"
+                                v-model="selectedDepartments"
+                                label="Department"
+                                :options="departmentOptions"
+                                placeholder="All departments"
+                                test-id="products-filter-department"
                             />
 
                             <MultiSelectFilter
-                                v-model="selectedTypes"
-                                label="Type"
-                                :options="typeOptions"
-                                placeholder="All types"
-                                test-id="products-filter-type"
+                                v-model="selectedManufacturers"
+                                label="Manufacturer"
+                                :options="manufacturerOptions"
+                                placeholder="All manufacturers"
+                                test-id="products-filter-manufacturer"
+                            />
+
+                            <MultiSelectFilter
+                                v-model="selectedFranchises"
+                                label="Franchise"
+                                :options="franchiseOptions"
+                                placeholder="All franchises"
+                                test-id="products-filter-franchise"
+                            />
+
+                            <MultiSelectFilter
+                                v-model="selectedProductLines"
+                                label="Product line"
+                                :options="productLineOptions"
+                                placeholder="All product lines"
+                                test-id="products-filter-product-line"
                             />
 
                             <MultiSelectFilter
@@ -2558,6 +2679,10 @@ function resetListState(): void {
                         :vendor-options="vendorOptions.map((v) => v.value)"
                         :main-type-options="mainTypeOptions.map((v) => v.value)"
                         :type-options="typeOptions.map((v) => v.value)"
+                        :department-options="departmentOptions.map((v) => v.value)"
+                        :manufacturer-options="manufacturerOptions.map((v) => v.value)"
+                        :franchise-options="franchiseOptions.map((v) => v.value)"
+                        :product-line-options="productLineOptions.map((v) => v.value)"
                         :grade-options="gradeOptions.map((v) => v.value)"
                         :scale-options="scaleOptions.map((v) => v.value)"
                         :series-options="seriesOptions.map((v) => v.value)"
@@ -2581,6 +2706,10 @@ function resetListState(): void {
                     :vendor-options="vendorOptions.map((v) => v.value)"
                     :main-type-options="mainTypeOptions.map((v) => v.value)"
                     :type-options="typeOptions.map((v) => v.value)"
+                    :department-options="departmentOptions.map((v) => v.value)"
+                    :manufacturer-options="manufacturerOptions.map((v) => v.value)"
+                    :franchise-options="franchiseOptions.map((v) => v.value)"
+                    :product-line-options="productLineOptions.map((v) => v.value)"
                     :embedded="true"
                 />
                 <ImportProductsCard v-show="activeTab === 'import'" :embedded="true" />

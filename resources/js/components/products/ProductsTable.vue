@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { RouterLink } from 'vue-router';
 import ConfirmDialog from '../ui/ConfirmDialog.vue';
 import BulkUpdateDialog from './BulkUpdateDialog.vue';
 import BulkExportDialog, { type ProductsBulkExportType } from './BulkExportDialog.vue';
@@ -24,6 +25,11 @@ export type ProductRow = {
     handle: string | null;
     main_type: string;
     type: string | null;
+    department?: string | null;
+    manufacturer?: string | null;
+    franchise?: string | null;
+    product_line?: string | null;
+    subline?: string | null;
     grade?: string | null;
     series?: string | null;
     scale?: string | null;
@@ -79,6 +85,11 @@ export type UpdateProductPayload = {
     handle: string | null;
     main_type: string;
     type: string | null;
+    department?: string | null;
+    manufacturer?: string | null;
+    franchise?: string | null;
+    product_line?: string | null;
+    subline?: string | null;
     grade?: string | null;
     series?: string | null;
     scale?: string | null;
@@ -94,6 +105,11 @@ export type BulkUpdateProductChanges = {
     handle?: string | null;
     main_type?: string | null;
     type?: string | null;
+    department?: string | null;
+    manufacturer?: string | null;
+    franchise?: string | null;
+    product_line?: string | null;
+    subline?: string | null;
     grade?: string | null;
     scale?: string | null;
     series?: string | null;
@@ -115,6 +131,11 @@ export type ProductSortKey =
     | 'description'
     | 'main_type'
     | 'type'
+    | 'department'
+    | 'manufacturer'
+    | 'franchise'
+    | 'product_line'
+    | 'subline'
     | 'grade'
     | 'series'
     | 'scale'
@@ -172,6 +193,10 @@ const props = defineProps<{
     vendorOptions?: string[];
     mainTypeOptions?: string[];
     typeOptions?: string[];
+    departmentOptions?: string[];
+    manufacturerOptions?: string[];
+    franchiseOptions?: string[];
+    productLineOptions?: string[];
     gradeOptions?: string[];
     scaleOptions?: string[];
     seriesOptions?: string[];
@@ -213,6 +238,22 @@ function mergeDistinctOptions(
     return Array.from(new Set(merged)).sort((a, b) => a.localeCompare(b));
 }
 
+const departmentChoices = computed<string[]>(() =>
+    mergeDistinctOptions(props.departmentOptions, draft.value?.department ?? null),
+);
+
+const manufacturerChoices = computed<string[]>(() =>
+    mergeDistinctOptions(props.manufacturerOptions, draft.value?.manufacturer ?? null),
+);
+
+const franchiseChoices = computed<string[]>(() =>
+    mergeDistinctOptions(props.franchiseOptions, draft.value?.franchise ?? null),
+);
+
+const productLineChoices = computed<string[]>(() =>
+    mergeDistinctOptions(props.productLineOptions, draft.value?.product_line ?? null),
+);
+
 const gradeChoices = computed<string[]>(() =>
     mergeDistinctOptions(props.gradeOptions, draft.value?.grade ?? null),
 );
@@ -242,7 +283,7 @@ const bulkUpdating = ref(false);
 const bulkExporting = ref(false);
 const creatingDraftPo = ref(false);
 const showCost = ref(false);
-const showClassificationColumns = ref(false);
+const showClassificationColumns = ref(true);
 const bulkMessage = ref<string | null>(null);
 const bulkError = ref<string | null>(null);
 const confirmBulkDeleteOpen = ref(false);
@@ -616,8 +657,8 @@ const allOnPageSelected = computed(
 );
 
 const emptyRowColspan = computed(() => {
-    const total = showCost.value ? 23 : 22;
-    return showClassificationColumns.value ? total : total - 6;
+    const total = showCost.value ? 25 : 24;
+    return showClassificationColumns.value ? total : total - 7;
 });
 
 function totalSold(p: ProductRow): number {
@@ -651,6 +692,11 @@ function sortLabel(key: ProductSortKey): string {
         description: 'Name',
         main_type: 'Main type',
         type: 'Type',
+        department: 'Department',
+        manufacturer: 'Manufacturer',
+        franchise: 'Franchise',
+        product_line: 'Product line',
+        subline: 'Sub-line',
         grade: 'Grade',
         series: 'Series',
         scale: 'Scale',
@@ -1051,6 +1097,11 @@ function startEdit(p: ProductRow): void {
         handle: p.handle,
         main_type: p.main_type,
         type: p.type,
+        department: p.department ?? null,
+        manufacturer: p.manufacturer ?? null,
+        franchise: p.franchise ?? null,
+        product_line: p.product_line ?? null,
+        subline: p.subline ?? null,
         grade: p.grade ?? null,
         scale: p.scale ?? null,
         series: p.series ?? null,
@@ -1084,6 +1135,11 @@ async function saveEdit(): Promise<void> {
             handle: draft.value.handle?.trim() || null,
             main_type: draft.value.main_type.trim() || 'model kit',
             type: draft.value.type?.trim() || null,
+            department: draft.value.department?.trim() || null,
+            manufacturer: draft.value.manufacturer?.trim() || null,
+            franchise: draft.value.franchise?.trim() || null,
+            product_line: draft.value.product_line?.trim() || null,
+            subline: draft.value.subline?.trim() || null,
             grade: draft.value.grade?.trim() || null,
             scale: draft.value.scale?.trim() || null,
             series: draft.value.series?.trim() || null,
@@ -1251,15 +1307,17 @@ onUnmounted(() => {
                         <button
                             class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
                             type="button"
-                            data-testid="toggle-classification-visibility"
+                            data-testid="toggle-taxonomy-visibility"
                             @click="showClassificationColumns = !showClassificationColumns"
                         >
-                            {{
-                                showClassificationColumns
-                                    ? 'Hide type/grade/scale'
-                                    : 'Show type/grade/scale'
-                            }}
+                            {{ showClassificationColumns ? 'Hide taxonomy' : 'Show taxonomy' }}
                         </button>
+                        <RouterLink
+                            class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+                            to="/products/taxonomy"
+                        >
+                            Review taxonomy
+                        </RouterLink>
                     </div>
                 </div>
                 <div
@@ -1277,15 +1335,17 @@ onUnmounted(() => {
                     <button
                         class="ml-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
                         type="button"
-                        data-testid="toggle-classification-visibility"
+                        data-testid="toggle-taxonomy-visibility"
                         @click="showClassificationColumns = !showClassificationColumns"
                     >
-                        {{
-                            showClassificationColumns
-                                ? 'Hide type/grade/scale'
-                                : 'Show type/grade/scale'
-                        }}
+                        {{ showClassificationColumns ? 'Hide taxonomy' : 'Show taxonomy' }}
                     </button>
+                    <RouterLink
+                        class="ml-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
+                        to="/products/taxonomy"
+                    >
+                        Review taxonomy
+                    </RouterLink>
                 </div>
 
                 <div
@@ -1355,20 +1415,42 @@ onUnmounted(() => {
                                 <button
                                     type="button"
                                     class="hover:underline"
-                                    :class="sortHeaderClass('main_type')"
-                                    @click="onSortChange('main_type')"
+                                    :class="sortHeaderClass('department')"
+                                    @click="onSortChange('department')"
                                 >
-                                    {{ sortLabel('main_type') }}{{ sortIndicator('main_type') }}
+                                    {{ sortLabel('department') }}{{ sortIndicator('department') }}
                                 </button>
                             </th>
                             <th v-if="showClassificationColumns" class="px-4 py-3">
                                 <button
                                     type="button"
                                     class="hover:underline"
-                                    :class="sortHeaderClass('type')"
-                                    @click="onSortChange('type')"
+                                    :class="sortHeaderClass('manufacturer')"
+                                    @click="onSortChange('manufacturer')"
                                 >
-                                    {{ sortLabel('type') }}{{ sortIndicator('type') }}
+                                    {{ sortLabel('manufacturer')
+                                    }}{{ sortIndicator('manufacturer') }}
+                                </button>
+                            </th>
+                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('franchise')"
+                                    @click="onSortChange('franchise')"
+                                >
+                                    {{ sortLabel('franchise') }}{{ sortIndicator('franchise') }}
+                                </button>
+                            </th>
+                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                                <button
+                                    type="button"
+                                    class="hover:underline"
+                                    :class="sortHeaderClass('product_line')"
+                                    @click="onSortChange('product_line')"
+                                >
+                                    {{ sortLabel('product_line')
+                                    }}{{ sortIndicator('product_line') }}
                                 </button>
                             </th>
                             <th v-if="showClassificationColumns" class="px-4 py-3">
@@ -1719,12 +1801,13 @@ onUnmounted(() => {
                             <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
                                 <template v-if="editingId === p.id">
                                     <select
-                                        v-model="draft!.main_type"
+                                        v-model="draft!.department"
                                         class="w-36 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
                                     >
+                                        <option :value="null">—</option>
                                         <option
-                                            v-for="opt in mainTypeChoices"
-                                            :key="`main-type-${opt}`"
+                                            v-for="opt in departmentChoices"
+                                            :key="`department-${opt}`"
                                             :value="opt"
                                         >
                                             {{ opt }}
@@ -1740,7 +1823,7 @@ onUnmounted(() => {
                                         @click="startEdit(p)"
                                         @keydown.enter.prevent="startEdit(p)"
                                     >
-                                        {{ p.main_type }}
+                                        {{ p.department ?? '—' }}
                                     </div>
                                 </template>
                             </td>
@@ -1748,15 +1831,13 @@ onUnmounted(() => {
                             <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
                                 <template v-if="editingId === p.id">
                                     <select
-                                        class="max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
-                                        :class="typeChoices.length > 4 ? 'w-44' : 'w-28'"
-                                        :value="draft!.type ?? ''"
-                                        @change="setDraftTypeFromSelect"
+                                        v-model="draft!.manufacturer"
+                                        class="w-40 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
                                     >
-                                        <option value="">—</option>
+                                        <option :value="null">—</option>
                                         <option
-                                            v-for="opt in typeChoices"
-                                            :key="`type-${opt}`"
+                                            v-for="opt in manufacturerChoices"
+                                            :key="`manufacturer-${opt}`"
                                             :value="opt"
                                         >
                                             {{ opt }}
@@ -1764,15 +1845,76 @@ onUnmounted(() => {
                                     </select>
                                 </template>
                                 <template v-else>
-                                    <span
-                                        class="inline-block cursor-pointer rounded-md px-1 py-0.5 transition hover:bg-slate-100"
+                                    <div
+                                        class="max-w-[12rem] cursor-pointer truncate rounded-md px-1 py-0.5 transition hover:bg-slate-100"
                                         title="Click to edit"
                                         role="button"
                                         tabindex="0"
                                         @click="startEdit(p)"
                                         @keydown.enter.prevent="startEdit(p)"
-                                        >{{ p.type ?? '—' }}</span
                                     >
+                                        {{ p.manufacturer ?? '—' }}
+                                    </div>
+                                </template>
+                            </td>
+
+                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                                <template v-if="editingId === p.id">
+                                    <select
+                                        v-model="draft!.franchise"
+                                        class="w-36 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                                    >
+                                        <option :value="null">—</option>
+                                        <option
+                                            v-for="opt in franchiseChoices"
+                                            :key="`franchise-${opt}`"
+                                            :value="opt"
+                                        >
+                                            {{ opt }}
+                                        </option>
+                                    </select>
+                                </template>
+                                <template v-else>
+                                    <div
+                                        class="max-w-[10rem] cursor-pointer truncate rounded-md px-1 py-0.5 transition hover:bg-slate-100"
+                                        title="Click to edit"
+                                        role="button"
+                                        tabindex="0"
+                                        @click="startEdit(p)"
+                                        @keydown.enter.prevent="startEdit(p)"
+                                    >
+                                        {{ p.franchise ?? '—' }}
+                                    </div>
+                                </template>
+                            </td>
+
+                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                                <template v-if="editingId === p.id">
+                                    <select
+                                        v-model="draft!.product_line"
+                                        class="w-40 max-w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+                                    >
+                                        <option :value="null">—</option>
+                                        <option
+                                            v-for="opt in productLineChoices"
+                                            :key="`product-line-${opt}`"
+                                            :value="opt"
+                                        >
+                                            {{ opt }}
+                                        </option>
+                                    </select>
+                                </template>
+                                <template v-else>
+                                    <div
+                                        class="max-w-[12rem] cursor-pointer truncate rounded-md px-1 py-0.5 transition hover:bg-slate-100"
+                                        title="Click to edit"
+                                        role="button"
+                                        tabindex="0"
+                                        @click="startEdit(p)"
+                                        @keydown.enter.prevent="startEdit(p)"
+                                    >
+                                        {{ p.product_line ?? '—' }}
+                                    </div>
                                 </template>
                             </td>
 
@@ -2281,6 +2423,10 @@ onUnmounted(() => {
         :main-type-options="props.mainTypeOptions ?? []"
         :vendor-options="props.vendorOptions ?? []"
         :type-options="props.typeOptions ?? []"
+        :department-options="props.departmentOptions ?? []"
+        :manufacturer-options="props.manufacturerOptions ?? []"
+        :franchise-options="props.franchiseOptions ?? []"
+        :product-line-options="props.productLineOptions ?? []"
         :grade-options="props.gradeOptions ?? []"
         :scale-options="props.scaleOptions ?? []"
         :series-options="props.seriesOptions ?? []"

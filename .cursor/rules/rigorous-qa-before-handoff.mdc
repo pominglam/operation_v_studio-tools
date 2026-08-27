@@ -20,32 +20,24 @@ Complements **`always-test-before-done.mdc`**, **`verify-ui-before-done.mdc`**, 
 
 Before saying **done**, **fixed**, **verified**, or **ready for review**:
 
-1. **Automated regression** — add or extend tests (Pest/Vitest; **Playwright e2e** when the feature has filters, tables, dialogs, bulk actions, or multi-step flows). Run them; report pass/fail.
+1. **Automated regression** — run **existing** tests when useful; **do not add or modify test files** unless the user asked (see **`agent-test-cleanup.mdc`**). Browser/manual QA is the default bar.
 2. **Real browser** — open the actual route/URL the user uses (see **`verify-ui-before-done.mdc`**). Hard refresh after bundle changes.
 3. **Every filter** — alone, cleared, and in **combination** with other filters/search/sort. Assert row counts and visible cell values match expectations.
 4. **Every primary action** — include/save/dismiss/bulk/submit/export at least once on real or seeded data; confirm persisted state and UI update (wait for API reload when toggles refetch).
 5. **Real data sanity** — spot-check fields the user cares about (prices, counts, dates, status). Null/wrong values on rows they will see = **not done**.
 6. **No known open bugs** on the paths you touched — fix or explicitly list gaps with evidence.
 
-## Playwright e2e (required when)
+## Playwright e2e (only when user requests tests)
 
-Add or extend `tests/e2e/*.spec.ts` when the change introduces or modifies:
+Add or extend `tests/e2e/*.spec.ts` **only if the user explicitly asks for e2e/tests**. Otherwise verify in the browser without persisting new specs.
 
-- Client-side or server-backed **filters**, **sort**, or **search**
-- **Bulk** selection / batch actions
-- **Dialogs** with validation (blank defaults, submit, cancel)
-- **Inline edit** or optimistic vs refetch behavior
-- **pageState** / localStorage persistence
-
-E2e must cover: happy path, at least one **filter combination**, and cleanup/teardown so tests do not leave dirty state for the next run. Prefer isolated seed SKUs over mutating production rows when possible.
-
-Run: `npm run test:e2e -- tests/e2e/<relevant-spec>.ts`
+When the user **does** ask for e2e, cover filters/sort/search, bulk actions, dialogs, inline edit, and `pageState` as applicable. E2e must include happy path, at least one filter combination, and cleanup/teardown. Run: `npm run test:e2e -- tests/e2e/<relevant-spec>.ts`
 
 ## Forbidden handoffs
 
 - "I verified in the browser" without listing **URL + actions + outcomes**
 - Passing only unrelated tests
-- Relying on truncated snapshots or one-off browser scripts instead of repeatable e2e
+- **Leaving new or modified test files** the user did not ask for (see **`agent-test-cleanup.mdc`**)
 - Leaving the user to find missing prices, wrong counts, or broken filter combos
 
 If blocked (auth, service down, no seed data), state **exactly** what was not verified and what unblocks it — do not imply quality you did not check.

@@ -1,7 +1,10 @@
-# Purchase orders (`/purchase-orders`, `/purchase-orders/:id`)
+# Purchase orders (`/purchase-orders`, `/purchase-orders/:id`, `/purchase-orders/:id/beta`)
 
 **List page:** `resources/js/pages/PurchaseOrdersPage.vue`  
-**Detail page:** `resources/js/pages/PurchaseOrderDetailPage.vue`
+**Detail page:** `resources/js/pages/PurchaseOrderDetailPage.vue`  
+**Beta workspace:** `resources/js/pages/PurchaseOrderDetailBetaPage.vue` at `/purchase-orders/:id/beta`
+
+The classic detail page remains the reliable default. The beta route is an opt-in redesign: mission-control overview, grouped Actions menu, and progressive tabs. Unimplemented writes still open classic UI. A **Try beta UI** link on classic detail and an **Edit details** link on beta keep both available. The beta chrome hides the global `AppNav` and uses the storefront `colorBar.png` at 65% width, right-aligned.
 
 ---
 
@@ -13,7 +16,7 @@ Persisted snapshot key: **`purchase-orders:history-filters:v2`** (`clearPageStat
 
 - Multi-select **vendor** facets combined with seeded defaults (**Plamod, Dspiae, Stedi, Other/multi, Gaahleri, MSMN, PM, JS**) merged with **`GET /api/v1/purchase-orders/filter-options`**.
 - Multi-select **status** chips: Draft, Ordered, Shipped, Received, **On shelves**. **Default (fresh load / Reset filters):** Draft, Ordered, Shipped, Received — **On shelves** is not pre-selected.
-- **Sort** presets: **`created | ordered | received`** ascending/descending. Default: **ordered desc** (POs without an ordered date sort last).
+- **Sort:** Click any history data column (except the checkbox and **Actions**) to sort via `GET /api/v1/purchase-orders?sort_by=&sort_dir=`. First click on a column sorts descending; clicking the active column toggles ascending. Default: **ordered desc**. Nullable date/money columns keep nulls last. **Status** follows workflow order (Draft → Ordered → Shipped → Received → On shelves). **Total** is product + shipping + surcharge (all-null totals last). Internal `sort_by=filter` (product/price-research PO picker) is unchanged.
 
 Derived **status labels** mapping internal enum → human copy (`poStatusLabel`).
 
@@ -21,9 +24,9 @@ Derived **status labels** mapping internal enum → human copy (`poStatusLabel`)
 
 - **Delete** opens a destructive **`ConfirmDialog`**; on confirm calls **`DELETE /api/v1/purchase-orders/{uuid}`** (same guards as PO detail — blocked when received inventory or FIFO lots exist). Reloads the history table on success.
 
-| Column       | API / logic                                                                                                                                                                                                                                   |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Shipment** | `shipment_method` on **`purchase_orders`** (`air` \| `sea` \| null). Set on import/create form, PO header edit, or inferred once from line products when unset (unambiguous air-only or sea-only).                                            |
+| Column       | API / logic                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Shipment** | `shipment_method` on **`purchase_orders`** (`air` \| `sea` \| null). Set on import/create form, PO header edit, or inferred once from line products when unset (unambiguous air-only or sea-only).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | **Tracking** | `shipment_tracking_numbers` JSON array on **`purchase_orders`** (up to 40 values, 255 characters each). After the list or detail header renders, visible numbers post to **`POST /api/v1/shipment-tracking/resolutions`**. The worker tries **17TRACK** first, then Kuaidi100, AfterShip, Ship24, and ParcelsApp. Queued/resolving numbers remain plain text with a spinner; the UI polls the same bulk endpoint and creates one external link only after the credential-free browser worker finds real shipment events. Successful provider URLs are cached globally in `shipment_tracking_resolutions`; no-match/failed checks remain plain text and use cooldowns before retry. |
 
 ### Pagination
@@ -108,6 +111,8 @@ Loads **`GET /api/v1/purchase-orders/{uuid}`** (`PurchaseOrderResource` projecti
 
 **View products in grid** opens `/products?purchase_order_uuid={uuid}` in a new browser tab, with the Products grid PO filter preselected for the current purchase order.
 
+**Try beta UI** opens `/purchase-orders/:id/beta`. The classic page is unchanged otherwise and remains the default from the Purchase Orders list.
+
 Supports inline edit + save for PO-level fields (**vendor_currency_code**, **`fx`** fields, **`supplier_order_id`**, dates, monetary totals **`product_total`, `shipping_total`, `surcharge_total`, `vendor_product_total`**, **`notes`**, **`is_done`**, **`exclude_from_latest_arrivals_ordering`**).
 
 **`exclude_from_latest_arrivals_ordering`** (checkbox on edit): when **true**, the PO keeps **`received_date`** for inventory/lots but is **skipped** when building storefront Latest Arrivals collection order (`LatestArrivalCatalogOrderService`). Use for restock invoices that should not bump products ahead on the homepage. Shared SKUs fall back to their next eligible received PO. Re-run **Push to Shopify — Latest Arrivals order** on a received PO after toggling to refresh Shopify collection sort.
@@ -144,7 +149,7 @@ Other vendors: direct re-import / import more (no preview dialog).
 
 ### Line grid (per SKU)
 
-Columns include SKU, **product vendor** (catalog `products.vendor`), qty **ordered/shipped/received**, **unit_cost** editable, linkages to **`product_id` UUID**, optional **available / maintain / not_arrived / reorder** aggregates, **`latest_landed_unit_cost`**, **`selling_price`**, multiplier display, etc.
+Columns include SKU, **product vendor** (catalog `products.vendor`), qty **ordered/shipped/received/damaged**, **unit_cost** editable, linkages to **`product_id` UUID**, optional **available / maintain / not_arrived / reorder** aggregates, **`latest_landed_unit_cost`**, **`selling_price`**, multiplier display, etc. **Damaged** (`purchase_order_items.qty_damaged`, default `0`) is editable per line, cannot exceed Qty received, and remains separate from the gross received quantity for receiving history.
 
 **Product vendor (Other/multi and mixed broker POs):** **Other/multi** imports create new catalog rows with **`product.vendor` null** (PO header stays **Other/multi**). An amber alert shows **`counts.unassigned_product_vendor`** when any line’s catalog product has no vendor. Assign per row in the **Product vendor** column (**`PATCH /api/v1/products/{uuid}/vendor`**) or bulk-update selected lines (**`changes.product_vendor`** on **`PATCH /api/v1/purchase-orders/{uuid}/items`**). Vendor picker uses **`GET /api/v1/products/filter-options`**; a new name is added to suggestions only after you save (blur/Enter), not on each keystroke. **Dspiae** / **Stedi** single-vendor imports still set vendor on **new** products only; re-import never overwrites an existing **`product.vendor`**.
 
@@ -154,26 +159,27 @@ Columns include SKU, **product vendor** (catalog `products.vendor`), qty **order
 
 Interactions:
 
-| User action                                               | API                                                                                                                               |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Edit qty ordered / shipped / received                     | PATCH item endpoints (**`/api/v1/purchase-order-items/{id}`** or bulk patch path)                                                 |
-| Set **product vendor** (inline or bulk)                   | **`PATCH /api/v1/products/{uuid}/vendor`**; bulk **`changes.product_vendor`** on **`PATCH /api/v1/purchase-orders/{uuid}/items`** |
-| Edit barcode column (when surfaced)                       | product-level barcode patch proxied via item row workflows                                                                        |
-| Edit unit cost                                            | item PATCH validations                                                                                                            |
-| **Bulk update selected rows** (`BulkUpdatePoItemsDialog`) | **`PATCH /api/v1/purchase-orders/{uuid}/items`** with selected IDs payload                                                        |
-| **Turn into water decals** (`PoWaterDecalPromoteDialog`)  | **`POST /api/v1/purchase-orders/{uuid}/water-decals/preview`** then **`POST .../water-decals/apply`** — preview shows intention per row (merge / promote / blocked); operator can override SKU, title, vendor, grade; merge requires checkbox confirm; all promoted SKUs get **`WD-`** prefix; vendor defaults to **`Water Decals`** |
+| User action                                               | API                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Edit qty ordered / shipped / received / damaged           | PATCH item endpoints (**`/api/v1/purchase-order-items/{id}`** or bulk patch path). **`qty_received` may exceed `qty_ordered` / `qty_shipped`** (over-receipt). **`qty_shipped` still cannot exceed `qty_ordered`**. **`qty_damaged` must be 0–received**. Receipt quantities cannot be changed after PO-linked inventory lots exist. Rows highlight yellow when received ≠ ordered. |
+| Set **product vendor** (inline or bulk)                   | **`PATCH /api/v1/products/{uuid}/vendor`**; bulk **`changes.product_vendor`** on **`PATCH /api/v1/purchase-orders/{uuid}/items`**                                                                                                                                                                                                                                                   |
+| Edit barcode column (when surfaced)                       | product-level barcode patch proxied via item row workflows                                                                                                                                                                                                                                                                                                                          |
+| Edit unit cost                                            | item PATCH validations                                                                                                                                                                                                                                                                                                                                                              |
+| **Bulk update selected rows** (`BulkUpdatePoItemsDialog`) | **`PATCH /api/v1/purchase-orders/{uuid}/items`** with selected IDs payload                                                                                                                                                                                                                                                                                                          |
+| **Turn into water decals** (`PoWaterDecalPromoteDialog`)  | **`POST /api/v1/purchase-orders/{uuid}/water-decals/preview`** then **`POST .../water-decals/apply`** — preview shows intention per row (merge / promote / blocked); operator can override SKU, title, vendor, grade; merge requires checkbox confirm; all promoted SKUs get **`WD-`** prefix; vendor defaults to **`Water Decals`**                                                |
 
 ### Apply received quantities → available inventory
 
 - Button triggers **`POST /api/v1/purchase-orders/{uuid}/apply-received-to-available`**.
-- Backend sums positive **`qty_received`** per **`product_id`**, increments **`products.available_qty`** transactionally — UI shows summarized counts / errors (`applyReceivedSummary` messaging).
+- Backend calculates each line's sellable receipt as **`max(0, qty_received - qty_damaged)`**, sums it per **`product_id`**, and increments **`products.available_qty`** transactionally. Gross received and damaged quantities remain unchanged for receiving history; UI reports both sellable units added and damaged units excluded.
 - **Requires every PO line** to have **`qty_received > 0`**; otherwise returns **422** with per-SKU issues (same rule as Prepare).
+- **Skip receiving-kit scanning** is an explicit exception in the receiving card. After confirmation, it bulk-overwrites every line's **`qty_received`** with its positive **`qty_shipped`** value through **`PATCH /api/v1/purchase-orders/{uuid}/items`** (`changes.set_received_to_shipped=true`). Lines with missing/zero shipped quantities block the action. Operators then enter damaged quantities before Prepare / Apply.
 
 ### Apply inventory-check snapshot → qty received on PO
 
 - User picks an **`inventory-check` session UUID** (`GET`-listed with pagination helpers in page script).
 - Confirmed apply posts **`POST /api/v1/purchase-orders/{uuid}/apply-inventory-check`** with chosen check id.
-- **Behavior:** resets PO receipt artifacts per service (removes movements/lots, clears **`qty_received`**) then overlays quantities aggregated by **trimmed SKU** from check rows; **`ProductLatestCostCacheService`** recomputes impacted SKUs; UI renders **warnings** (e.g., SKUs counted in CSV but absent on PO) inside dedicated panel.
+- **Behavior:** resets PO receipt artifacts per service (removes movements/lots, clears **`qty_received`**, resets **`qty_damaged`** to `0`) then overlays quantities aggregated by **trimmed SKU** from check rows; **`ProductLatestCostCacheService`** recomputes impacted SKUs; UI renders **warnings** (e.g., SKUs counted in CSV but absent on PO) inside dedicated panel.
 
 ### Draft workflow utilities
 
@@ -231,12 +237,28 @@ Every **Price updates** and **No price change** row with a suggested price shows
 | `mark_latest_arrival` | **Clear old latest** + **Mark latest** | **Clear old latest:** `POST .../workflow-actions/clear-stale-latest-arrival` (same as before). **Mark latest:** `POST .../workflow-actions/mark-latest-arrival` — sets **`latest_arrival`** true for PO products **except** `main_type` **tools** (response includes **`skipped_tools`**). Legacy combined endpoint **`mark-latest-arrival-published`** still exists. |
 | `import_product_available_quantity` | **Push to Shopify** | Preview + **`POST .../workflow-actions/push-inventory`** (returns **202** + **`batch_id`**) — **requires PO `received_date`** (SPA shows amber warning and disables **Push to Shopify** until set; API returns **422** if missing). Queues one **`PushSelectedProductToShopifyJob`** per eligible PO product on the **`shopify`** queue (same full push options as bulk Products → Push to Shopify). SPA polls **`GET .../push-inventory/status?batch_id=`** until **`phase`** is **`complete`** or **`failed`**; shows progress bar while **`pushing`** / **`finalizing`**. Full ERP → Shopify sync per product via **`productSet`**: title, description, images (when tunnel on), tags (incl. **`latest arrival`** when ERP flag set), price, publish status, and **sellable** inventory (`shopify_push_qty = max(0, erp_available - erp_hold)`). **Preview** (`PoWorkflowPushInventoryDialog`) table columns include **Available**, **Hold**, **Push qty**, and current **Shopify qty**; **Copy product names** copies preview titles one per line (Latest Arrivals sort order). When **`published_on_shopify`** is true, **`publishablePublish`** to all publications. **Preview** sorts products on **this PO only** (CCS toys → Sazabi bust → PG → Mega → MG (MGEX first) → RE → Full Mechanics → RG → HGUC → HG → SD/BB/EX-Standard → Kun DX → Macross → 30MM (Armored Core first) → 30MF → 30MS → 30MP → Figure-rise → Entry Grade → Pokemon → Keroro → Option parts → Action base → System base → LED → Option parts set Gunpla, newest within each grade). After batch jobs finish (no failures), a finalize step reorders the **Latest Arrivals** Shopify collection when **`SHOPIFY_LATEST_ARRIVALS_COLLECTION_GID`** is set: **received POs only** by **`received_date` desc** (unreceived POs ignored; products on multiple received POs count under their **newest received** PO only), then the **same grade order within each PO** (`LatestArrivalCatalogOrderService` + **`collectionReorderProducts`**; collection must be **manual** sort). Config: **`config/latest_arrival.php`**. Barcode scan override import remains under the export card (**Import product quantity**). Avoids HTTP **524** tunnel timeouts on large POs. |
 
+For the Prepare + Apply received step, Prepare also rejects **`qty_damaged > qty_received`**. Apply adds only **received − damaged** sellable units to ERP available inventory.
+
 ### Auxiliary modals reused from Products domain
 
 - **`ImportHandlesCard`** — same handle importer as Products tab (**`POST /api/v1/products/import-handles`**) surfaced for PO-aligned workflows.
 - **`ImportInventoryQuantityOverrideCard`** — quantity override importer.
 - **Bulk Shopify export / PDP recrawl dialogs** behave like **`ProductsPage`** equivalents but seed selected IDs from **`poProductUuids` computed unique list** derived from PO line **`product_id` UUID references.
 - PDP batch queue success navigations push **`sync-progress`** with **`batch_id`**, mirroring **`ProductsPage`**.
+
+## Beta workspace (`/purchase-orders/:id/beta`)
+
+Opt-in redesign. Classic `/purchase-orders/:id` stays the default and the write path for import, receiving, Shopify, bulk, and delete.
+
+| Area     | Behavior                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chrome   | Hides `AppNav`. Storefront `colorBar.png` is 8px high, 65% width, right-aligned, no hairline under the bar. Rail uses icons plus a color-bar accent. **Edit details** returns to the original page.                                                                                                                                                                                       |
+| Overview | Mission-control matching the v7 design: 3-step timeline, receiving progress bar, compact attention headlines, recent activity, large order-health count, costs with **Show calculation**. Uses **`GET /api/v1/purchase-orders/{uuid}`** only (does **not** auto-run `workflow-verify`). KPI money uses thousands separators (`CAD 6,842.30`). Meta shows supplier order id, not the UUID. |
+| Actions  | Catalog of PO tools. Implemented now: **Set or review prices** (`GET/POST .../workflow-actions/set-prices`) and **Selling price history** (`GET .../selling-price-history`). All other actions open classic with `?from=beta`.                                                                                                                                                            |
+| Tabs     | Overview, Workflow, Order lines (read-only), Import & receiving (summary + classic link), Activity.                                                                                                                                                                                                                                                                                       |
+| E2E      | `tests/e2e/purchase-order-detail-beta.spec.ts` creates a disposable test PO, exercises chrome/tabs/Actions/Continue/classic handoff, then deletes the PO.                                                                                                                                                                                                                                 |
+
+---
 
 ### Delete PO
 

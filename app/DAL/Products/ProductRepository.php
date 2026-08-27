@@ -27,7 +27,7 @@ interface ProductRepository
      * @param  array<int, string>  $productFlags
      * @param  array<int, string>  $shipmentMethods
      */
-    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false): LengthAwarePaginator;
+    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false, array $canonicalTaxonomyFilters = []): LengthAwarePaginator;
 
     /**
      * @param  array<int, string>  $mainTypes
@@ -40,7 +40,7 @@ interface ProductRepository
      * @param  array<int, string>  $shipmentMethods
      * @return Collection<int, Product>
      */
-    public function listFiltered(?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false): Collection;
+    public function listFiltered(?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false, array $canonicalTaxonomyFilters = []): Collection;
 
     /**
      * @param  array<int, string>  $types
@@ -131,6 +131,11 @@ interface ProductRepository
     public function listAll(): Collection;
 
     /**
+     * @return Collection<int, Product>
+     */
+    public function listAllWithTaxonomySources(): Collection;
+
+    /**
      * @return array<int, string>
      */
     public function distinctTypes(): array;
@@ -159,6 +164,21 @@ interface ProductRepository
      * @return array<int, string>
      */
     public function distinctSeries(): array;
+
+    /** @return array<int, string> */
+    public function distinctDepartments(): array;
+
+    /** @return array<int, string> */
+    public function distinctManufacturers(): array;
+
+    /** @return array<int, string> */
+    public function distinctFranchises(): array;
+
+    /** @return array<int, string> */
+    public function distinctProductLines(): array;
+
+    /** @return array<int, string> */
+    public function distinctSublines(): array;
 
     /**
      * @param  array<int, string>  $skus

@@ -15,7 +15,7 @@ final class AirbrushProductResolver
             return false;
         }
 
-        if (in_array($sku, ['PT-AB', 'AB-D03', 'AB-D05', 'MS-B50'], true)) {
+        if (in_array($sku, ['PT-AB', 'AB-D03', 'AB-D05', 'MS-B50', 'PM-001'], true)) {
             return true;
         }
 

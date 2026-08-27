@@ -19,7 +19,8 @@ export type PoItemSortKey =
     | 'multiplier'
     | 'qty_ordered'
     | 'qty_shipped'
-    | 'qty_received';
+    | 'qty_received'
+    | 'qty_damaged';
 
 export type PoItemSortRow = {
     sku: string;
@@ -39,6 +40,7 @@ export type PoItemSortRow = {
     qty_ordered: number | null;
     qty_shipped: number | null;
     qty_received: number | null;
+    qty_damaged: number;
 };
 
 function compareNullableNumber(a: number | null, b: number | null): number {
@@ -87,7 +89,10 @@ export function comparePoItems(
         case 'product_name':
             return compareNullableString(a.product_name, b.product_name);
         case 'vendor':
-            return compareNullableString(a.product_vendor ?? a.vendor, b.product_vendor ?? b.vendor);
+            return compareNullableString(
+                a.product_vendor ?? a.vendor,
+                b.product_vendor ?? b.vendor,
+            );
         case 'unit_cost':
             return compareMoney(a.unit_cost, b.unit_cost);
         case 'ship_per_unit':
@@ -123,6 +128,8 @@ export function comparePoItems(
             return compareNullableNumber(a.qty_shipped, b.qty_shipped);
         case 'qty_received':
             return compareNullableNumber(a.qty_received, b.qty_received);
+        case 'qty_damaged':
+            return compareNullableNumber(a.qty_damaged, b.qty_damaged);
         default:
             return 0;
     }
@@ -137,10 +144,17 @@ export function sortPoItems<T extends PoItemSortRow>(
 ): T[] {
     if (items.length <= 1) return items;
     const sign = dir === 'asc' ? 1 : -1;
-    return [...items].sort((left, right) => comparePoItems(left, right, key, shipPerUnitCents, surchargePerUnitCents) * sign);
+    return [...items].sort(
+        (left, right) =>
+            comparePoItems(left, right, key, shipPerUnitCents, surchargePerUnitCents) * sign,
+    );
 }
 
-export function poItemSortIndicator(sortBy: PoItemSortKey, sortDir: 'asc' | 'desc', key: PoItemSortKey): string {
+export function poItemSortIndicator(
+    sortBy: PoItemSortKey,
+    sortDir: 'asc' | 'desc',
+    key: PoItemSortKey,
+): string {
     if (sortBy !== key) return '';
     return sortDir === 'asc' ? ' ▲' : ' ▼';
 }

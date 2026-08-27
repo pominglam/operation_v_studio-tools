@@ -27,29 +27,35 @@ final class CanadianGundamProvider extends AbstractSearchProvider
 
     protected function maxCandidateProductUrlsToCheck(): int
     {
-        // CanadianGundam search pages often return many close matches; check a few more PDPs.
-        return 6;
+        return 8;
     }
 
     /**
-     * CanadianGundam search results are already ranked well; avoid re-ordering by URL heuristics.
-     *
      * @param  array<int, string>  $links
      * @return array<int, string>
      */
     protected function orderCandidateProductUrls(Product $product, array $links): array
     {
+        usort($links, function (string $a, string $b) use ($product): int {
+            return $this->scoreProductCandidateText($b, $product) <=> $this->scoreProductCandidateText($a, $product);
+        });
+
         return $links;
     }
 
     protected function searchTermForProduct(Product $product): ?string
     {
-        // Prefer description for CanadianGundam's PrestaShop search. It performs well with the site's own ranking,
-        // but we strip local annotations like "(edited)" to avoid polluting the query.
-        $desc = trim((string) ($product->description ?? ''));
+        $desc = $this->normalizeProductDescriptionForSearch((string) ($product->description ?? ''));
         if ($desc !== '') {
-            $desc = preg_replace('/\\s*\\(edited\\)\\s*/i', ' ', $desc) ?? $desc;
-            $desc = trim(preg_replace('/\\s+/', ' ', $desc) ?? $desc);
+            $nameFocused = $this->nameFocusedSearchTerm($desc);
+            if ($nameFocused !== '') {
+                return $nameFocused;
+            }
+
+            $compact = $this->compactSearchTerm($desc);
+            if ($compact !== '') {
+                return $compact;
+            }
 
             return mb_substr($desc, 0, 80);
         }
@@ -65,58 +71,159 @@ final class CanadianGundamProvider extends AbstractSearchProvider
         return null;
     }
 
+    /**
+     * @return array<int, string>
+     */
+    protected function searchTermsForProduct(Product $product): array
+    {
+        $terms = [];
+        $desc = $this->normalizeProductDescriptionForSearch((string) ($product->description ?? ''));
+
+        if ($desc !== '') {
+            $nameFocused = $this->nameFocusedSearchTerm($desc);
+            if ($nameFocused !== '') {
+                $terms[] = $nameFocused;
+            }
+
+            $compact = $this->compactSearchTerm($desc);
+            if ($compact !== '' && ! in_array($compact, $terms, true)) {
+                $terms[] = $compact;
+            }
+
+            $full = mb_substr($desc, 0, 80);
+            if ($full !== '' && ! in_array($full, $terms, true)) {
+                $terms[] = $full;
+            }
+        }
+
+        $sku = trim((string) ($product->sku ?? ''));
+        if ($sku !== '' && ! in_array($sku, $terms, true)) {
+            $terms[] = $sku;
+        }
+
+        $barcode = trim((string) ($product->barcode ?? ''));
+        if ($barcode !== '' && ! in_array($barcode, $terms, true)) {
+            $terms[] = $barcode;
+        }
+
+        return $terms;
+    }
+
+    private function compactSearchTerm(string $description): string
+    {
+        $compact = preg_replace('/\\([^)]*\\)/', ' ', $description) ?? $description;
+        $compact = preg_replace(
+            '/\\b(master\\s+grade|high\\s+grade|real\\s+grade|perfect\\s+grade)\\b/i',
+            ' ',
+            $compact,
+        ) ?? $compact;
+        $compact = preg_replace('/\\b1\\s*\\/\\s*\\d+\\b/', ' ', $compact) ?? $compact;
+        $compact = preg_replace('/\\b(mg|hg|rg|pg|sd|eg)\\b/i', ' ', $compact) ?? $compact;
+        $compact = trim(preg_replace('/\\s+/', ' ', $compact) ?? $compact);
+
+        return mb_substr($compact, 0, 80);
+    }
+
+    private function nameFocusedSearchTerm(string $description): string
+    {
+        $lower = mb_strtolower($description);
+        if (! str_contains($lower, 'narrative') || ! str_contains($lower, 'gundam')) {
+            return '';
+        }
+
+        $grade = 'MG';
+        if (preg_match('/\\b(hg|rg|pg|sd|eg|mg)\\b/i', $description, $match) === 1) {
+            $grade = strtoupper((string) $match[1]);
+        } elseif (str_contains($lower, 'master grade')) {
+            $grade = 'MG';
+        } elseif (str_contains($lower, 'high grade')) {
+            $grade = 'HG';
+        }
+
+        $term = $grade.' Narrative Gundam';
+        if (preg_match('/c[\-\s]?packs/i', $description) === 1) {
+            $term .= ' C-Packs';
+        }
+        if (preg_match('/ver\.?\s*ka/i', $description) === 1) {
+            $term .= ' Ver.Ka';
+        }
+
+        return $term;
+    }
+
     protected function htmlLikelyMatchesProduct(string $html, Product $product): bool
     {
         // CanadianGundam pages contain lots of global nav text that can trigger generic token matching.
         // Scope matching to the product title to avoid false positives (e.g. Pokemon pages).
         $title = $this->extractProductTitle($html);
-        if ($title !== null) {
-            $titleLower = mb_strtolower($title);
+        if ($title === null) {
+            return parent::htmlLikelyMatchesProduct($html, $product);
+        }
 
-            $desc = trim((string) ($product->description ?? ''));
-            $desc = preg_replace('/\\s*\\(edited\\)\\s*/i', ' ', $desc) ?? $desc;
-            $descLower = mb_strtolower($desc);
+        $titleLower = mb_strtolower($title);
+        $desc = $this->normalizeProductDescriptionForSearch((string) ($product->description ?? ''));
+        if ($desc === '') {
+            return false;
+        }
 
-            if (($product->barcode ?? '') !== '' && str_contains($titleLower, mb_strtolower((string) $product->barcode))) {
-                // Even if the barcode matches, do not accept a different grade/scale (HG vs MG, 1/144 vs 1/100).
-                if ($this->gradeOrScaleMismatch($descLower, $titleLower)) {
-                    return false;
-                }
+        $descLower = mb_strtolower($desc);
 
-                return true;
+        if (! $this->productDescriptionWantsAccessory($product)) {
+            if ($this->textLooksLikeAccessory($titleLower) || $this->textLooksLikeGiftCard($titleLower)) {
+                return false;
             }
+        }
 
-            if (($product->sku ?? '') !== '' && str_contains($titleLower, mb_strtolower((string) $product->sku))) {
-                if ($this->gradeOrScaleMismatch($descLower, $titleLower)) {
-                    return false;
-                }
-
-                return true;
-            }
-
-            // Strong guard: avoid mismatching HG/RG/MG/etc across grades.
+        if (($product->barcode ?? '') !== '' && str_contains($titleLower, mb_strtolower((string) $product->barcode))) {
             if ($this->gradeOrScaleMismatch($descLower, $titleLower)) {
                 return false;
             }
 
-            // If we expect "gundam", require it in the title.
-            if (str_contains($descLower, 'gundam') && ! str_contains($titleLower, 'gundam')) {
+            return true;
+        }
+
+        if (($product->sku ?? '') !== '' && str_contains($titleLower, mb_strtolower((string) $product->sku))) {
+            if ($this->gradeOrScaleMismatch($descLower, $titleLower)) {
                 return false;
             }
 
-            $tokens = preg_split('/[^a-z0-9]+/i', $desc) ?: [];
-            $tokens = array_values(array_filter($tokens, static fn (string $t): bool => mb_strlen($t) >= 4));
-            $hits = 0;
-            foreach (array_slice($tokens, 0, 8) as $t) {
-                if (str_contains($titleLower, mb_strtolower($t))) {
-                    $hits++;
-                }
-            }
-
-            return $hits >= 2;
+            return true;
         }
 
-        return parent::htmlLikelyMatchesProduct($html, $product);
+        if ($this->gradeOrScaleMismatch($descLower, $titleLower)) {
+            return false;
+        }
+
+        if (! $this->candidateGradeScaleConsistent($titleLower, $descLower)) {
+            return false;
+        }
+
+        if (! $this->candidateSatisfiesVariantKeys($titleLower, $this->requiredVariantKeysFromDescription($desc))) {
+            return false;
+        }
+
+        if (! $this->hasDistinctiveNameTokenMatch($descLower, $titleLower)) {
+            return false;
+        }
+
+        if (str_contains($descLower, 'gundam') && ! str_contains($titleLower, 'gundam')) {
+            return false;
+        }
+
+        $tokens = preg_split('/[^a-z0-9]+/i', $desc) ?: [];
+        $tokens = array_values(array_unique(array_filter(
+            $tokens,
+            static fn (string $t): bool => mb_strlen($t) >= 4,
+        )));
+
+        $hits = 0;
+        foreach (array_slice($tokens, 0, 8) as $token) {
+            if (str_contains($titleLower, mb_strtolower($token))) {
+                $hits++;
+            }
+        }
+
+        return $hits >= 2;
     }
 
     private function gradeOrScaleMismatch(string $expectedTextLower, string $actualTextLower): bool
@@ -138,8 +245,6 @@ final class CanadianGundamProvider extends AbstractSearchProvider
 
     private function extractGradeGroup(string $textLower): ?string
     {
-        // Normalize a few common grade prefixes into broad groups.
-        // HG group includes many HG variants (HGBF/HGUC/HGCE/HGAC/HGBD/etc).
         if (preg_match('/\\b(mg|master\\s+grade)\\b/', $textLower) === 1) {
             return 'mg';
         }
@@ -182,7 +287,6 @@ final class CanadianGundamProvider extends AbstractSearchProvider
             return null;
         }
 
-        // Avoid giant blobs if markup is weird.
         return Str::limit($raw, 200, '');
     }
 
@@ -197,7 +301,6 @@ final class CanadianGundamProvider extends AbstractSearchProvider
         $q = rawurlencode($term);
 
         return [
-            // Omit submit_search to avoid odd redirect behavior observed on some responses.
             "{$base}/search?controller=search&orderby=position&orderway=desc&search_query={$q}",
         ];
     }

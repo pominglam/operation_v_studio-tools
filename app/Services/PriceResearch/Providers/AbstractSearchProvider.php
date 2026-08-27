@@ -71,12 +71,57 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
             return $product->barcode;
         }
 
-        $desc = trim((string) ($product->description ?? ''));
+        $desc = $this->normalizeProductDescriptionForSearch((string) ($product->description ?? ''));
         if ($desc === '') {
             return null;
         }
 
         return mb_substr($desc, 0, 64);
+    }
+
+    protected function normalizeProductDescriptionForSearch(string $description): string
+    {
+        $description = preg_replace('/\\s*\\(edited\\)\\s*/i', ' ', $description) ?? $description;
+        $description = preg_replace('/,\\s*Mobile Suit Gundam[^,]*$/i', '', $description) ?? $description;
+        $description = trim(preg_replace('/\\s+/', ' ', $description) ?? $description);
+
+        return $description;
+    }
+
+    protected function hasDistinctiveNameTokenMatch(string $description, string $candidateHaystack): bool
+    {
+        $descLower = mb_strtolower($description);
+        $candidateLower = mb_strtolower($candidateHaystack);
+
+        $stop = ['gundam', 'bandai', 'hobby', 'model', 'kit', 'master', 'grade', 'mobile', 'suit', 'ver', 'ka'];
+        $shortAllow = ['rg', 'hg', 'mg', 'pg', 'sd', 'eg'];
+
+        $rawTokens = preg_split('/[^a-z0-9]+/i', $descLower) ?: [];
+        $distinctive = [];
+        foreach ($rawTokens as $token) {
+            $token = trim($token);
+            if ($token === '' || in_array($token, $stop, true) || in_array($token, $shortAllow, true)) {
+                continue;
+            }
+            if (preg_match('/^\d{1,4}$/', $token) === 1) {
+                continue;
+            }
+            if (mb_strlen($token) >= 4) {
+                $distinctive[$token] = true;
+            }
+        }
+
+        if ($distinctive === []) {
+            return true;
+        }
+
+        foreach (array_keys($distinctive) as $token) {
+            if (str_contains($candidateLower, $token)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -105,15 +150,471 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
         // when the query is the human-readable product name (URL-encoded in searchUrlsForTerm()).
         $desc = trim((string) ($product->description ?? ''));
         if ($desc !== '') {
-            $desc = preg_replace('/\\s*\\(edited\\)\\s*/i', ' ', $desc) ?? $desc;
-            $desc = trim(preg_replace('/\\s+/', ' ', $desc) ?? $desc);
+            $desc = $this->normalizeProductDescriptionForSearch($desc);
             $desc = mb_substr($desc, 0, 96);
             if ($desc !== '' && ! in_array($desc, $terms, true)) {
                 $terms[] = $desc;
             }
         }
 
+        foreach ($this->supplementalSearchTermsForProduct($product) as $term) {
+            if (! in_array($term, $terms, true)) {
+                $terms[] = $term;
+            }
+        }
+
         return $terms;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function supplementalSearchTermsForProduct(Product $product): array
+    {
+        $desc = $this->normalizeProductDescriptionForSearch((string) ($product->description ?? ''));
+        if ($desc === '') {
+            return [];
+        }
+
+        $lower = mb_strtolower($desc);
+        $terms = [];
+
+        if (preg_match('/ms[\-\s]?06s/i', $desc) === 1
+            && str_contains($lower, 'char')
+            && str_contains($lower, 'zaku')
+            && ! str_contains($lower, 'red comet')
+            && ! str_contains($lower, 'redcomet')) {
+            $terms[] = 'origin ms-06s red comet zaku';
+        }
+
+        if (preg_match('/red[\-\s]?comet/i', $desc) === 1) {
+            $terms[] = 'origin ms-06s red comet zaku';
+        }
+
+        return $terms;
+    }
+
+    protected function sanitizeProductUrl(string $url): string
+    {
+        $parts = parse_url($url);
+        if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'], $parts['path'])) {
+            return $url;
+        }
+
+        return $parts['scheme'].'://'.$parts['host'].$parts['path'];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function conflictingVariantTerms(): array
+    {
+        return [
+            'mariner',
+            'cannon',
+            'johnny ridden',
+            'johnny',
+            'ridden',
+            'matsunaga',
+            'high mobility',
+            'convert',
+            'ewac',
+            'gquuuuuux',
+            'police zaku',
+            'zaku amazing',
+            'decal',
+            'etching',
+            'photo-etch',
+            'photo etch',
+            'si-gu-mi',
+            'wa-gu-mi',
+            'head collection',
+            'anime color',
+        ];
+    }
+
+    protected function candidateHasConflictingVariant(string $candidateText, string $description): bool
+    {
+        $candidate = mb_strtolower($candidateText);
+        $desc = mb_strtolower($description);
+
+        foreach ($this->conflictingVariantTerms() as $term) {
+            if (str_contains($candidate, $term) && ! str_contains($desc, $term)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function extractPrimaryMobileSuitCode(string $text): ?string
+    {
+        $norm = $this->normalizeForVariantMatch($text);
+        if (preg_match('/ms(\d{2}[a-z]?)/', $norm, $match) !== 1) {
+            return null;
+        }
+
+        return 'ms'.strtolower((string) $match[1]);
+    }
+
+    protected function candidateMobileSuitCodeConsistent(string $candidateText, string $description): bool
+    {
+        $descCode = $this->extractPrimaryMobileSuitCode($description);
+        if ($descCode === null) {
+            return true;
+        }
+
+        $candidateNorm = $this->normalizeForVariantMatch($candidateText);
+        if (! str_contains($candidateNorm, $descCode)) {
+            return false;
+        }
+
+        if (preg_match_all('/ms(\d{2}[a-z]?)/', $candidateNorm, $matches) === false) {
+            return true;
+        }
+
+        $descNorm = $this->normalizeForVariantMatch($description);
+        foreach ($matches[1] as $rawCode) {
+            $code = 'ms'.strtolower((string) $rawCode);
+            if ($code !== $descCode && ! str_contains($descNorm, $code)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    protected function candidateTextFromShopifySuggestProduct(array $product): string
+    {
+        $url = (string) ($product['url'] ?? '');
+        $path = parse_url($url, PHP_URL_PATH);
+        $path = is_string($path) && $path !== '' ? $path : $url;
+
+        return (string) (($product['title'] ?? '').' '.$path.' '.($product['type'] ?? ''));
+    }
+
+    protected function lookupViaShopifySuggestJson(Product $product): ?PriceLookupResult
+    {
+        $base = rtrim($this->baseUrl(), '/');
+
+        try {
+            $terms = $this->searchTermsForProduct($product);
+            if ($terms === []) {
+                return null;
+            }
+
+            $bestMatch = null;
+            $bestScore = PHP_INT_MIN;
+
+            foreach (array_slice($terms, 0, 5) as $term) {
+                $q = rawurlencode($term);
+                $suggestUrl = "{$base}/search/suggest.json?q={$q}&resources[type]=product&resources[limit]=12&resources[options][unavailable_products]=show";
+
+                $res = $this->http->get($suggestUrl, [
+                    'Accept' => 'application/json, text/plain, */*',
+                ], $this->siteKey());
+                if (! $res->successful()) {
+                    continue;
+                }
+
+                /** @var array<string, mixed>|null $json */
+                $json = $res->json();
+                if (! is_array($json)) {
+                    continue;
+                }
+
+                /** @var array<int, array<string, mixed>> $products */
+                $products = Arr::get($json, 'resources.results.products', []);
+                if (! is_array($products) || $products === []) {
+                    continue;
+                }
+
+                usort($products, function (array $a, array $b) use ($product): int {
+                    $aText = $this->candidateTextFromShopifySuggestProduct($a)
+                        .' '.(string) ($a['body'] ?? '');
+                    $bText = $this->candidateTextFromShopifySuggestProduct($b)
+                        .' '.(string) ($b['body'] ?? '');
+
+                    return $this->scoreProductCandidateText($bText, $product) <=> $this->scoreProductCandidateText($aText, $product);
+                });
+
+                foreach (array_slice($products, 0, $this->maxCandidateProductUrlsToCheck()) as $p) {
+                    $relUrl = (string) ($p['url'] ?? '');
+                    if ($relUrl === '') {
+                        continue;
+                    }
+
+                    $candidateText = $this->candidateTextFromShopifySuggestProduct($p);
+                    if ($this->shouldRequireOriginRedCometCandidate($product)
+                        && ! str_contains($this->normalizeForVariantMatch($candidateText), 'redcomet')) {
+                        continue;
+                    }
+
+                    $candidateScore = $this->scoreProductCandidateText(
+                        $candidateText.' '.(string) ($p['body'] ?? ''),
+                        $product,
+                    );
+                    if ($candidateScore < 0) {
+                        continue;
+                    }
+
+                    $productUrl = str_starts_with($relUrl, 'http') ? $relUrl : $base.$relUrl;
+                    $productUrl = $this->sanitizeProductUrl($productUrl);
+
+                    $productRes = $this->http->get($productUrl, [], $this->siteKey());
+                    if (! $productRes->successful()) {
+                        continue;
+                    }
+
+                    if (! $this->htmlLikelyMatchesProduct($productRes->body(), $product)) {
+                        continue;
+                    }
+
+                    $this->captureCompetitorDescription($product, $productUrl, $productRes->body());
+
+                    $offer = $this->parser->extractPriceAndAvailabilityFromHtml($productRes->body());
+                    if ($offer['price'] === null) {
+                        continue;
+                    }
+
+                    if ($candidateScore > $bestScore) {
+                        $bestScore = $candidateScore;
+                        $bestMatch = PriceLookupResult::found(
+                            $this->siteKey(),
+                            $this->siteName(),
+                            $offer['price'],
+                            $offer['original_price'],
+                            'CAD',
+                            $productUrl,
+                            $offer['availability'],
+                        );
+                    }
+                }
+            }
+
+            return $bestMatch;
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    protected function productDescriptionWantsAccessory(Product $product): bool
+    {
+        $desc = mb_strtolower(trim((string) ($product->description ?? '')));
+
+        return preg_match('/\b(decals?|stickers?|waterslides?|photo[\-\s]?etch(?:ed)?|detail[\-\s]?up)\b/i', $desc) === 1;
+    }
+
+    protected function textLooksLikeAccessory(string $text): bool
+    {
+        return preg_match('/\b(decals?|stickers?|waterslides?|photo[\-\s]?etch(?:ed)?|detail[\-\s]?up|g[\-\s]?rework|upgrade parts|add-on|add on)\b/i', $text) === 1;
+    }
+
+    protected function textLooksLikeGiftCard(string $text): bool
+    {
+        return str_contains(mb_strtolower($text), 'gift card');
+    }
+
+    protected function normalizeForVariantMatch(string $text): string
+    {
+        $normalized = mb_strtolower($text);
+
+        return preg_replace('/[^a-z0-9]+/i', '', $normalized) ?? $normalized;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function requiredVariantKeysFromDescription(string $description): array
+    {
+        $norm = $this->normalizeForVariantMatch($description);
+        $keys = [];
+
+        if (str_contains($norm, 'cpacks') || str_contains($norm, 'cpack')) {
+            $keys[] = 'cpack';
+        }
+        if (str_contains($norm, 'bpacks') || str_contains($norm, 'bpack')) {
+            $keys[] = 'bpack';
+        }
+        if (str_contains($norm, 'apacks') || str_contains($norm, 'apack')) {
+            $keys[] = 'apack';
+        }
+        if (str_contains($norm, 'redcomet') || str_contains($norm, 'redcometver')) {
+            $keys[] = 'redcomet';
+        }
+
+        return $keys;
+    }
+
+    /**
+     * @param  array<int, string>  $requiredKeys
+     */
+    protected function candidateSatisfiesVariantKeys(string $candidateText, array $requiredKeys): bool
+    {
+        if ($requiredKeys === []) {
+            return true;
+        }
+
+        $norm = $this->normalizeForVariantMatch($candidateText);
+        foreach ($requiredKeys as $key) {
+            if (! str_contains($norm, $key)) {
+                return false;
+            }
+        }
+
+        if (in_array('cpack', $requiredKeys, true) && str_contains($norm, 'bpack') && ! str_contains($norm, 'cpack')) {
+            return false;
+        }
+
+        if (in_array('bpack', $requiredKeys, true) && str_contains($norm, 'cpack') && ! str_contains($norm, 'bpack')) {
+            return false;
+        }
+
+        if (in_array('redcomet', $requiredKeys, true) && ! str_contains($norm, 'redcomet')) {
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function candidateGradeScaleConsistent(string $candidateText, string $description): bool
+    {
+        $candidate = mb_strtolower($candidateText);
+        $query = mb_strtolower($description);
+
+        $wantsMg = preg_match('/\bmg\b/i', $query) === 1 || str_contains($query, 'master grade');
+        $wantsHg = preg_match('/\bhg\b/i', $query) === 1 || str_contains($query, 'high grade');
+        $wants100 = str_contains($query, '1/100') || preg_match('/\b100\b/', $query) === 1;
+        $wants144 = str_contains($query, '1/144') || preg_match('/\b144\b/', $query) === 1;
+
+        $candidateIsMg = preg_match('/\bmg\b/i', $candidate) === 1 || str_contains($candidate, 'master grade');
+        $candidateIsHg = preg_match('/\bhg\b/i', $candidate) === 1
+            || preg_match('/\bhguc\b/i', $candidate) === 1
+            || str_contains($candidate, 'high grade');
+        $candidateIs100 = str_contains($candidate, '1/100') || preg_match('/\b100\b/', $candidate) === 1;
+        $candidateIs144 = str_contains($candidate, '1/144') || preg_match('/\b144\b/', $candidate) === 1;
+
+        if ($wantsMg && $candidateIsHg && ! $candidateIsMg) {
+            return false;
+        }
+
+        if ($wantsHg && $candidateIsMg && ! $candidateIsHg) {
+            return false;
+        }
+
+        if ($wants100 && $candidateIs144 && ! $candidateIs100) {
+            return false;
+        }
+
+        if ($wants144 && $candidateIs100 && ! $candidateIs144) {
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function shouldRequireOriginRedCometCandidate(Product $product): bool
+    {
+        $desc = $this->normalizeProductDescriptionForSearch((string) ($product->description ?? ''));
+        if ($desc === '') {
+            return false;
+        }
+
+        $lower = mb_strtolower($desc);
+
+        return preg_match('/ms[\-\s]?06s/i', $desc) === 1
+            && str_contains($lower, 'char')
+            && str_contains($lower, 'zaku')
+            && ! preg_match('/#\s*\d+/', $desc)
+            && ! str_contains($lower, 'red comet')
+            && ! str_contains($this->normalizeForVariantMatch($desc), 'redcomet');
+    }
+
+    public function scoreProductCandidateText(string $candidateText, Product $product): int
+    {
+        $desc = trim((string) ($product->description ?? ''));
+        if ($desc === '') {
+            return 0;
+        }
+
+        $candidate = mb_strtolower($candidateText);
+        $score = 0;
+
+        if (! $this->productDescriptionWantsAccessory($product)) {
+            if ($this->textLooksLikeAccessory($candidate)) {
+                $score -= 40;
+            }
+            if ($this->textLooksLikeGiftCard($candidate)) {
+                $score -= 50;
+            }
+            if (str_contains($candidate, 'expansion set') && ! str_contains(mb_strtolower($desc), 'expansion')) {
+                $score -= 20;
+            }
+        }
+
+        if (! $this->candidateGradeScaleConsistent($candidate, $desc)) {
+            $score -= 30;
+        }
+
+        if (! $this->candidateSatisfiesVariantKeys($candidate, $this->requiredVariantKeysFromDescription($desc))) {
+            $score -= 35;
+        }
+
+        if ($this->candidateHasConflictingVariant($candidate, $desc)) {
+            $score -= 50;
+        }
+
+        if (! $this->candidateMobileSuitCodeConsistent($candidate, $desc)) {
+            $score -= 45;
+        }
+
+        if (str_contains($this->normalizeForVariantMatch($desc), 'redcomet')
+            && str_contains($this->normalizeForVariantMatch($candidate), 'redcomet')) {
+            $score += 10;
+        }
+
+        $sku = mb_strtolower(trim((string) ($product->sku ?? '')));
+        if ($sku !== '' && str_contains($candidate, $sku)) {
+            $score += 12;
+        }
+
+        $barcode = mb_strtolower(trim((string) ($product->barcode ?? '')));
+        if ($barcode !== '' && str_contains($candidate, $barcode)) {
+            $score += 12;
+        }
+
+        $rawTokens = preg_split('/[^a-z0-9]+/i', $desc) ?: [];
+        foreach ($rawTokens as $token) {
+            $token = mb_strtolower(trim($token));
+            if ($token === '' || mb_strlen($token) < 3) {
+                continue;
+            }
+            if (in_array($token, ['gundam', 'bandai', 'hobby', 'model', 'kit', 'grade'], true)) {
+                continue;
+            }
+            if (str_contains($candidate, $token)) {
+                $score += mb_strlen($token) >= 5 ? 4 : 2;
+            }
+        }
+
+        if (str_contains($candidate, 'ver ka') || str_contains($candidate, 'ver.ka')) {
+            if (str_contains(mb_strtolower($desc), 'ver')) {
+                $score += 6;
+            }
+        }
+
+        if (preg_match('/ms[\-\s]?06s/i', $desc) === 1
+            && str_contains(mb_strtolower($desc), 'char')
+            && str_contains(mb_strtolower($desc), 'zaku')) {
+            $candidateNorm = $this->normalizeForVariantMatch($candidate);
+            if (str_contains($candidateNorm, 'redcomet')) {
+                $score += 18;
+            } elseif (! preg_match('/#\s*\d+/', $desc)) {
+                $score -= 12;
+            }
+        }
+
+        return $score;
     }
 
     protected function htmlLikelyMatchesProduct(string $html, Product $product): bool
@@ -136,6 +637,28 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
 
         $desc = trim((string) ($product->description ?? ''));
         if ($desc === '') {
+            return false;
+        }
+
+        if (! $this->productDescriptionWantsAccessory($product)) {
+            if ($this->textLooksLikeAccessory($haystack) || $this->textLooksLikeGiftCard($haystack)) {
+                return false;
+            }
+        }
+
+        if (! $this->candidateGradeScaleConsistent($haystack, $desc)) {
+            return false;
+        }
+
+        if (! $this->candidateSatisfiesVariantKeys($haystack, $this->requiredVariantKeysFromDescription($desc))) {
+            return false;
+        }
+
+        if ($this->candidateHasConflictingVariant($haystack, $desc)) {
+            return false;
+        }
+
+        if (! $this->candidateMobileSuitCodeConsistent($haystack, $desc)) {
             return false;
         }
 
@@ -252,6 +775,9 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
         }
 
         try {
+            $bestMatch = null;
+            $bestScore = PHP_INT_MIN;
+
             foreach (array_slice($terms, 0, 4) as $term) {
                 foreach ($this->searchUrlsForTerm($term) as $searchUrl) {
                     $searchRes = $this->http->get($searchUrl, [], $this->siteKey());
@@ -271,22 +797,41 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
                             continue;
                         }
 
+                        $title = $this->extractTitleForMatching($productRes->body()) ?? '';
+                        $candidateScore = $this->scoreProductCandidateText($productUrl.' '.$title, $product);
+                        if ($this->shouldRequireOriginRedCometCandidate($product)
+                            && ! str_contains($this->normalizeForVariantMatch($productUrl.' '.$title), 'redcomet')) {
+                            continue;
+                        }
+                        if ($candidateScore < 0) {
+                            continue;
+                        }
+
                         $this->captureCompetitorDescription($product, $productUrl, $productRes->body());
 
                         $offer = $this->parser->extractPriceAndAvailabilityFromHtml($productRes->body());
-                        if ($offer['price'] !== null) {
-                            return PriceLookupResult::found(
+                        if ($offer['price'] === null) {
+                            continue;
+                        }
+
+                        if ($candidateScore > $bestScore) {
+                            $bestScore = $candidateScore;
+                            $bestMatch = PriceLookupResult::found(
                                 $this->siteKey(),
                                 $this->siteName(),
                                 $offer['price'],
                                 $offer['original_price'],
                                 'CAD',
-                                $productUrl,
+                                $this->sanitizeProductUrl($productUrl),
                                 $offer['availability'],
                             );
                         }
                     }
                 }
+            }
+
+            if ($bestMatch instanceof PriceLookupResult) {
+                return $bestMatch;
             }
 
             return PriceLookupResult::notFound($this->siteKey(), $this->siteName());
@@ -297,6 +842,10 @@ abstract class AbstractSearchProvider implements CompetitorPriceProvider
 
     protected function captureCompetitorDescription(Product $product, string $productUrl, string $html): void
     {
+        if ($product->id === null) {
+            return;
+        }
+
         $desc = $this->parser->extractDescriptionHtmlFromHtml($html);
         if ($desc === null || trim($desc) === '') {
             return;

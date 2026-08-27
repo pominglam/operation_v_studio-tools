@@ -1,0 +1,60 @@
+---
+description: Agents must delete test files AND test database rows before handoff; never leave E2E/agent SKUs in ERP
+alwaysApply: true
+---
+
+# Agent Test Cleanup (Files + Database)
+
+**Default:** Agents must not leave behind **test files** or **test database rows** unless the user explicitly asks to keep them.
+
+This overrides TDD / "add tests before done" guidance when the user has not requested tests.
+
+## Test SKU patterns (never persist)
+
+| Pattern | Examples |
+| --- | --- |
+| `E2E-*` | `E2E-RESTOCK-1787033168675`, `E2E-PO-*`, `E2E-BETA-*` |
+| `ARCH-UI-*`, `BR-UI-*` | Archive/UI QA fixtures |
+| `*UI-TEST*` in SKU | Ad-hoc UI test products |
+| Description contains | `UI TEST KIT`, `E2E Restock`, `E2E Product`, `E2E PO Product`, `E2E Manual Upload` |
+
+Shared guard: `App\Support\Products\AgentTestSkuGuard`.
+
+## Before handoff (mandatory)
+
+### 1. Test files
+
+- **Delete** any new test files (`tests/**`, `**/*.spec.ts`, `resources/js/**/__tests__/**`).
+- **Revert** edits to existing test files (`git checkout -- <path>`).
+- Confirm `git status` shows no unsolicited test paths.
+
+### 2. Test database rows
+
+If you created products, PO lines, taxonomy verifications, Plamod rows, or any ERP record for QA:
+
+- **Delete them** before marking the task done.
+- Purge script (local Docker): `docker exec -i pricing-tool-mysql mysql -uroot -proot pricing_tool < scripts/purge-agent-test-skus.sql`
+- Verify zero rows: `SELECT COUNT(*) FROM products WHERE sku LIKE 'E2E-%';` must be **0** after your session unless the user asked to keep fixtures.
+
+### 3. Do not pollute operator UIs
+
+- Never run bulk taxonomy research/approve against ad-hoc `E2E-*` products you created for browser QA.
+- Taxonomy review **excludes** agent test SKUs via `AgentTestSkuGuard` — do not bypass this.
+
+## Allowed verification (without leaving debris)
+
+- Real browser / manual API on **existing real SKUs** when possible.
+- Temporary `E2E-*` rows only for in-session debugging — **purge before handoff**.
+- Run existing project tests when useful; do not add new spec files.
+
+## Exceptions
+
+- User explicitly asks for tests or permanent fixtures.
+- User opens a PR and requests test coverage.
+- Minimal fix to an **existing** broken test the user owns.
+
+## Forbidden handoffs
+
+- `E2E-*` / `E2E-RESTOCK-*` rows visible on Products or Taxonomy review (screenshot-able proof of failure).
+- New or modified test files "for later".
+- Saying "tests pass" while test SKUs remain in the database.

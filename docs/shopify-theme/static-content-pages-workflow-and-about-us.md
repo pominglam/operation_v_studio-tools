@@ -2,6 +2,8 @@
 
 **Audience:** Operation V Studio storefront maintainers · **Shop:** operationvstudio.com
 
+**Content hierarchy (pages, Getting started nav, mega menu CTA slots):** [../requirements/storefront-content-hierarchy.md](../requirements/storefront-content-hierarchy.md)
+
 **Important:** Operations in this repository do **not** deploy or preview the Shopify theme. All theme changes happen in Shopify (duplicate unpublished theme recommended) or a dedicated theme codebase.
 
 ---

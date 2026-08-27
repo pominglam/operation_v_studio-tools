@@ -16,10 +16,122 @@ use Throwable;
 final class ExternalHtmlClient
 {
     /**
+     * Parallel suggest fetches with per-site rate limits (no cross-source blocking).
+     *
+     * @param  array<string, array{url: string, site_key: string, headers?: array<string, string>}>  $requests
+     * @return array<string, Response|null>
+     */
+    public function poolGetForSuggest(array $requests): array
+    {
+        /** @var array<string, Response|null> $results */
+        $results = array_fill_keys(array_keys($requests), null);
+
+        /** @var array<string, array{url: string, site_key: string, headers?: array<string, string>}> $pending */
+        $pending = [];
+
+        foreach ($requests as $alias => $request) {
+            $siteKey = $request['site_key'];
+            $url = $request['url'];
+
+            if ($this->tryAcquireSiteRateLimit($url, $siteKey, ':suggest')) {
+                $pending[$alias] = $request;
+
+                continue;
+            }
+
+            Log::channel('external_api')->warning('external_rate_limit_skipped', [
+                'alias' => $alias,
+                'site_key' => $siteKey,
+                'url' => $url,
+                'rate_limit_key' => $this->siteRateLimitKey($siteKey, $url, ':suggest'),
+                'updated_at' => now()->toISOString(),
+            ]);
+        }
+
+        if ($pending === []) {
+            return $results;
+        }
+
+        $baseHeaders = [
+            'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Accept' => 'application/json, text/plain, */*',
+            'Accept-Language' => 'en-CA,en;q=0.9',
+        ];
+
+        try {
+            /** @var array<string, Response> $responses */
+            $responses = Http::connectTimeout(2)
+                ->timeout(8)
+                ->pool(function (\Illuminate\Http\Client\Pool $pool) use ($pending, $baseHeaders): void {
+                    foreach ($pending as $alias => $request) {
+                        $headers = [...$baseHeaders, ...($request['headers'] ?? [])];
+                        $pool->as($alias)
+                            ->withHeaders($headers)
+                            ->get($request['url']);
+                    }
+                });
+        } catch (Throwable $e) {
+            Log::channel('external_api')->error('external_pool_error', [
+                'aliases' => array_keys($pending),
+                'error' => $e->getMessage(),
+                'updated_at' => now()->toISOString(),
+            ]);
+
+            return $results;
+        }
+
+        foreach ($responses as $alias => $response) {
+            if (! isset($pending[$alias])) {
+                continue;
+            }
+
+            $request = $pending[$alias];
+            $traceId = (string) Str::uuid();
+
+            Log::channel('external_api')->info('external_response', [
+                'trace_id' => $traceId,
+                'method' => 'GET',
+                'url' => $request['url'],
+                'site_key' => $request['site_key'],
+                'status' => $response->status(),
+                'pool' => 'suggest',
+                'updated_at' => now()->toISOString(),
+            ]);
+
+            $results[$alias] = $response;
+        }
+
+        return $results;
+    }
+
+    /**
+     * Fast JSON suggest/autocomplete fetch — shorter timeout and separate rate-limit bucket.
+     *
      * @param  array<string, string>  $headers
      */
-    public function get(string $url, array $headers = [], ?string $siteKey = null): Response
+    public function getForSuggest(string $url, array $headers = [], ?string $siteKey = null): Response
     {
+        return $this->get(
+            url: $url,
+            headers: $headers,
+            siteKey: $siteKey,
+            timeoutSeconds: 8,
+            rateLimitKeySuffix: ':suggest',
+            maxAttempts: 2,
+        );
+    }
+
+    /**
+     * @param  array<string, string>  $headers
+     */
+    public function get(
+        string $url,
+        array $headers = [],
+        ?string $siteKey = null,
+        ?int $timeoutSeconds = null,
+        ?string $rateLimitKeySuffix = null,
+        ?int $maxAttempts = null,
+    ): Response {
         $traceId = (string) Str::uuid();
         $startedAt = microtime(true);
 
@@ -32,7 +144,7 @@ final class ExternalHtmlClient
         ]);
 
         try {
-            $this->throttle($url, $siteKey, $traceId);
+            $this->throttle($url, $siteKey, $traceId, $rateLimitKeySuffix);
 
             $baseHeaders = [
                 // Use a browser-like UA to reduce WAF/bot-protection false positives.
@@ -46,6 +158,8 @@ final class ExternalHtmlClient
                 headers: [...$baseHeaders, ...$headers],
                 siteKey: $siteKey,
                 traceId: $traceId,
+                timeoutSeconds: $timeoutSeconds ?? 20,
+                maxAttempts: $maxAttempts ?? 5,
             );
 
             $durationMs = (int) round((microtime(true) - $startedAt) * 1000);
@@ -83,9 +197,14 @@ final class ExternalHtmlClient
      *
      * @param  array<string, string>  $headers
      */
-    private function sendWithRetry(string $url, array $headers, ?string $siteKey, string $traceId): Response
-    {
-        $maxAttempts = 5;
+    private function sendWithRetry(
+        string $url,
+        array $headers,
+        ?string $siteKey,
+        string $traceId,
+        int $timeoutSeconds = 20,
+        int $maxAttempts = 5,
+    ): Response {
         $attempt = 0;
         $sleepSeconds = 0;
 
@@ -104,7 +223,7 @@ final class ExternalHtmlClient
             }
 
             $response = Http::connectTimeout(3)
-                ->timeout(20)
+                ->timeout($timeoutSeconds)
                 ->withOptions([
                     'allow_redirects' => [
                         'max' => 10,
@@ -140,9 +259,58 @@ final class ExternalHtmlClient
         return max(1, min((int) $base, 30));
     }
 
-    private function throttle(string $url, ?string $siteKey, string $traceId): void
+    private function throttle(string $url, ?string $siteKey, string $traceId, ?string $rateLimitKeySuffix = null): void
     {
-        $defaultPerMinute = $this->globalHitsPerMinute();
+        if ($this->tryAcquireSiteRateLimit($url, $siteKey, $rateLimitKeySuffix)) {
+            return;
+        }
+
+        $key = $this->siteRateLimitKey($siteKey, $url, $rateLimitKeySuffix);
+        $perMinute = $this->siteRateLimitPerMinute($siteKey, $rateLimitKeySuffix === ':suggest');
+        $waitSeconds = max(1, (int) RateLimiter::availableIn($key));
+
+        Log::channel('external_api')->warning('external_rate_limited', [
+            'trace_id' => $traceId,
+            'site_key' => $siteKey,
+            'url' => $url,
+            'rate_limit_key' => $key,
+            'per_minute' => $perMinute,
+            'sleep_seconds' => $waitSeconds,
+            'updated_at' => now()->toISOString(),
+        ]);
+
+        sleep($waitSeconds);
+        RateLimiter::hit($key, 60);
+    }
+
+    private function tryAcquireSiteRateLimit(string $url, ?string $siteKey, ?string $rateLimitKeySuffix = null): bool
+    {
+        $key = $this->siteRateLimitKey($siteKey, $url, $rateLimitKeySuffix);
+        $perMinute = $this->siteRateLimitPerMinute($siteKey, $rateLimitKeySuffix === ':suggest');
+
+        if (RateLimiter::tooManyAttempts($key, $perMinute)) {
+            return false;
+        }
+
+        RateLimiter::hit($key, 60);
+
+        return true;
+    }
+
+    private function siteRateLimitKey(?string $siteKey, string $url, ?string $rateLimitKeySuffix = null): string
+    {
+        $suffix = $rateLimitKeySuffix ?? '';
+
+        if ($siteKey !== null && $siteKey !== '') {
+            return "price_research:site:{$siteKey}{$suffix}";
+        }
+
+        return $this->hostKeyForUrl($url).$suffix;
+    }
+
+    private function siteRateLimitPerMinute(?string $siteKey, bool $isSuggest): int
+    {
+        $defaultPerMinute = $isSuggest ? 30 : $this->globalHitsPerMinute();
         $override = null;
         if ($siteKey !== null && $siteKey !== '') {
             $v = config('price_research.rate_limit.per_site_overrides.'.$siteKey);
@@ -151,30 +319,11 @@ final class ExternalHtmlClient
             }
         }
         $perMinute = max(1, $override ?? $defaultPerMinute);
-        $decaySeconds = 60;
-
-        $key = $siteKey !== null && $siteKey !== ''
-            ? "price_research:site:{$siteKey}"
-            : $this->hostKeyForUrl($url);
-
-        if (RateLimiter::tooManyAttempts($key, $perMinute)) {
-            $waitSeconds = max(1, (int) RateLimiter::availableIn($key));
-
-            Log::channel('external_api')->warning('external_rate_limited', [
-                'trace_id' => $traceId,
-                'site_key' => $siteKey,
-                'url' => $url,
-                'rate_limit_key' => $key,
-                'per_minute' => $perMinute,
-                'sleep_seconds' => $waitSeconds,
-                'updated_at' => now()->toISOString(),
-            ]);
-
-            // Throttle by waiting until the limiter window resets for this site.
-            sleep($waitSeconds);
+        if ($isSuggest) {
+            $perMinute = max($perMinute, 30);
         }
 
-        RateLimiter::hit($key, $decaySeconds);
+        return $perMinute;
     }
 
     private function globalHitsPerMinute(): int

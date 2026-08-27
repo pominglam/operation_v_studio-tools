@@ -73,6 +73,7 @@ final class PurchaseOrderApplyInventoryCheckService
         $n = 0;
         foreach ($items as $item) {
             $item->qty_received = null;
+            $item->qty_damaged = 0;
             $this->purchaseOrders->saveItem($item);
             $n++;
         }

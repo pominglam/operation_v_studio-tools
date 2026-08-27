@@ -19,13 +19,37 @@ Tabs update the Vue Router **`hash`** so URLs are shareable and survive refresh:
 
 ---
 
+## Canonical taxonomy review (`/products/taxonomy`)
+
+`ProductTaxonomyReviewPage.vue` is the operator queue for additive canonical taxonomy:
+**department, manufacturer, franchise/IP, product line, sub-line, grade, series/title, scale**, plus **Tools & Supplies shelf** (`workshop_shelf`), **filter facets** (`workshop_facets` JSON), and **model kit accessory kind** (`accessory_kind` when department is `accessories`).
+
+- Summary cards show the latest completed research run.
+- Filters combine status, SKU/name, every canonical field, a selected missing field, confidence threshold, archive state, and **differences only**.
+- The queue is a **full-width review grid**: one row per product, with SKU, title, status, confidence, and every canonical field as columns. Changed proposals are highlighted and show the previous value as **was**.
+- **Show evidence** expands the selected row with source URLs and confidence. **Approve** applies an unchanged proposal; **Edit** records an override and operator notes.
+- **Bulk update** applies operator overrides to the checked rows. Select at least one proposed row, choose fields, then **Apply override**. Test SKUs are skipped.
+- **Approve high-confidence** confirms, then applies matching proposed rows with confidence ≥ 90. Test SKUs and model kits without a manufacturer are skipped.
+- **Export confirmation list** downloads the current filter set as CSV.
+- **Research all products** queues a new all-record run. T&S shelf/facets derive from storefront classifier rules, persist on the ERP product, and push as **`ovs_taxonomy` metafields only** until mega-menu cutover (live `ts:*` tags and nav unchanged).
+- **`php artisan products:taxonomy-reclassify`** re-opens **verified** rows when updated rules disagree with applied product values (default patterns: keychain, figures, dspiae-mp).
+
+APIs: `GET /api/v1/products/taxonomy/verifications`, `GET /api/v1/products/taxonomy/filter-options`,
+`GET /api/v1/products/taxonomy/summary`,
+`PATCH /api/v1/products/taxonomy/verifications/{id}/approve`,
+`POST /api/v1/products/taxonomy/verifications/bulk-approve`,
+`GET /api/v1/products/taxonomy/export`, and
+`POST /api/v1/products/taxonomy/research`.
+
+---
+
 ## Tab: Products (main grid)
 
 ### Global actions
 
 - **Reset filters** — clears search mode, typed filters, multi-selects; reloads (`data-testid=products-reset-filters-button`).
 - **Refresh** — re-fetches current page/filters without clearing them.
-- **Export filtered results** — downloads a UTF‑8 BOM catalog CSV of **all** products matching the active list filters across every page (`data-testid=products-export-filtered-button` → **`GET /api/v1/products/export/filtered`** with the same query params as the list).
+- **Export filtered results** — downloads a UTF‑8 BOM catalog CSV of **all** products matching the active list filters across every page (`data-testid=products-export-filtered-button` → **`GET /api/v1/products/export/filtered`** with the same query params as the list). The CSV retains legacy Main Type/Type and adds all eight canonical taxonomy columns.
 
 ### Search
 
@@ -34,8 +58,11 @@ Tabs update the Vue Router **`hash`** so URLs are shareable and survive refresh:
 
 ### Multi-select filters (from `GET /api/v1/products/filter-options`)
 
-- **Main type** — `products-filter-main-type`.
-- **Type** — `products-filter-type`.
+- **Department** — `products-filter-department` (`departments[]`).
+- **Manufacturer** — `products-filter-manufacturer` (`manufacturers[]`).
+- **Franchise** — `products-filter-franchise` (`franchises[]`).
+- **Product line** — `products-filter-product-line` (`product_lines[]`).
+- Legacy **Main type** / **Type** remain accepted on the API and inventory-report drill-down URLs, but are hidden from the Products grid.
 - **Vendor**
 - **PO** — filters catalog to SKUs appearing on chosen purchase orders (`purchaseOrderUuids` query param family). Dropdown rows are **two lines**: line 1 = vendor · item count · short PO id; line 2 = status + dates (`Received …`, or `Not arrived · ETA … · ordered …`, or `created …` for drafts). Search matches both lines.
 - Opening `/products?purchase_order_uuid={uuid}` (including the PO detail **View products in grid** shortcut) overrides the saved PO selection and loads the grid for that purchase order.
@@ -43,7 +70,7 @@ Tabs update the Vue Router **`hash`** so URLs are shareable and survive refresh:
 
 ### Add product
 
-`AddProductForm` posts **`POST /api/v1/products`** and is reused by the inventory-check resolve dialog. **Vendor** uses existing vendor options; **Main type** and **Type** are typed combo fields backed by `GET /api/v1/products/filter-options`, so operators can pick an existing taxonomy value or type a new one inline.
+`AddProductForm` posts **`POST /api/v1/products`** and is reused by the inventory-check resolve dialog. **Vendor** uses existing vendor options; **Department**, **Manufacturer**, **Franchise**, and **Product line** are typed combo fields backed by `GET /api/v1/products/filter-options`. Legacy `main_type` is still stored for storefront compatibility.
 
 ### Other filters
 
@@ -63,11 +90,11 @@ Tabs update the Vue Router **`hash`** so URLs are shareable and survive refresh:
 
 `ProductsTable` exposes sortable columns matching `ProductSortKey` (**SKU, barcode, description, taxonomies, landed cost, received date, selling price, totals, available, hold, demand, maintain, not_arrived, reorder**, …); toggling re-hits **`GET /api/v1/products`** with sort params.
 
-The taxonomy classification columns (**main type**, **type**, **grade**, **scale**, **series**) are hidden by default to keep the grid compact; **Show type/grade/scale** reveals them for sorting and inline edits.
+The taxonomy columns (**department**, **manufacturer**, **franchise**, **product line**, **grade**, **scale**, **series**) are visible by default. **Hide taxonomy** collapses them. Legacy main type/type stay off the grid.
 
 ### Row model (fields users see / edit)
 
-Key row fields (`ProductRow` type): SKU, barcode, description, handle, **main_type** / **type** / **grade** / **series** / **scale**, vendor, **archived**, **published_on_shopify**, **is_ready**, **latest_arrival**, **is_critical**, **is_discontinued**, **is_hazardous_shipment**, **shipment_method** (`air` | `sea` | null), **`latest_*_cost`**, **received_date**, selling price snapshot, PDP flags (**has_description**, **plamod_image_count**), **total_ordered**, **shopify_orders_count**, **available**, **hold**, **`sold_4w`**, **maintain**, **not_arrived**, **reorder**. **Total sold** renders ERP-derived sold units plus `({shopify_orders_count})`; clicking the count opens **`ProductDemandDetailDialog`** to the existing recent Shopify lines. Cancelled / voided Shopify orders are excluded. **Not arrived** sums PO line **qty ordered** until the PO has a **fully on shelves date** (`fully_on_shelves_date` is null), so received-but-not-shelved stock remains counted. The **Include draft POs** checkbox toggles `not_arrived_include_draft_orders` (draft = no ordered/shipped/received dates). **Reorder** uses the same not-arrived basis as the list request.
+Key row fields (`ProductRow` type): SKU, barcode, description, handle, **department** / **manufacturer** / **franchise** / **product_line** / **grade** / **series** / **scale**, vendor, **archived**, **published_on_shopify**, **is_ready**, **latest_arrival**, **is_critical**, **is_discontinued**, **is_hazardous_shipment**, **shipment_method** (`air` | `sea` | null), **`latest_*_cost`**, **received_date**, selling price snapshot, PDP flags (**has_description**, **plamod_image_count**), **total_ordered**, **shopify_orders_count**, **available**, **hold**, **`sold_4w`**, **maintain**, **not_arrived**, **reorder**. **Total sold** renders ERP-derived sold units plus `({shopify_orders_count})`; clicking the count opens **`ProductDemandDetailDialog`** to the existing recent Shopify lines. Cancelled / voided Shopify orders are excluded. **Not arrived** sums PO line **qty ordered** until the PO has a **fully on shelves date** (`fully_on_shelves_date` is null), so received-but-not-shelved stock remains counted. The **Include draft POs** checkbox toggles `not_arrived_include_draft_orders` (draft = no ordered/shipped/received dates). **Reorder** uses the same not-arrived basis as the list request.
 
 - **Sold 4 wk** — read-only rollup (units sold in rolling **28 days**: shopify + assumed); column header label **4 wk sold**; sort key **`demand`**; click opens **`ProductDemandDetailDialog`** → **`GET /api/v1/products/{id}/demand`** (`lines_page`, `lines_per_page` for recent lines; weekly rollups show **all weeks** in the 365-day window including zeros). Shopify order lines from **cancelled** orders (**`cancelled_at`** or **`VOIDED`** financial status) are excluded from rollups, the recent-lines list, and the total-sold order count.
 

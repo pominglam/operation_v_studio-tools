@@ -152,16 +152,17 @@ final class ToolFamilyProductResolver
             return 'handle';
         }
 
+        if ((in_array($sku, ['MS-23', 'MS-27'], true) || str_contains($description, 'needle'))
+            && ! str_contains($description, 'push knife')) {
+            return 'needle';
+        }
+
+        if ($sku === 'MS-27' && (str_contains($description, 'push knife') || str_contains($description, 'pen knife'))) {
+            return 'pusher';
+        }
+
         if (preg_match('/^MS-3[0-8]$/', $sku) === 1 || str_contains($description, 'pusher')) {
             return 'pusher';
-        }
-
-        if (in_array($sku, ['MS-27'], true) || str_contains($description, 'push knife')) {
-            return 'pusher';
-        }
-
-        if (in_array($sku, ['MS-23'], true) || str_contains($description, 'needle')) {
-            return 'needle';
         }
 
         return 'scriber';
@@ -191,7 +192,7 @@ final class ToolFamilyProductResolver
             'PT-MPS',
             'TZ-01',
             'GNK-01',
-            'PM-001',
+            'GH-E01',
         ], true);
     }
 
@@ -263,12 +264,18 @@ final class ToolFamilyProductResolver
 
     private function isScribingTool(Product $product, string $sku): bool
     {
-        if (in_array($sku, ['MS-03', 'MS-06', 'MS-27'], true)) {
+        $type = strtoupper(trim((string) ($product->type ?? '')));
+        $description = strtolower(trim((string) $product->description));
+
+        if (in_array($sku, ['MS-03', 'MS-06'], true)) {
             return false;
         }
 
-        $type = strtoupper(trim((string) ($product->type ?? '')));
-        $description = strtolower(trim((string) $product->description));
+        if ($sku === 'MS-27') {
+            return str_contains($description, 'needle')
+                || str_contains($description, 'scriber')
+                || str_contains($description, 'pusher');
+        }
 
         if ($type === 'SCRIBING') {
             return true;

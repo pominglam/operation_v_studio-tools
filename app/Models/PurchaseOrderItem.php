@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $qty_ordered
  * @property int|null $qty_shipped
  * @property int|null $qty_received
+ * @property int $qty_damaged
  */
 final class PurchaseOrderItem extends Model
 {
@@ -37,6 +38,7 @@ final class PurchaseOrderItem extends Model
         'qty_ordered',
         'qty_shipped',
         'qty_received',
+        'qty_damaged',
     ];
 
     /** @var array<string, string> */
@@ -46,6 +48,7 @@ final class PurchaseOrderItem extends Model
         'qty_ordered' => 'integer',
         'qty_shipped' => 'integer',
         'qty_received' => 'integer',
+        'qty_damaged' => 'integer',
     ];
 
     /** @return BelongsTo<PurchaseOrder, self> */

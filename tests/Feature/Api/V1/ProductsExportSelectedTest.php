@@ -298,6 +298,11 @@ it('exports selected products as restock PO CSV in CAD', function (): void {
 
 it('exports selected products as restock PO CSV in HKD with FX conversion', function (): void {
     Http::fake([
+        'https://www.google.com/finance/quote/CAD-HKD' => Http::response(
+            '"CAD / HKD",3,null,[1,2,3,4,5,2],null,8',
+            200,
+            ['Content-Type' => 'text/html'],
+        ),
         'https://api.frankfurter.app/latest*' => Http::response([
             'rates' => ['HKD' => 8.0],
         ], 200),

@@ -61,8 +61,10 @@ Employees also pass through API allow-lists enforced in `ExternalAccessPasswordM
 | `/import`                       | Redirect → `/products#hash#import`                                      | Admin    |
 | `/employee/inventory-count`     | Employee inventory scanning session UI                                  | Employee |
 | `/products`                     | Product catalog workflows (imports/exports/sync/PDP drawer…)            | Admin    |
+| `/products/taxonomy`            | Canonical taxonomy research and verification queue                      | Admin    |
 | `/purchase-orders`              | PO list                                                                 | Admin    |
-| `/purchase-orders/:id`          | PO detail                                                               | Admin    |
+| `/purchase-orders/:id`          | PO detail (classic, default)                                            | Admin    |
+| `/purchase-orders/:id/beta`     | PO detail beta workspace (opt-in)                                       | Admin    |
 | `/inventory-check`              | Inventory check sessions list / import UX                               | Admin    |
 | `/inventory-check/:id`          | Session detail                                                          | Admin    |
 | `/price-research`               | Competitor quotes table                                                 | Admin    |
@@ -136,6 +138,23 @@ Below, **verbs** reflect Laravel router methods. **`{id}` on products** uses **U
 | GET    | `/products/filter-options` | Facets for filters (types, vendors, etc.).                                                            |
 
 `GET /products` exposes computed **`not_arrived`** and **`reorder`** fields and accepts `not_arrived`, `not_arrived_min`, `not_arrived_include_draft_orders`, and `sort_by=not_arrived`. `ProductNotArrivedQtyService` / `ProductInboundOpenPoQtySql` define **Not arrived** as the sum of positive PO-line `qty_ordered` until the parent PO has `fully_on_shelves_date`; received-but-not-shelved quantities remain included. Products/report/replenishment defaults include draft POs, while PO-detail metrics and PLAMOD restock exclude drafts.
+
+### Products — canonical taxonomy verification
+
+| Method | Path                                            | Purpose                                                                                                                                     |
+| ------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/products/taxonomy/verifications`              | Latest completed-run review queue; combines status/search, canonical field arrays, confidence, archive state, and differences-only filters. |
+| GET    | `/products/taxonomy/filter-options`             | Distinct proposed canonical values from the latest completed research run.                                                                  |
+| GET    | `/products/taxonomy/summary`                    | Latest completed-run totals by proposal/verification state and low confidence.                                                              |
+| PATCH  | `/products/taxonomy/verifications/{id}/approve` | Approve proposed values or save an operator override transactionally.                                                                       |
+| POST   | `/products/taxonomy/verifications/bulk-approve` | Confirm, then apply matching high-confidence proposals. Skips test SKUs and kits without a manufacturer.                                    |
+| POST   | `/products/taxonomy/verifications/bulk-update`  | Confirm, then override selected proposed rows with operator-supplied canonical values. Skips test SKUs.                                     |
+| GET    | `/products/taxonomy/export`                     | Confirmation CSV of the current review filter set.                                                                                          |
+| POST   | `/products/taxonomy/research`                   | Queue all-record canonical taxonomy research.                                                                                               |
+| GET    | `/products/taxonomy/research/{id}`              | Research-run progress and counts.                                                                                                           |
+
+Canonical fields are additive to legacy `main_type`, `type`, and `brand`. Existing Shopify tags,
+collections, and navigation remain on the legacy compatibility path until an explicitly approved cutover.
 
 ### Products — barcode, availability, editorial flags
 
@@ -268,18 +287,18 @@ Two **different orchestrations** deliberately exist:
 
 ### Purchase orders
 
-| Method | Path                                         | Purpose                                                                                                                                                                                                                                                                                                                         |
-| ------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/purchase-orders/import/preview`            | Parses upload without DB write; returns HKD/CAD line preview for Dspiae/Stedi/Other/multi PM broker invoices (`PurchaseOrderImportService::preview`).                                                                                                                                                                           |
-| POST   | `/purchase-orders/import`                    | Parses vendor-specific PDF/HTML/CSV/XLSX blobs into PO + lines (`PurchaseOrderImportService`—heavy edge-case coverage in `tests/Feature/Api/V1/PurchaseOrder*`). Supports append/re-import behaviors per tests.                                                                                                                 |
-| POST   | `/purchase-orders/combined-payments/preview` | Validates two or more same-currency foreign POs and previews one CAD payment allocated across their vendor product totals and, optionally, vendor freight totals. Accepts optional combined `product_paid_cad` + `shipping_paid_cad` pools or exact per-PO CAD `allocations[]`; all amounts must reconcile to `total_paid_cad`. |
-| POST   | `/purchase-orders/combined-payments`         | Persists the combined-payment header and per-PO snapshots, updates each PO's suggested or exact CAD product/shipping allocation, and converts line CAD unit costs using each PO's product FX without changing original vendor-currency values.                                                                                  |
-| GET    | `/purchase-orders`                           | Indexed list filters/sorts (**vendor**, arrival-derived fields tested).                                                                                                                                                                                                                                                         |
-| GET    | `/purchase-orders/filter-options`            | Dropdown facets.                                                                                                                                                                                                                                                                                                                |
+| Method | Path                                         | Purpose                                                                                                                                                                                                                                                                                                                                                             |
+| ------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/purchase-orders/import/preview`            | Parses upload without DB write; returns HKD/CAD line preview for Dspiae/Stedi/Other/multi PM broker invoices (`PurchaseOrderImportService::preview`).                                                                                                                                                                                                               |
+| POST   | `/purchase-orders/import`                    | Parses vendor-specific PDF/HTML/CSV/XLSX blobs into PO + lines (`PurchaseOrderImportService`—heavy edge-case coverage in `tests/Feature/Api/V1/PurchaseOrder*`). Supports append/re-import behaviors per tests.                                                                                                                                                     |
+| POST   | `/purchase-orders/combined-payments/preview` | Validates two or more same-currency foreign POs and previews one CAD payment allocated across their vendor product totals and, optionally, vendor freight totals. Accepts optional combined `product_paid_cad` + `shipping_paid_cad` pools or exact per-PO CAD `allocations[]`; all amounts must reconcile to `total_paid_cad`.                                     |
+| POST   | `/purchase-orders/combined-payments`         | Persists the combined-payment header and per-PO snapshots, updates each PO's suggested or exact CAD product/shipping allocation, and converts line CAD unit costs using each PO's product FX without changing original vendor-currency values.                                                                                                                      |
+| GET    | `/purchase-orders`                           | Indexed list. Filters: `vendors[]`, `statuses[]`. Sort: `sort_by` (`id`, `status`, `shipment`, `created`, `ordered`, `estimated_arrival`, `received`, `on_shelves`, `vendor`, `items`, `product_total`, `shipping_total`, `surcharge_total`, `total`, plus internal `filter`) and `sort_dir` (`asc`\|`desc`). Default `ordered desc`.                               |
+| GET    | `/purchase-orders/filter-options`            | Dropdown facets.                                                                                                                                                                                                                                                                                                                                                    |
 | POST   | `/shipment-tracking/resolutions`             | Bulk status/dispatch endpoint for credential-free shipment tracking. Normalizes and caches one row per tracking number, queues `ResolveShipmentTrackingJob` on the isolated `shipment_tracking` worker without waiting for public providers, and returns `queued`, `resolving`, `resolved`, `not_found`, or `failed` plus the verified provider URL when available. |
-| GET    | `/purchase-orders/{id}`                      | Detailed PO projection including FX-derived CAD unit economics where imported (`PurchaseOrderResource`).                                                                                                                                                                                                                        |
-| PATCH  | `/purchase-orders/{id}`                      | Header updates (dates, totals, **`shipment_method`** (`air` \| `sea` \| null), **`shipment_tracking_numbers`** array (up to 40 strings, max 255 each), checklist container, **`is_done`**, notes…).                                                                                                                             |
-| DELETE | `/purchase-orders/{id}`                      | Controlled delete with referential safeguards (`PurchaseOrderDeleteService`).                                                                                                                                                                                                                                                   |
+| GET    | `/purchase-orders/{id}`                      | Detailed PO projection including FX-derived CAD unit economics where imported (`PurchaseOrderResource`).                                                                                                                                                                                                                                                            |
+| PATCH  | `/purchase-orders/{id}`                      | Header updates (dates, totals, **`shipment_method`** (`air` \| `sea` \| null), **`shipment_tracking_numbers`** array (up to 40 strings, max 255 each), checklist container, **`is_done`**, notes…).                                                                                                                                                                 |
+| DELETE | `/purchase-orders/{id}`                      | Controlled delete with referential safeguards (`PurchaseOrderDeleteService`).                                                                                                                                                                                                                                                                                       |
 
 | Draft workflow | Purpose |
 | -------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -289,14 +308,14 @@ Two **different orchestrations** deliberately exist:
 
 | Line updates | Purpose |
 | ------------ | ----------------------------- | -------------------------------------------------------------------------------------------- |
-| PATCH | `/purchase-orders/{id}/items` | Bulk update selected line ids (qty ordered/received/unit cost fields—see bulk request). |
+| PATCH | `/purchase-orders/{id}/items` | Bulk update selected line ids, including the confirmed receiving exception that copies **`qty_shipped` → `qty_received`** for selected/all PO lines (see bulk request). |
 | POST | `/purchase-orders/{id}/water-decals/preview` | Preview promoting selected PO lines to water decals (`item_ids`, optional `proposed[]` SKU overrides). |
 | POST | `/purchase-orders/{id}/water-decals/apply` | Apply promote/merge rows from preview (`rows[]` with SKU, description, vendor, type, `confirm_merge`). |
-| PATCH | `/purchase-order-items/{id}` | Numeric line id PATCH for granular edits (**validation** avoids inconsistent states tested). |
+| PATCH | `/purchase-order-items/{id}` | Numeric line id PATCH for granular edits, including **`qty_damaged`**; damaged cannot exceed received and receipt quantities are locked when PO-linked inventory lots exist. |
 
 | Applicators | Behavior summary |
 | ----------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST | `/purchase-orders/{id}/apply-received-to-available` | Requires **`qty_received > 0` on every line**; sums per distinct **`product_id`**, increments **`products.available_qty`** transactional (`PurchaseOrderApplyReceivedToAvailableService`). |
+| POST | `/purchase-orders/{id}/apply-received-to-available` | Requires **`qty_received > 0` on every line** and **`qty_damaged <= qty_received`**; sums **`max(0, qty_received - qty_damaged)`** per distinct **`product_id`**, then increments **`products.available_qty`** transactionally (`PurchaseOrderApplyReceivedToAvailableService`). |
 | POST | `/purchase-orders/{id}/apply-inventory-check` | **Destructive-ish reset**: deletes inventory movements/lots linked to PO line ids, clears **`qty_received`**, aggregates inventory-check rows by SKU, overwrites **`qty_received`**, then **`ProductLatestCostCacheService::recomputeForSkus`** for affected SKU set (`PurchaseOrderApplyInventoryCheckService`). Returns warnings like SKUs appearing on check lines but not PO. |
 
 | Checklist store | Meaning |
@@ -336,10 +355,14 @@ Two **different orchestrations** deliberately exist:
 
 ### Maintenance APIs
 
-| Method | Path                 | Purpose                                            |
-| ------ | -------------------- | -------------------------------------------------- |
-| GET    | `/maintenance/notes` | Freeform maintenance bulletin text.                |
-| PUT    | `/maintenance/notes` | Upserts maintenance note markdown/plain text blob. |
+| Method | Path                                                       | Purpose                                                                                                              |
+| ------ | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/maintenance/notes`                                       | Freeform maintenance bulletin text.                                                                                  |
+| PUT    | `/maintenance/notes`                                       | Upserts maintenance note markdown/plain text blob.                                                                   |
+| GET    | `/maintenance/custom-asia-order-customer-message-template` | Custom Asia order DM template (`maintenance_notes` key `custom_asia_customer_message`).                              |
+| PUT    | `/maintenance/custom-asia-order-customer-message-template` | Save template `{ body }` or reset `{ reset: true }`. Placeholders: `{product_name}`, `{price}`, `{deposit_percent}`. |
+| GET    | `/maintenance/custom-asia-order-pricing-caps` | Custom Asia order pricing caps (`maintenance_notes` key `custom_asia_pricing_caps`). Defaults: $50 merchandiser commission, $150 OPV margin. |
+| PUT    | `/maintenance/custom-asia-order-pricing-caps` | Save caps `{ merchandiser_commission_cap_cad, opv_margin_cap_cad }` or reset `{ reset: true }`. |
 
 | Database backups (`docs/requirements/maintenance-db-backups.md`) | Purpose |
 | ---------------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -412,6 +435,25 @@ Two **different orchestrations** deliberately exist:
 | ------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | GET    | `/tcg/events`         | Cached JSON feed for UI consumption.                                                                                                 |
 | POST   | `/tcg/events/refresh` | Hits Bandai TCG Plus HTTP client (`HttpBandaiTcgPlusApi`) and refreshes storage (see controller + refresh service tests if present). |
+
+### Custom Asia orders (admin only)
+
+| Method           | Path                                                     | Notes                                                                                                  |
+| ---------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| GET              | `/custom-asia-orders/filter-options`                     | Media, currency, quote/pricing/lifecycle dropdowns.                                                               |
+| GET              | `/custom-asia-orders/product-name-suggestions`           | Fast kit-name autocomplete (`q`) — Gundam Hangar API + Hobby Sense/Argama Shopify suggest.                         |
+| GET              | `/custom-asia-orders`                                    | Paginated list (`search`, `contact_media[]`, `quote_status`, `pricing_status`, `lifecycle_status`, `sort_by`, `sort_dir`; default active). |
+| POST             | `/custom-asia-orders`                                    | Create customer request.                                                                               |
+| GET/PATCH/DELETE | `/custom-asia-orders/{uuid}`                             | Show, update, delete.                                                                                  |
+| POST             | `/custom-asia-orders/{uuid}/competitor-prices/refresh`   | Queue async parallel competitor crawl (`scope`: `fast` \| `full`); **202**; `competitor_prices_refresh_status` on order; job crawls sites concurrently via `Concurrency::run`.                         |
+| POST             | `/custom-asia-orders/{uuid}/reject`                        | Soft reject (`rejected_at`).                                                                           |
+| POST             | `/custom-asia-orders/{uuid}/revive`                        | Clear `rejected_at`.                                                                                   |
+| POST             | `/custom-asia-orders/{uuid}/customer-visual`             | Multipart customer image.                                                                              |
+| POST             | `/custom-asia-orders/{uuid}/product-visual`              | Multipart product image.                                                                               |
+| GET              | `/custom-asia-orders/{uuid}/visuals/{customer\|product}` | Inline image view.                                                                                     |
+| DELETE           | `/custom-asia-orders/{uuid}/visuals/{customer\|product}` | Remove uploaded image; clears DB columns and deletes file from disk.                                   |
+
+See [screens/custom-asia-orders.md](../screens/custom-asia-orders.md).
 
 ### Plamod preorders (`app/Services/Plamod`)
 

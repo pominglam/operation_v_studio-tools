@@ -131,6 +131,12 @@ final class PurchaseOrderWorkflowPrepareInventoryService
                     'reason' => 'missing_or_zero_qty_received',
                 ];
             }
+            if ((int) ($item->qty_damaged ?? 0) > (int) ($qtyReceived ?? 0)) {
+                $issues[] = [
+                    'sku' => $sku !== '' ? $sku : '(unknown)',
+                    'reason' => 'qty_damaged_exceeds_received',
+                ];
+            }
         }
 
         if ($issues !== []) {

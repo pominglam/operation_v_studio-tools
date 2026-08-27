@@ -14,6 +14,9 @@ function isActive(name: string): boolean {
     if (name === 'purchase-orders') {
         return route.path.startsWith('/purchase-orders');
     }
+    if (name === 'custom-asia-orders') {
+        return route.path.startsWith('/custom-orders/asia');
+    }
     if (name === 'reports') {
         return route.path.startsWith('/reports');
     }
@@ -70,6 +73,18 @@ function isActive(name: string): boolean {
                 </RouterLink>
                 <RouterLink
                     v-if="!isEmployee"
+                    to="/products/taxonomy"
+                    class="rounded-md px-3 py-1.5 transition"
+                    :class="
+                        isActive('product-taxonomy')
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-100'
+                    "
+                >
+                    Taxonomy
+                </RouterLink>
+                <RouterLink
+                    v-if="!isEmployee"
                     to="/inventory-check"
                     class="rounded-md px-3 py-1.5 transition"
                     :class="
@@ -91,6 +106,18 @@ function isActive(name: string): boolean {
                     "
                 >
                     Purchase Orders
+                </RouterLink>
+                <RouterLink
+                    v-if="!isEmployee"
+                    to="/custom-orders/asia"
+                    class="rounded-md px-3 py-1.5 transition"
+                    :class="
+                        isActive('custom-asia-orders')
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-100'
+                    "
+                >
+                    Custom Orders
                 </RouterLink>
                 <RouterLink
                     v-if="!isEmployee"
