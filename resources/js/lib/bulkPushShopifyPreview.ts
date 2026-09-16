@@ -29,6 +29,7 @@ export type BulkPushShopifyPreviewRow = {
     selling_price: string | null;
     has_selling_price: boolean;
     published_on_shopify: boolean;
+    store_preorder_status?: 'open' | 'closed' | null;
     push_action: 'create' | 'update';
     option_independent_skip: BulkPushShopifySkipReason;
     push_eligible: boolean;

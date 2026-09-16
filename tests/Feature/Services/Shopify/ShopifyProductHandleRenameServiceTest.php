@@ -71,7 +71,7 @@ it('renames handle in ERP and Shopify and refreshes mirror', function (): void {
                 );
             }
 
-            if (str_contains($graphql, 'inventoryItem(id:')) {
+            if (str_contains($graphql, 'InventoryItemsByIds') || str_contains($graphql, 'inventoryItem(id:')) {
                 return FakeShopifyAdminGraphQlClient::wrapInventoryItem(
                     'gid://shopify/InventoryItem/9503',
                     ['pageInfo' => ['hasNextPage' => false, 'endCursor' => null], 'nodes' => []],

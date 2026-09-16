@@ -9,7 +9,13 @@
 Monthly table of **eligible Shopify orders** grouped by **calendar day** (America/Toronto) and attribution bucket:
 
 - Configured POS staff (`config/shopify.php` → `staff_order_report.staff`, keyed by Shopify REST `user_id`)
-- **Quick Sale**, **Online Store**, **Shop**, **POS (other)**
+- **Special order**, **Cash sale**, **NT sales**, **Quick Sale**, **Online Store**, **Shop**, **POS (other)**
+
+**Special order** is exclusive: Shopify draft-order invoices (`source_name=shopify_draft_order`) and orders tagged `special-order` / `special-deposit` / `special-balance`.
+
+**Cash sale** is exclusive (after special order): Shopify **Cash** payment gateway, or tag `cash`. These are real Shopify cash tenders, not ERP NT checkout.
+
+**NT sales** is exclusive (after special order): tags `nt` / `nt-sale` / `nt_sales` / `nt-sales` only. An NT tag wins over a Cash gateway on the same order. ERP NT checkout is not live yet; when it is, those sales should join this column.
 
 One table with a **Show** dropdown to switch between:
 
@@ -18,7 +24,7 @@ One table with a **Show** dropdown to switch between:
 
 Cancelled and voided orders are excluded (same rules as demand rollups).
 
-Data comes from the **`shopify_orders`** ERP mirror (same rows kept fresh by incremental order sync), not a live Shopify pull when the page loads.
+Data comes from the **`shopify_orders`** ERP mirror (same rows kept fresh by incremental order sync), not a live Shopify pull when the page loads. Individual orders are on **[Orders](shopify-orders.md)** (`/orders`).
 
 ## User actions
 
@@ -47,7 +53,7 @@ Data comes from the **`shopify_orders`** ERP mirror (same rows kept fresh by inc
 | --- | --- |
 | `ShopifyStaffOrdersMonthlyReportService` | Aggregates **`shopify_orders`** mirror rows for one calendar month. |
 | `ShopifyOrderStaffAttributionUpsertService` | Persists `source_name`, `channel_name`, and POS `pos_user_id` during order sync upserts. |
-| `ShopifyOrderStaffBucketClassifier` | Maps source/channel/`pos_user_id` → report column key. |
+| `ShopifyOrderStaffBucketClassifier` | Maps source/channel/`pos_user_id`/tags/payment gateways → report column key. Special order, Cash sale, and NT sales take priority over staff/channel. Changing staff or `extra_buckets` updates the report, Orders, and store events together. |
 | `ShopifyOrderPosUserIdFetcher` | REST fetch of `user_id` for POS orders during sync/backfill only. |
 | `ShopifyOrderDemandEligibility` | Skips cancelled / voided orders. |
 
@@ -56,6 +62,7 @@ Data comes from the **`shopify_orders`** ERP mirror (same rows kept fresh by inc
 - `source_name` — Shopify `sourceName` (e.g. `pos`, `web`, `quick_sale`)
 - `channel_name` — Shopify channel label when present
 - `pos_user_id` — Shopify REST `user_id` for POS orders (staff attribution)
+- `payment_gateway_names` — Shopify `paymentGatewayNames` (Cash → **Cash sale**)
 - `subtotal_shop_amount` — order subtotal before tax in shop currency (`currentSubtotalPriceSet.shopMoney.amount`)
 
 Populated on **incremental/historical order sync** and webhook upserts. Existing rows before deploy need a one-time backfill (also refreshes subtotals):
@@ -70,4 +77,4 @@ php artisan shopify:orders-backfill-staff-attribution 2026-07
 
 - `timezone` — report day boundaries (default `America/Toronto`)
 - `staff` — Shopify `user_id` → `{ key, label }`
-- `extra_buckets` — non-staff columns (Quick Sale, Online Store, etc.)
+- `extra_buckets` — non-staff columns after staff: Special order, Cash sale, NT sales, Quick Sale, Online Store, Shop, POS (other)

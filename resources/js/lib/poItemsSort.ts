@@ -28,6 +28,7 @@ export type PoItemSortRow = {
     vendor: string;
     product_vendor?: string | null;
     unit_cost: string | null;
+    shipping_per_unit?: string | null;
     available: number | null;
     maintain: number | null;
     not_arrived: number | null;
@@ -64,6 +65,18 @@ function compareMoney(a: string | null, b: string | null): number {
     return compareNullableNumber(parseMoney(a), parseMoney(b));
 }
 
+function shipCentsForRow(
+    row: PoItemSortRow,
+    fallbackShipPerUnitCents: number | null,
+): number | null {
+    const line = parseMoney(row.shipping_per_unit ?? null);
+    if (line !== null) {
+        return Math.round(line * 100);
+    }
+
+    return fallbackShipPerUnitCents;
+}
+
 function landedUnitCostCents(
     unitCost: string | null,
     shipPerUnitCents: number | null,
@@ -96,13 +109,16 @@ export function comparePoItems(
         case 'unit_cost':
             return compareMoney(a.unit_cost, b.unit_cost);
         case 'ship_per_unit':
-            return compareNullableNumber(shipPerUnitCents, shipPerUnitCents);
+            return compareNullableNumber(
+                shipCentsForRow(a, shipPerUnitCents),
+                shipCentsForRow(b, shipPerUnitCents),
+            );
         case 'surcharge_per_unit':
             return compareNullableNumber(surchargePerUnitCents, surchargePerUnitCents);
         case 'landed':
             return compareNullableNumber(
-                landedUnitCostCents(a.unit_cost, shipPerUnitCents, surchargePerUnitCents),
-                landedUnitCostCents(b.unit_cost, shipPerUnitCents, surchargePerUnitCents),
+                landedUnitCostCents(a.unit_cost, shipCentsForRow(a, shipPerUnitCents), surchargePerUnitCents),
+                landedUnitCostCents(b.unit_cost, shipCentsForRow(b, shipPerUnitCents), surchargePerUnitCents),
             );
         case 'available':
             return compareNullableNumber(a.available, b.available);

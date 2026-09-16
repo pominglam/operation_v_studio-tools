@@ -9,6 +9,7 @@ use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Support\PurchaseOrders\PmBrokerVendor;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -26,6 +27,7 @@ final class PurchaseOrderDraftService
      * @param  array<int, string>  $productUuids
      * @return array{
      *   purchase_order_uuid:string,
+     *   vendor:string,
      *   added:int,
      *   skipped_existing:int,
      *   skipped_vendor_mismatch:int
@@ -38,10 +40,7 @@ final class PurchaseOrderDraftService
             throw new RuntimeException('No products found for the provided ids.');
         }
 
-        $vendor = $this->resolveSingleVendor($list);
-        if ($vendor === null) {
-            throw new RuntimeException('Selected products must all share the same non-empty vendor.');
-        }
+        $vendor = $this->resolveDraftHeaderVendor($list);
 
         $po = new PurchaseOrder;
         $po->uuid = (string) Str::uuid();
@@ -59,7 +58,8 @@ final class PurchaseOrderDraftService
         $po->fx_rate_to_cad = null;
         $po->notes = null;
         $po->is_done = false;
-        $po->shipment_method = $this->shipmentMethods->inferFromProducts($list);
+        $po->shipment_method = $this->shipmentMethods->defaultForVendor($vendor)
+            ?? $this->shipmentMethods->inferFromProducts($list);
 
         $po = $this->purchaseOrders->create($po);
         $result = $this->addProductsToPurchaseOrder($po, $list);
@@ -70,6 +70,7 @@ final class PurchaseOrderDraftService
 
         return [
             'purchase_order_uuid' => $po->uuid,
+            'vendor' => $po->vendor,
             'added' => $result['added'],
             'skipped_existing' => $result['skipped_existing'],
             'skipped_vendor_mismatch' => $result['skipped_vendor_mismatch'],
@@ -168,7 +169,7 @@ final class PurchaseOrderDraftService
             }
 
             $productVendor = trim((string) ($product->vendor ?? ''));
-            if ($productVendor === '' || strcasecmp($productVendor, $po->vendor) !== 0) {
+            if (! $this->productMatchesPurchaseOrderVendor($po, $productVendor)) {
                 $skippedVendorMismatch++;
 
                 continue;
@@ -181,7 +182,7 @@ final class PurchaseOrderDraftService
             $item->purchase_order_id = $po->id;
             $item->product_id = $product->id;
             $item->sku = $product->sku;
-            $item->vendor = $po->vendor;
+            $item->vendor = $this->lineVendorForDraft($po, $productVendor);
             $item->unit_cost = $this->resolveDraftLineUnitCost($product);
             $item->qty_ordered = $qtyOrdered;
             $item->qty_shipped = null;
@@ -198,28 +199,50 @@ final class PurchaseOrderDraftService
         ];
     }
 
-    private function resolveSingleVendor(Collection $products): ?string
+    private function resolveDraftHeaderVendor(Collection $products): string
     {
-        $vendor = null;
+        /** @var array<string, string> $seen */
+        $seen = [];
+        $hadEmpty = false;
         foreach ($products as $product) {
             if (! $product instanceof Product) {
                 continue;
             }
             $next = trim((string) ($product->vendor ?? ''));
             if ($next === '') {
-                return null;
-            }
-            if ($vendor === null) {
-                $vendor = $next;
+                $hadEmpty = true;
 
                 continue;
             }
-            if (strcasecmp($vendor, $next) !== 0) {
-                return null;
+            $key = strtolower($next);
+            if (! isset($seen[$key])) {
+                $seen[$key] = $next;
             }
         }
 
-        return $vendor;
+        if (count($seen) === 1 && ! $hadEmpty) {
+            return array_values($seen)[0];
+        }
+
+        return 'Other/multi';
+    }
+
+    private function productMatchesPurchaseOrderVendor(PurchaseOrder $po, string $productVendor): bool
+    {
+        if (PmBrokerVendor::isOtherMulti((string) $po->vendor)) {
+            return true;
+        }
+
+        return $productVendor !== '' && strcasecmp($productVendor, (string) $po->vendor) === 0;
+    }
+
+    private function lineVendorForDraft(PurchaseOrder $po, string $productVendor): string
+    {
+        if (PmBrokerVendor::isOtherMulti((string) $po->vendor) && $productVendor !== '') {
+            return $productVendor;
+        }
+
+        return (string) $po->vendor;
     }
 
     private function resolveDraftLineUnitCost(Product $product): ?string

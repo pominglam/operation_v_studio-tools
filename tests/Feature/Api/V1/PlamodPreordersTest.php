@@ -51,8 +51,8 @@ it('lists preorders with is_new and unit selling price', function (): void {
     $this->getJson('/api/v1/preorders?per_page=50')
         ->assertOk()
         ->assertJsonFragment(['sku' => 'NEW-SKU', 'is_new' => true, 'unit_selling_price' => '15.99'])
-        ->assertJsonFragment(['sku' => 'OLD-SKU', 'is_new' => false, 'unit_selling_price' => '30.99'])
-        ->assertJsonFragment(['sku' => '0225768', 'quantity_preorder' => 2, 'unit_selling_price' => '54.99']);
+        ->assertJsonFragment(['sku' => 'OLD-SKU', 'is_new' => false, 'unit_selling_price' => '31.99'])
+        ->assertJsonFragment(['sku' => '0225768', 'quantity_preorder' => 2, 'unit_selling_price' => '57.99']);
 });
 
 it('filters new_only preorders', function (): void {
@@ -91,6 +91,8 @@ it('queues preorder sync job when scraper health is ready', function (): void {
                 'POST /download-zip',
                 'POST /export-preorders-csv',
                 'POST /export-manufacturer-preorders-csv',
+                'POST /export-manufacturer-preorder-merged',
+                'GET /preorder-export-progress',
                 'POST /list-manufacturer-preorders-filters',
                 'POST /search-retailer-preorders',
             ],
@@ -331,7 +333,7 @@ it('returns live phase results for pending lines only', function (): void {
         ->assertJsonPath('data.plamod_only.0.sku', '0225768')
         ->assertJsonPath('data.rows.0.sku', '0225768')
         ->assertJsonPath('data.rows.0.not_in_import', true)
-        ->assertJsonPath('data.rows.0.unit_selling_price', '54.99')
+        ->assertJsonPath('data.rows.0.unit_selling_price', '57.99')
         ->assertJsonPath('data.rows.0.quantity_preorder', 2)
         ->assertJsonPath('data.not_found', []);
 });

@@ -8,12 +8,14 @@ use App\DAL\Products\ProductSellingPriceRepository;
 use App\DTOs\Products\ProductSellingPriceUpsertContext;
 use App\Models\Product;
 use App\Models\PurchaseOrder;
-use App\Support\Pricing\CharmPricingCalculator;
+use App\Support\Pricing\OpvStandardCatalogPrice;
 use App\Support\PurchaseOrders\ProductLatestArrivedLandedUnitCostResolver;
 
 final class PurchaseOrderWorkflowSetPricesService
 {
     private const string LANDED_COST_MULTIPLIER = '1.5';
+
+    private const int MIN_SUGGESTED_PRICE_DIFF_CENTS = 100;
 
     public function __construct(
         private readonly PurchaseOrderProductScopeService $scope,
@@ -164,24 +166,20 @@ final class PurchaseOrderWorkflowSetPricesService
     }
 
     /**
-     * @return array<string, mixed>
-     */
-    /**
      * @param  array<int, string>  $landedByProductId
+     * @return array<string, mixed>
      */
     private function rowForProduct(Product $product, bool $isNewOnPo, array $landedByProductId): array
     {
         $landed = $this->landedCostForProduct($product, $landedByProductId);
         $current = $product->sellingPrice?->selling_price;
         $currentNormalized = $this->normalizeMoney($current);
-        $proposed = CharmPricingCalculator::applyHighMultiplierReduction(
-            CharmPricingCalculator::sellingPriceX99FromCost(
+        $proposedNormalized = $this->normalizeMoney(
+            OpvStandardCatalogPrice::fromCost(
                 $landed !== '' ? $landed : null,
                 self::LANDED_COST_MULTIPLIER,
             ),
-            $landed !== '' ? $landed : null,
         );
-        $proposedNormalized = $this->normalizeMoney($proposed);
 
         $base = [
             'product_id' => (int) $product->id,
@@ -196,23 +194,35 @@ final class PurchaseOrderWorkflowSetPricesService
             'proposed_multiplier' => $this->multiplierFromPriceAndCost($proposedNormalized, $landed !== '' ? $landed : null),
         ];
 
-        if ($proposedNormalized === null) {
-            return [...$base, 'category' => 'skipped_no_cost'];
+        return [...$base, ...$this->categoryForRow($proposedNormalized, $currentNormalized)];
+    }
+
+    /**
+     * @return array{category: string, keep_reason: string|null}
+     */
+    private function categoryForRow(?string $proposed, ?string $current): array
+    {
+        if ($proposed === null) {
+            return ['category' => 'skipped_no_cost', 'keep_reason' => null];
         }
 
-        if ($currentNormalized === null) {
-            return [...$base, 'category' => 'new'];
+        if ($current === null) {
+            return ['category' => 'new', 'keep_reason' => null];
         }
 
-        if ($currentNormalized === $proposedNormalized) {
-            return [...$base, 'category' => 'unchanged', 'keep_reason' => null];
+        if ($current === $proposed) {
+            return ['category' => 'unchanged', 'keep_reason' => null];
         }
 
-        if ($this->moneyLessThan($proposedNormalized, $currentNormalized)) {
-            return [...$base, 'category' => 'unchanged', 'keep_reason' => 'current_higher_than_formula'];
+        if ($this->moneyAbsDiffCents($proposed, $current) <= self::MIN_SUGGESTED_PRICE_DIFF_CENTS) {
+            return ['category' => 'unchanged', 'keep_reason' => 'diff_within_one_dollar'];
         }
 
-        return [...$base, 'category' => 'update', 'keep_reason' => null];
+        if ($this->moneyLessThan($proposed, $current)) {
+            return ['category' => 'unchanged', 'keep_reason' => 'current_higher_than_formula'];
+        }
+
+        return ['category' => 'update', 'keep_reason' => null];
     }
 
     /**
@@ -308,6 +318,11 @@ final class PurchaseOrderWorkflowSetPricesService
     private function moneyLessThan(string $left, string $right): bool
     {
         return (float) $left < (float) $right;
+    }
+
+    private function moneyAbsDiffCents(string $left, string $right): int
+    {
+        return abs((int) round((float) $left * 100) - (int) round((float) $right * 100));
     }
 
     private function multiplierFromPriceAndCost(?string $price, ?string $cost): ?string

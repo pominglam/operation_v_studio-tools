@@ -16,7 +16,7 @@ final class ExportPlamodPreorderHubCsvJob implements ShouldQueue
 {
     use Queueable;
 
-    public int $timeout = 600;
+    public int $timeout = 1500;
 
     public int $tries = 1;
 
@@ -48,9 +48,14 @@ final class ExportPlamodPreorderHubCsvJob implements ShouldQueue
         }
 
         $hubPath = (string) ($hubResult['export']['csv_storage_path'] ?? '');
+        $offersPath = (string) ($hubResult['export']['offers_storage_path'] ?? '');
         $logger->updateCounts($log, [
             'checkpoint_hub_csv_path' => $hubPath,
+            'checkpoint_offers_path' => $offersPath !== '' ? $offersPath : ($log->counts_json['checkpoint_offers_path'] ?? null),
             'hub_export_attempts' => $hubResult['attempts'] ?? 1,
+            'hub_new_preorders_count' => (int) ($hubResult['export']['new_preorders_count'] ?? 0),
+            'hub_offer_sheets_count' => (int) ($hubResult['export']['offer_sheets_count'] ?? 0),
+            'hub_category_filter' => $hubResult['export']['category_filter'] ?? 'Plastic Model Kits, Figures',
         ]);
     }
 }

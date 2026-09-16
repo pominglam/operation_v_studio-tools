@@ -20,9 +20,32 @@ final class PlamodPreordersIndexController extends Controller
         $search = isset($validated['search']) ? (string) $validated['search'] : null;
         $newOnly = isset($validated['new_only']) ? (bool) $validated['new_only'] : null;
 
-        $paginator = $query->paginate($perPage, $newOnly, $search);
+        $storeOffer = isset($validated['store_offer']) ? (string) $validated['store_offer'] : null;
+        $sort = isset($validated['sort']) ? (string) $validated['sort'] : null;
+        $sortDir = isset($validated['sort_dir']) ? (string) $validated['sort_dir'] : null;
+        $includeClosed = isset($validated['include_closed']) ? (bool) $validated['include_closed'] : false;
+        $futureReleasesOnly = isset($validated['future_releases_only'])
+            ? (bool) $validated['future_releases_only']
+            : false;
+        $interest = isset($validated['interest']) ? (string) $validated['interest'] : null;
+        /** @var array<int, string> $categories */
+        $categories = $validated['categories'] ?? [];
+
+        $paginator = $query->paginate(
+            $perPage,
+            $newOnly,
+            $search,
+            $storeOffer,
+            $sort,
+            $includeClosed,
+            $categories,
+            $sortDir,
+            $futureReleasesOnly,
+            $interest,
+        );
         $catalogSkus = $query->catalogSkus();
         $catalogSet = array_flip($catalogSkus);
+        $facets = $query->listCategoryFacets($newOnly, $storeOffer, $includeClosed, $futureReleasesOnly, $interest);
 
         $paginator->getCollection()->transform(function (PlamodPreorder $row) use ($catalogSet): PlamodPreorder {
             $row->setAttribute('_is_new', ! isset($catalogSet[trim((string) $row->sku)]));
@@ -32,7 +55,8 @@ final class PlamodPreordersIndexController extends Controller
 
         return PlamodPreorderResource::collection($paginator)->additional([
             'meta' => [
-                'categories' => $query->listCategories(),
+                'categories' => array_column($facets, 'category'),
+                'category_facets' => $facets,
             ],
         ])->response();
     }

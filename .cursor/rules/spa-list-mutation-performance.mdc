@@ -1,0 +1,28 @@
+---
+description: Patch list rows locally after mutations; busy states; page large grids
+alwaysApply: true
+---
+
+# SPA list mutation performance
+
+When a list/grid action changes one row (or a small set), **do not refetch the whole collection**.
+
+| Do | Do not |
+| --- | --- |
+| Apply the mutation **response** (or optimistic + rollback) to that row and recompute totals in the browser | `PUT`/`POST` then `GET` the entire list/proposal |
+| Split heavy reads (`section=existing\|new`) so mutating A does not rebuild B | Rebuild unrelated sections on every click |
+| Show a **per-row busy** state on Later / Dismiss / save until the call settles | Leave the control looking idle while a 200–500ms+ refetch runs |
+| **Page** large tables (default **50**). Select-all stays **all filtered rows** across pages unless the screen documents otherwise | Render 200+ rows with thumbnails on every keystroke |
+| Keep hide/status filters that only hide already-loaded rows **client-side** | Refetch the collection when Hide dismissed / Included toggles |
+
+```ts
+// ❌ BAD
+await api.put(`/decisions/${sku}`, body);
+await loadProposal();
+
+// ✅ GOOD
+const { data } = await api.put(`/decisions/${sku}`, body);
+proposal.value = applyDecision(proposal.value, data.data);
+```
+
+Reload the full (or section) payload after **settings**, **sync**, or anything that can change **many** rows or classification — not after a single-row decision.

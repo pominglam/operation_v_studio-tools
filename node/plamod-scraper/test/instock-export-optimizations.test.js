@@ -10,6 +10,8 @@ const {
   readManufacturerInstockFilterCache,
   writeManufacturerInstockFilterCache,
   instockSliceShouldRetryListingPrices,
+  instockChunkNeedsRetry,
+  manufacturerRowNeedsPdpEnrich,
 } = require('../src/plamod');
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'plamod-cache-test-'));
@@ -19,6 +21,20 @@ try {
   assert.equal(instockSliceShouldRetryListingPrices(3, 10), false);
   assert.equal(instockSliceShouldRetryListingPrices(5, 10), true);
   assert.equal(instockSliceShouldRetryListingPrices(8, 8), true);
+
+  assert.equal(instockChunkNeedsRetry({ error: 'Could not select manufacturer filter: BRAND/HGUC', skipped: true }), true);
+  assert.equal(instockChunkNeedsRetry({ expected: 176, listing_expected: 176, rows: 100 }), true);
+  assert.equal(instockChunkNeedsRetry({ expected: 45, listing_expected: 45, rows: 45 }), false);
+  assert.equal(instockChunkNeedsRetry({ expected: 176, listing_expected: 176, rows: 100, retried: true }), false);
+
+  assert.equal(
+    manufacturerRowNeedsPdpEnrich({ sku: 'TT40636', product_name: 'TT40636', price_stock: '17.39', image_url: '' }, 'In-Stock'),
+    true,
+  );
+  assert.equal(
+    manufacturerRowNeedsPdpEnrich({ sku: '5061613', product_name: 'RG Aile Strike', price_stock: '32.00', image_url: 'https://images.plamod.com/x.jpg' }, 'In-Stock'),
+    false,
+  );
 
   const cachePath = manufacturerInstockFilterCachePath(tmpRoot, '1');
   assert.match(cachePath, /instock_filter_cache[\\/]mfr-1\.json$/);

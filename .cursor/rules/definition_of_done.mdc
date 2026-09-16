@@ -1,22 +1,98 @@
 ---
-description: Definition of Done: features must fulfill purpose and be tested
+description: Definition of Done checklist — WORKING requires intent proof on real data, not just code/tests
 alwaysApply: true
 ---
 
 # Definition of Done (WORKING)
 
-A feature/task/bugfix is **WORKING** only when:
+A feature, task, or bugfix is **WORKING** only when **all** checklist items below pass. If any item is unchecked or blocked without disclosure, status is **not WORKING** — do not say **done**, **fixed**, **verified**, or **ready for review**.
 
-- The **actual purpose is fulfilled** (from the user’s perspective), and
-- It has been **tested in the same way the real user/system will use it**.
+Complements **`intent-and-data-verification.mdc`**, **`rigorous-qa-before-handoff.mdc`**, **`verify-ui-before-done.mdc`**, **`bug-check-before-return.mdc`**, and **`always-test-before-done.mdc`**.
 
-## External integrations
+## Definition of Done checklist
 
-If the purpose involves **external systems** (Shopify, webhooks, public downloads, etc.), testing must include an **external internet** check when relevant.
+**Agent must complete every item below before handoff.** Work through it internally; fix failures before saying done. The user does **not** need full proof tables in chat unless they ask or something failed/blocked.
 
-### Example: Shopify image downloads
+### 1. Purpose & intent
+
+- [ ] **User purpose fulfilled** — the change does what the user asked for, from their perspective (not only what the code author assumed).
+- [ ] **Intent Contract** — for each new/changed behavior, one line: *When [action] → expect [observable outcome on real data]* (see **`intent-and-data-verification.mdc`**). Write this during QA (notes or mental model); use it to drive checks.
+- [ ] **Every contract line verified** — each line checked on real data with recorded evidence (counts, SKU, field, URL). If any line fails, **fix and re-check** before handoff.
+
+### 2. Data correctness
+
+- [ ] **Purity** — all visible rows/items/fields match the contract (scanned more than the first row).
+- [ ] **Counts match** — UI totals, pill counts, pagination totals match actual results.
+- [ ] **Cross-layer spot-check** — for UI that reads API/DB, at least one sample row verified at the source layer.
+- [ ] **Column semantics** — money/status/date fields use the correct source (see **`data-column-discipline.mdc`** when costing or balances are involved).
+- [ ] **Sibling consistency** — controls that look or sit together behave the same way unless spec documents a difference.
+
+### 3. User-visible verification
+
+- [ ] **Real path tested** — browser for UI/storefront; same API/job/export path the user/system will use (not code review alone).
+- [ ] **Hard refresh / fresh assets** — after Vite build or theme push; bundle built when required (`npm run build` per **`project.mdc`**).
+- [ ] **Primary actions exercised** — save, submit, filter, sort, navigate, bulk, export, confirm flows — at least once on real or seeded data.
+- [ ] **Edge paths considered** — clear/deselect, empty state, error, or disabled state when applicable to the change.
+
+### 4. Automated & regression checks
+
+- [ ] **Targeted existing tests run** when relevant; results reported (see **`always-test-before-done.mdc`**).
+- [ ] **No unsolicited test files left behind** unless the user asked (see **`agent-test-cleanup.mdc`**).
+- [ ] **Lint/format/build** — run when the change touches those layers (local-CI parity per **`project.mdc`**).
+
+### 5. Bug-fix specific (when fixing a reported bug)
+
+- [ ] **Reproduced first** on the user’s path before the fix.
+- [ ] **Same control re-tested** after the fix with evidence on the failing case (see **`bug-check-before-return.mdc`**).
+
+### 6. External integrations (when applicable)
+
+- [ ] **External/internet check** when the feature depends on Shopify, webhooks, tunnels, CDN, or public URLs — not only localhost.
+- [ ] **Integration logs reviewed** for jobs/sync/scrapers — no silent partial failure (e.g. completed job with bad/skipped rows).
+
+### 7. Documentation & handoff hygiene
+
+- [ ] **Feature docs updated** when behavior, routes, or API contracts changed (`docs/features/**` per **`features-documentation-catalog.mdc`**).
+- [ ] **Gaps explicit in reply** — anything not verified must say **what** and **what unblocks it**; never imply quality that was not checked.
+
+## Forbidden “done” signals
+
+- Saying **done** when the checklist above was skipped or any contract line failed.
+- Code/tests green / “clicked and page updated” **without** outcome verification on real data.
+- “Should work after refresh” or “try again” instead of fixing or disclosing gaps.
+- **Skipping verification because the user prefers a short reply** — brevity is for the message, not for QA.
+
+## External integrations — examples
+
+### Shopify image downloads
 
 - Do not consider “image serving” done just because local URLs load.
 - Verify the image is reachable from the outside world (e.g. the Cloudflare Tunnel URL) and returns:
   - **HTTP 200**
   - **Correct `Content-Type`** (e.g. `image/jpeg`, `image/png`)
+
+## What to tell the user (concise handoff)
+
+**Do the full checklist internally. Reply briefly.**
+
+Default final reply — short **Verified** note (often 1–3 bullets or one sentence):
+
+- What was checked (URL/route or command)
+- Key outcome (e.g. “Rejected → 4 rows, all Rejected”)
+- Build/tests if relevant
+
+**Expand** (tables, step-by-step evidence) only when:
+
+- Something **failed**, is **blocked**, or handoff is **incomplete**
+- The user asks for proof / QA detail
+- The change is high-risk (money, auth, prod writes, destructive actions)
+
+**Never** omit verification work to keep the reply short. **Never** claim verified without having run the checks.
+
+Example (good):
+
+> **Verified:** `/special-orders` — Rejected filter shows 4 orders, all Rejected status. `npm run build` passed.
+
+Example (bad):
+
+> Done! Should work now.

@@ -161,6 +161,30 @@ query ProductsConnectivityPreview($first: Int!) {
 }
 GQL;
 
+    public const INVENTORY_ITEMS_BY_IDS = <<<'GQL'
+query InventoryItemsByIds($ids: [ID!]!, $levelsFirst: Int!) {
+  nodes(ids: $ids) {
+    ... on InventoryItem {
+      id
+      inventoryLevels(first: $levelsFirst) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          quantities(names: ["available"]) {
+            name
+            quantity
+          }
+          location {
+            id
+          }
+          updatedAt
+        }
+      }
+    }
+  }
+}
+GQL;
+
     public const INVENTORY_ITEM_LEVELS = <<<'GQL'
 query InventoryItemLevels($id: ID!, $first: Int!, $after: String) {
   inventoryItem(id: $id) {
@@ -191,10 +215,19 @@ query Orders($first: Int!, $after: String) {
       id
       legacyResourceId
       name
+      tags
       displayFinancialStatus
       displayFulfillmentStatus
       sourceName
+      paymentGatewayNames
       channelInformation { channelDefinition { channelName } }
+      email
+      phone
+      customer {
+        id
+        defaultEmailAddress { emailAddress }
+        defaultPhoneNumber { phoneNumber }
+      }
       cancelledAt
       currentSubtotalPriceSet { shopMoney { amount currencyCode } }
       createdAt
@@ -205,6 +238,8 @@ query Orders($first: Int!, $after: String) {
           id
           sku
           quantity
+          title
+          customAttributes { key value }
           variant { id sku }
         }
       }
@@ -221,10 +256,19 @@ query OrdersIncremental($first: Int!, $after: String, $query: String) {
       id
       legacyResourceId
       name
+      tags
       displayFinancialStatus
       displayFulfillmentStatus
       sourceName
+      paymentGatewayNames
       channelInformation { channelDefinition { channelName } }
+      email
+      phone
+      customer {
+        id
+        defaultEmailAddress { emailAddress }
+        defaultPhoneNumber { phoneNumber }
+      }
       cancelledAt
       currentSubtotalPriceSet { shopMoney { amount currencyCode } }
       createdAt
@@ -235,6 +279,8 @@ query OrdersIncremental($first: Int!, $after: String, $query: String) {
           id
           sku
           quantity
+          title
+          customAttributes { key value }
           variant { id sku }
         }
       }
@@ -249,10 +295,19 @@ query OrderById($id: ID!) {
     id
     legacyResourceId
     name
+    tags
     displayFinancialStatus
     displayFulfillmentStatus
     sourceName
+    paymentGatewayNames
     channelInformation { channelDefinition { channelName } }
+    email
+    phone
+    customer {
+      id
+      defaultEmailAddress { emailAddress }
+      defaultPhoneNumber { phoneNumber }
+    }
     cancelledAt
     currentSubtotalPriceSet { shopMoney { amount currencyCode } }
     createdAt
@@ -263,6 +318,8 @@ query OrderById($id: ID!) {
         id
         sku
         quantity
+        title
+        customAttributes { key value }
         variant { id sku }
       }
     }
@@ -279,6 +336,7 @@ query Customers($first: Int!, $after: String) {
       legacyResourceId
       displayName
       defaultEmailAddress { emailAddress }
+      defaultPhoneNumber { phoneNumber }
       createdAt
       updatedAt
     }
@@ -292,6 +350,7 @@ query CollectionByHandle($handle: String!) {
     id
     handle
     title
+    sortOrder
     productsCount {
       count
     }
@@ -417,6 +476,48 @@ query ProductMediaStatus($id: ID!, $first: Int!, $after: String) {
         }
       }
     }
+  }
+}
+GQL;
+
+    public const PRODUCTS_BY_QUERY = <<<'GQL'
+query ProductsByQuery($query: String!, $first: Int!, $after: String) {
+  products(first: $first, after: $after, query: $query) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id
+      handle
+      title
+      status
+      tags
+      variants(first: 10) {
+        nodes { sku }
+      }
+    }
+  }
+}
+GQL;
+
+    public const COLLECTION_PRODUCTS_BY_HANDLE = <<<'GQL'
+query CollectionProductsByHandle($handle: String!, $first: Int!, $after: String) {
+  collectionByHandle(handle: $handle) {
+    products(first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id
+        variants(first: 10) {
+          nodes { sku }
+        }
+      }
+    }
+  }
+}
+GQL;
+
+    public const ORDERS_EXIST_BY_QUERY = <<<'GQL'
+query OrdersExistByQuery($query: String!) {
+  orders(first: 1, query: $query) {
+    nodes { id }
   }
 }
 GQL;

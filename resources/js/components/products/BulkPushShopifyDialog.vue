@@ -164,6 +164,11 @@ function skipLabel(reason: BulkPushShopifyPreviewRow['skip_reason']): string {
     }
 }
 
+const openStorePreorderCount = computed(() => {
+    return (previewBase.value?.products ?? []).filter((row) => row.store_preorder_status === 'open')
+        .length;
+});
+
 function onConfirm(): void {
     if (!hasAnyPushOption(pushOptions.value)) {
         previewError.value = 'Select at least one field to push.';
@@ -172,6 +177,15 @@ function onConfirm(): void {
     if (!preview.value || preview.value.push_count === 0) {
         previewError.value = 'No eligible products to push.';
         return;
+    }
+    if (openStorePreorderCount.value > 0) {
+        const ok = window.confirm(
+            `This push includes ${openStorePreorderCount.value} store preorder(s). ` +
+                'Shopify will charge the deposit (not the full sell $), and those kits will appear only on the Pre-order page — not in the regular catalog. Push anyway?',
+        );
+        if (!ok) {
+            return;
+        }
     }
     emit('confirm', { pushOptions: { ...pushOptions.value }, preview: preview.value });
 }
@@ -272,6 +286,14 @@ function onConfirm(): void {
                         class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
                     >
                         <div v-for="(warning, idx) in scopeWarnings" :key="idx">{{ warning }}</div>
+                    </div>
+
+                    <div
+                        v-if="openStorePreorderCount > 0"
+                        class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"
+                    >
+                        {{ openStorePreorderCount }} store preorder(s) in this selection. Confirming
+                        will push the deposit price and show them only on the Pre-order page.
                     </div>
 
                     <div v-if="preview" class="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">

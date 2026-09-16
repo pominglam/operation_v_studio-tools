@@ -12,6 +12,15 @@ final class ArgamaHtmlParser
 {
     public const string BASE_URL = 'https://argamahobby.com';
 
+    public function __construct(
+        private readonly string $storefrontBaseUrl = self::BASE_URL,
+    ) {}
+
+    public function storefrontBaseUrl(): string
+    {
+        return $this->storefrontBaseUrl;
+    }
+
     /**
      * @return array<int, array{url: string, title: string}>
      */
@@ -202,13 +211,13 @@ final class ArgamaHtmlParser
             return 'https:'.$u;
         }
         if (str_starts_with($u, '/')) {
-            return self::BASE_URL.$u;
+            return $this->storefrontBaseUrl.$u;
         }
         if (str_starts_with($u, 'http://') || str_starts_with($u, 'https://')) {
             return $u;
         }
 
-        return self::BASE_URL.'/'.ltrim($u, '/');
+        return $this->storefrontBaseUrl.'/'.ltrim($u, '/');
     }
 
     private function isProductImageUrl(string $url): bool
@@ -306,10 +315,10 @@ final class ArgamaHtmlParser
             return $u;
         }
         if (str_starts_with($u, '/')) {
-            return self::BASE_URL.$u;
+            return $this->storefrontBaseUrl.$u;
         }
 
-        return self::BASE_URL.'/'.ltrim($u, '/');
+        return $this->storefrontBaseUrl.'/'.ltrim($u, '/');
     }
 
     private function candidateTitleFromLink(DOMElement $a): string

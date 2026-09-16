@@ -21,11 +21,21 @@ export const REPORT_DEFINITIONS: ReportDefinition[] = [
         path: '/reports/inventory-by-main-type',
         label: 'Inventory by type',
         description:
-            'On-hand units grouped by product main type, with unique SKU counts and estimated landed value.',
+            'On-hand units grouped by taxonomy department and product line (or Tools & Supplies shelf), with unique SKU counts and estimated landed value.',
+    },
+    {
+        id: 'customer-retention',
+        routeName: 'reports-customer-retention',
+        path: '/reports/customer-retention',
+        label: 'Customer retention',
+        description:
+            'Identified Shopify customers: month-by-month New vs returning (chart + table), AOV, store-rhythm cadence, and store-quintile RFM.',
     },
 ];
 
-export function reportDefinitionForRouteName(routeName: string | null | undefined): ReportDefinition | null {
+export function reportDefinitionForRouteName(
+    routeName: string | null | undefined,
+): ReportDefinition | null {
     if (!routeName) {
         return null;
     }

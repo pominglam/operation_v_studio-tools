@@ -52,6 +52,7 @@ final class ProductsQueryService
         bool $missingLandedCost = false,
         bool $hasLandedCost = false,
         array $canonicalTaxonomyFilters = [],
+        string $storePreorderFilter = 'exclude',
     ): LengthAwarePaginator {
         return $this->products->paginate(
             $perPage,
@@ -82,6 +83,7 @@ final class ProductsQueryService
             $missingLandedCost,
             $hasLandedCost,
             $canonicalTaxonomyFilters,
+            $storePreorderFilter,
         );
     }
 
@@ -123,6 +125,7 @@ final class ProductsQueryService
         bool $missingLandedCost = false,
         bool $hasLandedCost = false,
         array $canonicalTaxonomyFilters = [],
+        string $storePreorderFilter = 'exclude',
     ): Collection {
         return $this->products->listFiltered(
             $search,
@@ -152,6 +155,7 @@ final class ProductsQueryService
             $missingLandedCost,
             $hasLandedCost,
             $canonicalTaxonomyFilters,
+            $storePreorderFilter,
         );
     }
 
@@ -231,5 +235,11 @@ final class ProductsQueryService
     public function distinctSublines(): array
     {
         return $this->products->distinctSublines();
+    }
+
+    /** @return array<int, string> */
+    public function emptyCanonicalFields(): array
+    {
+        return $this->products->emptyCanonicalFields();
     }
 }

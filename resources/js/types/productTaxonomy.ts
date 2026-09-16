@@ -32,6 +32,22 @@ export type TaxonomyEvidenceField =
     | 'workshop_facets'
     | 'accessory_kind';
 
+export type SeriesResolutionConfidence = 'high' | 'medium' | 'review';
+
+export type SeriesResolution = {
+    erp: string | null;
+    plamod: string | null;
+    rules: string | null;
+    wiki: string | null;
+    bandai: string | null;
+    final_decision: string | null;
+    confidence: SeriesResolutionConfidence;
+    plamod_url: string | null;
+    wiki_url: string | null;
+    bandai_url: string | null;
+    decision_reason: string | null;
+};
+
 export type TaxonomyVerification = {
     id: string;
     status: 'proposed' | 'verified' | 'overridden';
@@ -42,6 +58,7 @@ export type TaxonomyVerification = {
     previous_values: TaxonomyValues;
     evidence: Partial<Record<TaxonomyEvidenceField, TaxonomyEvidence>>;
     operator_notes: string | null;
+    series_resolution: SeriesResolution | null;
     product: TaxonomyValues & {
         id: string;
         sku: string;
@@ -77,6 +94,17 @@ export const workshopTaxonomyFields: Array<{
     { key: 'workshop_shelf', label: 'T&S shelf' },
     { key: 'workshop_facets', label: 'Facets' },
 ];
+
+export type TaxonomyResearchField = TaxonomyEvidenceField;
+
+export const taxonomyResearchFields: Array<{ key: TaxonomyResearchField; label: string }> = [
+    ...taxonomyFields,
+    ...workshopTaxonomyFields,
+    { key: 'accessory_kind', label: 'Accessory kind' },
+];
+
+export const defaultTaxonomyResearchFields = (): TaxonomyResearchField[] =>
+    taxonomyResearchFields.map((field) => field.key);
 
 export const accessoryKindLabels: Record<AccessoryKind, string> = {
     display_stand: 'Display stand',

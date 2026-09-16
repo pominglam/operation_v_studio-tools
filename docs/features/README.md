@@ -8,14 +8,19 @@ This folder is the **navigation hub** for **what each screen does**, how users m
 | **Products (catalog, imports, exports, drawers, bulk)** | [screens/products.md](screens/products.md) |
 | **Product taxonomy research and verification** | [screens/products.md#canonical-taxonomy-review-productstaxonomy](screens/products.md#canonical-taxonomy-review-productstaxonomy) |
 | **Purchase orders** | [screens/purchase-orders.md](screens/purchase-orders.md) |
-| **Custom orders (Asia request + quote)** | [screens/custom-asia-orders.md](screens/custom-asia-orders.md) |
+| **Special orders (Asia request + quote)** | [screens/special-orders.md](screens/special-orders.md) |
 | **Admin inventory CSV + sessions + employee count** | [screens/inventory-and-counting.md](screens/inventory-and-counting.md) |
 | **Competitor pricing** | [screens/price-research.md](screens/price-research.md) |
+| **Shopify sales orders (list)** | [screens/shopify-orders.md](screens/shopify-orders.md) |
 | **Staff orders (POS / channels)** | [screens/staff-orders-report.md](screens/staff-orders-report.md) |
+| **Customer retention (RFM)** | [screens/customer-retention.md](screens/customer-retention.md) |
 | **Reports hub (inventory by type, etc.)** | [screens/reports.md](screens/reports.md) |
 | **PDP / Plamod rename batch progress** | [screens/sync-progress.md](screens/sync-progress.md) |
+| **Store events (in-store)** | [screens/store-events.md](screens/store-events.md) |
+| **Marketing notes** | [screens/store-marketing-notes.md](screens/store-marketing-notes.md) |
 | **Bandai TCG+ events** | [screens/tcg-events.md](screens/tcg-events.md) |
 | **Plamod preorders** | [screens/preorders.md](screens/preorders.md) |
+| **Store preorders** | [screens/store-preorders.md](screens/store-preorders.md) |
 | **PLAMOD restock (in-stock)** | [screens/plamod-restock.md](screens/plamod-restock.md) |
 | **Maintenance & dangerous ops** | [screens/maintenance.md](screens/maintenance.md) |
 | **Full HTTP/job/service catalog** (dense backend reference) | [backend/system-catalog-services-and-http.md](backend/system-catalog-services-and-http.md) |
@@ -34,20 +39,27 @@ Shopify **Online Store theme** workflows (draft theme, static About page handoff
 | External login / roles | [shared/roles-and-access.md](shared/roles-and-access.md) |
 | Job batches / PDP sync progress | [screens/sync-progress.md](screens/sync-progress.md) |
 | Navbar & layout | [shared/shell-and-navigation.md](shared/shell-and-navigation.md) |
+| OPV catalog margin | [screens/maintenance.md](screens/maintenance.md) |
 | Price research & reports | [screens/price-research.md](screens/price-research.md) |
+| Shopify orders list | [screens/shopify-orders.md](screens/shopify-orders.md) |
 | Staff orders report | [screens/staff-orders-report.md](screens/staff-orders-report.md) |
+| Customer retention | [screens/customer-retention.md](screens/customer-retention.md) |
 | Reports hub | [screens/reports.md](screens/reports.md) |
 | Products catalog (table, bulk, tabs) | [screens/products.md](screens/products.md) |
 | Product taxonomy review | [screens/products.md#canonical-taxonomy-review-productstaxonomy](screens/products.md#canonical-taxonomy-review-productstaxonomy) |
 | Purchase orders | [screens/purchase-orders.md](screens/purchase-orders.md) |
-| Custom orders (Asia) | [screens/custom-asia-orders.md](screens/custom-asia-orders.md) |
+| Special orders (Asia) | [screens/special-orders.md](screens/special-orders.md) |
 | Shopify / exports / tunnel (UI, internal catalog) | [screens/products.md](screens/products.md), [screens/sync-progress.md](screens/sync-progress.md) |
 | Shopify storefront static pages / theme duplication | [`../shopify-theme/static-content-pages-workflow-and-about-us.md`](../shopify-theme/static-content-pages-workflow-and-about-us.md) |
 | Storefront content hierarchy (guides, mega menu CTAs) | [`../requirements/storefront-content-hierarchy.md`](../requirements/storefront-content-hierarchy.md) |
+| Storefront listing CTAs (Add to cart / Sold out / Pre-order; homepage has none) | [`../requirements/model-kit-collection-filters.md#listing-ctas`](../requirements/model-kit-collection-filters.md#listing-ctas) |
 | Model kit shelves (`mk:*` tags → smart collections) | [`../requirements/model-kit-storefront-shelves.md`](../requirements/model-kit-storefront-shelves.md) |
 | Stuck price run reset | [screens/maintenance.md](screens/maintenance.md) |
+| Store events | [screens/store-events.md](screens/store-events.md) |
+| Marketing notes | [screens/store-marketing-notes.md](screens/store-marketing-notes.md) |
 | TCG+ events | [screens/tcg-events.md](screens/tcg-events.md) |
 | Plamod preorders | [screens/preorders.md](screens/preorders.md) |
+| Store preorders | [screens/store-preorders.md](screens/store-preorders.md) |
 | PLAMOD restock | [screens/plamod-restock.md](screens/plamod-restock.md) |
 
 ## Screen ↔ route cheat sheet
@@ -59,8 +71,9 @@ Shopify **Online Store theme** workflows (draft theme, static About page handoff
 | `/purchase-orders` | `PurchaseOrdersPage.vue` |
 | `/purchase-orders/:id` | `PurchaseOrderDetailPage.vue` |
 | `/purchase-orders/:id/beta` | `PurchaseOrderDetailBetaPage.vue` (beta workspace; classic remains default) |
-| `/custom-orders/asia` | `CustomAsiaOrdersPage.vue` |
-| `/custom-orders/asia/new`, `/custom-orders/asia/:id` | `CustomAsiaOrderDetailPage.vue` |
+| `/orders` | `ShopifyOrdersPage.vue` |
+| `/special-orders` | `SpecialOrdersPage.vue` |
+| `/special-orders/new`, `/special-orders/:id` | `SpecialOrderDetailPage.vue` |
 | `/inventory-check` | `InventoryCheckPage.vue` |
 | `/inventory-check/:id` | `InventoryCheckDetailPage.vue` |
 | `/employee/inventory-count` | `EmployeeInventoryCountPage.vue` |
@@ -69,9 +82,13 @@ Shopify **Online Store theme** workflows (draft theme, static About page handoff
 | `/price-research/runs/:id/logs` | `PriceResearchRunLogsPage.vue` |
 | `/reports/staff-orders` | `StaffOrdersReportPage.vue` (nested in `ReportsLayoutPage.vue`) |
 | `/reports/inventory-by-main-type` | `InventoryByMainTypeReportPage.vue` (nested in `ReportsLayoutPage.vue`) |
+| `/reports/customer-retention` | `CustomerRetentionReportPage.vue` (nested in `ReportsLayoutPage.vue`) |
 | `/sync-progress` | `SyncProgressPage.vue` |
+| `/store-events` | `StoreEventsPage.vue` |
+| `/marketing-notes` | `StoreMarketingNotesPage.vue` |
 | `/tcg-events` | `TcgEventsPage.vue` |
 | `/preorders` | `PreordersPage.vue` |
+| `/store-preorders` | `StorePreordersPage.vue` |
 | `/restocking/plamod` | `PlamodRestockPage.vue` |
 | `/maintenance` | `MaintenancePage.vue` |
 | `/shopify/webhooks` | `ShopifyWebhookLogsPage.vue` |

@@ -177,6 +177,10 @@ final class ProductBulkUpdateService
             $updates['is_critical'] = (bool) $changes['is_critical'];
         }
 
+        if (array_key_exists('is_urgent', $changes)) {
+            $updates['is_urgent'] = (bool) $changes['is_urgent'];
+        }
+
         if (array_key_exists('is_discontinued', $changes)) {
             $updates['is_discontinued'] = (bool) $changes['is_discontinued'];
         }

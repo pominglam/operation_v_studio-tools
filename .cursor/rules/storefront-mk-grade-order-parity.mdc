@@ -1,0 +1,10 @@
+---
+description: Model kit grade facet order must match mega menu grade order (theme)
+alwaysApply: true
+---
+
+# Model kit grade order — mega menu ↔ facet parity
+
+See **`ovs-shopify-theme/.cursor/rules/storefront-mk-grade-order-parity.mdc`** for the canonical grade sequence and file checklist.
+
+When changing hub prefilters or shelf titles for grades, update **`ModelKitCollectionFilterHubNavigation.php`** in the same change set as the theme mega menu + grade facet snippet.

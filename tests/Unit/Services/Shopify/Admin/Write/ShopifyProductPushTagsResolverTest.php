@@ -44,11 +44,23 @@ it('merges storefront tags with existing mirror tags and strips legacy on push',
         pushTagsTestProduct(['sku' => 'MT-02']),
         $productGid,
         true,
-        false,
+        true,
     );
 
     expect($tags)->toContain('custom-campaign', 'ts:dept:tapes', 'ts:tape:masking', 'ts:tape:width:2')
         ->and($tags)->not->toContain('supplies', 'Others');
+});
+
+it('returns null on non-info updates so image-only pushes keep Shopify tags', function (): void {
+    $resolver = app(ShopifyProductPushTagsResolver::class);
+    $tags = $resolver->tagsForProductSet(
+        pushTagsTestProduct(['sku' => 'MT-02']),
+        'gid://shopify/Product/88001',
+        true,
+        false,
+    );
+
+    expect($tags)->toBeNull();
 });
 
 it('returns null for unclassified updates so Shopify tags stay unchanged', function (): void {

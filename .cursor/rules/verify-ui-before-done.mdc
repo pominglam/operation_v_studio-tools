@@ -5,11 +5,13 @@ alwaysApply: true
 
 # Verify UI Before Done
 
+**Gate:** Read **`browser-first-mandatory.mdc`** first. No UI handoff without a real browser check + screenshot of the changed control.
+
 Do **not** tell the user a UI/storefront change is **done**, **fixed**, **live**, or **verified** until you have exercised it in a **real browser** (Cursor browser or equivalent) the way a customer would.
 
 Code review, `curl`, HTML string checks, and passing unit tests **alone** are not enough for user-visible behavior.
 
-**You own QA** — see **`rigorous-qa-before-handoff.mdc`**. The user is not your tester; exercise filter combinations, full flows, and repeatable Playwright e2e before handoff.
+**You own QA** — see **`intent-and-data-verification.mdc`** and **`rigorous-qa-before-handoff.mdc`**. The user is not your tester; prove outcomes on real data, not only that controls respond.
 
 ## When this applies
 
@@ -71,11 +73,15 @@ See **`ovs-shopify-theme/.cursor/rules/storefront-ts-collection-filters.mdc`** f
 
 ## Final reply must include
 
-- **URL tested**
-- **Actions performed** (e.g. “Checked Brushes filter → 9 products; clicked mobile drawer checkbox → same count”)
-- **Pass/fail against customer expectation** — not just “HTTP 200” or “needle found in HTML”
+- **URL tested** and **key outcome** (e.g. filter count + row purity) — brief **Verified** note per **`definition_of_done.mdc`**
+- Pass/fail against customer expectation — not just “HTTP 200” or “needle found in HTML”
+- **Layout verification** table per **`layout-visual-gate-before-handoff.mdc`** (mobile + desktop screenshots when layout changed)
 
-If browser testing is blocked (auth, credentials, service down), say so explicitly and list what remains unverified. Do **not** imply the UI is correct.
+If browser testing is blocked (auth, credentials, service down), say so explicitly and list what remains unverified. Do **not** imply the UI is correct. Still include **`### Layout verification`** with **Not verified — blocked** rows.
+
+## Completion gate
+
+UI/storefront handoffs **require** the literal heading **`### Layout verification`** before any **done** / **fixed** / **verified** / **ready for review** language. See **`layout-visual-gate-before-handoff.mdc`**.
 
 ## Related rules
 

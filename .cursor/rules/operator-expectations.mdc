@@ -1,0 +1,100 @@
+---
+description: Operator preferences and expectations — read before starting and before handoff
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Operator expectations (living document)
+
+**When to read:** at task start (orient) and before handoff (self-check). If work does not meet these expectations, fix before replying — do not push approval gates back to the operator.
+
+Update this file when the operator states a durable preference in chat.
+
+---
+
+## Autonomy vs approval
+
+| Prefer | Avoid |
+| --- | --- |
+| **Process + safety nets** so agents finish work end-to-end | Blocking on operator approval for routine steps |
+| **Undo paths** (backup → migrate → restore if wrong) | “Wait for me to approve migrate” when backup exists |
+| **Prove outcomes** in handoff (URL, counts, backup filename) | Handing off “should work” or homework lists |
+
+**Default:** complete the task autonomously when rules, backups, and verification cover the risk. Ask only when genuinely blocked (missing secrets, ambiguous product choice with no spec, destructive action with no undo and no spec).
+
+---
+
+## Lean production database
+
+- Local Docker MySQL (`pricing-tool-mysql`) **is production** for this project unless the operator says otherwise.
+- **Migrations:** backup first, then migrate — **no approval required** if a fresh backup was just created and its filename/UUID is recorded for rollback.
+- **Rollback:** restore via Maintenance UI or `POST /api/v1/maintenance/db-backups/restore` / documented restore path using the pre-migrate backup UUID.
+- **Still forbidden without a spec or undo:** ad-hoc `Schema::drop` in tinker, data deletes without backup, migrations that drop live rows without copy/rename checks (`migration-data-safety.mdc`).
+
+### Pre-migrate checklist (agents run this, do not ask)
+
+1. `php artisan db:backup --yes --description="Pre-migrate …" --created-by=system`
+2. Note **filename + UUID** in session notes for handoff
+3. `php artisan migrate --pretend` — scan for unexpected DROP/TRUNCATE
+4. `php artisan migrate`
+5. Smoke-check affected features on real data
+6. If broken: restore from step 1 backup, fix migration, repeat
+
+`migrate:fresh` / `db:wipe`: same backup requirement; use only when the task truly needs an empty schema (greenfield reset), never as a casual debug shortcut.
+
+---
+
+## Quality bar (operator is not QA)
+
+- Browser-verify user-visible changes; agent runs existing tests when relevant — see `rigorous-qa-before-handoff.mdc`, `verify-ui-before-done.mdc`.
+- **Intent contract:** when [action] → [observable outcome on real data]; verify before handoff.
+- Do not leave `E2E-*` test debris (`agent-test-cleanup.mdc`).
+- Brief **Verified** line in reply; expand only on failure or blocker.
+
+---
+
+## Backups and “oops” recovery
+
+- Scheduled daily backup + weekly purge — see `database-backup-operations.mdc`.
+- **Undo for schema/data ops = restore backup**, not operator intervention.
+- Off-site copy of ZIPs is operator-owned periodic ops; agents remind if discussing disaster recovery.
+
+---
+
+## Git and deploy
+
+- Still **no commit/push** unless operator asks (`user rules`).
+- Still **no push to `dev`/`main`** without “approve push” (`project.mdc`).
+- Shopify theme: AI Dev theme `196218716241` for verification; no live theme publish without approval (`shopify-page-draft-safety.mdc`).
+
+---
+
+## Handoff self-check
+
+Before sending the final reply, read **`verification-handoff-gate.mdc`** and confirm:
+
+- [ ] Task purpose met from operator’s perspective (not only code compiled)
+- [ ] **Intent Contract** written in user words; every line verified on real URL
+- [ ] **Right surface** — QA hit the exact facet/menu/column the user cares about, not grep/page-load
+- [ ] **Environment** — preview vs live stated if theme work; operator’s URL or explicit preview-only
+- [ ] Preferences above respected (autonomy where safe, backup noted if DB touched)
+- [ ] Verification run on real path; gaps stated explicitly
+- [ ] UI work includes `### Layout verification` when applicable (screenshots show contract outcome)
+
+---
+
+## Preference log (append dated bullets when operator states new expectations)
+
+- **2026-09-02:** Prefer autonomous migrate on prod-like DB after backup (restore = undo); avoid approval gates for routine ops; agents should self-check against this doc before start and handoff.
+- **2026-09-02:** Recurring false **Verified** handoffs = infrastructure/partial checks instead of user intent on their path. Mandatory gate: **`verification-handoff-gate.mdc`** before any completion language on UI/storefront work.
+- **2026-09-02:** Store preorder default deposit is **20%**. Suggested sell $ uses **OPV catalog margin** (Maintenance; default 1.5×) on **estimated landed** (PO cost + restock shipping %, default 5%), closest X.99 (ties go up); operators can override sell $ per kit (also snapped to closest X.99). The 1.5× target is vs landed, not raw PO cost.
+- **2026-09-02:** Store preorder closing defaults to **one day before Plamod due** (24h to place the Plamod order). Deposit, cap, and closing are **per kit** on open; closing is pre-filled and overridable.
+- **2026-09-02:** When setting store-preorder sell $, show **estimated landed** (PO cost + configurable Plamod restock shipping %, default 5%) and the **multiplier** (sell ÷ landed).
+- **2026-09-02:** Later (when customers pay a store-preorder deposit): operator needs a place to see those **preorder orders**. Discuss in the Shopify/checkout slice — do not invent that list until then.
+- **2026-09-02:** Never delete or mutate operator-created store preorders / ERP products during QA. Prove Delete on agent-owned fixtures only, or stop at the confirm dialog. The operator’s live rows are not test data.
+- **2026-09-09:** PO money is always **before tax**. `unit_cost`, `product_total`, and shipping/surcharge are pre-tax. Do not import Plamod (or any vendor) grand totals that include tax; use the pre-tax subtotal / unit price. Tax stays on the vendor invoice, not in ERP PO costing.
+- **2026-09-09:** Do **not** write PO **notes** on import (or any other agent-created PO). Leave `notes` empty; the operator writes notes themselves.
+- **2026-09-09:** Plamod POs default **shipment = air**. Operator will change to sea when needed. Do not leave Plamod shipment blank on new imports.
+- **2026-09-10:** Storefront / Shopify theme changes default to **live Rise** (`190542250065`, `operationvstudio.com` with no `preview_theme_id`). Push and verify on live unless the operator explicitly says dest / AI Dev / preview. Do not hand off preview-only when they are looking at live.
+- **2026-09-14:** Collection / search / related-product / PDP cards show listing CTAs (Add to cart, Sold out, Pre-order, Preorder closed). **Homepage** Featured Products and Latest Arrivals do **not** — photo + title + price only.

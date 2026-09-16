@@ -7,6 +7,7 @@ namespace App\Services\Products;
 use App\DAL\Products\ProductExternalAssetRepository;
 use App\DAL\Products\ProductRepository;
 use App\Models\ProductExternalAsset;
+use App\Support\Products\ProductExternalAssetApiArray;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -23,7 +24,7 @@ final class ProductManualImageUploadService
 
     /**
      * @param  array<int, UploadedFile>  $files
-     * @return array{created:int, asset_ids:array<int,int>}
+     * @return array{created:int, asset_ids:array<int,int>, assets:array<int, array<string, mixed>>}
      */
     public function upload(string $productUuid, array $files): array
     {
@@ -31,7 +32,7 @@ final class ProductManualImageUploadService
 
         $files = array_values(array_filter($files, static fn (mixed $f): bool => $f instanceof UploadedFile));
         if ($files === []) {
-            return ['created' => 0, 'asset_ids' => []];
+            return ['created' => 0, 'asset_ids' => [], 'assets' => []];
         }
 
         $disk = Storage::disk('local');
@@ -93,9 +94,37 @@ final class ProductManualImageUploadService
             $this->assetRenamer->renameImageAssetsForProductUuid((string) $product->uuid);
         }
 
+        $ids = array_values(array_map(static fn (ProductExternalAsset $a): int => (int) $a->id, $created));
+
         return [
             'created' => count($created),
-            'asset_ids' => array_values(array_map(static fn (ProductExternalAsset $a): int => (int) $a->id, $created)),
+            'asset_ids' => $ids,
+            'assets' => $this->freshAssetPayloads((int) $product->id, $ids),
         ];
+    }
+
+    /**
+     * @param  array<int, int>  $ids
+     * @return array<int, array<string, mixed>>
+     */
+    private function freshAssetPayloads(int $productId, array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $wanted = array_fill_keys($ids, true);
+        $out = [];
+        foreach ($this->assets->listAllForProduct($productId) as $asset) {
+            if (! $asset instanceof ProductExternalAsset) {
+                continue;
+            }
+            $id = (int) $asset->id;
+            if (! isset($wanted[$id])) {
+                continue;
+            }
+            $out[] = ProductExternalAssetApiArray::from($asset);
+        }
+
+        return $out;
     }
 }

@@ -1,0 +1,97 @@
+---
+description: MANDATORY layout/visual verification before UI handoff — behavior checks alone are not enough
+alwaysApply: true
+---
+
+# Layout & visual gate before handoff
+
+**Passing logic ≠ passing layout.** Filter counts, API responses, and CDP/JS metrics **do not** satisfy UI completion if alignment, spacing, nesting, or overflow were not **seen** in a real browser.
+
+Read **`browser-first-mandatory.mdc`** first. This rule adds the **layout** bar on top of interaction/behavior checks in **`verify-ui-before-done.mdc`**.
+
+## Hard gate
+
+Before **done**, **fixed**, **verified**, or **ready for review** on any user-visible UI change:
+
+### 1. Two viewports (both required when layout changed)
+
+| Viewport | Width | When |
+| --- | --- | --- |
+| **Mobile** | ≤749px (or device emulation) | Always for nav, drawers, filters, collection sidebars |
+| **Desktop** | ≥990px | Always when desktop layout exists (vertical facets, mega menu, wide grids) |
+
+Skipping either viewport = **incomplete handoff** unless the change is explicitly single-viewport-only (state which one in the reply).
+
+### 2. Screenshot evidence (mandatory)
+
+Capture **at least one screenshot per viewport** showing the **changed surface**:
+
+- Default state (panel open / filters visible / menu expanded as relevant)
+- After interaction state when expand/collapse or drill-down affects layout
+
+**Attach or reference** screenshots in the final reply. Describe what a customer would **see** (alignment, indent, wrapping), not only what code changed.
+
+### 3. Layout checklist (eyeball — not grep)
+
+For every new or changed UI surface, confirm visually:
+
+- [ ] Checkbox/control **touching or aligned with** its label (no floating columns)
+- [ ] Nested hierarchy **stacks vertically** (parent above children), not side-by-side columns
+- [ ] Indent is **consistent** per depth level (no stair-step drift)
+- [ ] Text **does not break mid-word** or clip off-container (`Char's Counterattack`, long series names)
+- [ ] No orphan rows (labels without controls, controls without labels)
+- [ ] Spacing matches surrounding Dawn/facet patterns (not raw unstyled HTML)
+
+If any item fails → **keep fixing** until a fresh screenshot passes.
+
+## Does NOT count as layout verification
+
+- `Invoke-WebRequest`, HTML grep, or “marker found in page source”
+- CDP-only checks (element counts, `getBoundingClientRect` gaps) **without** a screenshot you inspected
+- “Tests pass” / manifest verify / filter count math alone
+- Opening the wrong URL, wrong theme (`preview_theme_id` missing on AI Dev work), or homepage only
+- Describing expected layout from code review
+
+## Final reply must include a **Layout verification** block
+
+**Literal heading required:** the user-facing reply **must** contain this exact markdown heading (level-3):
+
+```markdown
+### Layout verification
+```
+
+Without that heading, the handoff is **incomplete** for any user-visible UI change.
+
+```markdown
+### Layout verification
+| Viewport | URL | Screenshot | Pass/fail |
+| --- | --- | --- | --- |
+| Mobile 390px | … | Grade + series filters, nested under SD/HG | Pass — checkbox beside label |
+| Desktop 1400px | … | Left facet column | Pass — children indented one level |
+```
+
+Each row must name the **URL**, what the **screenshot shows**, and **pass/fail** for layout (alignment, nesting, wrapping) — not only behavior counts.
+
+If blocked (no browser, auth, theme push failed): use the same heading and set pass/fail to **Not verified — blocked**; do **not** imply the UI looks correct.
+
+## Forbidden handoff language (UI changes)
+
+Do **not** use these words/phrases in the final reply unless **`### Layout verification`** is present with at least one populated row (or explicit **Not verified — blocked**):
+
+- done / complete / finished
+- fixed / resolved
+- verified / confirmed / looks good / works
+- ready for review / ready to test / ship it / live
+
+**Allowed without layout block:** API-only, backend-only, or refactors with **zero** user-visible layout change — say so explicitly (“no UI layout change; layout gate N/A”).
+
+## User reject phrase
+
+If the agent omits **`### Layout verification`**, the user may reply: **“Layout gate not met — send screenshots at 390px and 1400px.”** Treat that as a hard stop; do not argue that counts or tests were enough.
+
+## Related rules
+
+- `browser-first-mandatory.mdc`
+- `verify-ui-before-done.mdc`
+- `rigorous-qa-before-handoff.mdc`
+- `mobile-nav-interaction-qa.mdc` (storefront nav)

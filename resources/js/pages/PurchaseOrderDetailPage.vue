@@ -63,6 +63,7 @@ type PurchaseOrderItem = {
     sku: string;
     vendor: string;
     unit_cost: string | null;
+    shipping_per_unit: string | null;
     qty_ordered: number | null;
     qty_shipped: number | null;
     qty_received: number | null;
@@ -509,7 +510,9 @@ function formatPrepareInventoryError(
         .map((i) => `${i.sku}: ${i.reason}`)
         .join('; ');
     const suffix = lines !== '' ? ` ${lines}` : '';
-    const missingReceived = issues.some((i) => i.reason === 'missing_or_zero_qty_received');
+    const missingReceived = issues.some(
+        (i) => i.reason === 'missing_qty_received' || i.reason === 'missing_or_zero_qty_received',
+    );
     const hint = missingReceived
         ? ' Plamod import sets Qty shipped only — enter Qty received on each line, use Bulk update → Set qty received to qty shipped, or apply an inventory check first.'
         : '';
@@ -521,7 +524,7 @@ function poItemIdsMissingReceivedWithShipped(): number[] {
         .filter((it) => {
             const received = it.qty_received;
             const shipped = it.qty_shipped ?? 0;
-            return (received === null || received <= 0) && shipped > 0;
+            return received === null && shipped > 0;
         })
         .map((it) => it.id);
 }
@@ -587,7 +590,9 @@ async function useShippedQuantitiesAsReceived(): Promise<void> {
 async function maybeFillReceivedFromShippedBeforePrepare(
     issues: Array<{ sku: string; reason: string }>,
 ): Promise<boolean> {
-    const hasMissingReceived = issues.some((i) => i.reason === 'missing_or_zero_qty_received');
+    const hasMissingReceived = issues.some(
+        (i) => i.reason === 'missing_qty_received' || i.reason === 'missing_or_zero_qty_received',
+    );
     if (!hasMissingReceived) {
         return false;
     }
@@ -689,6 +694,20 @@ async function prepareInventoryForPo(): Promise<void> {
         };
     }
 }
+
+const latestArrivalsPushBlockedReason = computed((): string | null => {
+    if (!po.value) {
+        return null;
+    }
+    if (!po.value.received_date) {
+        return 'Set Received date before pushing to Latest Arrivals.';
+    }
+    if (!po.value.fully_on_shelves_date) {
+        return 'Set On shelves date before pushing. Latest Arrivals should run after kits are on the shelf — otherwise you will have to push again.';
+    }
+
+    return null;
+});
 
 function workflowRowButtonLabel(key: WorkflowChecklistKey): string | null {
     switch (key) {
@@ -1071,6 +1090,11 @@ async function confirmPushInventory(): Promise<void> {
     if (!po.value.received_date) {
         pushInventoryPreviewError.value =
             'Set Received date on this PO before pushing to Shopify. Unreceived POs are ignored for Latest Arrivals storefront ordering.';
+        return;
+    }
+    if (!po.value.fully_on_shelves_date) {
+        pushInventoryPreviewError.value =
+            'Set On shelves date on this PO before pushing to Shopify. Latest Arrivals should run after kits are on the shelf.';
         return;
     }
     pushInventoryPushBusy.value = true;
@@ -2110,7 +2134,8 @@ const totalsCheck = computed<TotalsCheck>(() => {
                 missingUnitCostLines++;
                 continue;
             }
-            landedLinesTotal += (unitCents + shipUnit + surchargeUnit) * qty;
+            const itemShip = shipCentsForItem(it) ?? shipUnit;
+            landedLinesTotal += (unitCents + itemShip + surchargeUnit) * qty;
         }
     }
 
@@ -2142,6 +2167,12 @@ function formatCentsDelta(cents: number | null): string {
     const sign = cents === 0 ? '' : cents > 0 ? '+' : '−';
     const abs = Math.abs(cents);
     return `${sign}$${(abs / 100).toFixed(2)}`;
+}
+
+function shipCentsForItem(item: PurchaseOrderItem): number | null {
+    const line = moneyToCents(item.shipping_per_unit ?? null);
+    if (line !== null) return line;
+    return shippingPerUnitCents.value;
 }
 
 function landedFor(
@@ -3769,120 +3800,139 @@ onMounted(() => {
                     </div>
 
                     <div class="mt-3 space-y-2">
-                        <div
-                            v-for="row in checklistLabels"
-                            :key="row.key"
-                            class="flex items-center gap-2"
-                        >
-                            <label
-                                class="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-800"
-                            >
-                                <input
-                                    type="checkbox"
-                                    class="h-4 w-4 shrink-0 rounded border-slate-300"
-                                    :disabled="checklistBusy"
-                                    :checked="checklist[row.key]"
-                                    @change="
-                                        toggleChecklist(
-                                            row.key,
-                                            ($event.target as HTMLInputElement).checked,
-                                        )
+                        <div v-for="row in checklistLabels" :key="row.key" class="space-y-1">
+                            <div class="flex items-center gap-2">
+                                <label
+                                    class="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-800"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        class="h-4 w-4 shrink-0 rounded border-slate-300"
+                                        :disabled="checklistBusy"
+                                        :checked="checklist[row.key]"
+                                        @change="
+                                            toggleChecklist(
+                                                row.key,
+                                                ($event.target as HTMLInputElement).checked,
+                                            )
+                                        "
+                                    />
+                                    <span class="min-w-0">{{ row.label }}</span>
+                                </label>
+                                <button
+                                    v-if="row.key === 'mark_latest_arrival'"
+                                    type="button"
+                                    class="shrink-0 rounded-md border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="checklistBusy || clearingStaleLatestArrival"
+                                    data-testid="workflow-clear-stale-latest-arrival"
+                                    title="Remove latest arrival from products on POs older than 4 weeks"
+                                    @click="clearStaleLatestArrivalFromWorkflow"
+                                >
+                                    {{
+                                        clearingStaleLatestArrival
+                                            ? 'Clearing…'
+                                            : 'Clear old latest'
+                                    }}
+                                </button>
+                                <button
+                                    v-if="workflowRowButtonLabel(row.key)"
+                                    type="button"
+                                    class="shrink-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :title="
+                                        row.key === 'import_product_available_quantity' &&
+                                        latestArrivalsPushBlockedReason
+                                            ? latestArrivalsPushBlockedReason
+                                            : row.key === 'mark_published_on_shopify'
+                                              ? 'Sets published_on_shopify in the ERP only until push'
+                                              : row.key === 'mark_latest_arrival'
+                                                ? 'Sets latest_arrival in the ERP for non-tools; push adds the Shopify tag'
+                                                : row.key ===
+                                                    'update_product_available_with_shopify_current_inventory_quantity'
+                                                  ? 'Validates qty received on all lines. If Shopify mirror data is stale, asks whether to pull fresh inventory for PO SKUs. Run before Apply received.'
+                                                  : undefined
                                     "
-                                />
-                                <span class="min-w-0">{{ row.label }}</span>
-                            </label>
-                            <button
-                                v-if="row.key === 'mark_latest_arrival'"
-                                type="button"
-                                class="shrink-0 rounded-md border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
-                                :disabled="checklistBusy || clearingStaleLatestArrival"
-                                data-testid="workflow-clear-stale-latest-arrival"
-                                title="Remove latest arrival from products on POs older than 4 weeks"
-                                @click="clearStaleLatestArrivalFromWorkflow"
-                            >
-                                {{ clearingStaleLatestArrival ? 'Clearing…' : 'Clear old latest' }}
-                            </button>
-                            <button
-                                v-if="workflowRowButtonLabel(row.key)"
-                                type="button"
-                                class="shrink-0 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                :title="
-                                    row.key === 'mark_published_on_shopify'
-                                        ? 'Sets published_on_shopify in the ERP only until push'
-                                        : row.key === 'mark_latest_arrival'
-                                          ? 'Sets latest_arrival in the ERP for non-tools; push adds the Shopify tag'
-                                          : row.key ===
-                                              'update_product_available_with_shopify_current_inventory_quantity'
-                                            ? 'Validates qty received on all lines. If Shopify mirror data is stale, asks whether to pull fresh inventory for PO SKUs. Run before Apply received.'
-                                            : undefined
-                                "
-                                :disabled="
-                                    checklistBusy ||
-                                    Boolean(workflowActionBusy[row.key]) ||
-                                    (row.key === 'export_to_shopify_get_handles' &&
-                                        !poHasProducts) ||
-                                    (row.key === 'crawl_desc_image_price' && !poHasProducts)
-                                "
-                                @click="onWorkflowRowAction(row.key)"
-                            >
-                                <template
+                                    :disabled="
+                                        checklistBusy ||
+                                        Boolean(workflowActionBusy[row.key]) ||
+                                        (row.key === 'export_to_shopify_get_handles' &&
+                                            !poHasProducts) ||
+                                        (row.key === 'crawl_desc_image_price' && !poHasProducts) ||
+                                        (row.key === 'import_product_available_quantity' &&
+                                            Boolean(latestArrivalsPushBlockedReason))
+                                    "
+                                    @click="onWorkflowRowAction(row.key)"
+                                >
+                                    <template
+                                        v-if="
+                                            row.key ===
+                                            'update_product_available_with_shopify_current_inventory_quantity'
+                                        "
+                                    >
+                                        {{ workflowActionBusy[row.key] ? 'Preparing…' : 'Prepare' }}
+                                    </template>
+                                    <template v-else>
+                                        {{
+                                            workflowActionBusy[row.key]
+                                                ? 'Working…'
+                                                : workflowRowButtonLabel(row.key)
+                                        }}
+                                    </template>
+                                </button>
+                                <button
                                     v-if="
                                         row.key ===
                                         'update_product_available_with_shopify_current_inventory_quantity'
                                     "
+                                    type="button"
+                                    class="shrink-0 rounded-md border border-emerald-200 bg-white px-2 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="
+                                        !inventoryPrepareReady ||
+                                        applyingReceivedToAvailable ||
+                                        !poHasProducts
+                                    "
+                                    @click="applyReceivedFromChecklist"
                                 >
-                                    {{ workflowActionBusy[row.key] ? 'Preparing…' : 'Prepare' }}
-                                </template>
-                                <template v-else>
                                     {{
-                                        workflowActionBusy[row.key]
-                                            ? 'Working…'
-                                            : workflowRowButtonLabel(row.key)
+                                        applyingReceivedToAvailable ? 'Applying…' : 'Apply received'
                                     }}
-                                </template>
-                            </button>
-                            <button
+                                </button>
+                                <button
+                                    v-if="
+                                        row.key === 'crawl_desc_image_price' &&
+                                        !checklist.crawl_desc_image_price
+                                    "
+                                    type="button"
+                                    class="shrink-0 rounded-md border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="checklistBusy"
+                                    data-testid="workflow-skip-crawl"
+                                    @click="skipCrawlStep"
+                                >
+                                    Skip
+                                </button>
+                                <button
+                                    v-if="
+                                        row.key === 'select_and_arrange_product_images' &&
+                                        !checklist.select_and_arrange_product_images
+                                    "
+                                    type="button"
+                                    class="shrink-0 rounded-md border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    :disabled="checklistBusy"
+                                    data-testid="workflow-defer-image-curation"
+                                    @click="deferImageCuration"
+                                >
+                                    Defer
+                                </button>
+                            </div>
+                            <p
                                 v-if="
-                                    row.key ===
-                                    'update_product_available_with_shopify_current_inventory_quantity'
+                                    row.key === 'import_product_available_quantity' &&
+                                    latestArrivalsPushBlockedReason
                                 "
-                                type="button"
-                                class="shrink-0 rounded-md border border-emerald-200 bg-white px-2 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                                :disabled="
-                                    !inventoryPrepareReady ||
-                                    applyingReceivedToAvailable ||
-                                    !poHasProducts
-                                "
-                                @click="applyReceivedFromChecklist"
+                                class="ml-6 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-950"
+                                data-testid="workflow-latest-arrivals-push-blocked"
                             >
-                                {{ applyingReceivedToAvailable ? 'Applying…' : 'Apply received' }}
-                            </button>
-                            <button
-                                v-if="
-                                    row.key === 'crawl_desc_image_price' &&
-                                    !checklist.crawl_desc_image_price
-                                "
-                                type="button"
-                                class="shrink-0 rounded-md border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
-                                :disabled="checklistBusy"
-                                data-testid="workflow-skip-crawl"
-                                @click="skipCrawlStep"
-                            >
-                                Skip
-                            </button>
-                            <button
-                                v-if="
-                                    row.key === 'select_and_arrange_product_images' &&
-                                    !checklist.select_and_arrange_product_images
-                                "
-                                type="button"
-                                class="shrink-0 rounded-md border border-amber-200 bg-white px-2 py-1 text-xs font-medium text-amber-900 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
-                                :disabled="checklistBusy"
-                                data-testid="workflow-defer-image-curation"
-                                @click="deferImageCuration"
-                            >
-                                Defer
-                            </button>
+                                {{ latestArrivalsPushBlockedReason }}
+                            </p>
                         </div>
                     </div>
 
@@ -4233,6 +4283,15 @@ onMounted(() => {
                             <span class="font-medium">On shelves:</span>
                             {{ po.fully_on_shelves_date ?? '—' }}
                         </div>
+                    </div>
+                    <div
+                        v-if="po.received_date && !po.fully_on_shelves_date"
+                        class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+                        data-testid="po-missing-on-shelves-date-badge"
+                    >
+                        No On shelves date. Set it on Edit before
+                        <span class="font-semibold">Push to Shopify — Latest Arrivals order</span>
+                        so you only push once.
                     </div>
                     <div
                         v-if="po.exclude_from_latest_arrivals_ordering"
@@ -4807,9 +4866,9 @@ onMounted(() => {
                                 </td>
                                 <td class="px-2 py-1 text-right">
                                     {{
-                                        shippingPerUnitCents === null
+                                        shipCentsForItem(it) === null
                                             ? ''
-                                            : centsToMoney(shippingPerUnitCents)
+                                            : centsToMoney(shipCentsForItem(it))
                                     }}
                                 </td>
                                 <td class="px-2 py-1 text-right">
@@ -4823,7 +4882,7 @@ onMounted(() => {
                                     {{
                                         landedFor(
                                             it.unit_cost,
-                                            shippingPerUnitCents,
+                                            shipCentsForItem(it),
                                             surchargePerUnitCents,
                                         )
                                     }}
@@ -5089,6 +5148,8 @@ onMounted(() => {
         :push-summary="pushInventoryPushSummary"
         :error="pushInventoryPreviewError"
         :received-date="po?.received_date ?? null"
+        :fully-on-shelves-date="po?.fully_on_shelves_date ?? null"
+        :exclude-from-latest-arrivals-ordering="po?.exclude_from_latest_arrivals_ordering ?? false"
         :progress-percent="pushInventoryProgressPercent"
         :phase-label="pushInventoryPhaseLabel"
         @cancel="closePushInventoryDialog"

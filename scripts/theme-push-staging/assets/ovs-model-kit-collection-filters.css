@@ -1,0 +1,137 @@
+/**
+ * Model kit collection filters — nested grade/series rows.
+ * Dawn's .facets__item { display:flex } puts parent labels beside nested <ul>s; override here.
+ */
+
+.ovs-mk-filters .facets__list {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.ovs-mk-filters .ovs-mk-filters__group.facets__item {
+  display: block;
+}
+
+.ovs-mk-filters .ovs-mk-filters__group-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.4rem;
+  align-items: start;
+  column-gap: 0.4rem;
+}
+
+.ovs-mk-filters .ovs-mk-filters__group-head > .facets__label {
+  grid-column: 1;
+}
+
+.ovs-mk-filters .ovs-mk-filters__toggle {
+  grid-column: 2;
+  align-self: center;
+  justify-self: end;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 0;
+  cursor: pointer;
+}
+
+.ovs-mk-filters .ovs-mk-filters__toggle-icon {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-right: 0.15rem solid currentColor;
+  border-bottom: 0.15rem solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+  margin-top: -0.2rem;
+}
+
+.ovs-mk-filters .ovs-mk-filters__toggle[aria-expanded='true'] .ovs-mk-filters__toggle-icon {
+  transform: rotate(-135deg);
+  margin-top: 0.2rem;
+}
+
+.ovs-mk-filters .ovs-mk-filters__children--collapsed {
+  display: none;
+}
+
+.ovs-mk-filters .ovs-mk-filters__children {
+  margin: 0;
+  padding: 0 0 0 1.6rem;
+  list-style: none;
+}
+
+.ovs-mk-filters .ovs-mk-filters__children .facets__item {
+  display: block;
+}
+
+.ovs-mk-filters .ovs-mk-filters__parent-label {
+  font-weight: 600;
+}
+
+.ovs-mk-filters .facets__label.facet-checkbox {
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr);
+  column-gap: 1rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.6rem 0;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.ovs-mk-filters .facets__label.facet-checkbox > input[type='checkbox'] {
+  grid-column: 1;
+  grid-row: 1;
+  position: relative;
+  top: auto;
+  left: auto;
+  opacity: 0;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin: 0;
+  z-index: 2;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.ovs-mk-filters .facets__label.facet-checkbox > svg {
+  grid-column: 1;
+  grid-row: 1;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin: 0;
+  justify-self: center;
+}
+
+.ovs-mk-filters .facets__label.facet-checkbox > .svg-wrapper {
+  grid-column: 1;
+  grid-row: 1;
+  position: relative;
+  left: auto;
+  top: auto;
+  transform: none;
+  justify-self: center;
+  align-self: center;
+  width: 1.1rem;
+  height: 0.7rem;
+  margin: 0;
+}
+
+.ovs-mk-filters .facets__label.facet-checkbox > .facet-checkbox__text {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.ovs-mk-filters .facets__item.ovs-mk-filters__empty {
+  display: none;
+}
+
+@media screen and (max-width: 749px) {
+  .ovs-mk-filters .ovs-mk-filters__children {
+    padding-left: 1.2rem;
+  }
+}

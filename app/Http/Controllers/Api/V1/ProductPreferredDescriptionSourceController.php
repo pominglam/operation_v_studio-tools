@@ -16,9 +16,12 @@ final class ProductPreferredDescriptionSourceController extends Controller
         $source = $request->validated('preferred_description_source');
         $source = is_string($source) ? trim($source) : null;
         $source = $source !== '' ? $source : null;
-        $manualDescriptionHtml = $request->validated('manual_description_html');
-        $manualDescriptionHtml = is_string($manualDescriptionHtml) ? trim($manualDescriptionHtml) : null;
-        $manualDescriptionHtml = $manualDescriptionHtml !== '' ? $manualDescriptionHtml : null;
+        $validated = $request->validated();
+        $manualDescriptionHtml = null;
+        if (array_key_exists('manual_description_html', $validated)) {
+            $raw = $validated['manual_description_html'];
+            $manualDescriptionHtml = is_string($raw) ? trim($raw) : '';
+        }
 
         $product = $service->setForProduct($id, $source, $manualDescriptionHtml);
 

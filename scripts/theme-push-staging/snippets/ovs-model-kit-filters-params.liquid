@@ -1,0 +1,36 @@
+{% comment %} Parses OVS model-kit filter URL params into CSV + padded CSV assigns. {% endcomment %}
+{%- liquid
+  assign ovs_mk_grades_csv = ''
+  assign ovs_mk_series_csv = ''
+  assign ovs_mk_franchise_csv = ''
+  assign ovs_mk_line_csv = ''
+  assign ovs_mk_prices_csv = ''
+  if request.query_string != blank
+    assign qs_parts = request.query_string | split: '&'
+    for part in qs_parts
+      if part contains 'ovs_mk_grade='
+        assign ovs_mk_grades_csv = part | split: 'ovs_mk_grade=' | last | split: '&' | first | url_decode
+      endif
+      if part contains 'ovs_mk_series='
+        assign ovs_mk_series_csv = part | split: 'ovs_mk_series=' | last | split: '&' | first | url_decode
+      endif
+      if part contains 'ovs_mk_franchise='
+        assign ovs_mk_franchise_csv = part | split: 'ovs_mk_franchise=' | last | split: '&' | first | url_decode
+      endif
+      if part contains 'ovs_mk_line='
+        assign ovs_mk_line_csv = part | split: 'ovs_mk_line=' | last | split: '&' | first | url_decode
+      endif
+      if part contains 'ovs_mk_price='
+        assign ovs_mk_prices_csv = part | split: 'ovs_mk_price=' | last | split: '&' | first | url_decode
+      endif
+    endfor
+  endif
+
+  assign ovs_mk_grades_padded = ',' | append: ovs_mk_grades_csv | append: ','
+  assign ovs_mk_series_padded = ',' | append: ovs_mk_series_csv | append: ','
+  assign ovs_mk_franchise_padded = ',' | append: ovs_mk_franchise_csv | append: ','
+  assign ovs_mk_line_padded = ',' | append: ovs_mk_line_csv | append: ','
+  assign ovs_mk_prices_padded = ',' | append: ovs_mk_prices_csv | append: ','
+  assign ovs_mk_section_id = section_id | default: collection.id
+  assign ovs_mk_filter_suffix = filter_suffix | default: ''
+-%}

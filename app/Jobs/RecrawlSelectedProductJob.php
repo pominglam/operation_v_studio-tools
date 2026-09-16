@@ -9,12 +9,16 @@ use App\Services\Jobs\JobBatchItemService;
 use App\Services\PriceResearch\PriceResearchService;
 use App\Services\Products\Argama\ArgamaContentSyncService;
 use App\Services\Products\Bandai\BandaiContentSyncService;
+use App\Services\Products\CoolDragon\CoolDragonContentSyncService;
 use App\Services\Products\GundamHangar\GundamHangarContentSyncService;
 use App\Services\Products\GundamPlanet\GundamPlanetContentSyncService;
 use App\Services\Products\Hlj\HljContentSync;
 use App\Services\Products\Newtype\NewtypeContentSyncService;
 use App\Services\Products\PlamodAssetFilenameService;
 use App\Services\Products\PlamodAssetSyncService;
+use App\Services\StorePreorders\StorePreorderShopifyImageFollowUpService;
+use App\Services\StorePreorders\StorePreorderUsesPlamodImagesOnly;
+use App\Support\Products\ProductsRecrawlSources;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -73,6 +77,9 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         }
 
         $sources = array_values(array_unique(array_filter(array_map('strval', $this->sources), static fn (string $v): bool => trim($v) !== '')));
+        if (app(StorePreorderUsesPlamodImagesOnly::class)->appliesToProductUuid($this->productUuid)) {
+            $sources = app(StorePreorderUsesPlamodImagesOnly::class)->filterRecrawlSources($sources);
+        }
         if (is_string($batchId) && $batchId !== '') {
             $batchItems->markRunning($batchId, $this->productUuid, $this->syncUuid);
             $batchItems->appendDebugLog($batchId, $this->productUuid, '[job] sources='.implode(',', $sources));
@@ -151,11 +158,14 @@ final class RecrawlSelectedProductJob implements ShouldQueue
         $wantNewtype = in_array('newtype', $sources, true);
         $wantGundamHangar = in_array('gundamhangar', $sources, true);
         $wantBandai = in_array('bandai', $sources, true);
-        $wantPrices = in_array('competitor_price_research', $sources, true);
+        $selectedPriceSites = ProductsRecrawlSources::priceSiteKeysFrom($sources);
+        $wantAllPrices = in_array('competitor_price_research', $sources, true);
+        $wantPrices = $wantAllPrices || $selectedPriceSites !== [];
         $wantArgama = in_array('argama', $sources, true);
+        $wantCoolDragon = in_array('cool_dragon', $sources, true);
 
         $product = null;
-        if ($wantHlj || $wantGundamPlanet || $wantNewtype || $wantGundamHangar || $wantArgama) {
+        if ($wantHlj || $wantGundamPlanet || $wantNewtype || $wantGundamHangar || $wantArgama || $wantCoolDragon) {
             $product = $products->findByUuidOrFail($this->productUuid);
         }
 
@@ -224,9 +234,19 @@ final class RecrawlSelectedProductJob implements ShouldQueue
             });
         }
 
+        if ($wantCoolDragon && $product !== null) {
+            $runSource('cool_dragon', function () use ($product, $trace): array {
+                /** @var CoolDragonContentSyncService $coolDragon */
+                $coolDragon = app(CoolDragonContentSyncService::class);
+                $coolDragon->syncForProduct($product, $this->syncUuid, $trace);
+
+                return ['result' => 'ok'];
+            });
+        }
+
         if ($wantPrices) {
-            $runSource('competitor_price_research', function () use ($prices): array {
-                $res = $prices->run([$this->productUuid], true, null, null);
+            $runSource('competitor_price_research', function () use ($prices, $wantAllPrices, $selectedPriceSites): array {
+                $res = $prices->run([$this->productUuid], true, null, $wantAllPrices ? null : $selectedPriceSites);
 
                 return [
                     'result' => 'ok',
@@ -243,6 +263,10 @@ final class RecrawlSelectedProductJob implements ShouldQueue
             } catch (\Throwable $e) {
                 $append('rename', 'error', ['message' => $e->getMessage()]);
             }
+        }
+
+        if ($wantPlamod) {
+            app(StorePreorderShopifyImageFollowUpService::class)->afterPlamodPhotos($this->productUuid);
         }
 
         if (is_string($batchId) && $batchId !== '') {

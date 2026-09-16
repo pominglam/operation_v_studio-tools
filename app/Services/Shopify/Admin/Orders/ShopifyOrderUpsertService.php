@@ -9,6 +9,8 @@ use App\Models\Shopify\ShopifyOrder;
 use App\Models\Shopify\ShopifyOrderLineItem;
 use App\Services\Shopify\Admin\Demand\ProductDemandRollupService;
 use App\Services\Shopify\Admin\Support\ShopifyGraphQlNodeParser;
+use App\Support\Shopify\Admin\Orders\ShopifyOrderGraphQlCustomerIdentity;
+use App\Support\Shopify\Admin\Orders\ShopifyOrderGraphQlPaymentGateways;
 use App\Support\Shopify\Admin\Orders\ShopifyOrderGraphQlSubtotal;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
@@ -19,6 +21,7 @@ final class ShopifyOrderUpsertService
         private readonly ProductDemandRollupService $demandRollups,
         private readonly ShopifyOrderDemandEligibility $demandEligibility,
         private readonly ShopifyOrderStaffAttributionUpsertService $staffAttribution,
+        private readonly ShopifyOrderStorePreorderTagger $preorderTagger,
     ) {}
 
     /**
@@ -47,7 +50,9 @@ final class ShopifyOrderUpsertService
                 'display_financial_status' => $financial,
                 'display_fulfillment_status' => $fulfillment,
                 ...$this->staffAttribution->attributesFromGraphQlNode($node),
+                ...ShopifyOrderGraphQlCustomerIdentity::attributesFromGraphQlNode($node),
                 'subtotal_shop_amount' => ShopifyOrderGraphQlSubtotal::subtotalShopAmount($node),
+                'payment_gateway_names' => ShopifyOrderGraphQlPaymentGateways::names($node),
                 'ordered_at_shop_tz' => ShopifyGraphQlNodeParser::timestampInShopTz($orderedAtStr),
                 'cancelled_at' => $this->demandEligibility->parseCancelledAt($node),
                 'graphql_updated_at' => ShopifyGraphQlNodeParser::timestampInShopTz(
@@ -59,6 +64,7 @@ final class ShopifyOrderUpsertService
 
         $demandEligible = $this->demandEligibility->isEligibleFromGraphQlNode($node);
         $this->syncLineItems($gid, $node, $soldOn, $demandEligible);
+        $this->preorderTagger->tagIfNeeded($order);
 
         return $order;
     }

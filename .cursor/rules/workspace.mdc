@@ -12,8 +12,8 @@ This workspace uses layered rule files located in `.cursor/rules/`. All rules in
 ## Automatic Application
 
 Rules are automatically applied based on their configuration:
-- **Always Apply**: `project.mdc`, `formatting.mdc`, `typesafety.mdc`, `versioning.mdc`, `infra.mdc`, `architecture.mdc`, `workspace.mdc`, `features-documentation-catalog.mdc`, `shopify-erp-integration.mdc`, `agent-test-cleanup.mdc`, `always-test-before-done.mdc`, `bug-check-before-return.mdc`, `rigorous-qa-before-handoff.mdc`, `verify-ui-before-done.mdc`, `definition_of_done.mdc`, `data-column-discipline.mdc`
-- **Targeted**: Rules matching specific file patterns (controllers, services, DAL, frontend, tests)
+- **Always Apply**: `project.mdc`, `formatting.mdc`, `typesafety.mdc`, `versioning.mdc`, `infra.mdc`, `architecture.mdc`, `workspace.mdc`, `operator-expectations.mdc`, `verification-handoff-gate.mdc`, `api-resource-enrichment-wiring.mdc`, `features-documentation-catalog.mdc`, `shopify-erp-integration.mdc`, `agent-test-cleanup.mdc`, `always-test-before-done.mdc`, `bug-fix-regression-tests.mdc`, `intent-and-data-verification.mdc`, `bug-check-before-return.mdc`, `rigorous-qa-before-handoff.mdc`, `verify-ui-before-done.mdc`, `browser-first-mandatory.mdc`, `layout-visual-gate-before-handoff.mdc`, `definition_of_done.mdc`, `data-column-discipline.mdc`, `database-backup-operations.mdc`, `spa-list-mutation-performance.mdc`
+- **Targeted**: Rules matching specific file patterns (controllers, services, DAL, frontend, tests, **`migration-data-safety.mdc`** on `database/migrations/**`)
 
 ## Key Rules Summary
 
@@ -26,10 +26,15 @@ Rules are automatically applied based on their configuration:
 - Pest: 3.x, Vitest: 2.x
 
 ### Workflow Rules
-- **Agent tests**: Do not add/modify test files unless asked — delete/revert before handoff (`agent-test-cleanup.mdc`)
+- **Agent tests**: Do not add/modify test files unless asked — delete/revert before handoff (`agent-test-cleanup.mdc`); **exception:** user-reported bug fixes require regression tests (`bug-fix-regression-tests.mdc`)
+- **Intent & data correctness**: Full verification internally; brief Verified note in reply (`intent-and-data-verification.mdc`, `verification-handoff-gate.mdc`, `definition_of_done.mdc`)
 - **Verify UI before done**: Real browser, click filters/controls, match customer expectations (`verify-ui-before-done.mdc`)
+- **Layout visual gate**: Mobile + desktop screenshots; literal **`### Layout verification`** heading required before done/verified (`layout-visual-gate-before-handoff.mdc`)
 - **Rigorous QA before handoff**: Agent owns QA — filter combos, full flows, Playwright e2e, real data; user is not QA (`rigorous-qa-before-handoff.mdc`)
 - **Bug check before return**: Reproduce reported bugs, verify on real data/logs, no "should work" handoffs (`bug-check-before-return.mdc`)
+- **API enrichment wiring**: Per-row computed JSON on the row/DTO — not `$request->attributes`; verify HTTP JSON + UI, not tinker alone (`api-resource-enrichment-wiring.mdc`)
+- **Definition of Done**: Full checklist before **WORKING**; concise handoff to user (`definition_of_done.mdc`)
+- **SPA list mutations**: Patch the row from the mutation response; busy state; page large grids (`spa-list-mutation-performance.mdc`)
 - **Never commit to `dev`/`main`**: Always use `feature/*` or `hotfix/*` branches
 - **Multi-angle review**: Correctness, Completeness, Consistency
 - **Max iterations**: 10 (respect limit)

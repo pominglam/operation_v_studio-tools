@@ -1,0 +1,95 @@
+/**
+ * UC Gunpla collection filters — nested grade/series rows.
+ * Dawn's .facets__item { display:flex } puts parent labels beside nested <ul>s; override here.
+ */
+
+.ovs-mk-uc-filters .facets__list {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Parent row + nested list stack vertically (Dawn flex row caused side-by-side layout) */
+.ovs-mk-uc-filters .ovs-mk-uc-filters__group.facets__item {
+  display: block;
+}
+
+.ovs-mk-uc-filters .ovs-mk-uc-filters__children {
+  margin: 0;
+  padding: 0 0 0 1.6rem;
+  list-style: none;
+}
+
+.ovs-mk-uc-filters .ovs-mk-uc-filters__children .facets__item {
+  display: block;
+}
+
+.ovs-mk-uc-filters .ovs-mk-uc-filters__parent-label {
+  font-weight: 600;
+}
+
+/* Checkbox column + label column */
+.ovs-mk-uc-filters .facets__label.facet-checkbox {
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr);
+  column-gap: 1rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.6rem 0;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.ovs-mk-uc-filters .facets__label.facet-checkbox > input[type='checkbox'] {
+  grid-column: 1;
+  grid-row: 1;
+  position: relative;
+  top: auto;
+  left: auto;
+  opacity: 0;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin: 0;
+  z-index: 2;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.ovs-mk-uc-filters .facets__label.facet-checkbox > svg {
+  grid-column: 1;
+  grid-row: 1;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin: 0;
+  justify-self: center;
+}
+
+.ovs-mk-uc-filters .facets__label.facet-checkbox > .svg-wrapper {
+  grid-column: 1;
+  grid-row: 1;
+  position: relative;
+  left: auto;
+  top: auto;
+  transform: none;
+  justify-self: center;
+  align-self: center;
+  width: 1.1rem;
+  height: 0.7rem;
+  margin: 0;
+}
+
+.ovs-mk-uc-filters .facets__label.facet-checkbox > .facet-checkbox__text {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.ovs-mk-uc-filters .facets__item.ovs-mk-uc-filters__empty {
+  display: none;
+}
+
+@media screen and (max-width: 749px) {
+  .ovs-mk-uc-filters .ovs-mk-uc-filters__children {
+    padding-left: 1.2rem;
+  }
+}

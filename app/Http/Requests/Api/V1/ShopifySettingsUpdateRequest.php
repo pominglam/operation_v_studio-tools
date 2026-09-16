@@ -19,7 +19,18 @@ final class ShopifySettingsUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'order_reconcile_interval_hours' => ['required', 'integer', 'min:1', 'max:168'],
+            'order_reconcile_interval_minutes' => [
+                'required_without:order_reconcile_interval_hours',
+                'integer',
+                'min:15',
+                'max:10080',
+            ],
+            'order_reconcile_interval_hours' => [
+                'required_without:order_reconcile_interval_minutes',
+                'integer',
+                'min:1',
+                'max:168',
+            ],
         ];
     }
 }

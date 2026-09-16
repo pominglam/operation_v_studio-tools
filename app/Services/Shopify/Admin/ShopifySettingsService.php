@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Shopify\Admin;
 
-use App\DAL\Maintenance\MaintenanceNoteRepository;
+use App\Services\Shopify\Admin\Orders\ShopifyOrderReconcileIntervalService;
 
 final class ShopifySettingsService
 {
@@ -13,27 +13,30 @@ final class ShopifySettingsService
     public const string SYNC_KEY_ORDERS = 'orders';
 
     public function __construct(
-        private readonly MaintenanceNoteRepository $notes,
         private readonly ShopifyOpsStatusService $opsStatus,
+        private readonly ShopifyOrderReconcileIntervalService $interval,
     ) {}
+
+    public function getOrderReconcileIntervalMinutes(): int
+    {
+        return $this->interval->getMinutes();
+    }
+
+    public function setOrderReconcileIntervalMinutes(int $minutes): int
+    {
+        return $this->interval->setMinutes($minutes);
+    }
 
     public function getOrderReconcileIntervalHours(): int
     {
-        $note = $this->notes->findByKey(self::KEY_ORDER_RECONCILE_INTERVAL_HOURS);
-        $raw = is_string($note?->body) ? trim($note->body) : '';
-        if ($raw === '' || ! ctype_digit($raw)) {
-            return 12;
-        }
-
-        return max(1, min(168, (int) $raw));
+        return max(1, (int) ceil($this->interval->getMinutes() / 60));
     }
 
     public function setOrderReconcileIntervalHours(int $hours): int
     {
-        $hours = max(1, min(168, $hours));
-        $this->notes->upsert(self::KEY_ORDER_RECONCILE_INTERVAL_HOURS, (string) $hours);
+        $this->interval->setHours($hours);
 
-        return $hours;
+        return $this->getOrderReconcileIntervalHours();
     }
 
     /**

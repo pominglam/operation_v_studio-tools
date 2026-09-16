@@ -248,6 +248,12 @@ final class ShopifyContentExportService
     {
         $preferred = is_string($product->preferred_description_source) ? trim($product->preferred_description_source) : '';
         if ($preferred !== '') {
+            if ($preferred === 'other') {
+                $blankManual = $this->preferredOtherBodyHtml($product);
+                if ($blankManual !== null) {
+                    return $blankManual;
+                }
+            }
             // If user has a preference, use it when it has non-empty HTML.
             if ($preferred === 'hlj') {
                 $hlj = $product->hljExternalContent?->description_html;
@@ -319,6 +325,26 @@ final class ShopifyContentExportService
         }
 
         return '';
+    }
+
+    /**
+     * Exact source=other row, including an intentional blank Manual override.
+     */
+    private function preferredOtherBodyHtml(Product $product): ?string
+    {
+        $contents = $product->externalContents?->all() ?? [];
+        foreach ($contents as $c) {
+            if (! $c instanceof ProductExternalContent) {
+                continue;
+            }
+            if (strtolower(trim((string) $c->source)) !== 'other') {
+                continue;
+            }
+
+            return is_string($c->description_html) ? (string) $c->description_html : '';
+        }
+
+        return null;
     }
 
     private function normalizeBodyHtmlForShopify(string $html): string

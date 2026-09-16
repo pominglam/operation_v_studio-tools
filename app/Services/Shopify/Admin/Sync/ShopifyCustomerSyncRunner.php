@@ -71,6 +71,11 @@ final class ShopifyCustomerSyncRunner implements ShopifySyncRunnerInterface
         if (is_array($dea) && isset($dea['emailAddress']) && is_string($dea['emailAddress'])) {
             $email = $dea['emailAddress'];
         }
+        $phone = null;
+        $dpn = $node['defaultPhoneNumber'] ?? null;
+        if (is_array($dpn) && isset($dpn['phoneNumber']) && is_string($dpn['phoneNumber'])) {
+            $phone = $dpn['phoneNumber'];
+        }
         $metrics->recordFetch();
         $model = ShopifyCustomer::query()->updateOrCreate(
             ['gid' => $gid],
@@ -79,6 +84,7 @@ final class ShopifyCustomerSyncRunner implements ShopifySyncRunnerInterface
                 'display_name' => isset($node['displayName']) && is_string($node['displayName'])
                     ? $node['displayName'] : null,
                 'email' => $email,
+                'phone' => $phone,
                 'customer_created_at' => ShopifyGraphQlNodeParser::timestamp(
                     isset($node['createdAt']) && is_string($node['createdAt']) ? $node['createdAt'] : null,
                 ),

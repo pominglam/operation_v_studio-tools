@@ -128,7 +128,8 @@ function compareEntries(
             </span>
         </div>
         <div class="mt-1 text-xs text-slate-600">
-            Recorded when Set/review selling prices is applied on this PO.
+            One row per product: price before this PO → last price set on this PO. Changes of $1.00
+            or less are omitted.
         </div>
 
         <p v-if="error" class="mt-2 text-sm text-rose-700">{{ error }}</p>

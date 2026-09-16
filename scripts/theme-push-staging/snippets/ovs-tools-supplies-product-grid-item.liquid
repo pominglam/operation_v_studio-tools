@@ -1,0 +1,228 @@
+{% comment %}
+  Renders one product card in tools & supplies collection grids.
+  Accepts: product, section, skip_card_product_styles, disable_scroll_anim, lazy_load_index
+{% endcomment %}
+{%- liquid
+  assign ovs_product_sku = product.selected_or_first_available_variant.sku
+  assign ovs_tape_type = ''
+  if ovs_product_sku contains 'MT-'
+    assign ovs_tape_type = 'masking'
+  elsif ovs_product_sku contains 'MS-'
+    assign ovs_tape_type = 'scribing'
+  endif
+
+  assign ovs_sand_type = ''
+  assign ovs_sand_grits_csv = ''
+  for tag in product.tags
+    if tag contains 'ts:sand:type:'
+      assign type_slug = tag | split: 'ts:sand:type:' | last
+      if type_slug == 'stick' or type_slug == 'sponge'
+        assign ovs_sand_type = type_slug
+      elsif type_slug != 'stick-sponge'
+        assign ovs_sand_type = type_slug
+      endif
+    elsif tag contains 'ts:sand:grit:'
+      assign grit_slug = tag | split: 'ts:sand:grit:' | last
+      if ovs_sand_grits_csv == ''
+        assign ovs_sand_grits_csv = grit_slug
+      else
+        assign ovs_sand_grits_csv = ovs_sand_grits_csv | append: ',' | append: grit_slug
+      endif
+    endif
+  endfor
+
+  if ovs_sand_type == '' or ovs_sand_type == 'stick-sponge'
+    assign ovs_sku_upper = ovs_product_sku | upcase
+    if ovs_sku_upper contains 'MS-E' or ovs_sku_upper contains 'GH-KS3'
+      assign ovs_sand_type = 'stick'
+    elsif ovs_sku_upper contains 'MS-A' or ovs_sku_upper contains 'MS-AT' or ovs_sku_upper contains 'MS-C' or ovs_sku_upper contains 'MS-DT'
+      assign ovs_sand_type = 'sponge'
+    elsif ovs_sku_upper contains 'MS-D'
+      unless ovs_sku_upper == 'MS-D2' or ovs_sku_upper == 'MS-D4' or ovs_sku_upper == 'MS-D15' or ovs_sku_upper == 'MS-D20'
+        assign ovs_sand_type = 'sponge'
+      endunless
+    endif
+  endif
+
+  assign ovs_cut_category = ''
+  assign ovs_cut_styles_csv = ''
+  for tag in product.tags
+    if tag == 'ts:cut:nipper'
+      assign ovs_cut_category = 'nipper'
+    elsif tag == 'ts:cut:knife'
+      assign ovs_cut_category = 'knife'
+    elsif tag == 'ts:cut:blade'
+      assign ovs_cut_category = 'blade'
+    elsif tag contains 'ts:cut:style:'
+      assign style_slug = tag | split: 'ts:cut:style:' | last
+      if ovs_cut_styles_csv == ''
+        assign ovs_cut_styles_csv = style_slug
+      else
+        assign ovs_cut_styles_csv = ovs_cut_styles_csv | append: ',' | append: style_slug
+      endif
+    endif
+  endfor
+
+  assign ovs_paint_product = ''
+  assign ovs_paint_apps_csv = ''
+  assign ovs_paint_type = ''
+  for tag in product.tags
+    if tag contains 'ts:paint:product:'
+      assign ovs_paint_product = tag | split: 'ts:paint:product:' | last
+    elsif tag contains 'ts:paint:app:'
+      assign app_slug = tag | split: 'ts:paint:app:' | last
+      if ovs_paint_apps_csv == ''
+        assign ovs_paint_apps_csv = app_slug
+      else
+        assign ovs_paint_apps_csv = ovs_paint_apps_csv | append: ',' | append: app_slug
+      endif
+    elsif tag contains 'ts:paint:type:'
+      assign ovs_paint_type = tag | split: 'ts:paint:type:' | last
+    endif
+  endfor
+
+  assign ovs_marker_type = ''
+  assign ovs_marker_tip = ''
+  assign ovs_panel_liner_kind = ''
+  assign ovs_panel_liner_type = ''
+  for tag in product.tags
+    if tag contains 'ts:marker:type:'
+      assign ovs_marker_type = tag | split: 'ts:marker:type:' | last
+    elsif tag contains 'ts:marker:tip:'
+      assign ovs_marker_tip = tag | split: 'ts:marker:tip:' | last
+    elsif tag contains 'ts:panel-liner:kind:'
+      assign ovs_panel_liner_kind = tag | split: 'ts:panel-liner:kind:' | last
+    elsif tag contains 'ts:panel-liner:type:'
+      assign ovs_panel_liner_type = tag | split: 'ts:panel-liner:type:' | last
+    endif
+  endfor
+
+  assign ovs_brush_type = ''
+  assign ovs_drill_type = ''
+  assign ovs_tweezer_line = ''
+  assign ovs_tweezer_style = ''
+  assign ovs_scribing_type = ''
+  assign ovs_airbrush_role = ''
+  assign ovs_ts_dept = ''
+  for tag in product.tags
+    if tag contains 'ts:dept:'
+      assign ovs_ts_dept = tag | split: 'ts:dept:' | last
+    elsif tag contains 'ts:brush:type:'
+      assign ovs_brush_type = tag | split: 'ts:brush:type:' | last
+    elsif tag contains 'ts:drill:type:'
+      assign ovs_drill_type = tag | split: 'ts:drill:type:' | last
+    elsif tag contains 'ts:tweezer:line:'
+      assign ovs_tweezer_line = tag | split: 'ts:tweezer:line:' | last
+    elsif tag contains 'ts:tweezer:style:'
+      assign ovs_tweezer_style = tag | split: 'ts:tweezer:style:' | last
+    elsif tag contains 'ts:scribing:type:'
+      assign ovs_scribing_type = tag | split: 'ts:scribing:type:' | last
+    elsif tag contains 'ts:airbrush:role:'
+      assign ovs_airbrush_role = tag | split: 'ts:airbrush:role:' | last
+    endif
+  endfor
+
+  assign ovs_scribing_filter = ''
+  if ovs_scribing_type == 'scriber' or ovs_scribing_type == 'pusher'
+    assign ovs_scribing_filter = 'scriber-pusher'
+  elsif ovs_scribing_type == 'handle'
+    assign ovs_scribing_filter = 'handle'
+  elsif ovs_scribing_type == 'needle' or ovs_scribing_type == 'scraper'
+    assign ovs_scribing_filter = 'others'
+  endif
+
+  assign ovs_misc_type = ''
+  assign ovs_mk_grade = ''
+  assign ovs_mk_sublines_csv = ''
+  assign ovs_mk_series_csv = ''
+  assign ovs_mk_lines_csv = ''
+  for tag in product.tags
+    if tag contains 'ts:misc:type:'
+      assign ovs_misc_type = tag | split: 'ts:misc:type:' | last
+    elsif tag contains 'mk:grade:'
+      assign ovs_mk_grade = tag | split: 'mk:grade:' | last
+    elsif tag contains 'mk:subline:'
+      assign mk_subline_slug = tag | split: 'mk:subline:' | last
+      if ovs_mk_sublines_csv == ''
+        assign ovs_mk_sublines_csv = mk_subline_slug
+      else
+        assign ovs_mk_sublines_csv = ovs_mk_sublines_csv | append: ',' | append: mk_subline_slug
+      endif
+    elsif tag contains 'mk:series:'
+      assign mk_series_slug = tag | split: 'mk:series:' | last
+      if ovs_mk_series_csv == ''
+        assign ovs_mk_series_csv = mk_series_slug
+      else
+        assign ovs_mk_series_csv = ovs_mk_series_csv | append: ',' | append: mk_series_slug
+      endif
+    elsif tag contains 'mk:line:'
+      assign mk_line_slug = tag | split: 'mk:line:' | last
+      if ovs_mk_lines_csv == ''
+        assign ovs_mk_lines_csv = mk_line_slug
+      else
+        assign ovs_mk_lines_csv = ovs_mk_lines_csv | append: ',' | append: mk_line_slug
+      endif
+    endif
+  endfor
+  if ovs_misc_type == ''
+    assign ovs_sku_misc = ovs_product_sku | upcase
+    if ovs_sku_misc == 'PT-MPS' or ovs_sku_misc == 'GH-E01'
+      assign ovs_misc_type = 'part-separator'
+    elsif ovs_sku_misc == 'MS-58'
+      assign ovs_misc_type = 'joint-reinforcement'
+    endif
+  endif
+
+  assign ovs_lazy_load = false
+  if lazy_load_index > 2
+    assign ovs_lazy_load = true
+  endif
+
+  assign ovs_price_cents = product.selected_or_first_available_variant.price
+-%}
+<li
+  class="grid__item{% if disable_scroll_anim == false and settings.animations_reveal_on_scroll %} scroll-trigger animate--slide-in{% endif %}"
+  data-ovs-sku="{{ ovs_product_sku | escape }}"
+  data-ovs-tape-type="{{ ovs_tape_type | escape }}"
+  data-ovs-sand-type="{{ ovs_sand_type | escape }}"
+  data-ovs-sand-grits="{{ ovs_sand_grits_csv | escape }}"
+  data-ovs-cut-category="{{ ovs_cut_category | escape }}"
+  data-ovs-cut-styles="{{ ovs_cut_styles_csv | escape }}"
+  data-ovs-paint-product="{{ ovs_paint_product | escape }}"
+  data-ovs-paint-apps="{{ ovs_paint_apps_csv | escape }}"
+  data-ovs-paint-type="{{ ovs_paint_type | escape }}"
+  data-ovs-marker-type="{{ ovs_marker_type | escape }}"
+  data-ovs-marker-tip="{{ ovs_marker_tip | escape }}"
+  data-ovs-panel-liner-kind="{{ ovs_panel_liner_kind | escape }}"
+  data-ovs-panel-liner-type="{{ ovs_panel_liner_type | escape }}"
+  data-ovs-brush-type="{{ ovs_brush_type | escape }}"
+  data-ovs-drill-type="{{ ovs_drill_type | escape }}"
+  data-ovs-tweezer-line="{{ ovs_tweezer_line | escape }}"
+  data-ovs-tweezer-style="{{ ovs_tweezer_style | escape }}"
+  data-ovs-scribing-filter="{{ ovs_scribing_filter | escape }}"
+  data-ovs-misc-type="{{ ovs_misc_type | escape }}"
+  data-ovs-airbrush-role="{{ ovs_airbrush_role | escape }}"
+  data-ovs-ts-dept="{{ ovs_ts_dept | escape }}"
+  data-ovs-mk-grade="{{ ovs_mk_grade | escape }}"
+  data-ovs-mk-sublines="{{ ovs_mk_sublines_csv | escape }}"
+  data-ovs-mk-series="{{ ovs_mk_series_csv | escape }}"
+  data-ovs-mk-lines="{{ ovs_mk_lines_csv | escape }}"
+  data-ovs-price-cents="{{ ovs_price_cents }}"
+  {% if disable_scroll_anim == false and settings.animations_reveal_on_scroll %}
+    data-cascade
+    style="--animation-order: {{ lazy_load_index }};"
+  {% endif %}
+>
+  {% render 'card-product',
+    card_product: product,
+    media_aspect_ratio: section.settings.image_ratio,
+    image_shape: section.settings.image_shape,
+    show_secondary_image: section.settings.show_secondary_image,
+    show_vendor: section.settings.show_vendor,
+    show_rating: section.settings.show_rating,
+    lazy_load: ovs_lazy_load,
+    skip_styles: skip_card_product_styles,
+    quick_add: section.settings.quick_add,
+    section_id: section.id
+  %}
+</li>

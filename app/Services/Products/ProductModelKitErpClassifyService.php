@@ -81,11 +81,19 @@ final class ProductModelKitErpClassifyService
         /** @var array<string, string|null> $patch */
         $patch = [];
 
-        foreach (['manufacturer', 'franchise', 'product_line', 'subline', 'grade', 'series', 'scale'] as $field) {
+        foreach (['manufacturer', 'franchise', 'product_line', 'subline', 'grade', 'series', 'scale', 'accessory_kind'] as $field) {
             $current = $this->nullableString($product->getAttribute($field));
             $next = $derived[$field] ?? null;
             if ($current === null && is_string($next) && trim($next) !== '') {
                 $patch[$field] = trim($next);
+            }
+        }
+
+        if (($derived['department'] ?? null) === 'accessories' && ($derived['accessory_kind'] ?? null) !== null) {
+            $currentDept = $this->nullableString($product->department);
+            if ($currentDept === null || $currentDept === 'model kits') {
+                $patch['department'] = 'accessories';
+                $patch['grade'] = null;
             }
         }
 
@@ -124,7 +132,89 @@ final class ProductModelKitErpClassifyService
             }
         }
 
+        $patch = $this->applyKeroroGrade($product, $text, $patch);
+        $patch = $this->applyProductLineInference($product, $text, $patch);
+
         return $patch;
+    }
+
+    /**
+     * @param  array<string, string|null>  $patch
+     * @return array<string, string|null>
+     */
+    private function applyKeroroGrade(Product $product, string $text, array $patch): array
+    {
+        if ($this->nullableString($product->grade) !== null || isset($patch['grade'])) {
+            return $patch;
+        }
+
+        if (preg_match('/\b(?:KERORO|SGT\.?\s*FROG)\b/', $text) !== 1) {
+            return $patch;
+        }
+
+        $patch['grade'] = 'Keroro';
+
+        if ($this->nullableString($product->franchise) === null) {
+            $patch['franchise'] = 'Sgt. Frog';
+        }
+
+        if ($this->nullableString($product->series) === null) {
+            $patch['series'] = 'Keroro';
+        }
+
+        return $patch;
+    }
+
+    /**
+     * @param  array<string, string|null>  $patch
+     * @return array<string, string|null>
+     */
+    private function applyProductLineInference(Product $product, string $text, array $patch): array
+    {
+        if ($this->nullableString($product->product_line) !== null || isset($patch['product_line'])) {
+            return $patch;
+        }
+
+        if (preg_match('/\bEUREKA SEVEN\b/', $text) === 1) {
+            $patch['product_line'] = 'Eureka Seven';
+
+            return $patch;
+        }
+
+        if (preg_match('/\b(?:KERORO|SGT\.?\s*FROG)\b/', $text) === 1) {
+            return $patch;
+        }
+
+        if (preg_match('/\bUCHG\b/', $text) === 1) {
+            $patch['product_line'] = 'Gunpla';
+
+            return $patch;
+        }
+
+        $grade = $patch['grade'] ?? $this->nullableString($product->grade);
+        if ($grade !== null && $this->isGunplaKitGrade($grade)) {
+            $patch['product_line'] = 'Gunpla';
+        }
+
+        return $patch;
+    }
+
+    private function isGunplaKitGrade(string $grade): bool
+    {
+        return in_array(mb_strtoupper(trim($grade)), [
+            'EG',
+            'HG',
+            'RG',
+            'MG',
+            'MGEX',
+            'MGSD',
+            'PG',
+            'SD',
+            'FM',
+            'RE',
+            'MEGA',
+            'NG',
+        ], true);
     }
 
     private function sublineFromType(mixed $type): ?string

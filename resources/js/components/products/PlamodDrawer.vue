@@ -3,24 +3,14 @@ import { computed, ref, watch } from 'vue';
 import { api } from '../../lib/api';
 import { decodeHtmlEntitiesDeep } from '../../lib/html';
 import { descriptionSourceUrl } from '../../lib/pdpSources';
-
-type ProductInfoAsset = {
-    id: number;
-    source: string;
-    kind: string;
-    filename: string;
-    mime_type: string | null;
-    size_bytes: number | null;
-    origin_url?: string | null;
-    origin_width?: number | null;
-    origin_height?: number | null;
-    checksum_sha256?: string | null;
-    sort_order?: number | null;
-    shopify_enabled?: boolean | null;
-    download_url: string;
-    view_url: string;
-    thumb_url?: string | null;
-};
+import ProductInfoPhotosPanel from './ProductInfoPhotosPanel.vue';
+import {
+    SOURCE_LABELS,
+    isImage,
+    normalizeSourceKey,
+    type ProductInfoAsset,
+    type SourceKey,
+} from './productInfoTypes';
 
 type ProductInfoContent = {
     source: string;
@@ -37,60 +27,12 @@ type ProductInfoPayload = {
     assets: ProductInfoAsset[];
 };
 
-type SourceKey =
-    | 'bandai'
-    | 'hlj'
-    | 'gundamplanet'
-    | 'newtype'
-    | 'gundamhangar'
-    | 'plamod'
-    | 'manual_upload'
-    | 'other';
-
 type DescriptionSelectionMode = 'source' | 'manual';
 
 type SelectedSourceState = {
     contentSource: SourceKey;
     descriptionMode: DescriptionSelectionMode;
 };
-
-const SOURCE_LABELS: Record<SourceKey, string> = {
-    bandai: 'Bandai',
-    hlj: 'HLJ',
-    plamod: 'Plamod',
-    gundamplanet: 'GundamPlanet',
-    newtype: 'Newtype',
-    gundamhangar: 'GundamHangar',
-    manual_upload: 'Manual upload',
-    other: 'Other',
-};
-
-const SOURCE_BADGE_CLASSES: Record<SourceKey, string> = {
-    plamod: 'border-indigo-700 bg-indigo-600 text-white',
-    hlj: 'border-emerald-700 bg-emerald-600 text-white',
-    newtype: 'border-fuchsia-700 bg-fuchsia-600 text-white',
-    gundamplanet: 'border-amber-700 bg-amber-500 text-slate-950',
-    gundamhangar: 'border-teal-700 bg-teal-600 text-white',
-    bandai: 'border-sky-700 bg-sky-600 text-white',
-    manual_upload: 'border-rose-700 bg-rose-600 text-white',
-    other: 'border-slate-700 bg-slate-700 text-white',
-};
-
-function sourceBadgeClass(key: SourceKey): string {
-    return SOURCE_BADGE_CLASSES[key] ?? SOURCE_BADGE_CLASSES.other;
-}
-
-function normalizeSourceKey(source: string): SourceKey {
-    const s = source.trim().toLowerCase();
-    if (s === 'bandai') return 'bandai';
-    if (s === 'hlj') return 'hlj';
-    if (s === 'plamod') return 'plamod';
-    if (s === 'gundamplanet') return 'gundamplanet';
-    if (s === 'newtype') return 'newtype';
-    if (s === 'gundamhangar') return 'gundamhangar';
-    if (s === 'manual_upload') return 'manual_upload';
-    return 'other';
-}
 
 function preferredContentSource(available: Set<SourceKey>): SourceKey {
     if (available.has('hlj')) return 'hlj';
@@ -99,11 +41,6 @@ function preferredContentSource(available: Set<SourceKey>): SourceKey {
     if (available.has('gundamhangar')) return 'gundamhangar';
     if (available.has('other')) return 'other';
     return 'plamod';
-}
-
-function isImage(a: ProductInfoAsset): boolean {
-    if (a.kind === 'image') return true;
-    return (a.mime_type ?? '').startsWith('image/');
 }
 
 function isBlank(s: string | null | undefined): boolean {
@@ -132,10 +69,25 @@ function manualDraftToHtml(text: string): string | null {
     return `<p>${body}</p>`;
 }
 
+function htmlFromManualIsBlank(html: string | null): boolean {
+    return html === null || html.trim() === '';
+}
+
 function contentForSource(
     contents: ProductInfoContent[],
     source: SourceKey,
 ): ProductInfoContent | null {
+    const newest = (list: ProductInfoContent[]): ProductInfoContent | null =>
+        list.slice().sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))[0] ??
+        null;
+
+    if (source === 'other') {
+        const exactOther = contents.filter((c) => c.source.trim().toLowerCase() === 'other');
+        if (exactOther.length > 0) {
+            return newest(exactOther);
+        }
+    }
+
     const src = source === 'other' ? null : source;
     const candidates = src
         ? contents.filter((c) => normalizeSourceKey(c.source) === source)
@@ -145,10 +97,7 @@ function contentForSource(
     // Prefer one with description, then most recently updated.
     const withDesc = candidates.filter((c) => !isBlank(c.description_html));
     const list = withDesc.length > 0 ? withDesc : candidates;
-    return (
-        list.slice().sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))[0] ??
-        null
-    );
+    return newest(list);
 }
 
 type PlamodPayload = {
@@ -177,13 +126,18 @@ const props = defineProps<{
 const loading = ref(false);
 const error = ref<string | null>(null);
 const message = ref<string | null>(null);
-const data = ref<ProductInfoPayload | null>(null);
+const contents = ref<ProductInfoContent[]>([]);
+const assets = ref<ProductInfoAsset[]>([]);
+const preferredDescriptionSource = ref<string | null>(null);
+const photoSavesPending = ref(false);
+const photosPanelRef = ref<{
+    resetPhotoUi: () => void;
+    loadHiddenSourcesFromStorage: () => void;
+} | null>(null);
 const availableSources = computed<Set<SourceKey>>(() => {
     const s = new Set<SourceKey>();
-    const contents = data.value?.contents ?? [];
-    for (const c of contents) s.add(normalizeSourceKey(c.source));
-    const assets = data.value?.assets ?? [];
-    for (const a of assets) {
+    for (const c of contents.value) s.add(normalizeSourceKey(c.source));
+    for (const a of assets.value) {
         if (isImage(a)) s.add(normalizeSourceKey(a.source));
     }
     return s;
@@ -194,25 +148,31 @@ const selectedSource = ref<SelectedSourceState>({
     descriptionMode: 'source',
 });
 
+const preferredContentSourceKey = computed<SourceKey>(() => {
+    const avail = availableSources.value;
+    const preferredRaw = preferredDescriptionSource.value;
+    const preferred =
+        typeof preferredRaw === 'string' && preferredRaw.trim() !== ''
+            ? normalizeSourceKey(preferredRaw)
+            : null;
+    return preferred && avail.has(preferred) ? preferred : preferredContentSource(avail);
+});
+
 watch(
-    () => availableSources.value,
-    (avail) => {
-        const preferredRaw = data.value?.preferred_description_source ?? null;
-        const preferred =
-            typeof preferredRaw === 'string' && preferredRaw.trim() !== ''
-                ? normalizeSourceKey(preferredRaw)
-                : null;
+    preferredContentSourceKey,
+    (contentSource) => {
+        const keepManual =
+            selectedSource.value.descriptionMode === 'manual' && contentSource === 'other';
         selectedSource.value = {
-            contentSource:
-                preferred && avail.has(preferred) ? preferred : preferredContentSource(avail),
-            descriptionMode: 'source',
+            contentSource,
+            descriptionMode: keepManual ? 'manual' : 'source',
         };
     },
     { immediate: true },
 );
 
 const selectedContent = computed<ProductInfoContent | null>(() => {
-    return contentForSource(data.value?.contents ?? [], selectedSource.value.contentSource);
+    return contentForSource(contents.value, selectedSource.value.contentSource);
 });
 
 const title = computed<string>(
@@ -226,7 +186,7 @@ type DescriptionCard = {
 };
 
 const descriptionCards = computed<DescriptionCard[]>(() => {
-    const contents = data.value?.contents ?? [];
+    const list = contents.value;
     const order: SourceKey[] = [
         'hlj',
         'newtype',
@@ -238,7 +198,7 @@ const descriptionCards = computed<DescriptionCard[]>(() => {
     ];
     const out: DescriptionCard[] = [];
     for (const key of order) {
-        const c = contentForSource(contents, key);
+        const c = contentForSource(list, key);
         if (!c) continue;
         out.push({ key, content: c });
     }
@@ -248,9 +208,17 @@ const descriptionCards = computed<DescriptionCard[]>(() => {
 const manualDescriptionDraft = ref<string>('');
 const manualDraftProductId = ref<string | null>(null);
 const MANUAL_DRAFT_STORAGE_PREFIX = 'plamod_drawer:manual_description_draft:';
+const MANUAL_BLANK_SENTINEL = '__ovs_manual_blank__';
 const otherDefaultDescriptionHtml = computed<string | null>(() => {
-    const other = contentForSource(data.value?.contents ?? [], 'other');
+    const other = contentForSource(contents.value, 'other');
     return other ? descriptionHtmlFor(other) : null;
+});
+const manualDraftIsDirty = computed<boolean>(() => {
+    const draft = manualDescriptionDraft.value.trim();
+    const saved = otherDefaultDescriptionHtml.value
+        ? htmlToPlainText(otherDefaultDescriptionHtml.value)
+        : '';
+    return draft !== saved.trim();
 });
 
 function storageKeyForManualDraft(productId: string | null): string | null {
@@ -280,16 +248,24 @@ function persistManualDraftToStorage(productId: string | null, value: string): v
     }
 }
 
+function meaningfulStoredDraft(productId: string | null): string | null {
+    const stored = loadManualDraftFromStorage(productId);
+    if (stored === null) return null;
+    if (stored === MANUAL_BLANK_SENTINEL) return '';
+    if (stored.trim() === '') return null;
+    return stored;
+}
+
 watch(
     () => [props.open, props.productId, otherDefaultDescriptionHtml.value] as const,
     ([open, productId, html]) => {
         if (!open) return;
         if (!productId) return;
 
+        const stored = meaningfulStoredDraft(productId);
         const switchedProduct = manualDraftProductId.value !== productId;
         if (switchedProduct) {
-            const stored = loadManualDraftFromStorage(productId);
-            // On product switch, avoid seeding from stale previous-product content.
+            // On product switch, avoid seeding from stale previous-product HTML.
             // New product content may load asynchronously right after this branch.
             manualDescriptionDraft.value = stored ?? '';
             manualDraftProductId.value = productId;
@@ -298,16 +274,16 @@ watch(
 
         // Same product: only seed when draft is empty.
         if (manualDescriptionDraft.value.trim() !== '') return;
-        const stored = loadManualDraftFromStorage(productId);
         manualDescriptionDraft.value = stored ?? (html ? htmlToPlainText(html) : '');
     },
     { immediate: true },
 );
 
 watch(
-    () => [props.productId, manualDescriptionDraft.value] as const,
-    ([productId, draft]) => {
-        if (!productId) return;
+    () => [props.open, props.productId, manualDescriptionDraft.value] as const,
+    ([open, productId, draft]) => {
+        if (!open || !productId) return;
+        if (draft.trim() === '') return;
         persistManualDraftToStorage(productId, draft);
     },
 );
@@ -322,15 +298,13 @@ function useDescriptionSource(key: SourceKey): void {
 }
 
 function useManualDescription(): void {
+    const html = manualDraftToHtml(manualDescriptionDraft.value) ?? '';
     selectedSource.value = {
         ...selectedSource.value,
         contentSource: 'other',
         descriptionMode: 'manual',
     };
-    void persistPreferredDescriptionSource(
-        'other',
-        manualDraftToHtml(manualDescriptionDraft.value),
-    );
+    void persistPreferredDescriptionSource('other', html);
 }
 
 const savingPreferredDescription = ref(false);
@@ -342,11 +316,13 @@ async function persistPreferredDescriptionSource(
     if (!props.productId) return;
     savingPreferredDescription.value = true;
     error.value = null;
+    message.value = null;
+    const usingManual = key === 'other' && manualDescriptionHtml !== null;
     try {
         const payload: Record<string, unknown> = {
             preferred_description_source: key,
         };
-        if (key === 'other') {
+        if (key === 'other' && manualDescriptionHtml !== null) {
             payload.manual_description_html = manualDescriptionHtml;
         }
 
@@ -354,10 +330,25 @@ async function persistPreferredDescriptionSource(
             `/api/v1/products/${props.productId}/preferred-description-source`,
             payload,
         );
-        if (data.value) {
-            data.value = { ...data.value, preferred_description_source: key };
+        preferredDescriptionSource.value = key;
+        if (usingManual) {
+            applyManualDescriptionLocally(manualDescriptionHtml);
         }
-        await load();
+        if (usingManual) {
+            selectedSource.value = {
+                contentSource: 'other',
+                descriptionMode: 'manual',
+            };
+            message.value = htmlFromManualIsBlank(manualDescriptionHtml)
+                ? 'Blank manual description saved.'
+                : 'Manual description saved.';
+            persistManualDraftToStorage(
+                props.productId,
+                htmlFromManualIsBlank(manualDescriptionHtml)
+                    ? MANUAL_BLANK_SENTINEL
+                    : manualDescriptionDraft.value,
+            );
+        }
     } catch {
         error.value = 'Failed to save preferred description.';
     } finally {
@@ -389,763 +380,44 @@ function descriptionHtmlFor(content: ProductInfoContent): string | null {
     return trimmed !== '' ? trimmed : null;
 }
 
-function assetSortKey(a: ProductInfoAsset): [number, number] {
-    const order =
-        typeof a.sort_order === 'number' && Number.isFinite(a.sort_order)
-            ? a.sort_order
-            : 1_000_000_000;
-    return [order, a.id];
-}
-
-function isExporting(a: ProductInfoAsset): boolean {
-    return (a.shopify_enabled ?? true) === true;
-}
-
-function isManualUploadAsset(a: ProductInfoAsset | null): boolean {
-    return a !== null && normalizeSourceKey(a.source) === 'manual_upload';
-}
-
-function shopifyToggleLabel(a: ProductInfoAsset): string {
-    const exporting = a.shopify_enabled ?? true;
-
-    return isManualUploadAsset(a)
-        ? exporting
-            ? 'On'
-            : 'Off'
-        : exporting
-          ? 'Exporting'
-          : 'Not exporting';
-}
-
-const imageAssets = computed<ProductInfoAsset[]>(() => {
-    return (data.value?.assets ?? [])
-        .filter(isImage)
-        .slice()
-        .sort((a, b) => {
-            const [ao, aid] = assetSortKey(a);
-            const [bo, bid] = assetSortKey(b);
-            if (ao !== bo) return ao - bo;
-            return aid - bid;
-        });
-});
-
-const hiddenImageSources = ref<Set<SourceKey>>(new Set());
-const HIDDEN_SOURCES_STORAGE_PREFIX = 'plamod_drawer:hidden_image_sources:';
-
-function storageKeyForHiddenSources(productId: string | null): string | null {
-    const id = (productId ?? '').trim();
-    if (!id) return null;
-    return `${HIDDEN_SOURCES_STORAGE_PREFIX}${id}`;
-}
-
-function loadHiddenSourcesFromStorage(): void {
-    const key = storageKeyForHiddenSources(props.productId);
-    if (!key) return;
-    try {
-        const raw = window.localStorage.getItem(key);
-        const list = raw ? (JSON.parse(raw) as unknown) : null;
-        if (!Array.isArray(list)) return;
-        const next = new Set<SourceKey>();
-        for (const v of list) {
-            if (typeof v !== 'string') continue;
-            next.add(normalizeSourceKey(v));
-        }
-        hiddenImageSources.value = next;
-    } catch {
-        // ignore (privacy mode / invalid JSON)
-    }
-}
-
-function persistHiddenSourcesToStorage(): void {
-    const key = storageKeyForHiddenSources(props.productId);
-    if (!key) return;
-    try {
-        const list = Array.from(hiddenImageSources.value.values());
-        window.localStorage.setItem(key, JSON.stringify(list));
-    } catch {
-        // ignore
-    }
-}
-
-type ImageSourceStat = {
-    key: SourceKey;
-    label: string;
-    count: number;
-    hidden: boolean;
-};
-
-const imageSourceStats = computed<ImageSourceStat[]>(() => {
-    const counts = new Map<SourceKey, number>();
-    for (const a of imageAssets.value) {
-        const k = normalizeSourceKey(a.source);
-        counts.set(k, (counts.get(k) ?? 0) + 1);
-    }
-    const order: SourceKey[] = [
-        'hlj',
-        'newtype',
-        'gundamhangar',
-        'gundamplanet',
-        'plamod',
-        'manual_upload',
-        'bandai',
-        'other',
-    ];
-    const keys = Array.from(counts.keys()).sort((a, b) => {
-        const ai = order.indexOf(a);
-        const bi = order.indexOf(b);
-        if (ai >= 0 && bi >= 0) return ai - bi;
-        if (ai >= 0) return -1;
-        if (bi >= 0) return 1;
-        return a.localeCompare(b);
-    });
-    return keys.map((k) => ({
-        key: k,
-        label: SOURCE_LABELS[k] ?? k,
-        count: counts.get(k) ?? 0,
-        hidden: hiddenImageSources.value.has(k),
-    }));
-});
-
-function toggleImageSourceVisibility(key: SourceKey): void {
-    const next = new Set(hiddenImageSources.value);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    hiddenImageSources.value = next;
-    persistHiddenSourcesToStorage();
-
-    // When hiding a source, treat it like "disabled for export" as well.
-    if (hiddenImageSources.value.has(key)) {
-        void disableImagesForSource(key);
-    }
-}
-
-function showAllImageSources(): void {
-    hiddenImageSources.value = new Set();
-    persistHiddenSourcesToStorage();
-}
-
-async function disableImagesForSource(key: SourceKey): Promise<void> {
-    if (!props.productId) return;
-
-    const idsToDisable = imageAssets.value
-        .filter((a) => normalizeSourceKey(a.source) === key)
-        .filter((a) => isExporting(a))
-        .map((a) => a.id);
-
-    if (idsToDisable.length === 0) {
-        return;
-    }
-
-    // Optimistic update
-    if (data.value) {
-        const set = new Set(idsToDisable);
-        data.value = {
-            ...data.value,
-            assets: (data.value.assets ?? []).map((x) =>
-                set.has(x.id) ? { ...x, shopify_enabled: false } : x,
-            ),
-        };
-    }
-
-    try {
-        await Promise.allSettled(
-            idsToDisable.map((id) =>
-                api.patch(`/api/v1/product-assets/${id}/shopify-enabled`, {
-                    shopify_enabled: false,
-                }),
-            ),
-        );
-
-        // Reorder: keep enabled first, disabled last.
-        const after = imageAssets.value.slice();
-        const enabled = after.filter((a) => isExporting(a));
-        const disabled = after.filter((a) => !isExporting(a));
-        const ordered = [...enabled, ...disabled];
-        applyImageOrderLocally(ordered);
-        await persistImageOrder(ordered);
-    } catch {
-        // Best-effort; if persistence fails, reload to reflect server truth.
-        await load();
-    }
-}
-
-async function disableImagesForHiddenSources(): Promise<void> {
-    if (!props.productId) return;
-    if (disablingHiddenSources.value) return;
-
-    const hidden = hiddenImageSources.value;
-    if (hidden.size === 0) return;
-
-    const idsToDisable = imageAssets.value
-        .filter((a) => hidden.has(normalizeSourceKey(a.source)))
-        .filter((a) => isExporting(a))
-        .map((a) => a.id);
-
-    if (idsToDisable.length === 0) {
-        return;
-    }
-
-    disablingHiddenSources.value = true;
-
-    // Optimistic update
-    if (data.value) {
-        const set = new Set(idsToDisable);
-        data.value = {
-            ...data.value,
-            assets: (data.value.assets ?? []).map((x) =>
-                set.has(x.id) ? { ...x, shopify_enabled: false } : x,
-            ),
-        };
-    }
-
-    try {
-        await Promise.allSettled(
-            idsToDisable.map((id) =>
-                api.patch(`/api/v1/product-assets/${id}/shopify-enabled`, {
-                    shopify_enabled: false,
-                }),
-            ),
-        );
-
-        // Reorder: keep enabled first, disabled last.
-        const after = imageAssets.value.slice();
-        const enabled = after.filter((a) => isExporting(a));
-        const disabled = after.filter((a) => !isExporting(a));
-        const ordered = [...enabled, ...disabled];
-        applyImageOrderLocally(ordered);
-        await persistImageOrder(ordered);
-    } catch {
-        // Best-effort; if persistence fails, reload to reflect server truth.
-        await load();
-    } finally {
-        disablingHiddenSources.value = false;
-    }
-}
-
-const visibleImageAssets = computed<ProductInfoAsset[]>(() => {
-    const hidden = hiddenImageSources.value;
-    if (hidden.size === 0) return imageAssets.value;
-    return imageAssets.value.filter((a) => !hidden.has(normalizeSourceKey(a.source)));
-});
-
-const plamodPdpUrl = computed<string | null>(() => {
-    const sku = (props.productSku ?? '').trim();
-    if (!sku) return null;
-    return `https://plamod.com/retailer/products/${encodeURIComponent(sku)}`;
-});
-
-const searchQuery = computed<string>(() => {
-    const sku = (props.productSku ?? '').trim();
-    if (sku) return sku;
-    const t = (selectedContent.value?.title ?? '').trim();
-    return t;
-});
-
-const pandaSearchUrl = computed<string | null>(() => {
-    const q = searchQuery.value.trim();
-    if (!q) return null;
-    return `https://pandahobby.ca/search?q=${encodeURIComponent(q)}`;
-});
-
-const argamaSearchUrl = computed<string | null>(() => {
-    const q = searchQuery.value.trim();
-    if (!q) return null;
-    return `https://argamahobby.com/search?q=${encodeURIComponent(q)}`;
-});
-
-const descriptionSource = computed<string | null>(() => {
-    const c = selectedContent.value ?? null;
-    return descriptionSourceUrl(
-        c
-            ? {
-                  source: c.source,
-                  source_url: c.source_url,
-              }
-            : null,
-        { sku: props.productSku, query: searchQuery.value },
-    );
-});
-
-const activeImageId = ref<number | null>(null);
-const activeImageIndex = computed<number>(() => {
-    const id = activeImageId.value;
-    if (id === null) return 0;
-    const idx = visibleImageAssets.value.findIndex((a) => a.id === id);
-    return idx >= 0 ? idx : 0;
-});
-const activeImage = computed<ProductInfoAsset | null>(
-    () => visibleImageAssets.value[activeImageIndex.value] ?? null,
-);
-const activeImageDebug = computed<string | null>(() => {
-    const img = activeImage.value;
-    if (!img) return null;
-
-    const parts: string[] = [];
-    if (img.origin_width && img.origin_height)
-        parts.push(`${img.origin_width}×${img.origin_height}`);
-    if (img.checksum_sha256) parts.push(img.checksum_sha256.slice(0, 12));
-    return parts.length > 0 ? parts.join(' · ') : null;
-});
-const savingOrder = ref(false);
-const dragAssetId = ref<number | null>(null);
-const thumbnailDragInProgress = ref(false);
-const togglingShopify = ref<Record<number, true>>({});
-const deletingManualAssetId = ref<number | null>(null);
-const dedupingExact = ref(false);
-const disablingHiddenSources = ref(false);
-const manualUploadBusy = ref(false);
-const manualUploadInput = ref<HTMLInputElement | null>(null);
-const manualUploadDragOver = ref(false);
-
-function openManualUploadPicker(): void {
-    if (manualUploadBusy.value) return;
-    message.value = null;
-    error.value = null;
-    manualUploadInput.value?.click();
-}
-
-async function onManualUploadFilesSelected(e: Event): Promise<void> {
-    const input = e.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []);
-    input.value = '';
-
-    await uploadManualFiles(files);
-}
-
-function onManualUploadDragOver(e: DragEvent): void {
-    e.preventDefault();
-    if (manualUploadBusy.value) return;
-    if (thumbnailDragInProgress.value) return;
-    manualUploadDragOver.value = true;
-}
-
-function onManualUploadDragEnter(e: DragEvent): void {
-    e.preventDefault();
-    if (manualUploadBusy.value) return;
-    if (thumbnailDragInProgress.value) return;
-    manualUploadDragOver.value = true;
-}
-
-function onManualUploadDragLeave(e: DragEvent): void {
-    e.preventDefault();
-    // Only reset when leaving the dropzone entirely.
-    if ((e.currentTarget as HTMLElement | null) === e.target) {
-        manualUploadDragOver.value = false;
-    }
-}
-
-async function onManualUploadDrop(e: DragEvent): Promise<void> {
-    e.preventDefault();
-    manualUploadDragOver.value = false;
-    if (manualUploadBusy.value) return;
-    if (thumbnailDragInProgress.value || dragAssetId.value !== null) return;
-
-    const files = Array.from(e.dataTransfer?.files ?? []);
-    await uploadManualFiles(files);
-}
-
-async function uploadManualFiles(files: File[]): Promise<void> {
-    if (!props.productId) return;
-    if (files.length === 0) return;
-
-    const imageFiles = files.filter((f) => (f.type ?? '').toLowerCase().startsWith('image/'));
-    if (imageFiles.length === 0) {
-        error.value = 'Please drop image files only.';
-        return;
-    }
-
-    manualUploadBusy.value = true;
-    message.value = null;
-    error.value = null;
-
-    try {
-        const form = new FormData();
-        for (const f of imageFiles) {
-            form.append('files[]', f);
-        }
-
-        const res = await api.post<{ ok: boolean; data: { created: number } }>(
-            `/api/v1/products/${props.productId}/assets/manual-upload`,
-            form,
-            { headers: { 'Content-Type': 'multipart/form-data' }, validateStatus: () => true },
-        );
-
-        if (res.status !== 201) {
-            const anyData = res.data as any;
-            const msg: unknown = anyData?.message ?? anyData?.error ?? anyData?.errors;
-            let details = '';
-            if (typeof msg === 'string') details = msg.trim();
-            else if (msg !== null && msg !== undefined) {
-                try {
-                    details = JSON.stringify(msg);
-                } catch {
-                    details = String(msg);
-                }
-            }
-            throw new Error(`Upload failed (HTTP ${res.status}).${details ? ` ${details}` : ''}`);
-        }
-
-        const created = (res.data as any)?.data?.created;
-        message.value = `Uploaded ${typeof created === 'number' ? created : imageFiles.length} image(s).`;
-        await load();
-    } catch (e2: unknown) {
-        error.value = e2 instanceof Error ? e2.message : 'Failed to upload images.';
-    } finally {
-        manualUploadBusy.value = false;
-    }
-}
-
-function applyImageOrderLocally(orderedImages: ProductInfoAsset[]): void {
-    if (!data.value) return;
-
-    const idToOrder = new Map<number, number>();
-    for (let i = 0; i < orderedImages.length; i++) {
-        const a = orderedImages[i];
-        if (!a) continue;
-        idToOrder.set(a.id, i + 1);
-    }
-
-    const nonImages: ProductInfoAsset[] = (data.value.assets ?? []).filter((a) => !isImage(a));
-    const updatedImages = orderedImages.map((a) => ({
-        ...a,
-        sort_order: idToOrder.get(a.id) ?? a.sort_order ?? null,
-    }));
-
-    data.value = {
-        ...data.value,
-        assets: [...updatedImages, ...nonImages],
+function applyManualDescriptionLocally(html: string | null): void {
+    const next = contents.value.slice();
+    const idx = next.findIndex((c) => normalizeSourceKey(c.source) === 'other');
+    const existing = idx >= 0 ? next[idx] : null;
+    const row: ProductInfoContent = {
+        source: 'other',
+        source_url: existing?.source_url ?? null,
+        title: existing?.title ?? 'Other',
+        description_html: html,
+        attributes: existing?.attributes ?? null,
+        updated_at: new Date().toISOString(),
     };
+    if (idx >= 0) next[idx] = row;
+    else next.push(row);
+    contents.value = next;
 }
 
-function reorder<T>(arr: T[], from: number, to: number): T[] {
-    const copy = [...arr];
-    const [item] = copy.splice(from, 1);
-    if (item === undefined) return copy;
-    copy.splice(to, 0, item);
-    return copy;
-}
-
-function mergeVisibleAndHiddenImages(visibleOrdered: ProductInfoAsset[]): ProductInfoAsset[] {
-    const visibleIds = new Set(visibleOrdered.map((a) => a.id));
-    const hidden = imageAssets.value.filter((a) => !visibleIds.has(a.id));
-    return [...visibleOrdered, ...hidden];
-}
-
-async function persistImageOrder(orderedImages: ProductInfoAsset[]): Promise<void> {
+async function load(options?: { quiet?: boolean }): Promise<void> {
     if (!props.productId) return;
-
-    savingOrder.value = true;
-    error.value = null;
-    message.value = null;
-    try {
-        await api.put(`/api/v1/products/${props.productId}/assets/order`, {
-            asset_ids: orderedImages.map((a) => a.id),
-        });
-        message.value = 'Image order saved.';
-    } catch {
-        error.value = 'Failed to save image order.';
-    } finally {
-        savingOrder.value = false;
+    const quiet = options?.quiet === true;
+    if (!quiet) {
+        loading.value = true;
     }
-}
-
-async function sortExportingImagesBySource(): Promise<void> {
-    if (savingOrder.value) return;
-
-    const current = imageAssets.value.slice();
-    if (current.length <= 1) return;
-
-    const enabled: ProductInfoAsset[] = [];
-    const disabled: ProductInfoAsset[] = [];
-    for (const a of current) {
-        if (isExporting(a)) enabled.push(a);
-        else disabled.push(a);
-    }
-
-    const order: SourceKey[] = ['plamod', 'hlj', 'newtype', 'gundamhangar', 'gundamplanet'];
-    const buckets = new Map<SourceKey, ProductInfoAsset[]>();
-    for (const k of order) buckets.set(k, []);
-
-    const otherEnabled: ProductInfoAsset[] = [];
-    for (const a of enabled) {
-        const k = normalizeSourceKey(a.source);
-        const bucket = buckets.get(k) ?? null;
-        if (bucket) bucket.push(a);
-        else otherEnabled.push(a);
-    }
-
-    const sortedEnabled: ProductInfoAsset[] = [];
-    for (const k of order) {
-        sortedEnabled.push(...(buckets.get(k) ?? []));
-    }
-    sortedEnabled.push(...otherEnabled);
-
-    const ordered = [...sortedEnabled, ...disabled];
-    applyImageOrderLocally(ordered);
-
-    // Keep current active image if possible.
-    const beforeActiveId = activeImage.value?.id ?? null;
-    if (beforeActiveId !== null) {
-        const idx = ordered.findIndex((a) => a.id === beforeActiveId);
-        if (idx >= 0) activeImageId.value = ordered[idx]?.id ?? beforeActiveId;
-    }
-
-    await persistImageOrder(ordered);
-}
-
-async function onDropThumbnail(toIndex: number): Promise<void> {
-    const fromId = dragAssetId.value;
-    dragAssetId.value = null;
-    thumbnailDragInProgress.value = false;
-    if (fromId === null) return;
-    const from = visibleImageAssets.value.findIndex((a) => a.id === fromId);
-    if (from < 0) return;
-    if (from === toIndex) return;
-
-    const beforeActiveId = activeImage.value?.id ?? null;
-    const reorderedVisible = reorder(visibleImageAssets.value, from, toIndex);
-    const reorderedImages = mergeVisibleAndHiddenImages(reorderedVisible);
-
-    // Update local ordering immediately (and update sort_order so the computed sort doesn't snap back).
-    applyImageOrderLocally(reorderedImages);
-
-    // Keep current active image if possible.
-    if (beforeActiveId !== null) {
-        const idx = reorderedImages.findIndex((a) => a.id === beforeActiveId);
-        if (idx >= 0) activeImageId.value = reorderedImages[idx]?.id ?? beforeActiveId;
-    }
-
-    await persistImageOrder(reorderedImages);
-}
-
-function prevImage(): void {
-    const n = visibleImageAssets.value.length;
-    if (n <= 1) return;
-    const idx = activeImageIndex.value;
-    const next = (idx - 1 + n) % n;
-    activeImageId.value = visibleImageAssets.value[next]?.id ?? null;
-}
-
-function nextImage(): void {
-    const n = visibleImageAssets.value.length;
-    if (n <= 1) return;
-    const idx = activeImageIndex.value;
-    const next = (idx + 1) % n;
-    activeImageId.value = visibleImageAssets.value[next]?.id ?? null;
-}
-
-function formatCad(value: string | null): string | null {
-    if (!value) return null;
-    const n = Number.parseFloat(value);
-    if (!Number.isFinite(n)) return null;
-    return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n);
-}
-
-watch(
-    () => data.value?.assets?.map((a) => a.id).join(',') ?? '',
-    () => {
-        activeImageId.value = visibleImageAssets.value[0]?.id ?? null;
-    },
-);
-
-watch(
-    () => visibleImageAssets.value.map((a) => a.id).join(','),
-    () => {
-        const id = activeImageId.value;
-        if (id === null) {
-            activeImageId.value = visibleImageAssets.value[0]?.id ?? null;
-            return;
-        }
-        const stillVisible = visibleImageAssets.value.some((a) => a.id === id);
-        if (!stillVisible) {
-            activeImageId.value = visibleImageAssets.value[0]?.id ?? null;
-        }
-    },
-);
-
-function isTogglingShopify(id: number): boolean {
-    return togglingShopify.value[id] === true;
-}
-
-async function toggleShopifyEnabled(a: ProductInfoAsset): Promise<void> {
-    const id = a.id;
-    if (isTogglingShopify(id)) return;
-
-    const current = a.shopify_enabled ?? true;
-    const next = !current;
-
-    togglingShopify.value = { ...togglingShopify.value, [id]: true };
-    error.value = null;
-    message.value = null;
-
-    // Optimistic update
-    if (data.value) {
-        data.value = {
-            ...data.value,
-            assets: (data.value.assets ?? []).map((x) =>
-                x.id === id ? { ...x, shopify_enabled: next } : x,
-            ),
-        };
-    }
-
-    try {
-        await api.patch(`/api/v1/product-assets/${id}/shopify-enabled`, { shopify_enabled: next });
-
-        // If disabling an image, move it to the end (you likely won't use it).
-        // Also keep disabled images grouped at the back for readability.
-        const imgs = imageAssets.value.slice();
-        const tgt = imgs.find((x) => x.id === id) ?? null;
-        if (tgt) {
-            const rest = imgs.filter((x) => x.id !== id);
-            const enabled = rest.filter((x) => (x.shopify_enabled ?? true) === true);
-            const disabled = rest.filter((x) => (x.shopify_enabled ?? true) === false);
-
-            let ordered: ProductInfoAsset[];
-            if (next === false) {
-                ordered = [...enabled, ...disabled, { ...tgt, shopify_enabled: false }];
-            } else {
-                // Re-enabled: put it at the end of the enabled group (before disabled).
-                ordered = [...enabled, { ...tgt, shopify_enabled: true }, ...disabled];
-            }
-
-            applyImageOrderLocally(ordered);
-            await persistImageOrder(ordered);
-        }
-    } catch {
-        if (data.value) {
-            data.value = {
-                ...data.value,
-                assets: (data.value.assets ?? []).map((x) =>
-                    x.id === id ? { ...x, shopify_enabled: current } : x,
-                ),
-            };
-        }
-        error.value = 'Failed to update Shopify export setting.';
-    } finally {
-        const { [id]: _omit, ...rest } = togglingShopify.value;
-        togglingShopify.value = rest;
-    }
-}
-
-function isDeletingManualAsset(id: number): boolean {
-    return deletingManualAssetId.value === id;
-}
-
-async function deleteManualImage(a: ProductInfoAsset): Promise<void> {
-    if (!isManualUploadAsset(a)) return;
-    if (isDeletingManualAsset(a.id)) return;
-
-    const confirmed = window.confirm(
-        `Delete the manually uploaded photo "${a.filename}"? This cannot be undone.`,
-    );
-    if (!confirmed) return;
-
-    deletingManualAssetId.value = a.id;
-    error.value = null;
-    message.value = null;
-
-    try {
-        await api.delete(`/api/v1/product-assets/${a.id}`);
-        message.value = 'Deleted manual upload image.';
-        await load();
-    } catch {
-        error.value = 'Failed to delete manual upload image.';
-    } finally {
-        deletingManualAssetId.value = null;
-    }
-}
-
-async function disableExactDuplicateImages(): Promise<void> {
-    if (!props.productId) return;
-    if (dedupingExact.value) return;
-
-    // Group by checksum (exact byte-identical images).
-    const imgs = imageAssets.value.slice();
-    const groups = new Map<string, ProductInfoAsset[]>();
-    for (const a of imgs) {
-        const sha = (a.checksum_sha256 ?? '').trim();
-        if (!sha) continue;
-        const list = groups.get(sha) ?? [];
-        list.push(a);
-        groups.set(sha, list);
-    }
-
-    // Determine which assets to disable: keep first (current order), disable rest.
-    const toDisable: ProductInfoAsset[] = [];
-    for (const [, list] of groups) {
-        if (list.length <= 1) continue;
-        for (const a of list.slice(1)) {
-            if ((a.shopify_enabled ?? true) === true) {
-                toDisable.push(a);
-            }
-        }
-    }
-    if (toDisable.length === 0) {
-        message.value = 'No exact duplicates found.';
-        return;
-    }
-
-    dedupingExact.value = true;
-    error.value = null;
-    message.value = null;
-
-    // Optimistic: disable duplicates locally.
-    if (data.value) {
-        const disableIds = new Set(toDisable.map((a) => a.id));
-        data.value = {
-            ...data.value,
-            assets: (data.value.assets ?? []).map((x) =>
-                disableIds.has(x.id) ? { ...x, shopify_enabled: false } : x,
-            ),
-        };
-    }
-
-    try {
-        await Promise.allSettled(
-            toDisable.map((a) =>
-                api.patch(`/api/v1/product-assets/${a.id}/shopify-enabled`, {
-                    shopify_enabled: false,
-                }),
-            ),
-        );
-
-        // Reorder: enabled first (keep relative order), then disabled.
-        const after = imageAssets.value.slice();
-        const enabled = after.filter((a) => (a.shopify_enabled ?? true) === true);
-        const disabled = after.filter((a) => (a.shopify_enabled ?? true) === false);
-        const ordered = [...enabled, ...disabled];
-
-        applyImageOrderLocally(ordered);
-        await persistImageOrder(ordered);
-
-        message.value = `Disabled ${toDisable.length} exact duplicate(s).`;
-    } catch {
-        error.value = 'Failed to disable exact duplicates.';
-        await load();
-    } finally {
-        dedupingExact.value = false;
-    }
-}
-
-function assetThumbUrl(asset: ProductInfoAsset): string {
-    return asset.thumb_url ?? asset.view_url;
-}
-
-async function load(): Promise<void> {
-    if (!props.productId) return;
-    loading.value = true;
     error.value = null;
     try {
         const res = await api.get<{ data: ProductInfoPayload }>(
             `/api/v1/products/${props.productId}/product-info`,
         );
-        data.value = res.data.data;
-        // Enforce: hidden sources should not be exported.
-        void disableImagesForHiddenSources();
+        const payload = res.data.data;
+        contents.value = payload.contents ?? [];
+        assets.value = payload.assets ?? [];
+        preferredDescriptionSource.value = payload.preferred_description_source ?? null;
     } catch {
         error.value = 'Failed to load product info.';
     } finally {
-        loading.value = false;
+        if (!quiet) {
+            loading.value = false;
+        }
     }
 }
 
@@ -1153,24 +425,17 @@ function resetDrawerState(): void {
     loading.value = false;
     error.value = null;
     message.value = null;
-    data.value = null;
+    contents.value = [];
+    assets.value = [];
+    preferredDescriptionSource.value = null;
+    photoSavesPending.value = false;
+    photosPanelRef.value?.resetPhotoUi();
     selectedSource.value = {
         contentSource: 'plamod',
         descriptionMode: 'source',
     };
     manualDescriptionDraft.value = '';
     manualDraftProductId.value = null;
-    hiddenImageSources.value = new Set();
-    activeImageId.value = null;
-    savingOrder.value = false;
-    dragAssetId.value = null;
-    thumbnailDragInProgress.value = false;
-    togglingShopify.value = {};
-    deletingManualAssetId.value = null;
-    dedupingExact.value = false;
-    disablingHiddenSources.value = false;
-    manualUploadBusy.value = false;
-    manualUploadDragOver.value = false;
     savingPreferredDescription.value = false;
 }
 
@@ -1189,7 +454,6 @@ watch(
             resetDrawerState();
         }
 
-        loadHiddenSourcesFromStorage();
         void load();
     },
     { immediate: true },
@@ -1243,6 +507,13 @@ watch(
                         class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
                     >
                         {{ message }}
+                    </div>
+                    <div
+                        v-if="photoSavesPending"
+                        class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900"
+                        data-testid="photo-saves-pending-drawer"
+                    >
+                        Saving photo changes…
                     </div>
 
                     <div v-if="loading" class="text-sm text-slate-600">Loading…</div>
@@ -1381,14 +652,18 @@ watch(
                                             >
                                                 Manual
                                             </div>
-                                            <div class="text-xs text-slate-500">local</div>
+                                            <div class="text-xs text-slate-500">
+                                                edit, then save
+                                            </div>
                                         </div>
                                         <div
                                             class="mt-1 truncate text-sm font-semibold text-slate-900"
                                         >
                                             Editable draft
                                         </div>
-                                        <div class="mt-1 text-xs text-slate-600">—</div>
+                                        <div class="mt-1 text-xs text-slate-600">
+                                            Save &amp; use keeps this text, including a blank box.
+                                        </div>
                                     </div>
                                     <button
                                         type="button"
@@ -1402,9 +677,12 @@ watch(
                                         @click="useManualDescription"
                                     >
                                         {{
-                                            selectedSource.descriptionMode === 'manual'
+                                            selectedSource.descriptionMode === 'manual' &&
+                                            !manualDraftIsDirty
                                                 ? 'Using'
-                                                : 'Use this'
+                                                : manualDraftIsDirty
+                                                  ? 'Save & use'
+                                                  : 'Use this'
                                         }}
                                     </button>
                                 </div>
@@ -1425,291 +703,14 @@ watch(
                         </div>
                     </div>
 
-                    <div
-                        class="rounded-md border border-slate-200 bg-white p-3 transition"
-                        data-testid="manual-image-dropzone"
-                        :class="manualUploadDragOver ? 'border-blue-400 bg-blue-50/60' : ''"
-                        @dragenter="onManualUploadDragEnter"
-                        @dragover="onManualUploadDragOver"
-                        @dragleave="onManualUploadDragLeave"
-                        @drop="onManualUploadDrop"
-                    >
-                        <div class="flex items-center justify-between gap-3">
-                            <div
-                                class="text-xs font-semibold uppercase tracking-wide text-slate-500"
-                            >
-                                Photos
-                            </div>
-                            <div class="text-xs text-slate-500">
-                                {{ visibleImageAssets.length }} shown ·
-                                {{ imageAssets.length }} total
-                            </div>
-                        </div>
-                        <div class="mt-1 text-xs text-slate-600">
-                            Drag to reorder (Shopify export follows this order). Toggle export per
-                            photo (color vs grayed out).
-                        </div>
-
-                        <div class="mt-2 flex flex-wrap items-center gap-2">
-                            <input
-                                ref="manualUploadInput"
-                                class="hidden"
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                @change="onManualUploadFilesSelected"
-                            />
-                            <template v-if="imageAssets.length > 0">
-                                <div class="text-xs font-semibold text-slate-700">Sources</div>
-                                <button
-                                    v-for="s in imageSourceStats"
-                                    :key="s.key"
-                                    type="button"
-                                    class="rounded-full border px-2 py-0.5 text-xs font-semibold transition"
-                                    :class="
-                                        s.hidden
-                                            ? 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                                            : 'border-slate-900 bg-slate-900 text-white hover:bg-slate-800'
-                                    "
-                                    @click="toggleImageSourceVisibility(s.key)"
-                                >
-                                    {{ s.label }} <span class="opacity-80">({{ s.count }})</span>
-                                    <span v-if="s.hidden" class="opacity-70"> · hidden</span>
-                                </button>
-                                <button
-                                    v-if="hiddenImageSources.size > 0"
-                                    type="button"
-                                    class="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-900 hover:bg-slate-50"
-                                    @click="showAllImageSources"
-                                >
-                                    Show all
-                                </button>
-                            </template>
-                            <div class="grow" />
-                            <button
-                                type="button"
-                                class="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
-                                :disabled="manualUploadBusy || savingOrder"
-                                @click="openManualUploadPicker"
-                                title="Upload images from your computer (source: Manual upload)."
-                            >
-                                {{ manualUploadBusy ? 'Uploading…' : 'Upload images' }}
-                            </button>
-                            <button
-                                v-if="imageAssets.length > 0"
-                                type="button"
-                                class="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
-                                :disabled="dedupingExact || savingOrder"
-                                @click="disableExactDuplicateImages"
-                                title="Exact duplicates are detected by checksum (identical bytes). Duplicates will be disabled for Shopify export."
-                            >
-                                {{ dedupingExact ? 'Disabling…' : 'Disable exact duplicates' }}
-                            </button>
-                            <button
-                                v-if="imageAssets.length > 0"
-                                type="button"
-                                class="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
-                                :disabled="savingOrder"
-                                @click="sortExportingImagesBySource"
-                                title="Reorders exporting (On) photos by source: Plamod → HLJ → Newtype → GundamHangar → GundamPlanet."
-                            >
-                                Sort exporting by source
-                            </button>
-                        </div>
-                        <button
-                            type="button"
-                            class="mt-2 w-full rounded-md border-2 border-dashed px-3 py-4 text-center text-sm transition disabled:cursor-not-allowed disabled:opacity-60"
-                            :class="
-                                manualUploadDragOver
-                                    ? 'border-blue-500 bg-blue-50 text-blue-900'
-                                    : 'border-slate-300 bg-slate-50 text-slate-700 hover:border-slate-400 hover:bg-slate-100'
-                            "
-                            :disabled="manualUploadBusy"
-                            @click="openManualUploadPicker"
-                        >
-                            {{
-                                manualUploadBusy
-                                    ? 'Uploading…'
-                                    : 'Drop images here, or click to upload'
-                            }}
-                        </button>
-
-                        <div v-if="imageAssets.length === 0" class="mt-2 text-sm text-slate-600">
-                            No images found yet.
-                        </div>
-
-                        <div v-else class="mt-2 rounded-md border border-slate-200 bg-slate-50">
-                            <div class="relative">
-                                <img
-                                    v-if="activeImage"
-                                    data-testid="photo-hero-image"
-                                    :src="activeImage.view_url"
-                                    :alt="activeImage.filename"
-                                    class="h-72 w-full rounded-md object-contain"
-                                    :class="
-                                        (activeImage.shopify_enabled ?? true)
-                                            ? ''
-                                            : 'opacity-60 grayscale'
-                                    "
-                                />
-
-                                <div
-                                    class="absolute left-2 top-2 flex flex-wrap items-center gap-2"
-                                >
-                                    <div
-                                        v-if="activeImage"
-                                        class="rounded-full border px-2 py-0.5 text-xs font-semibold"
-                                        :class="
-                                            sourceBadgeClass(normalizeSourceKey(activeImage.source))
-                                        "
-                                    >
-                                        {{
-                                            SOURCE_LABELS[normalizeSourceKey(activeImage.source)] ??
-                                            activeImage.source
-                                        }}
-                                    </div>
-                                    <button
-                                        v-if="activeImage"
-                                        type="button"
-                                        data-testid="active-shopify-export-toggle"
-                                        class="rounded-full px-2 py-0.5 text-xs font-semibold transition disabled:opacity-50"
-                                        :class="
-                                            (activeImage.shopify_enabled ?? true)
-                                                ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                                                : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
-                                        "
-                                        :disabled="isTogglingShopify(activeImage.id)"
-                                        @click="toggleShopifyEnabled(activeImage)"
-                                    >
-                                        {{ shopifyToggleLabel(activeImage) }}
-                                    </button>
-                                </div>
-
-                                <button
-                                    v-if="activeImage && isManualUploadAsset(activeImage)"
-                                    type="button"
-                                    data-testid="delete-manual-photo"
-                                    class="absolute right-2 top-2 rounded-full bg-rose-600 px-2 py-0.5 text-xs font-semibold text-white shadow-sm transition hover:bg-rose-700 disabled:opacity-50"
-                                    :disabled="
-                                        isDeletingManualAsset(activeImage.id) ||
-                                        isTogglingShopify(activeImage.id)
-                                    "
-                                    @click="deleteManualImage(activeImage)"
-                                >
-                                    {{
-                                        isDeletingManualAsset(activeImage.id)
-                                            ? 'Deleting…'
-                                            : 'Delete'
-                                    }}
-                                </button>
-
-                                <div
-                                    v-if="activeImageDebug"
-                                    class="absolute bottom-2 right-2 rounded bg-white/90 px-2 py-1 text-xs text-slate-700"
-                                >
-                                    {{ activeImageDebug }}
-                                </div>
-
-                                <button
-                                    v-if="visibleImageAssets.length > 1"
-                                    type="button"
-                                    class="absolute left-2 top-1/2 -translate-y-1/2 rounded-full border border-slate-200 bg-white/90 px-2 py-1 text-sm text-slate-900 shadow-sm hover:bg-white"
-                                    @click="prevImage"
-                                >
-                                    ‹
-                                </button>
-                                <button
-                                    v-if="visibleImageAssets.length > 1"
-                                    type="button"
-                                    class="absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-slate-200 bg-white/90 px-2 py-1 text-sm text-slate-900 shadow-sm hover:bg-white"
-                                    @click="nextImage"
-                                >
-                                    ›
-                                </button>
-                            </div>
-
-                            <div
-                                v-if="visibleImageAssets.length > 1"
-                                class="border-t border-slate-200 bg-white p-2"
-                            >
-                                <div class="grid grid-cols-3 gap-3 sm:grid-cols-4">
-                                    <button
-                                        v-for="(img, idx) in visibleImageAssets"
-                                        :key="img.id"
-                                        type="button"
-                                        class="group relative aspect-square overflow-hidden rounded border p-0.5 disabled:cursor-not-allowed disabled:opacity-50"
-                                        :class="
-                                            img.id === activeImage?.id
-                                                ? 'border-slate-900'
-                                                : 'border-slate-200 hover:border-slate-400'
-                                        "
-                                        :disabled="savingOrder"
-                                        draggable="true"
-                                        @dragstart="
-                                            dragAssetId = img.id;
-                                            thumbnailDragInProgress = true;
-                                        "
-                                        @dragend="
-                                            dragAssetId = null;
-                                            thumbnailDragInProgress = false;
-                                        "
-                                        @dragover.prevent.stop
-                                        @drop.prevent.stop="onDropThumbnail(idx)"
-                                        @click="activeImageId = img.id"
-                                    >
-                                        <img
-                                            data-testid="photo-grid-thumb"
-                                            loading="lazy"
-                                            :src="assetThumbUrl(img)"
-                                            :alt="img.filename"
-                                            class="h-full w-full rounded object-cover"
-                                            :class="
-                                                (img.shopify_enabled ?? true)
-                                                    ? ''
-                                                    : 'opacity-40 grayscale'
-                                            "
-                                        />
-                                        <div
-                                            class="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-black/60 px-1 py-0.5"
-                                        >
-                                            <div class="truncate">
-                                                <span
-                                                    class="rounded-full border px-1.5 py-0.5 text-[11px] font-semibold"
-                                                    :class="
-                                                        sourceBadgeClass(
-                                                            normalizeSourceKey(img.source),
-                                                        )
-                                                    "
-                                                >
-                                                    {{
-                                                        SOURCE_LABELS[
-                                                            normalizeSourceKey(img.source)
-                                                        ] ?? img.source
-                                                    }}
-                                                </span>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                class="shrink-0 rounded bg-white/90 px-1 py-0.5 text-[11px] font-semibold text-slate-900 hover:bg-white disabled:opacity-50"
-                                                :disabled="isTogglingShopify(img.id)"
-                                                @click.stop="toggleShopifyEnabled(img)"
-                                                :title="
-                                                    (img.shopify_enabled ?? true)
-                                                        ? 'Export to Shopify (click to disable)'
-                                                        : 'Not exporting (click to enable)'
-                                                "
-                                            >
-                                                {{ (img.shopify_enabled ?? true) ? 'On' : 'Off' }}
-                                            </button>
-                                        </div>
-                                    </button>
-                                </div>
-                                <div v-if="savingOrder" class="mt-2 text-xs text-slate-500">
-                                    Saving order…
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    <ProductInfoPhotosPanel
+                        ref="photosPanelRef"
+                        v-model:assets="assets"
+                        :product-id="productId"
+                        @error="error = $event"
+                        @message="message = $event"
+                        @pending="photoSavesPending = $event"
+                    />
                 </div>
             </aside>
         </div>

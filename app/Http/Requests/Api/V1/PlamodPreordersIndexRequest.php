@@ -18,6 +18,14 @@ final class PlamodPreordersIndexRequest extends FormRequest
             'page' => ['sometimes', 'integer', 'min:1'],
             'search' => ['sometimes', 'string', 'max:200'],
             'new_only' => ['sometimes', 'boolean'],
+            'store_offer' => ['sometimes', 'string', 'in:all,not_opened,opened'],
+            'interest' => ['sometimes', 'string', 'in:interested,not_interested,all'],
+            'sort' => ['sometimes', 'string', 'in:name,release,category,stock,sell,qty,closing,eta,eta_months'],
+            'sort_dir' => ['sometimes', 'string', 'in:asc,desc'],
+            'include_closed' => ['sometimes', 'boolean'],
+            'future_releases_only' => ['sometimes', 'boolean'],
+            'categories' => ['sometimes', 'array'],
+            'categories.*' => ['string', 'max:128'],
         ];
     }
 }

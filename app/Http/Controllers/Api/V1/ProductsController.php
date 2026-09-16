@@ -136,6 +136,7 @@ final class ProductsController extends Controller
                 $missingLandedCost,
                 $hasLandedCost,
                 $request->canonicalTaxonomyFilters(),
+                $request->storePreorderFilter(),
             ),
         );
     }

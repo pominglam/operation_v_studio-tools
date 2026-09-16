@@ -41,7 +41,12 @@ Thumbs.db
 
 # Playwright / Chromium user data & caches
 **/.pw-user-data/
+**/.pw-user-data-cart/
 **/pw-user-data/
+/test-results/
+
+# Windows accidental NUL device file
+/NUL
 **/Code Cache/
 **/Cache/
 **/*.tmp

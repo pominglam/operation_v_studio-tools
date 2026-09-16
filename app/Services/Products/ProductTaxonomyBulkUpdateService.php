@@ -90,8 +90,8 @@ final class ProductTaxonomyBulkUpdateService
         if ($overrides === []) {
             return 'no values';
         }
-        if ($verification->status !== 'proposed') {
-            return 'not proposed';
+        if (! in_array($verification->status, ['proposed', 'verified', 'overridden'], true)) {
+            return 'unsupported status';
         }
 
         $product = $verification->product;

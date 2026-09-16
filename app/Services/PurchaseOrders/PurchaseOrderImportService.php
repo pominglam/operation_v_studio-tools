@@ -726,11 +726,12 @@ final class PurchaseOrderImportService
         $po->product_total = array_key_exists('product_total', $meta) ? $meta['product_total'] : null;
         $po->surcharge_total = array_key_exists('surcharge_total', $meta) ? $meta['surcharge_total'] : null;
         $po->notes = array_key_exists('notes', $meta) ? $meta['notes'] : null;
-        if (array_key_exists('shipment_method', $meta)) {
-            $po->shipment_method = $this->shipmentMethods->normalize(
+        $explicitShipment = array_key_exists('shipment_method', $meta)
+            ? $this->shipmentMethods->normalize(
                 $meta['shipment_method'] !== null ? (string) $meta['shipment_method'] : null,
-            );
-        }
+            )
+            : null;
+        $po->shipment_method = $explicitShipment ?? $this->shipmentMethods->defaultForVendor($vendor);
         $this->purchaseOrders->create($po);
 
         return $po;

@@ -16,7 +16,7 @@ final class FinalizePlamodPreorderSyncJob implements ShouldQueue
 {
     use Queueable;
 
-    public int $timeout = 3600;
+    public int $timeout = 7200;
 
     public int $tries = 1;
 

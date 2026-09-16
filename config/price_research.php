@@ -87,5 +87,9 @@ return [
             'name' => 'Argama Hobby',
             'base_url' => 'https://argamahobby.com',
         ],
+        'cool_dragon_hobby' => [
+            'name' => 'Cool Dragon Hobby',
+            'base_url' => 'https://cooldragonhobby.ca',
+        ],
     ],
 ];

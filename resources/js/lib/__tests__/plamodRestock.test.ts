@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    applySkuCheckboxChange,
     collectCartReportRetryableSkus,
     filterPlamodRestockNewRows,
     formatPlamodRestockCartRetryConfirmMessage,
@@ -118,5 +119,41 @@ describe('new product filters', () => {
                 series: '',
             }).map((row) => row.sku),
         ).toEqual(['DISMISSED']);
+    });
+});
+
+describe('sku checkbox selection', () => {
+    const orderedSkus = ['A', 'B', 'C', 'D'];
+
+    it('toggles a single sku on a normal click and moves the anchor', () => {
+        expect(
+            applySkuCheckboxChange({
+                selected: { A: true },
+                orderedSkus,
+                sku: 'C',
+                checked: true,
+                shiftKey: false,
+                anchorSku: 'A',
+            }),
+        ).toEqual({
+            selected: { A: true, C: true },
+            anchorSku: 'C',
+        });
+    });
+
+    it('selects the inclusive filtered range on shift-click from the anchor', () => {
+        expect(
+            applySkuCheckboxChange({
+                selected: { A: true },
+                orderedSkus,
+                sku: 'C',
+                checked: false,
+                shiftKey: true,
+                anchorSku: 'A',
+            }),
+        ).toEqual({
+            selected: { A: true, B: true, C: true },
+            anchorSku: 'A',
+        });
     });
 });

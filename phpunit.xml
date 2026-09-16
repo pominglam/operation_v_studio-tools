@@ -33,5 +33,6 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="SHOPIFY_MK_INDEX_REBUILD_ENABLED" value="false"/>
     </php>
 </phpunit>

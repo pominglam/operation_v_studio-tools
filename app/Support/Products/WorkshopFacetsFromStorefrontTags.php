@@ -49,6 +49,10 @@ final class WorkshopFacetsFromStorefrontTags
                 $facets['scribing_type'] = substr($tag, strlen(StorefrontTag::SCRIBING_TYPE_PREFIX));
             } elseif (str_starts_with($tag, StorefrontTag::ADHESIVE_TYPE_PREFIX)) {
                 $facets['adhesive_type'] = substr($tag, strlen(StorefrontTag::ADHESIVE_TYPE_PREFIX));
+            } elseif (str_starts_with($tag, StorefrontTag::ADHESIVE_FLOW_PREFIX)) {
+                $facets['adhesive_flow'] = substr($tag, strlen(StorefrontTag::ADHESIVE_FLOW_PREFIX));
+            } elseif (str_starts_with($tag, StorefrontTag::ADHESIVE_THICKNESS_PREFIX)) {
+                $facets['adhesive_thickness'] = substr($tag, strlen(StorefrontTag::ADHESIVE_THICKNESS_PREFIX));
             } elseif (str_starts_with($tag, StorefrontTag::AIRBRUSH_ROLE_PREFIX)) {
                 $facets['airbrush_role'] = substr($tag, strlen(StorefrontTag::AIRBRUSH_ROLE_PREFIX));
             } elseif (str_starts_with($tag, StorefrontTag::MARKER_TYPE_PREFIX)) {

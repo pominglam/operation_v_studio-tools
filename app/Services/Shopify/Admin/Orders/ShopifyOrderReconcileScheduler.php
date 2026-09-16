@@ -21,11 +21,11 @@ final class ShopifyOrderReconcileScheduler
 
     public function runIfDue(): bool
     {
-        $intervalHours = $this->settings->getOrderReconcileIntervalHours();
+        $intervalMinutes = $this->settings->getOrderReconcileIntervalMinutes();
         $state = $this->syncState->findByKey(ShopifySettingsService::SYNC_KEY_ORDERS);
         $anchor = $state?->last_success_at ?? $state?->last_run_started_at;
 
-        if ($anchor !== null && $anchor->copy()->addHours($intervalHours)->isFuture()) {
+        if ($anchor !== null && $anchor->copy()->addMinutes($intervalMinutes)->isFuture()) {
             return false;
         }
 

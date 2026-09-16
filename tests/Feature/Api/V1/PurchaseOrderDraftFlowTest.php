@@ -70,6 +70,51 @@ it('creates a draft PO from selected products', function (): void {
     expect((int) ($items['DR-CREATE-2']->qty_ordered ?? -1))->toBe(0);
 });
 
+it('creates a draft PO as Other/multi when selected products have different vendors', function (): void {
+    $stedi = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000220011',
+        'sku' => 'DR-MULTI-STEDI',
+        'description' => 'Draft Multi Stedi',
+        'vendor' => 'Stedi',
+        'available_qty' => 1,
+        'maintain_qty' => 2,
+        'latest_unit_cost' => '5.00',
+        'latest_landed_unit_cost' => '5.00',
+    ]);
+    $plamod = Product::query()->create([
+        'uuid' => '00000000-0000-0000-0000-000000220012',
+        'sku' => 'DR-MULTI-PLAMOD',
+        'description' => 'Draft Multi Plamod',
+        'vendor' => 'Plamod',
+        'available_qty' => 1,
+        'maintain_qty' => 3,
+        'latest_unit_cost' => '8.00',
+        'latest_landed_unit_cost' => '8.00',
+    ]);
+
+    $res = $this->postJson('/api/v1/purchase-orders/drafts/create-from-products', [
+        'ids' => [$stedi->uuid, $plamod->uuid],
+    ]);
+
+    $res->assertOk();
+    $res->assertJsonPath('vendor', 'Other/multi');
+    $res->assertJsonPath('added', 2);
+    $res->assertJsonPath('skipped_vendor_mismatch', 0);
+
+    $po = PurchaseOrder::query()->where('uuid', (string) $res->json('purchase_order_uuid'))->firstOrFail();
+    expect($po->vendor)->toBe('Other/multi');
+
+    $items = PurchaseOrderItem::query()
+        ->where('purchase_order_id', $po->id)
+        ->orderBy('sku')
+        ->get()
+        ->keyBy('sku');
+
+    expect($items)->toHaveCount(2);
+    expect((string) $items['DR-MULTI-STEDI']->vendor)->toBe('Stedi');
+    expect((string) $items['DR-MULTI-PLAMOD']->vendor)->toBe('Plamod');
+});
+
 it('adds products by SKU to draft PO and skips existing, mismatch, and missing rows', function (): void {
     $po = PurchaseOrder::query()->create(['vendor' => 'Stedi']);
 
@@ -117,6 +162,44 @@ it('adds products by SKU to draft PO and skips existing, mismatch, and missing r
     $this->assertDatabaseHas('purchase_order_items', [
         'purchase_order_id' => $po->id,
         'sku' => 'DR-ADD-NEW',
+    ]);
+});
+
+it('adds mixed-vendor SKUs to an Other/multi draft PO', function (): void {
+    $po = PurchaseOrder::query()->create(['vendor' => 'Other/multi']);
+
+    $stedi = Product::query()->create([
+        'sku' => 'DR-ADD-OTHER-STEDI',
+        'description' => 'Other multi Stedi',
+        'vendor' => 'Stedi',
+        'available_qty' => 0,
+        'maintain_qty' => 1,
+    ]);
+    $plamod = Product::query()->create([
+        'sku' => 'DR-ADD-OTHER-PLAMOD',
+        'description' => 'Other multi Plamod',
+        'vendor' => 'Plamod',
+        'available_qty' => 0,
+        'maintain_qty' => 1,
+    ]);
+
+    $res = $this->postJson("/api/v1/purchase-orders/{$po->uuid}/draft-products", [
+        'skus' => [$stedi->sku, $plamod->sku],
+    ]);
+
+    $res->assertOk();
+    $res->assertJsonPath('added', 2);
+    $res->assertJsonPath('skipped_vendor_mismatch', 0);
+
+    $this->assertDatabaseHas('purchase_order_items', [
+        'purchase_order_id' => $po->id,
+        'sku' => 'DR-ADD-OTHER-STEDI',
+        'vendor' => 'Stedi',
+    ]);
+    $this->assertDatabaseHas('purchase_order_items', [
+        'purchase_order_id' => $po->id,
+        'sku' => 'DR-ADD-OTHER-PLAMOD',
+        'vendor' => 'Plamod',
     ]);
 });
 

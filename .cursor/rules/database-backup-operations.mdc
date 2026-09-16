@@ -1,0 +1,67 @@
+---
+description: Database backup schedule, retention, purge, and pre-migrate safety (lean prod)
+globs:
+  - "app/Services/Maintenance/**"
+  - "app/Console/Commands/DatabaseBackup*.php"
+  - "routes/console.php"
+  - "config/database_backup.php"
+alwaysApply: true
+---
+
+# Database backup operations
+
+Lean prod may be a **single Docker MySQL** on the developer machine. App backups + MySQL binlog are complementary; neither replaces the other.
+
+## What exists
+
+| Mechanism | Location | Role |
+| --- | --- | --- |
+| Manual / UI backup | Maintenance → Database backups, `php artisan db:backup` | On-demand mysqldump + asset ZIP → `storage/backups/` |
+| Scheduled backup | `routes/console.php` → scheduler container | Daily automated backup when `DB_BACKUP_SCHEDULE_ENABLED=true` |
+| Retention purge | `php artisan db:backup:purge` | Weekly trim per retention policy |
+| Plamod first-sync | `PlamodFirstSyncBackupService` | One-time backup before first Plamod sync |
+| MySQL binlog | Docker MySQL config | Point-in-time / disaster recovery (ops-level, not app UI) |
+
+## Default retention policy
+
+Configured in `config/database_backup.php` (override via `.env`):
+
+- **Recent window**: keep **every** backup from the last **14 days** (`DB_BACKUP_RETENTION_RECENT_DAYS`).
+- **Weekly history**: for backups older than the recent window but within **180 days** (`DB_BACKUP_RETENTION_WEEKLY_DAYS`), keep **one backup per ISO week** (newest in each week).
+- **Safety floor**: never purge below the **5** most recent backups (`DB_BACKUP_RETENTION_MINIMUM`), even if older than 180 days.
+
+Purged backups: delete ZIP under `storage/backups/` and the `database_backups` row.
+
+## Before destructive operations
+
+Required on production-like DB **before**:
+
+- `php artisan migrate` (or rollback)
+- Migrations containing `Schema::drop` / table renames with data
+- Bulk deletes or restore-from-backup drills
+
+```powershell
+php artisan db:backup --yes --description="Pre-migrate …" --created-by=system
+php artisan migrate --pretend
+```
+
+Report the created backup filename in handoff when agents run migrations.
+
+## Off-site copies (consolidation droplet)
+
+- **Direction:** pricing-tool ZIPs **PC →** `134.209.213.143:/srv/stack/backups/offsite/pricing-tool/` only.
+- **Never** push to `/srv/stack/backups/daily/` (that tree is pulled back to `Backups/ATA/`).
+- Scripts in `local-llm/scripts/pricing-tool-backup-push-to-droplet.sh` + setup/cron installers.
+- Docs: `local-llm/docs/server-consolidation/pricing-tool-offsite-backup.md`.
+
+## Agent constraints
+
+- Do **not** disable scheduled backups or retention without user approval.
+- Do **not** run `db:backup:purge --yes` without `--dry-run` review unless user asked for purge.
+- Do **not** imply backups exist — verify `database_backups` / `storage/backups/` or run backup first.
+- Cross-reference `migration-data-safety.mdc` for migrate gates; autonomous migrate OK after backup per `operator-expectations.mdc`.
+
+## Related docs
+
+- `docs/requirements/maintenance-db-backups.md`
+- `docs/features/screens/maintenance.md`

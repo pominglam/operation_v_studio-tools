@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace App\Services\Products;
 
 use App\DAL\Products\ProductExternalAssetRepository;
+use App\DAL\Products\ProductRepository;
 use App\Models\ProductExternalAsset;
 
 final class ProductExternalAssetShopifyPreferenceService
 {
-    public function __construct(private readonly ProductExternalAssetRepository $assets) {}
+    public function __construct(
+        private readonly ProductExternalAssetRepository $assets,
+        private readonly ProductRepository $products,
+    ) {}
 
     /**
      * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
@@ -22,13 +26,18 @@ final class ProductExternalAssetShopifyPreferenceService
         }
 
         $this->assets->setShopifyEnabled($assetId, $enabled);
+        $asset->shopify_enabled = $enabled;
 
-        // Re-fetch (keeps controller thin and returns authoritative current state).
-        $updated = $this->assets->findById($assetId);
-        if (! $updated instanceof ProductExternalAsset) {
-            throw new \Illuminate\Database\Eloquent\ModelNotFoundException('Asset not found after update.');
-        }
+        return $asset;
+    }
 
-        return $updated;
+    /**
+     * @param  array<int, int>  $ids
+     */
+    public function setShopifyEnabledForProduct(string $productUuid, array $ids, bool $enabled): int
+    {
+        $product = $this->products->findByUuidOrFail($productUuid);
+
+        return $this->assets->setShopifyEnabledForProductIds((int) $product->id, $ids, $enabled);
     }
 }

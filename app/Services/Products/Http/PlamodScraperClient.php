@@ -12,6 +12,8 @@ final class PlamodScraperClient implements PlamodScraper
 {
     private const int LONG_TIMEOUT_SECONDS = 400;
 
+    private const int PREORDER_HUB_TIMEOUT_SECONDS = 900;
+
     private const int INSTOCK_MERGED_TIMEOUT_SECONDS = 10800;
 
     private const int RESTOCK_CART_TIMEOUT_SECONDS = 7200;
@@ -39,7 +41,7 @@ final class PlamodScraperClient implements PlamodScraper
     public function exportPreordersCsv(): array
     {
         $payload = $this->decodeResponse(
-            $this->post('/export-preorders-csv', [], self::LONG_TIMEOUT_SECONDS, 3),
+            $this->post('/export-preorders-csv', [], self::PREORDER_HUB_TIMEOUT_SECONDS, 2),
             'Plamod scraper error',
         );
 
@@ -97,18 +99,42 @@ final class PlamodScraperClient implements PlamodScraper
     }
 
     /**
+     * @param  array<int, array{name: string, tab: string, category_id: string|null, expected: int}>  $onlyFilters
      * @return array{ok: bool, error_message?: string, csv_storage_path?: string, bytes?: int, row_count?: int, expected_row_count?: int, filter_mode?: string|null, filter_chunks?: array<int, array<string, mixed>>, duration_ms?: int}
      */
-    public function exportManufacturerInstockMerged(int $manufacturerId = 1): array
+    public function exportManufacturerInstockMerged(int $manufacturerId = 1, array $onlyFilters = []): array
     {
+        $body = ['manufacturer_id' => $manufacturerId];
+        if ($onlyFilters !== []) {
+            $body['only_filters'] = $onlyFilters;
+        }
+
         $payload = $this->decodeResponse(
-            $this->post('/export-manufacturer-instock-merged', ['manufacturer_id' => $manufacturerId], self::INSTOCK_MERGED_TIMEOUT_SECONDS, 1),
+            $this->post('/export-manufacturer-instock-merged', $body, self::INSTOCK_MERGED_TIMEOUT_SECONDS, 1),
             'Plamod scraper error',
             notFoundMessage: 'Plamod scraper endpoint not found. Restart the pricing-tool-plamod-scraper container after scraper code changes.',
         );
 
         if (($payload['ok'] ?? false) === false && ! isset($payload['error_message'])) {
             $payload['error_message'] = 'Plamod in-stock merged export failed';
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @return array{ok: bool, error_message?: string, csv_storage_path?: string, offers_storage_path?: string, bytes?: int, row_count?: int, expected_row_count?: int, filter_mode?: string|null, filter_chunks?: array<int, array<string, mixed>>, duration_ms?: int}
+     */
+    public function exportManufacturerPreorderMerged(int $manufacturerId = 1): array
+    {
+        $payload = $this->decodeResponse(
+            $this->post('/export-manufacturer-preorder-merged', ['manufacturer_id' => $manufacturerId], self::INSTOCK_MERGED_TIMEOUT_SECONDS, 1),
+            'Plamod scraper error',
+            notFoundMessage: 'Plamod scraper endpoint not found. Restart the pricing-tool-plamod-scraper container after scraper code changes.',
+        );
+
+        if (($payload['ok'] ?? false) === false && ! isset($payload['error_message'])) {
+            $payload['error_message'] = 'Plamod preorder merged export failed';
         }
 
         return $payload;
@@ -139,7 +165,7 @@ final class PlamodScraperClient implements PlamodScraper
 
     /**
      * @param  array<int, string>  $skus
-     * @return array{ok: bool, error_message?: string, results?: array<string, array{image_url?: string, product_name?: string, price_preorder?: string, quantity_preorder?: string}|null>, enriched?: int, duration_ms?: int}
+     * @return array{ok: bool, error_message?: string, results?: array<string, array{image_url?: string, product_name?: string, price_preorder?: string, quantity_preorder?: string, description_html?: string}|null>, enriched?: int, duration_ms?: int}
      */
     public function enrichPreorderPdpFields(array $skus): array
     {
@@ -258,6 +284,17 @@ final class PlamodScraperClient implements PlamodScraper
         return $this->decodeResponse(
             $this->get('/instock-export-progress', 5, 1),
             'Plamod scraper in-stock export progress failed',
+        );
+    }
+
+    /**
+     * @return array{ok: bool, active: bool, phase?: string, filters_total?: int, filters_processed?: int, current_filter?: string, error_message?: string}
+     */
+    public function preorderExportProgress(): array
+    {
+        return $this->decodeResponse(
+            $this->get('/preorder-export-progress', 5, 1),
+            'Plamod scraper preorder export progress failed',
         );
     }
 

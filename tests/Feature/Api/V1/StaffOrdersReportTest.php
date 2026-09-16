@@ -235,3 +235,47 @@ it('backfills staff attribution columns for mirrored orders in a month', functio
         ->and($order?->pos_user_id)->toBe(134032556113)
         ->and(number_format((float) $order?->subtotal_shop_amount, 2, '.', ''))->toBe('88.00');
 });
+
+it('splits Shopify cash tenders from NT-tagged sales', function (): void {
+    ShopifyOrder::query()->create([
+        'gid' => 'gid://shopify/Order/9401',
+        'legacy_numeric_id' => '9401',
+        'name' => '#9401',
+        'display_financial_status' => 'PAID',
+        'source_name' => 'pos',
+        'channel_name' => 'Main Store (Point of Sale)',
+        'pos_user_id' => 134032556113,
+        'payment_gateway_names' => ['Cash'],
+        'subtotal_shop_amount' => '101.95',
+        'ordered_at_shop_tz' => '2026-07-08 12:00:00',
+        'cancelled_at' => null,
+    ]);
+    ShopifyOrder::query()->create([
+        'gid' => 'gid://shopify/Order/9402',
+        'legacy_numeric_id' => '9402',
+        'name' => '#9402',
+        'display_financial_status' => 'PAID',
+        'source_name' => 'pos',
+        'channel_name' => 'Main Store (Point of Sale)',
+        'pos_user_id' => 134032556113,
+        'payment_gateway_names' => ['Cash'],
+        'payload_json' => ['tags' => ['nt-sale']],
+        'subtotal_shop_amount' => '55.99',
+        'ordered_at_shop_tz' => '2026-07-08 13:00:00',
+        'cancelled_at' => null,
+    ]);
+
+    $report = app(ShopifyStaffOrdersMonthlyReportService::class)->reportForMonth('2026-07');
+    $columnKeys = array_column($report['columns'], 'key');
+    $columnLabels = array_column($report['columns'], 'label');
+
+    expect($columnKeys)->toContain('cash_sale')
+        ->and($columnKeys)->toContain('nt_sales')
+        ->and($columnLabels)->toContain('Cash sale')
+        ->and($columnLabels)->toContain('NT sales')
+        ->and($report['revenue_totals']['cash_sale'])->toBe('101.95')
+        ->and($report['revenue_totals']['nt_sales'])->toBe('55.99')
+        ->and($report['revenue_totals']['alex_hui'])->toBe('0.00')
+        ->and($report['totals']['cash_sale'])->toBe(1)
+        ->and($report['totals']['nt_sales'])->toBe(1);
+});

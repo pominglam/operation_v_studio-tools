@@ -1,0 +1,540 @@
+{% comment %}
+  Responsive model-kit mega-menu proof of concept for the AI development theme.
+
+  Nav targets: ERP mk:* tags → Shopify smart collections → /collections/{handle}
+  See pricing-tool/docs/requirements/model-kit-storefront-shelves.md
+
+  Accepts:
+  - variant: 'desktop' or 'mobile'
+  - root_link: Shopify navigation link for Model kits
+  - index: parent navigation loop index (mobile IDs)
+{% endcomment %}
+
+{%- capture latest_arrivals_url -%}/collections/latest-arrivals{%- endcapture -%}
+{%- capture gunpla_collection_url -%}/collections/gunpla{%- endcapture -%}
+{%- capture beginner_kits_url -%}/collections/beginner-kits{%- endcapture -%}
+{%- capture entry_grade_url -%}/collections/entry-grade-eg{%- endcapture -%}
+{%- capture sd_gundam_url -%}/collections/sd-gundam{%- endcapture -%}
+{%- capture sd_ex_standard_url -%}/collections/sd-ex-standard{%- endcapture -%}
+{%- capture sd_cross_silhouette_url -%}/collections/sd-cross-silhouette{%- endcapture -%}
+{%- capture sd_world_heroes_url -%}/collections/sd-world-heroes{%- endcapture -%}
+{%- capture sd_bb_url -%}/collections/sd-bb-senshi{%- endcapture -%}
+{%- capture sd_g_generation_url -%}/collections/sd-g-generation{%- endcapture -%}
+{%- capture sd_build_fighters_url -%}/collections/sd-build-fighters{%- endcapture -%}
+{%- capture sd_gunpla_kun_url -%}/collections/sd-gunpla-kun{%- endcapture -%}
+{%- capture action_bases_url -%}/collections/action-base{%- endcapture -%}
+{%- capture hg_url -%}/collections/high-grade-hg{%- endcapture -%}
+{%- capture hguc_url -%}/collections/hg-universal-century{%- endcapture -%}
+{%- capture hgce_url -%}/collections/hg-gundam-seed{%- endcapture -%}
+{%- capture hgac_url -%}/collections/hg-after-colony{%- endcapture -%}
+{%- capture hgibo_url -%}/collections/hg-iron-blooded-orphans{%- endcapture -%}
+{%- capture hgbf_url -%}/collections/hg-build-fighters{%- endcapture -%}
+{%- capture hgbd_url -%}/collections/hg-build-divers{%- endcapture -%}
+{%- capture rg_url -%}/collections/real-grade-rg{%- endcapture -%}
+{%- capture mg_collection_url -%}/collections/master-grade-mg{%- endcapture -%}
+{%- capture mg_standard_collection_url -%}/collections/mg-standard{%- endcapture -%}
+{%- capture mg_ver_ka_collection_url -%}/collections/mg-ver-ka{%- endcapture -%}
+{%- capture mgex_collection_url -%}/collections/mgex{%- endcapture -%}
+{%- capture mgsd_collection_url -%}/collections/master-grade-sd-mgsd{%- endcapture -%}
+{%- capture perfect_grade_url -%}/collections/perfect-grade-pg{%- endcapture -%}
+{%- capture gunpla_option_parts_url -%}/collections/gunpla-option-parts{%- endcapture -%}
+{%- capture gundam_uc_series_url -%}/collections/gundam-universal-century{%- endcapture -%}
+{%- capture gundam_au_series_url -%}/collections/gundam-alternate-universes{%- endcapture -%}
+{%- capture gundam_other_uc_series_url -%}/collections/gundam-other-uc-series{%- endcapture -%}
+{%- capture gundam_other_au_series_url -%}/collections/gundam-other-au-series{%- endcapture -%}
+{%- capture gundam_0079_series_url -%}/collections/gundam-mobile-suit-gundam{%- endcapture -%}
+{%- capture gundam_zeta_series_url -%}/collections/gundam-zeta{%- endcapture -%}
+{%- capture gundam_zz_series_url -%}/collections/gundam-zz{%- endcapture -%}
+{%- capture gundam_cca_series_url -%}/collections/gundam-chars-counterattack{%- endcapture -%}
+{%- capture gundam_0080_series_url -%}/collections/gundam-0080{%- endcapture -%}
+{%- capture gundam_0083_series_url -%}/collections/gundam-0083{%- endcapture -%}
+{%- capture gundam_seed_series_url -%}/collections/gundam-seed{%- endcapture -%}
+{%- capture gundam_wing_series_url -%}/collections/gundam-wing{%- endcapture -%}
+{%- capture gundam_00_series_url -%}/collections/gundam-00{%- endcapture -%}
+{%- capture gundam_ibo_series_url -%}/collections/gundam-iron-blooded-orphans{%- endcapture -%}
+{%- capture gundam_mercury_series_url -%}/collections/gundam-witch-from-mercury{%- endcapture -%}
+{%- capture gundam_unicorn_series_url -%}/collections/gundam-unicorn{%- endcapture -%}
+{%- capture g_gundam_series_url -%}/collections/g-gundam{%- endcapture -%}
+{%- capture gundam_build_fighters_series_url -%}/collections/gundam-build-fighters{%- endcapture -%}
+{%- capture gundam_build_divers_series_url -%}/collections/gundam-build-divers{%- endcapture -%}
+{%- capture gundam_age_series_url -%}/collections/gundam-age{%- endcapture -%}
+{%- capture gundam_hathaway_series_url -%}/collections/gundam-hathaway{%- endcapture -%}
+{%- capture thirty_mm_url -%}/collections/30-minutes-missions{%- endcapture -%}
+{%- capture thirty_ms_url -%}/collections/30-minutes-sisters{%- endcapture -%}
+{%- capture thirty_mf_url -%}/collections/30-minutes-fantasy{%- endcapture -%}
+{%- capture thirty_mp_url -%}/collections/30-minutes-preference{%- endcapture -%}
+{%- capture thirty_ml_accessories_url -%}/collections/30-minutes-accessories{%- endcapture -%}
+{%- capture pokemon_url -%}/collections/pokemon{%- endcapture -%}
+{%- capture kotobukiya_url -%}/collections/kotobukiya{%- endcapture -%}
+{%- capture moderoid_url -%}/collections/moderoid{%- endcapture -%}
+{%- capture keroro_url -%}/collections/keroro{%- endcapture -%}
+{%- capture snaa_url -%}/collections/snaa{%- endcapture -%}
+{%- capture mechatrowego_url -%}/collections/mechatrowego{%- endcapture -%}
+{%- capture plamax_url -%}/collections/plamax{%- endcapture -%}
+{%- capture evangelion_url -%}/collections/evangelion{%- endcapture -%}
+{%- capture other_series_url -%}/collections/other-series{%- endcapture -%}
+{%- capture doraemon_url -%}/collections/doraemon{%- endcapture -%}
+{%- capture mazinger_url -%}/collections/mazinger{%- endcapture -%}
+{%- capture getter_robo_url -%}/collections/getter-robo{%- endcapture -%}
+{%- capture kotetsu_jeeg_url -%}/collections/kotetsu-jeeg{%- endcapture -%}
+{%- capture patlabor_url -%}/collections/patlabor{%- endcapture -%}
+{%- capture macross_delta_url -%}/collections/macross-delta{%- endcapture -%}
+{%- capture armored_trooper_votoms_url -%}/collections/armored-trooper-votoms{%- endcapture -%}
+{%- capture sakura_wars_url -%}/collections/sakura-wars{%- endcapture -%}
+{%- capture linebarrels_of_iron_url -%}/collections/linebarrels-of-iron{%- endcapture -%}
+{%- capture eureka_seven_url -%}/collections/eureka-seven{%- endcapture -%}
+{%- capture one_piece_url -%}/collections/one-piece{%- endcapture -%}
+{%- capture super_robot_wars_url -%}/collections/super-robot-wars{%- endcapture -%}
+{%- capture armored_core_url -%}/collections/armored-core{%- endcapture -%}
+
+{%- if variant == 'desktop' -%}
+  <div class="ovs-model-mega page-width">
+    <div class="ovs-model-mega__topline">
+      <div>
+        <p class="ovs-model-mega__eyebrow">Gunpla &amp; model kits</p>
+        <p class="ovs-model-mega__intro">Hundreds of unique kits in stock — shop by grade, Gundam series, or franchise.</p>
+      </div>
+      <a class="ovs-model-mega__view-all link" href="{{ latest_arrivals_url }}">
+        New arrivals
+        <span aria-hidden="true">→</span>
+      </a>
+    </div>
+
+    <div class="ovs-model-mega__grid">
+      <div class="ovs-model-mega__feature">
+        <p class="ovs-model-mega__eyebrow">Start here</p>
+        <p class="ovs-model-mega__feature-title">Find your next build</p>
+        <p class="ovs-model-mega__feature-copy">
+          Shop familiar franchises first. Grades and series are available when you want to narrow the selection.
+        </p>
+        <div class="ovs-model-mega__feature-actions">
+          <a class="ovs-model-mega__button ovs-model-mega__button--primary" href="{{ gunpla_collection_url }}">
+            Shop Gunpla
+          </a>
+          <a class="ovs-model-mega__button" href="{{ beginner_kits_url }}">Beginner kits</a>
+        </div>
+      </div>
+
+      <div class="ovs-model-mega__group">
+        <p class="ovs-model-mega__heading">Shop by grade</p>
+        <ul class="ovs-model-mega__links list-unstyled" role="list">
+          <li>
+            <a href="{{ entry_grade_url }}">Entry Grade</a>
+          </li>
+          <li>
+            <details class="ovs-model-mega__details">
+              <summary class="ovs-model-mega__details-summary">
+                <a href="{{ sd_gundam_url }}" class="ovs-model-mega__details-link">SD Gundam</a>
+              </summary>
+              <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                <li><a href="{{ sd_ex_standard_url }}">EX-Standard</a></li>
+                <li><a href="{{ sd_cross_silhouette_url }}">Cross Silhouette</a></li>
+                <li><a href="{{ sd_world_heroes_url }}">SD World Heroes</a></li>
+                <li><a href="{{ sd_bb_url }}">BB Senshi</a></li>
+                <li><a href="{{ sd_g_generation_url }}">G Generation</a></li>
+                <li><a href="{{ sd_build_fighters_url }}">Build Fighters</a></li>
+                <li><a href="{{ sd_gunpla_kun_url }}">Gunpla-kun</a></li>
+              </ul>
+            </details>
+          </li>
+          <li>
+            <details class="ovs-model-mega__details">
+              <summary class="ovs-model-mega__details-summary">
+                <a href="{{ hg_url }}" class="ovs-model-mega__details-link">High Grade</a>
+              </summary>
+              <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                <li><a href="{{ hguc_url }}">Universal Century</a></li>
+                <li><a href="{{ hgce_url }}">Gundam SEED</a></li>
+                <li><a href="{{ hgac_url }}">After Colony</a></li>
+                <li><a href="{{ hgibo_url }}">Iron-Blooded Orphans</a></li>
+                <li><a href="{{ hgbf_url }}">Build Fighters</a></li>
+                <li><a href="{{ hgbd_url }}">Build Divers</a></li>
+              </ul>
+            </details>
+          </li>
+          <li>
+            <a href="{{ rg_url }}">Real Grade</a>
+          </li>
+          <li>
+            <details class="ovs-model-mega__details">
+              <summary class="ovs-model-mega__details-summary">
+                <a href="{{ mg_collection_url }}" class="ovs-model-mega__details-link">Master Grade</a>
+              </summary>
+              <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                <li><a href="{{ mg_standard_collection_url }}">MG</a></li>
+                <li><a href="{{ mg_ver_ka_collection_url }}">MG Ver.Ka</a></li>
+                <li><a href="{{ mgex_collection_url }}">MGEX</a></li>
+                <li><a href="{{ mgsd_collection_url }}">MGSD</a></li>
+              </ul>
+            </details>
+          </li>
+          <li>
+            <a href="{{ perfect_grade_url }}">Perfect Grade</a>
+          </li>
+          <li>
+            <a href="{{ gunpla_option_parts_url }}">Option parts</a>
+          </li>
+          <li>
+            <a href="{{ action_bases_url }}">Action bases</a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="ovs-model-mega__group">
+        <p class="ovs-model-mega__heading">Shop by series</p>
+        <ul class="ovs-model-mega__links list-unstyled" role="list">
+          <li class="ovs-model-mega__grade-parent">
+            <a href="{{ gunpla_collection_url }}">Gundam</a>
+            {%- comment -%} UC/AU nav: series shelves with >5 kits get their own link; ≤5 roll into Other UC/AU series. {%- endcomment -%}
+            <ul class="ovs-model-mega__sublinks list-unstyled" role="list">
+              <li>
+                <details class="ovs-model-mega__details">
+                  <summary class="ovs-model-mega__details-summary">
+                    <a href="{{ gundam_uc_series_url }}" class="ovs-model-mega__details-link">Universal Century</a>
+                  </summary>
+                  <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                    <li><a href="{{ gundam_0079_series_url }}">Mobile Suit Gundam</a></li>
+                    <li><a href="{{ gundam_zeta_series_url }}">Zeta Gundam</a></li>
+                    <li><a href="{{ gundam_zz_series_url }}">Gundam ZZ</a></li>
+                    <li><a href="{{ gundam_cca_series_url }}">Char's Counterattack</a></li>
+                    <li><a href="{{ gundam_0080_series_url }}">0080: War in the Pocket</a></li>
+                    <li><a href="{{ gundam_0083_series_url }}">0083: Stardust Memory</a></li>
+                    <li><a href="{{ gundam_unicorn_series_url }}">Unicorn</a></li>
+                    <li><a href="{{ gundam_hathaway_series_url }}">Hathaway's Flash</a></li>
+                    <li><a href="{{ gundam_other_uc_series_url }}">Other UC series</a></li>
+                  </ul>
+                </details>
+              </li>
+              <li>
+                <details class="ovs-model-mega__details">
+                  <summary class="ovs-model-mega__details-summary">
+                    <a href="{{ gundam_au_series_url }}" class="ovs-model-mega__details-link">Alternate universes</a>
+                  </summary>
+                  <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                    <li><a href="{{ g_gundam_series_url }}">G Gundam</a></li>
+                    <li><a href="{{ gundam_wing_series_url }}">Gundam Wing</a></li>
+                    <li><a href="{{ gundam_seed_series_url }}">Gundam SEED</a></li>
+                    <li><a href="{{ gundam_00_series_url }}">Gundam 00</a></li>
+                    <li><a href="{{ gundam_age_series_url }}">Gundam Age</a></li>
+                    <li><a href="{{ gundam_build_fighters_series_url }}">Build Fighters</a></li>
+                    <li><a href="{{ gundam_ibo_series_url }}">Iron-Blooded Orphans</a></li>
+                    <li><a href="{{ gundam_build_divers_series_url }}">Build Divers</a></li>
+                    <li><a href="{{ gundam_mercury_series_url }}">The Witch from Mercury</a></li>
+                    <li><a href="{{ gundam_other_au_series_url }}">Other AU series</a></li>
+                  </ul>
+                </details>
+              </li>
+            </ul>
+          </li>
+          <li><a href="{{ pokemon_url }}">Pokémon</a></li>
+          <li><a href="{{ keroro_url }}">Keroro</a></li>
+          <li><a href="{{ armored_core_url }}">Armored Core</a></li>
+          <li><a href="{{ super_robot_wars_url }}">Super Robot Wars</a></li>
+          <li><a href="{{ evangelion_url }}">Evangelion</a></li>
+          <li>
+            <details class="ovs-model-mega__details">
+              <summary class="ovs-model-mega__details-summary">
+                <a href="{{ other_series_url }}" class="ovs-model-mega__details-link">Others</a>
+              </summary>
+              <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                <li><a href="{{ doraemon_url }}">Doraemon</a></li>
+                <li><a href="{{ mazinger_url }}">Mazinger</a></li>
+                <li><a href="{{ getter_robo_url }}">Getter Robo</a></li>
+                <li><a href="{{ kotetsu_jeeg_url }}">Kotetsu Jeeg</a></li>
+                <li><a href="{{ patlabor_url }}">Patlabor</a></li>
+                <li><a href="{{ macross_delta_url }}">Macross Delta</a></li>
+                <li><a href="{{ armored_trooper_votoms_url }}">Armored Trooper Votoms</a></li>
+                <li><a href="{{ sakura_wars_url }}">Sakura Wars</a></li>
+                <li><a href="{{ linebarrels_of_iron_url }}">Linebarrels of Iron</a></li>
+                <li><a href="{{ eureka_seven_url }}">Eureka Seven</a></li>
+                <li><a href="{{ one_piece_url }}">One Piece</a></li>
+              </ul>
+            </details>
+          </li>
+        </ul>
+      </div>
+
+      <div class="ovs-model-mega__group">
+        <p class="ovs-model-mega__heading">30 Minutes Label</p>
+        <ul class="ovs-model-mega__links list-unstyled" role="list">
+          <li>
+            <a href="{{ thirty_mm_url }}">30 Minutes Missions</a>
+          </li>
+          <li><a href="{{ thirty_ms_url }}">30 Minutes Sisters</a></li>
+          <li><a href="{{ thirty_mf_url }}">30 Minutes Fantasy</a></li>
+          <li><a href="{{ thirty_mp_url }}">30 Minutes Preference</a></li>
+          <li><a href="{{ thirty_ml_accessories_url }}">Option parts</a></li>
+        </ul>
+      </div>
+
+      <div class="ovs-model-mega__group">
+        <p class="ovs-model-mega__heading">Other model kits</p>
+        {%- comment -%} Manual order by ERP total sold (received − available) as of 2026-08-26. Re-sort when catalog shifts. {%- endcomment -%}
+        <ul class="ovs-model-mega__links list-unstyled" role="list">
+          <li><a href="{{ kotobukiya_url }}">Kotobukiya</a></li>
+          <li><a href="{{ moderoid_url }}">Moderoid</a></li>
+          <li><a href="{{ plamax_url }}">PLAMAX</a></li>
+          <li><a href="{{ snaa_url }}">SNAA</a></li>
+          <li><a href="{{ mechatrowego_url }}">MechatroWeGo</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+{%- elsif variant == 'mobile' -%}
+  <li>
+    <details id="Details-menu-drawer-menu-item-{{ index }}">
+      <summary
+        id="HeaderDrawer-{{ root_link.handle }}"
+        class="menu-drawer__menu-item list-menu__item link link--text focus-inset"
+      >
+        {{ root_link.title | escape }}
+        <span class="svg-wrapper">
+          {{- 'icon-arrow.svg' | inline_asset_content -}}
+        </span>
+        <span class="svg-wrapper">
+          {{- 'icon-caret.svg' | inline_asset_content -}}
+        </span>
+      </summary>
+
+      <div
+        id="link-{{ root_link.handle | escape }}"
+        class="menu-drawer__submenu has-submenu gradient motion-reduce"
+        tabindex="-1"
+      >
+        <div class="menu-drawer__inner-submenu">
+          <button class="menu-drawer__close-button link link--text focus-inset" aria-expanded="true">
+            <span class="svg-wrapper">
+              {{- 'icon-arrow.svg' | inline_asset_content -}}
+            </span>
+            Main menu
+          </button>
+
+          <div
+            class="ovs-mobile-nav"
+            data-ovs-titles='{"hub":"Model kits","grade":"By grade","series":"By series","thirty-mm":"30 Minutes Label","other-kits":"Other model kits"}'
+          >
+            <div class="ovs-mobile-nav__chrome">
+              <button type="button" class="ovs-mobile-nav__back" data-ovs-nav-back aria-label="Back">
+                ‹
+              </button>
+              <p class="ovs-mobile-nav__title" data-ovs-nav-title>Model kits</p>
+              <button type="button" class="ovs-mobile-nav__close" data-ovs-nav-close aria-label="Close menu">
+                ×
+              </button>
+            </div>
+
+            <div class="ovs-mobile-nav__scroll">
+              <div class="ovs-mobile-nav__panel" data-ovs-panel="hub">
+                <div class="ovs-mobile-nav__start">
+                  <p class="ovs-model-mega__eyebrow">Start here</p>
+                  <p class="ovs-mobile-nav__start-title">Find your next build</p>
+                  <div class="ovs-mobile-nav__start-actions">
+                    <a class="ovs-model-mega__button ovs-model-mega__button--primary" href="{{ gunpla_collection_url }}">
+                      Shop Gunpla
+                    </a>
+                    <a class="ovs-model-mega__button" href="{{ beginner_kits_url }}">Beginner kits</a>
+                  </div>
+                </div>
+
+                <p class="ovs-mobile-nav__section-label">Shop</p>
+                <ul class="ovs-mobile-nav__list" role="list">
+                  <li>
+                    <a class="ovs-mobile-nav__row" href="{{ latest_arrivals_url }}">
+                      New arrivals
+                    </a>
+                  </li>
+                  <li>
+                    <button type="button" class="ovs-mobile-nav__row-btn" data-ovs-go="grade">
+                      By grade
+                      <span class="ovs-mobile-nav__chevron" aria-hidden="true">›</span>
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" class="ovs-mobile-nav__row-btn" data-ovs-go="series">
+                      By series
+                      <span class="ovs-mobile-nav__chevron" aria-hidden="true">›</span>
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" class="ovs-mobile-nav__row-btn" data-ovs-go="thirty-mm">
+                      30 Minutes Label
+                      <span class="ovs-mobile-nav__chevron" aria-hidden="true">›</span>
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" class="ovs-mobile-nav__row-btn" data-ovs-go="other-kits">
+                      Other model kits
+                      <span class="ovs-mobile-nav__chevron" aria-hidden="true">›</span>
+                    </button>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="ovs-mobile-nav__panel" data-ovs-panel="grade" hidden>
+                <p class="ovs-mobile-nav__panel-heading">By grade</p>
+                <ul class="ovs-mobile-nav__list" role="list">
+                  <li>
+                    <a class="ovs-mobile-nav__row" href="{{ entry_grade_url }}">Entry Grade</a>
+                  </li>
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ sd_gundam_url }}" class="ovs-model-mega__details-link">SD Gundam</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ sd_ex_standard_url }}">EX-Standard</a></li>
+                        <li><a href="{{ sd_cross_silhouette_url }}">Cross Silhouette</a></li>
+                        <li><a href="{{ sd_world_heroes_url }}">SD World Heroes</a></li>
+                        <li><a href="{{ sd_bb_url }}">BB Senshi</a></li>
+                        <li><a href="{{ sd_g_generation_url }}">G Generation</a></li>
+                        <li><a href="{{ sd_build_fighters_url }}">Build Fighters</a></li>
+                        <li><a href="{{ sd_gunpla_kun_url }}">Gunpla-kun</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ hg_url }}" class="ovs-model-mega__details-link">High Grade</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ hguc_url }}">Universal Century</a></li>
+                        <li><a href="{{ hgce_url }}">Gundam SEED</a></li>
+                        <li><a href="{{ hgac_url }}">After Colony</a></li>
+                        <li><a href="{{ hgibo_url }}">Iron-Blooded Orphans</a></li>
+                        <li><a href="{{ hgbf_url }}">Build Fighters</a></li>
+                        <li><a href="{{ hgbd_url }}">Build Divers</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <a class="ovs-mobile-nav__row" href="{{ rg_url }}">Real Grade</a>
+                  </li>
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ mg_collection_url }}" class="ovs-model-mega__details-link">Master Grade</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ mg_standard_collection_url }}">MG</a></li>
+                        <li><a href="{{ mg_ver_ka_collection_url }}">MG Ver.Ka</a></li>
+                        <li><a href="{{ mgex_collection_url }}">MGEX</a></li>
+                        <li><a href="{{ mgsd_collection_url }}">MGSD</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <a class="ovs-mobile-nav__row" href="{{ perfect_grade_url }}">Perfect Grade</a>
+                  </li>
+                  <li>
+                    <a class="ovs-mobile-nav__row" href="{{ gunpla_option_parts_url }}">Option parts</a>
+                  </li>
+                  <li>
+                    <a class="ovs-mobile-nav__row" href="{{ action_bases_url }}">Action bases</a>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="ovs-mobile-nav__panel" data-ovs-panel="series" hidden>
+                <p class="ovs-mobile-nav__panel-heading">By series</p>
+                <p class="ovs-mobile-nav__group-label">Gundam</p>
+                <ul class="ovs-mobile-nav__list" role="list">
+                  <li>
+                    <a class="ovs-mobile-nav__row" href="{{ gunpla_collection_url }}">All Gunpla</a>
+                  </li>
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ gundam_uc_series_url }}" class="ovs-model-mega__details-link">Universal Century</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ gundam_0079_series_url }}">Mobile Suit Gundam</a></li>
+                        <li><a href="{{ gundam_zeta_series_url }}">Zeta Gundam</a></li>
+                        <li><a href="{{ gundam_zz_series_url }}">Gundam ZZ</a></li>
+                        <li><a href="{{ gundam_cca_series_url }}">Char's Counterattack</a></li>
+                        <li><a href="{{ gundam_0080_series_url }}">0080: War in the Pocket</a></li>
+                        <li><a href="{{ gundam_0083_series_url }}">0083</a></li>
+                        <li><a href="{{ gundam_unicorn_series_url }}">Unicorn</a></li>
+                        <li><a href="{{ gundam_hathaway_series_url }}">Hathaway's Flash</a></li>
+                        <li><a href="{{ gundam_other_uc_series_url }}">Other UC series</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ gundam_au_series_url }}" class="ovs-model-mega__details-link">Alternate universes</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ g_gundam_series_url }}">G Gundam</a></li>
+                        <li><a href="{{ gundam_wing_series_url }}">Gundam Wing</a></li>
+                        <li><a href="{{ gundam_seed_series_url }}">Gundam SEED</a></li>
+                        <li><a href="{{ gundam_00_series_url }}">Gundam 00</a></li>
+                        <li><a href="{{ gundam_age_series_url }}">Gundam Age</a></li>
+                        <li><a href="{{ gundam_build_fighters_series_url }}">Build Fighters</a></li>
+                        <li><a href="{{ gundam_ibo_series_url }}">Iron-Blooded Orphans</a></li>
+                        <li><a href="{{ gundam_build_divers_series_url }}">Build Divers</a></li>
+                        <li><a href="{{ gundam_mercury_series_url }}">The Witch from Mercury</a></li>
+                        <li><a href="{{ gundam_other_au_series_url }}">Other AU series</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                </ul>
+                <p class="ovs-mobile-nav__group-label">More franchises</p>
+                <ul class="ovs-mobile-nav__list" role="list">
+                  <li><a class="ovs-mobile-nav__row" href="{{ pokemon_url }}">Pokémon</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ keroro_url }}">Keroro</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ armored_core_url }}">Armored Core</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ super_robot_wars_url }}">Super Robot Wars</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ evangelion_url }}">Evangelion</a></li>
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ other_series_url }}" class="ovs-model-mega__details-link">Others</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ doraemon_url }}">Doraemon</a></li>
+                        <li><a href="{{ mazinger_url }}">Mazinger</a></li>
+                        <li><a href="{{ getter_robo_url }}">Getter Robo</a></li>
+                        <li><a href="{{ kotetsu_jeeg_url }}">Kotetsu Jeeg</a></li>
+                        <li><a href="{{ patlabor_url }}">Patlabor</a></li>
+                        <li><a href="{{ macross_delta_url }}">Macross Delta</a></li>
+                        <li><a href="{{ armored_trooper_votoms_url }}">Armored Trooper Votoms</a></li>
+                        <li><a href="{{ sakura_wars_url }}">Sakura Wars</a></li>
+                        <li><a href="{{ linebarrels_of_iron_url }}">Linebarrels of Iron</a></li>
+                        <li><a href="{{ eureka_seven_url }}">Eureka Seven</a></li>
+                        <li><a href="{{ one_piece_url }}">One Piece</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="ovs-mobile-nav__panel" data-ovs-panel="thirty-mm" hidden>
+                <p class="ovs-mobile-nav__panel-heading">30 Minutes Label</p>
+                <ul class="ovs-mobile-nav__list" role="list">
+                  <li><a class="ovs-mobile-nav__row" href="{{ thirty_mm_url }}">30 Minutes Missions</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ thirty_ms_url }}">30 Minutes Sisters</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ thirty_mf_url }}">30 Minutes Fantasy</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ thirty_mp_url }}">30 Minutes Preference</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ thirty_ml_accessories_url }}">Option parts</a></li>
+                </ul>
+              </div>
+
+              <div class="ovs-mobile-nav__panel" data-ovs-panel="other-kits" hidden>
+                <p class="ovs-mobile-nav__panel-heading">Other model kits</p>
+                <ul class="ovs-mobile-nav__list" role="list">
+                  <li><a class="ovs-mobile-nav__row" href="{{ kotobukiya_url }}">Kotobukiya</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ moderoid_url }}">Moderoid</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ plamax_url }}">PLAMAX</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ snaa_url }}">SNAA</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ mechatrowego_url }}">MechatroWeGo</a></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+  </li>
+{%- endif -%}

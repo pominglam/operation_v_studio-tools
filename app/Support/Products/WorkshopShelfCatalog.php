@@ -60,6 +60,7 @@ final class WorkshopShelfCatalog
             StorefrontDepartment::AIRBRUSH,
             StorefrontDepartment::WEATHERING,
             StorefrontDepartment::ADHESIVES,
+            StorefrontDepartment::CUTTING_MATS,
             StorefrontDepartment::WORKSHOP_MISC => 'supplies',
             default => null,
         };

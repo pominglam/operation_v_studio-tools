@@ -42,6 +42,11 @@ final class PurchaseOrderWorkflowPushInventoryQueueService
                 'Set a received date on this purchase order before pushing to Shopify. Unreceived POs are ignored for Latest Arrivals storefront ordering.',
             );
         }
+        if ($po->fully_on_shelves_date === null) {
+            throw new PurchaseOrderWorkflowPushInventoryException(
+                'Set an On shelves date on this purchase order before pushing to Shopify. Latest Arrivals should run after kits are on the shelf.',
+            );
+        }
 
         $preview = $this->pushInventory->preview($purchaseOrderUuid);
         $uuids = $preview['product_uuids'];

@@ -1,0 +1,52 @@
+---
+description: Require automated regression tests when fixing reported bugs
+alwaysApply: true
+---
+
+# Bug-fix regression tests (mandatory)
+
+When the user reports a **bug** (wrong counts, empty grid, flash, broken filter, bad data) and you ship a fix, add or extend an **automated regression test** in the same change set **before handoff**.
+
+This complements **`bug-check-before-return.mdc`**, **`always-test-before-done.mdc`**, and **`agent-test-cleanup.mdc`**.
+
+## When this applies
+
+| Fix type | Minimum regression test |
+| --- | --- |
+| Storefront filter / nav / grid (Shopify theme) | Manifest case + Playwright e2e — see **`storefront-e2e-regression.mdc`** |
+| ERP SPA filter / table / dialog | Vitest and/or Playwright e2e on the affected route |
+| API wrong field / count / filter semantics | Pest feature test asserting the contract the UI reads |
+| Computed API field missing in JSON (service OK, UI empty) | Pest `getJson` on the SPA route asserting JSON path — see **`api-resource-enrichment-wiring.mdc`** |
+| Scraper / sync partial failure | Feature test with realistic fixture; assert no silent skip |
+| Reported flash / race / “works on retry” | E2e that waits for ready + settle time; assert stable visible outcome |
+
+## Storefront MK filters (this project)
+
+1. Register the case in **`ovs-shopify-theme/docs/storefront-mk-collection-filters.manifest.json`**:
+   - **Prefilter URL stability** (land with query param, empty/wrong grid): `prefilterStabilityCases` on the hub row
+   - **Mega menu landing**: `megaMenuPrefilterCases`
+   - **Toggle / multiselect**: existing `toggleCases` / `combinationCases`
+2. Extend **`pricing-tool/tests/e2e/storefront-mk-collection-filters.spec.ts`** (manifest-driven — do not hardcode one-off specs).
+3. Assert **customer-visible outcomes**: visible row count, `OVS_MK_LAST_BROWSE.matches`, visible title text — not only that a checkbox toggles.
+4. **Photo badges** (Sold out on filtered cards): assert the badge is **absolutely positioned on the square photo**. InnerText `"Sold out"` is not enough (badge can sit under the photo).
+5. Run **`npm run test:e2e:storefront-mk-filters`** before handoff. For badge work: `npx playwright test tests/e2e/storefront-mk-collection-filters.spec.ts --grep "Sold out"`.
+
+## Test must fail without the fix
+
+Prefer a case that would have **failed on the reported bug** (e.g. `expectExactVisibleProducts: 16` after 3s settle; MGEX `expectExactVisibleProducts: 1` with non-empty title).
+
+## Exceptions (disclose in handoff)
+
+- No runnable test harness for the layer (document what was run instead).
+- User explicitly says **no tests** for this fix.
+- Flaky external dependency — still add the test; use manifest thresholds and settle waits; fix flake before merge.
+
+## Agent test cleanup
+
+User-requested bug regression tests **stay in the repo**. Do not delete manifest/e2e additions from this rule unless the user asks.
+
+## Related
+
+- `bug-check-before-return.mdc` — reproduce before fix
+- `storefront-e2e-regression.mdc` — manifest + e2e workflow
+- `project.mdc` — Bug Fix Protocol (reproduction test before fix)

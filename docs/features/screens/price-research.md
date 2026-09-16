@@ -13,7 +13,7 @@ Loads **`GET /api/v1/price-research/products`** with pagination + filters persis
 
 ### Columns & derived math
 
-Shows per-product SKU, barcode text, descriptions, freshness indicator (**fresh vs expired TTL** mirrored from backend), **`available`**, **`landed_cost` / fallback `cost` Po band fields**, **`selling_price`**, **`multiplier`**, **`quotes[]`** matrix for each crawler result (availability tinting rules: **`sold_out` red accent**, **`not_found` grey**). A **PO lines** link immediately to the right of each selling-price input opens `ProductPoLinesDrawer` with that SKU’s PO history and unit/shipping/surcharge/landed breakdown.
+Shows per-product SKU, barcode text, descriptions, freshness indicator (**fresh vs expired TTL** mirrored from backend), **`available`**, **`landed_cost` / fallback `cost` Po band fields**, **`selling_price`**, **`multiplier`**, **`quotes[]`** matrix for each crawler result (availability tinting rules: **`sold_out` red accent**, **`not_found` grey**). **Ship/unit** (and landed derived from it) uses the latest PO line’s **`purchase_order_items.shipping_per_unit`** when set; otherwise it equal-splits that PO’s header `shipping_total`. A **PO lines** link immediately to the right of each selling-price input opens `ProductPoLinesDrawer` with that SKU’s PO history and unit/shipping/surcharge/landed breakdown.
 
 Footer totals accumulate parsed money fields for **`landed_cost` vs `cost` preference** identical to grid row logic (**`parseMoney`** on page slice).
 
@@ -33,7 +33,7 @@ Separate from multi-select chips: **`disabledSiteKeys`** array filtered out visu
 
 Whenever disabled set updates, **`normalizeRunSites`** ensures **`POST /price-research/run`** body excludes AliExpress scaffolding when needed (see implementation near watchers).
 
-Site catalog enumerated in **`allSites` constant**: **AliExpress, Argama, Panda, Canada Computers, Canadian Gundam, Hobby Bee, HobbyWholesale, Meeplemart, Hobby Sense, Gundam Hangar** (plus comment about dynamic disable states).
+Site catalog enumerated in **`allSites` constant**: **AliExpress, Argama, Panda, Canada Computers, Canadian Gundam, Hobby Bee, HobbyWholesale, Meeplemart, Hobby Sense, Gundam Hangar, Cool Dragon Hobby** (plus comment about dynamic disable states).
 
 AliExpress flagged separately—the run payload builder purposely treats AliExpress distinctly (credential / Playwright interplay).
 

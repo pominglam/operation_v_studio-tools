@@ -10,6 +10,7 @@ use App\DAL\Products\ProductRepository;
 use App\Models\Product;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\Products\ProductPdpSearchTermsService;
+use App\Services\StorePreorders\StorePreorderUsesPlamodImagesOnly;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -25,6 +26,7 @@ final class BandaiContentSyncService
         private readonly ProductRepository $products,
         private readonly ProductExternalContentRepository $contents,
         private readonly ProductExternalAssetRepository $assets,
+        private readonly StorePreorderUsesPlamodImagesOnly $storePreorderPlamodImagesOnly,
     ) {}
 
     public function syncByProductUuid(string $productUuid): bool
@@ -36,6 +38,10 @@ final class BandaiContentSyncService
 
     public function syncForProduct(Product $product): bool
     {
+        if ($this->storePreorderPlamodImagesOnly->appliesToProduct($product)) {
+            return false;
+        }
+
         $best = $this->resolvePdpFromTerms($product);
         if ($best === null) {
             return false;
@@ -61,6 +67,7 @@ final class BandaiContentSyncService
         DB::transaction(function () use ($product, $parsed, $pdpUrl, $assetRows): void {
             $attrs = [
                 'bandai_age_text' => $parsed['age_text'],
+                'bandai_series' => $parsed['series'],
             ];
 
             $this->contents->upsertForProduct(

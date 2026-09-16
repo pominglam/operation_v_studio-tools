@@ -239,8 +239,10 @@ it('excludes cancelled orders when rebuilding demand rollups', function (): void
 it('stores and returns shopify reconcile interval hours', function (): void {
     $service = app(ShopifySettingsService::class);
 
-    expect($service->getOrderReconcileIntervalHours())->toBe(12);
+    expect($service->getOrderReconcileIntervalMinutes())->toBe(30);
+    expect($service->getOrderReconcileIntervalHours())->toBe(1);
 
     $service->setOrderReconcileIntervalHours(6);
+    expect($service->getOrderReconcileIntervalMinutes())->toBe(360);
     expect($service->getOrderReconcileIntervalHours())->toBe(6);
 });

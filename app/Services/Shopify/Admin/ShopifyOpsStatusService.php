@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Shopify\Admin;
 
-use App\DAL\Maintenance\MaintenanceNoteRepository;
 use App\DAL\Shopify\ShopifySyncStateRepository;
 use App\Jobs\Shopify\PullShopifyInventoryToProductsJob;
 use App\Jobs\Shopify\RebuildProductDemandRollupsJob;
@@ -12,6 +11,7 @@ use App\Jobs\Shopify\ShopifyOrderHistoricalBackfillJob;
 use App\Jobs\Shopify\ShopifyOrderReconcileJob;
 use App\Models\Shopify\ShopifySyncLog;
 use App\Models\Shopify\ShopifyWebhookLog;
+use App\Services\Shopify\Admin\Orders\ShopifyOrderReconcileIntervalService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -26,8 +26,8 @@ final class ShopifyOpsStatusService
     public const string SYNC_KEY_INVENTORY_PULL = 'inventory_pull_to_products';
 
     public function __construct(
-        private readonly MaintenanceNoteRepository $notes,
         private readonly ShopifySyncStateRepository $syncState,
+        private readonly ShopifyOrderReconcileIntervalService $interval,
     ) {}
 
     /**
@@ -36,7 +36,7 @@ final class ShopifyOpsStatusService
     public function snapshot(): array
     {
         $state = $this->syncState->findByKey(ShopifySettingsService::SYNC_KEY_ORDERS);
-        $intervalHours = $this->resolveOrderReconcileIntervalHours();
+        $intervalMinutes = $this->interval->getMinutes();
         $lastSuccess = $state?->last_success_at;
 
         /** @var Carbon|null $lastWebhook */
@@ -44,11 +44,12 @@ final class ShopifyOpsStatusService
 
         $nextReconcileDue = null;
         if ($lastSuccess !== null) {
-            $nextReconcileDue = $lastSuccess->copy()->addHours($intervalHours);
+            $nextReconcileDue = $lastSuccess->copy()->addMinutes($intervalMinutes);
         }
 
         return [
-            'order_reconcile_interval_hours' => $intervalHours,
+            'order_reconcile_interval_minutes' => $intervalMinutes,
+            'order_reconcile_interval_hours' => max(1, (int) ceil($intervalMinutes / 60)),
             'orders_last_success_at' => optional($state?->last_success_at)->toISOString(),
             'orders_high_water_updated_at' => optional($state?->high_water_updated_at)->toISOString(),
             'orders_last_error' => $state?->last_error,
@@ -139,16 +140,5 @@ final class ShopifyOpsStatusService
         return DB::table('jobs')
             ->where('payload', 'like', '%'.$needle.'%')
             ->exists();
-    }
-
-    private function resolveOrderReconcileIntervalHours(): int
-    {
-        $note = $this->notes->findByKey(ShopifySettingsService::KEY_ORDER_RECONCILE_INTERVAL_HOURS);
-        $raw = is_string($note?->body) ? trim($note->body) : '';
-        if ($raw === '' || ! ctype_digit($raw)) {
-            return 12;
-        }
-
-        return max(1, min(168, (int) $raw));
     }
 }

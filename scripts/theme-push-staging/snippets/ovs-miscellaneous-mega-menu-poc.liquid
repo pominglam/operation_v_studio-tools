@@ -1,0 +1,122 @@
+{% comment %}
+  Miscellaneous mega menu POC — keychains, collectibles, and other products.
+
+  Accepts:
+  - variant: 'desktop' or 'mobile'
+  - root_link: Shopify navigation link for Miscellaneous
+  - index: parent navigation loop index (mobile IDs)
+{% endcomment %}
+
+{%- capture keychains_url -%}/collections/keychain{%- endcapture -%}
+{%- capture ccs_toys_url -%}/collections/ccs-toys{%- endcapture -%}
+
+{%- if variant == 'desktop' -%}
+  <div class="ovs-model-mega ovs-misc-mega page-width">
+    <div class="ovs-model-mega__topline">
+      <div>
+        <p class="ovs-model-mega__eyebrow">Miscellaneous</p>
+        <p class="ovs-model-mega__intro">Keychains and licensed collectibles beyond kits and tools.</p>
+      </div>
+    </div>
+
+    <div class="ovs-model-mega__grid ovs-misc-mega__grid">
+      <div class="ovs-model-mega__feature">
+        <p class="ovs-model-mega__eyebrow">Start here</p>
+        <p class="ovs-model-mega__feature-title">Collectibles &amp; more</p>
+        <p class="ovs-model-mega__feature-copy">
+          Small extras and licensed collectibles that are not model kits or workshop tools.
+        </p>
+        <div class="ovs-model-mega__feature-actions">
+          <a class="ovs-model-mega__button ovs-model-mega__button--primary" href="{{ keychains_url }}">
+            Keychains
+          </a>
+          <a class="ovs-model-mega__button" href="{{ ccs_toys_url }}">CCS Toys</a>
+        </div>
+      </div>
+
+      <div class="ovs-model-mega__group">
+        <p class="ovs-model-mega__heading">Collectibles</p>
+        <ul class="ovs-model-mega__links list-unstyled" role="list">
+          <li><a href="{{ keychains_url }}">Keychains</a></li>
+          <li><a href="{{ ccs_toys_url }}">CCS Toys</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+{%- elsif variant == 'mobile' -%}
+  <li>
+    <details id="Details-menu-drawer-menu-item-{{ index }}">
+      <summary
+        id="HeaderDrawer-{{ root_link.handle }}"
+        class="menu-drawer__menu-item list-menu__item link link--text focus-inset"
+      >
+        {{ root_link.title | escape }}
+        <span class="svg-wrapper">
+          {{- 'icon-arrow.svg' | inline_asset_content -}}
+        </span>
+        <span class="svg-wrapper">
+          {{- 'icon-caret.svg' | inline_asset_content -}}
+        </span>
+      </summary>
+
+      <div
+        id="link-{{ root_link.handle | escape }}"
+        class="menu-drawer__submenu has-submenu gradient motion-reduce"
+        tabindex="-1"
+      >
+        <div class="menu-drawer__inner-submenu">
+          <button class="menu-drawer__close-button link link--text focus-inset" aria-expanded="true">
+            <span class="svg-wrapper">
+              {{- 'icon-arrow.svg' | inline_asset_content -}}
+            </span>
+            Main menu
+          </button>
+
+          <div
+            class="ovs-mobile-nav"
+            data-ovs-titles='{"hub":"Miscellaneous","collectibles":"Collectibles"}'
+          >
+            <div class="ovs-mobile-nav__chrome">
+              <button type="button" class="ovs-mobile-nav__back" data-ovs-nav-back aria-label="Back">‹</button>
+              <p class="ovs-mobile-nav__title" data-ovs-nav-title>Miscellaneous</p>
+              <button type="button" class="ovs-mobile-nav__close" data-ovs-nav-close aria-label="Close menu">×</button>
+            </div>
+
+            <div class="ovs-mobile-nav__scroll">
+              <div class="ovs-mobile-nav__panel" data-ovs-panel="hub">
+                <div class="ovs-mobile-nav__start">
+                  <p class="ovs-model-mega__eyebrow">Start here</p>
+                  <p class="ovs-mobile-nav__start-title">Collectibles &amp; more</p>
+                  <div class="ovs-mobile-nav__start-actions">
+                    <a class="ovs-model-mega__button ovs-model-mega__button--primary" href="{{ keychains_url }}">
+                      Keychains
+                    </a>
+                    <a class="ovs-model-mega__button" href="{{ ccs_toys_url }}">CCS Toys</a>
+                  </div>
+                </div>
+
+                <p class="ovs-mobile-nav__section-label">Shop</p>
+                <ul class="ovs-mobile-nav__list" role="list">
+                  <li>
+                    <button type="button" class="ovs-mobile-nav__row-btn" data-ovs-go="collectibles">
+                      Collectibles
+                      <span class="ovs-mobile-nav__chevron" aria-hidden="true">›</span>
+                    </button>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="ovs-mobile-nav__panel" data-ovs-panel="collectibles" hidden>
+                <p class="ovs-mobile-nav__panel-heading">Collectibles</p>
+                <ul class="ovs-mobile-nav__list" role="list">
+                  <li><a class="ovs-mobile-nav__row" href="{{ keychains_url }}">Keychains</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ ccs_toys_url }}">CCS Toys</a></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+  </li>
+{%- endif -%}

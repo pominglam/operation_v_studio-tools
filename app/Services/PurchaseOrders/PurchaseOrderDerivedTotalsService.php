@@ -78,18 +78,21 @@ final class PurchaseOrderDerivedTotalsService
             $shippingPerUnit = $this->divideDecimal($shippingTotal, $totalReceived, 6);
         }
 
-        $itemIds = $items->pluck('id')->all();
-        if ($itemIds !== []) {
+        $receivedAt = $this->resolveReceivedAt(
+            $po->received_date,
+            $po->shipped_date,
+            $po->ordered_date,
+        );
+        foreach ($items as $item) {
+            $lineShip = $item->shipping_per_unit !== null && trim((string) $item->shipping_per_unit) !== ''
+                ? (string) $item->shipping_per_unit
+                : $shippingPerUnit;
             InventoryLot::query()
-                ->whereIn('purchase_order_item_id', $itemIds)
+                ->where('purchase_order_item_id', (int) $item->id)
                 ->where('source_type', '=', 'po')
                 ->update([
-                    'shipping_per_unit' => $shippingPerUnit,
-                    'received_at' => $this->resolveReceivedAt(
-                        $po->received_date,
-                        $po->shipped_date,
-                        $po->ordered_date,
-                    ),
+                    'shipping_per_unit' => $lineShip,
+                    'received_at' => $receivedAt,
                     'updated_at' => now(),
                 ]);
         }

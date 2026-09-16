@@ -186,14 +186,19 @@ final class PurchaseOrderUpdateService
             $po->ordered_date?->toDateString(),
         );
 
-        InventoryLot::query()
-            ->whereIn('purchase_order_item_id', $itemIds)
-            ->where('source_type', '=', 'po')
-            ->update([
-                'shipping_per_unit' => $shippingPerUnit,
-                'received_at' => $receivedAt,
-                'updated_at' => now(),
-            ]);
+        foreach ($po->items as $item) {
+            $lineShip = $item->shipping_per_unit !== null && trim((string) $item->shipping_per_unit) !== ''
+                ? (string) $item->shipping_per_unit
+                : $shippingPerUnit;
+            InventoryLot::query()
+                ->where('purchase_order_item_id', (int) $item->id)
+                ->where('source_type', '=', 'po')
+                ->update([
+                    'shipping_per_unit' => $lineShip,
+                    'received_at' => $receivedAt,
+                    'updated_at' => now(),
+                ]);
+        }
     }
 
     private function resolveReceivedAt(?string $receivedDate, ?string $shippedDate, ?string $orderedDate): \DateTimeInterface

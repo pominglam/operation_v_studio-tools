@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Api\V1;
 
+use App\Support\Products\ProductsRecrawlSources;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -20,7 +21,7 @@ final class ProductsRecrawlSelectedRequest extends FormRequest
             'sources' => ['required', 'array', 'min:1'],
             'sources.*' => [
                 'string',
-                Rule::in(['bandai', 'hlj', 'gundamplanet', 'newtype', 'gundamhangar', 'argama', 'plamod', 'competitor_price_research']),
+                Rule::in(ProductsRecrawlSources::allowed()),
             ],
         ];
     }

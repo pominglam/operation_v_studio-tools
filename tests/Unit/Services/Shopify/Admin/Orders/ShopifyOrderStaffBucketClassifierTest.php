@@ -23,3 +23,19 @@ it('classifies pos orders by configured staff user id', function (): void {
     expect($classifier->classify('pos', 134032556113, 'Main Store (Point of Sale)', $staff))->toBe('alex_hui')
         ->and($classifier->classify('pos', 999, 'Main Store (Point of Sale)', $staff))->toBe('pos_other');
 });
+
+it('puts Shopify cash tenders in cash sale, not NT sales', function (): void {
+    $classifier = new ShopifyOrderStaffBucketClassifier;
+    $staff = [
+        '134032556113' => ['key' => 'alex_hui', 'label' => 'Alex Hui'],
+    ];
+
+    expect($classifier->classify('pos', 134032556113, 'Main Store (Point of Sale)', $staff, [], ['Cash']))
+        ->toBe('cash_sale')
+        ->and($classifier->classify('pos', 134032556113, 'Main Store (Point of Sale)', $staff, ['cash'], []))
+        ->toBe('cash_sale')
+        ->and($classifier->classify('pos', 134032556113, 'Main Store (Point of Sale)', $staff, ['nt-sale'], ['Cash']))
+        ->toBe('nt_sales')
+        ->and($classifier->classify('pos', 134032556113, 'Main Store (Point of Sale)', $staff, ['nt'], []))
+        ->toBe('nt_sales');
+});

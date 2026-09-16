@@ -35,6 +35,14 @@ final class ProductTypeDerivationService
             return 'KERORO';
         }
 
+        if (preg_match('/\bPANEL\s+LINER\b/i', $name) === 1) {
+            return 'Panel liner';
+        }
+
+        if (preg_match('/\b(?:KEYCHAIN|RUBBER MASCOT|MASCOT KEYCHAIN)\b/i', $name) === 1) {
+            return 'KEYCHAIN';
+        }
+
         if (preg_match('/\b(?:GUNPLA|ZAKUPLA|CHARZAKU)-KUN(?:\s+DX)?\b/i', $name) === 1) {
             return 'KUN DX';
         }

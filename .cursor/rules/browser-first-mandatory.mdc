@@ -1,0 +1,41 @@
+---
+description: MANDATORY real-browser verification before any UI/storefront handoff — no exceptions
+alwaysApply: true
+---
+
+# Browser first — mandatory before handoff
+
+**The user is not QA.** Do not hand off UI/storefront work until you have **looked at it in a real browser** and confirmed it **looks and behaves** correctly.
+
+## Hard gate (do not skip)
+
+Before saying **done**, **fixed**, **live**, **verified**, or **ready for review** on any **user-visible** change:
+
+1. **Open the real customer URL** (correct route, preview theme id, tenant, collection — not code review alone).
+2. **Hard refresh** after CSS/JS/Liquid/theme pushes.
+3. **Perform the interaction** (open menu, expand/collapse, click link, filter, submit).
+4. **Take a screenshot** (or browser snapshot) of the affected UI in both **default** and **after interaction** states when layout is involved.
+5. **Layout pass (mandatory for filters, nav, forms, sidebars):** Read **`layout-visual-gate-before-handoff.mdc`**. Confirm alignment, nesting, and text wrapping at **mobile + desktop** — not only that JS logic or counts work.
+6. **Only then** reply to the user — with **`### Layout verification`** when layout or visible UI changed (see **`layout-visual-gate-before-handoff.mdc`**).
+7. **Handoff gate:** Read **`verification-handoff-gate.mdc`** — Intent Contract in user words, right surface, environment (preview vs live), completeness (full option set visible). No **verified** if any gate fails.
+
+## Forbidden handoff language
+
+On user-visible UI work, do **not** say **done**, **fixed**, **verified**, or **ready for review** unless the reply contains the literal heading **`### Layout verification`** with screenshot evidence (or **Not verified — blocked**).
+
+## Does NOT count as verification
+
+- `curl`, `Invoke-WebRequest`, or HTML string grep (“FOUND: … in page source”)
+- Assuming Shopify Admin GraphQL push succeeded means the UI is correct
+- “Tests pass” without visual confirmation
+- Opening the homepage without opening the specific menu/dialog/filter you changed
+
+## If browser tools are unavailable
+
+Say explicitly: **what was not visually verified** and that handoff is **incomplete**. Do not imply the UI is correct.
+
+## Related rules
+
+- `verify-ui-before-done.mdc`
+- `rigorous-qa-before-handoff.mdc`
+- `bug-check-before-return.mdc`

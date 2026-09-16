@@ -1,0 +1,65 @@
+{% comment %} Combined UC + AU Gundam series for grade/subline shelves. {% endcomment %}
+<details class="facets__disclosure-vertical js-filter ovs-mk-filters" id="OvsMkSeriesAll-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" open>
+  <summary class="facets__summary caption-large focus-offset">
+    <div><span class="facets__summary-label">Gundam series</span>{{- 'icon-caret.svg' | inline_asset_content -}}</div>
+  </summary>
+  <div class="facets__display-vertical">
+    <fieldset class="facets-wrap facets-wrap-vertical">
+      <legend class="visually-hidden">Gundam series</legend>
+      <ul class="facets-layout facets-layout-list facets-layout-list--text facets__list--vertical list-unstyled" role="list">
+        <li class="list-menu__item facets__item ovs-mk-filters__group">
+          {%- assign uc_parent_token = ',uc-all,' -%}
+          <label for="OvsMkSeriesAll-uc-all-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="facets__label facet-checkbox">
+            <input type="checkbox" id="OvsMkSeriesAll-uc-all-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="ovs-mk-series-input" value="uc-all" data-ovs-mk-series="uc-all" data-ovs-mk-parent="true" {% if ovs_mk_series_padded contains uc_parent_token %}checked{% endif %}>
+            {{- 'square.svg' | inline_asset_content -}}
+            <div class="svg-wrapper">{{- 'icon-checkmark.svg' | inline_asset_content -}}</div>
+            <span class="facet-checkbox__text" aria-hidden="true"><span class="facet-checkbox__text-label ovs-mk-filters__parent-label">Universal Century</span></span>
+          </label>
+          <ul class="ovs-mk-filters__children list-unstyled" role="list">
+            {%- assign uc_series = "mobile_suit_gundam|Mobile Suit Gundam,zeta_gundam|Zeta Gundam,gundam_zz|Gundam ZZ,char_s_counterattack|Char's Counterattack,gundam_0080__war_in_the_pocket|0080: War in the Pocket,gundam_0083__stardust_memory|0083: Stardust Memory,gundam_unicorn|Unicorn,hathaway|Hathaway's Flash,other_uc|Other UC series" | split: ',' -%}
+            {%- for uc_show in uc_series -%}
+              {%- assign show_parts = uc_show | split: '|' -%}
+              {%- assign show_key = show_parts[0] -%}
+              {%- assign show_label = show_parts[1] -%}
+              {%- assign show_token = ',' | append: show_key | append: ',' -%}
+              <li class="list-menu__item facets__item">
+                <label for="OvsMkSeriesAll-{{ show_key }}-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="facets__label facet-checkbox">
+                  <input type="checkbox" id="OvsMkSeriesAll-{{ show_key }}-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="ovs-mk-series-input" value="{{ show_key }}" data-ovs-mk-series="{{ show_key }}" {% if ovs_mk_series_padded contains show_token %}checked{% endif %}>
+                  {{- 'square.svg' | inline_asset_content -}}
+                  <div class="svg-wrapper">{{- 'icon-checkmark.svg' | inline_asset_content -}}</div>
+                  <span class="facet-checkbox__text" aria-hidden="true"><span class="facet-checkbox__text-label">{{ show_label }}</span></span>
+                </label>
+              </li>
+            {%- endfor -%}
+          </ul>
+        </li>
+        <li class="list-menu__item facets__item ovs-mk-filters__group">
+          {%- assign au_parent_token = ',au-all,' -%}
+          <label for="OvsMkSeriesAll-au-all-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="facets__label facet-checkbox">
+            <input type="checkbox" id="OvsMkSeriesAll-au-all-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="ovs-mk-series-input" value="au-all" data-ovs-mk-series="au-all" data-ovs-mk-parent="true" {% if ovs_mk_series_padded contains au_parent_token %}checked{% endif %}>
+            {{- 'square.svg' | inline_asset_content -}}
+            <div class="svg-wrapper">{{- 'icon-checkmark.svg' | inline_asset_content -}}</div>
+            <span class="facet-checkbox__text" aria-hidden="true"><span class="facet-checkbox__text-label ovs-mk-filters__parent-label">Alternate universes</span></span>
+          </label>
+          <ul class="ovs-mk-filters__children list-unstyled" role="list">
+            {%- assign au_series = 'g_gundam|G Gundam,gundam_wing|Gundam Wing,gundam_seed|Gundam SEED,gundam_00|Gundam 00,gundam_age|Gundam Age,gundam_build_fighters|Build Fighters,iron_blooded_orphans|Iron-Blooded Orphans,gundam_build_divers|Build Divers,the_witch_from_mercury|The Witch from Mercury,other_au|Other AU series' | split: ',' -%}
+            {%- for au_show in au_series -%}
+              {%- assign show_parts = au_show | split: '|' -%}
+              {%- assign show_key = show_parts[0] -%}
+              {%- assign show_label = show_parts[1] -%}
+              {%- assign show_token = ',' | append: show_key | append: ',' -%}
+              <li class="list-menu__item facets__item">
+                <label for="OvsMkSeriesAll-au-{{ show_key }}-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="facets__label facet-checkbox">
+                  <input type="checkbox" id="OvsMkSeriesAll-au-{{ show_key }}-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="ovs-mk-series-input" value="{{ show_key }}" data-ovs-mk-series="{{ show_key }}" {% if ovs_mk_series_padded contains show_token %}checked{% endif %}>
+                  {{- 'square.svg' | inline_asset_content -}}
+                  <div class="svg-wrapper">{{- 'icon-checkmark.svg' | inline_asset_content -}}</div>
+                  <span class="facet-checkbox__text" aria-hidden="true"><span class="facet-checkbox__text-label">{{ show_label }}</span></span>
+                </label>
+              </li>
+            {%- endfor -%}
+          </ul>
+        </li>
+      </ul>
+    </fieldset>
+  </div>
+</details>

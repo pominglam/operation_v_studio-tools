@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Models\Product;
 use App\Services\Shopify\Admin\Write\ShopifyProductPushBySkusService;
+use App\Support\Products\ModelKitAccessoryKind;
 use Illuminate\Console\Command;
 
 final class ProductsPushModelKitTagsCommand extends Command
@@ -21,7 +22,22 @@ final class ProductsPushModelKitTagsCommand extends Command
         $gradeFilter = is_string($this->option('grade')) ? strtoupper(trim($this->option('grade'))) : '';
 
         $query = Product::query()
-            ->where('main_type', 'model kit')
+            ->where(function ($query): void {
+                $query->where('main_type', 'model kit')
+                    ->orWhere('type', 'KUN DX')
+                    ->orWhere('type', 'ACTION BASE')
+                    ->orWhere('accessory_kind', ModelKitAccessoryKind::DISPLAY_STAND)
+                    ->orWhere('type', 'OPTION PARTS SET')
+                    ->orWhere('sku', 'like', 'BPHD-%')
+                    ->orWhere('sku', 'like', 'OP-%')
+                    ->orWhere('sku', 'like', 'WAVOP-%')
+                    ->orWhere(function ($query): void {
+                        $query->whereIn('accessory_kind', [
+                            ModelKitAccessoryKind::OPTION_PARTS,
+                            ModelKitAccessoryKind::DETAIL_PARTS,
+                        ])->whereIn('product_line', ['Gunpla', 'Builders Parts HD', 'Option System']);
+                    });
+            })
             ->orderBy('sku');
 
         if ($gradeFilter !== '') {

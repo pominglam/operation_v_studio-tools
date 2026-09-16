@@ -69,7 +69,7 @@ return [
     | mirror segments completed within this window (seconds). Default: 1 hour.
     */
 
-    'po_prepare_mirror_freshness_seconds' => max(60, (int) env('SHOPIFY_PO_PREPARE_MIRROR_FRESHNESS_SECONDS', 3600)),
+    'customer_mirror_freshness_seconds' => max(3600, (int) env('SHOPIFY_CUSTOMER_MIRROR_FRESHNESS_SECONDS', 86400)),
 
     /*
     | Optional: pin inventory pushes to a specific Shopify location GID. When unset, the first
@@ -79,6 +79,12 @@ return [
     'inventory_location_gid' => env('SHOPIFY_INVENTORY_LOCATION_GID'),
 
     'inventory_set_batch_size' => max(1, min(250, (int) env('SHOPIFY_INVENTORY_SET_BATCH_SIZE', 100))),
+
+    /*
+    | Inventory level pull uses GraphQL nodes(ids:) batches. Hard cap is Shopify's
+    | 250-ID input-array limit; a single query must still stay under 1000 cost points.
+    */
+    'inventory_item_batch_size' => max(1, min(250, (int) env('SHOPIFY_INVENTORY_ITEM_BATCH_SIZE', 200))),
 
     'graphql_retry_attempts' => max(1, min(8, (int) env('SHOPIFY_GRAPHQL_RETRY_ATTEMPTS', 3))),
 
@@ -94,6 +100,21 @@ return [
     */
 
     'theme_mirror_path' => env('SHOPIFY_THEME_MIRROR_PATH', base_path('themes/shopify-draft')),
+
+    /*
+    | Model-kit collection filter catalog cache (one generated Liquid snippet).
+    | Product mutations poke a unique delayed job that recreates the file so the
+    | next storefront visitor does not wait on sequential Shopify section fetches.
+    */
+    'mk_storefront_index' => [
+        'enabled' => (bool) env('SHOPIFY_MK_INDEX_REBUILD_ENABLED', true),
+        'filename' => env('SHOPIFY_MK_INDEX_FILENAME', 'snippets/ovs-model-kit-index-cache.liquid'),
+        'poke_delay_seconds' => max(0, (int) env('SHOPIFY_MK_INDEX_POKE_DELAY_SECONDS', 8)),
+        'theme_ids' => array_values(array_filter(array_map(
+            static fn (string $id): string => trim($id),
+            explode(',', (string) env('SHOPIFY_MK_INDEX_THEME_IDS', '190542250065,196218716241')),
+        ))),
+    ],
 
     /*
     |--------------------------------------------------------------------------
@@ -113,12 +134,25 @@ return [
             '132966613073' => ['key' => 'po_ming_lam', 'label' => 'Po Ming Lam'],
         ],
         'extra_buckets' => [
+            ['key' => 'special_order', 'label' => 'Special order'],
+            ['key' => 'cash_sale', 'label' => 'Cash sale'],
+            ['key' => 'nt_sales', 'label' => 'NT sales'],
             ['key' => 'quick_sale', 'label' => 'Quick Sale'],
             ['key' => 'online_store', 'label' => 'Online Store'],
             ['key' => 'shop', 'label' => 'Shop'],
             ['key' => 'pos_other', 'label' => 'POS (other)'],
         ],
         'cache_ttl_seconds' => max(60, (int) env('SHOPIFY_STAFF_ORDER_REPORT_CACHE_TTL', 300)),
+    ],
+
+    /*
+    | Shared inboxes that must not join two people (R2). Comma-separated, lowercased.
+    */
+    'customer_retention' => [
+        'email_denylist' => array_values(array_filter(array_map(
+            static fn (string $email): string => strtolower(trim($email)),
+            explode(',', (string) env('SHOPIFY_CUSTOMER_EMAIL_DENYLIST', '')),
+        ))),
     ],
 
 ];

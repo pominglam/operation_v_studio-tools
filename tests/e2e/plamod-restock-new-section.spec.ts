@@ -1,7 +1,29 @@
 import { expect, test } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const TEST_SKU = 'E2E-NEW-FILTER';
 const PAGE_STATE_KEY = 'plamod_restock_page_state';
+
+function readExternalPasswordFromDotEnv(): string | null {
+    try {
+        const raw = fs.readFileSync(path.resolve(process.cwd(), '.env'), 'utf8');
+        const match = raw.match(/^\s*EXTERNAL_ACCESS_PASSWORD\s*=\s*(.+)\s*$/m);
+        if (!match) {
+            return null;
+        }
+        let value = String(match[1] ?? '').trim();
+        if (
+            (value.startsWith('"') && value.endsWith('"')) ||
+            (value.startsWith("'") && value.endsWith("'"))
+        ) {
+            value = value.slice(1, -1);
+        }
+        return value.trim() !== '' ? value.trim() : null;
+    } catch {
+        return null;
+    }
+}
 
 function parseNewRowCount(text: string | null): number {
     if (!text) return 0;
@@ -24,7 +46,18 @@ async function gotoRestock(page: import('@playwright/test').Page): Promise<void>
     }, PAGE_STATE_KEY);
 
     await page.goto('/restocking/plamod');
-    await expect(page.getByRole('heading', { name: 'PLAMOD restock' })).toBeVisible();
+    const externalAccess = page.getByRole('heading', { name: 'External access' });
+    if (await externalAccess.isVisible().catch(() => false)) {
+        const password = readExternalPasswordFromDotEnv();
+        if (!password) {
+            throw new Error('EXTERNAL_ACCESS_PASSWORD is required to pass the tunnel login in e2e');
+        }
+        await page.getByLabel('Password').fill(password);
+        await page.getByRole('button', { name: 'Log in' }).click();
+    }
+    await expect(page.getByRole('heading', { name: 'PLAMOD restock' })).toBeVisible({
+        timeout: 30_000,
+    });
     await expect(page.getByTestId('restock-tab-existing')).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByTestId('restock-cost-total')).toBeVisible();
     await expect(page.getByTestId('restock-cost-existing')).toBeVisible();
@@ -301,6 +334,40 @@ test.describe('PLAMOD restock — new products section', () => {
 
         await page.getByTestId('restock-new-select-all').uncheck();
         await expect(page.getByTestId('restock-new-bulk-bar')).toHaveCount(0);
+    });
+
+    test('row Bulk checkbox toggles on a normal click and shift-click selects a range', async ({
+        page,
+    }) => {
+        await gotoRestock(page);
+
+        const boxes = page.locator(
+            '[data-testid^="restock-new-select-"]:not([data-testid="restock-new-select-all"])',
+        );
+        await expect(boxes.first()).toBeVisible();
+        expect(await boxes.count()).toBeGreaterThanOrEqual(3);
+
+        await boxes.nth(0).click();
+        await expect(boxes.nth(0)).toBeChecked();
+        await expect(page.getByTestId('restock-new-bulk-bar')).toContainText('1 selected');
+
+        await boxes.nth(0).click();
+        await expect(boxes.nth(0)).not.toBeChecked();
+        await expect(page.getByTestId('restock-new-bulk-bar')).toHaveCount(0);
+
+        await boxes.nth(0).click({ modifiers: ['Shift'] });
+        await expect(boxes.nth(0)).toBeChecked();
+        await boxes.nth(2).click({ modifiers: ['Shift'] });
+        await expect(boxes.nth(0)).toBeChecked();
+        await expect(boxes.nth(1)).toBeChecked();
+        await expect(boxes.nth(2)).toBeChecked();
+        await expect(page.getByTestId('restock-new-bulk-bar')).toContainText('3 selected');
+
+        await boxes.nth(1).click();
+        await expect(boxes.nth(1)).not.toBeChecked();
+        await expect(boxes.nth(0)).toBeChecked();
+        await expect(boxes.nth(2)).toBeChecked();
+        await expect(page.getByTestId('restock-new-bulk-bar')).toContainText('2 selected');
     });
 
     test('dismissed status shows dismissed rows while preserving hide preference', async ({

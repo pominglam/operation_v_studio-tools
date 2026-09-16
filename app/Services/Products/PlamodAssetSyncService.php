@@ -12,6 +12,7 @@ use App\Models\Product;
 use App\Models\ProductExternalContent;
 use App\Services\Products\Exceptions\PlamodSyncException;
 use App\Services\Products\Hlj\HljContentSync;
+use App\Services\StorePreorders\StorePreorderUsesPlamodImagesOnly;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -28,6 +29,8 @@ final class PlamodAssetSyncService
         private readonly PlamodZipDownloadService $zipDownloads,
         private readonly PlamodAssetFilenameService $assetFilenames,
         private readonly HljContentSync $hlj,
+        private readonly StorePreorderUsesPlamodImagesOnly $storePreorderPlamodImagesOnly,
+        private readonly PlamodPlaceholderImageDetector $placeholders,
     ) {}
 
     public function syncByProductUuid(string $productUuid, bool $attemptPlamodAssets = false): PlamodSyncResult
@@ -39,11 +42,7 @@ final class PlamodAssetSyncService
         // For other vendors, we still do a best-effort HLJ description sync and return.
         // Manual “Get product info” can override this with $attemptPlamodAssets=true.
         if (! $attemptPlamodAssets && ($product->vendor ?? null) !== 'Plamod') {
-            try {
-                $this->hlj->syncForProduct($product);
-            } catch (\Throwable) {
-                // Ignore; this is best-effort.
-            }
+            $this->syncHljIfAllowed($product);
 
             $hljContent = $this->contents->findForProduct($product->id, 'hlj');
 
@@ -131,11 +130,7 @@ final class PlamodAssetSyncService
             // In bulk “sync missing PDP info”, many products may not have a Plamod ZIP.
             // Treat “missing Download ZIP” as a non-fatal condition so the batch can progress.
             if (str_contains($msg, 'Download ZIP')) {
-                try {
-                    $this->hlj->syncForProduct($product);
-                } catch (\Throwable) {
-                    // Ignore; best-effort.
-                }
+                $this->syncHljIfAllowed($product);
 
                 $hljContent = $this->contents->findForProduct($product->id, 'hlj');
 
@@ -179,13 +174,7 @@ final class PlamodAssetSyncService
         $assetRows = $this->buildAssetRows($zipStoragePath, $extractedPaths);
         $assets = $this->assets->replaceForProduct($product->id, self::SOURCE, $assetRows);
 
-        // Best-effort: store a generic manufacturer/distributor-style description from HLJ
-        // so the PDP preview can show something even if Plamod doesn't provide text.
-        try {
-            $this->hlj->syncForProduct($product);
-        } catch (\Throwable) {
-            // Ignore; Plamod assets are the primary goal of this job.
-        }
+        $this->syncHljIfAllowed($product);
 
         // Rename ALL image assets (every source) to SEO-friendly filenames after Plamod + HLJ sync.
         $this->assetFilenames->renameImageAssetsForProductUuid($product->uuid);
@@ -197,6 +186,19 @@ final class PlamodAssetSyncService
             content: $content,
             assets: $assets,
         );
+    }
+
+    private function syncHljIfAllowed(Product $product): void
+    {
+        if ($this->storePreorderPlamodImagesOnly->appliesToProduct($product)) {
+            return;
+        }
+
+        try {
+            $this->hlj->syncForProduct($product);
+        } catch (\Throwable) {
+            // Best-effort catalog enrichment only. Store preorders stay Plamod-only.
+        }
     }
 
     /**
@@ -297,6 +299,9 @@ final class PlamodAssetSyncService
             if ($kind === 'image' && $disk->exists($p)) {
                 $abs = $disk->path($p);
                 $sha = is_string($abs) && $abs !== '' ? (hash_file('sha256', $abs) ?: null) : null;
+                if ($this->placeholders->isPlaceholderChecksum($sha)) {
+                    continue;
+                }
             }
             $rows[] = [
                 'kind' => $kind,

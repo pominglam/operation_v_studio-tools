@@ -1,0 +1,69 @@
+{% comment %} Full Gunpla grade tree (flat + nested SD/HG/MG). Requires ovs-model-kit-filters-params. {% endcomment %}
+<details class="facets__disclosure-vertical js-filter ovs-mk-filters" id="OvsMkGrade-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" open>
+  <summary class="facets__summary caption-large focus-offset">
+    <div>
+      <span class="facets__summary-label">Grade</span>
+      {{- 'icon-caret.svg' | inline_asset_content -}}
+    </div>
+  </summary>
+  <div class="facets__display-vertical">
+    <fieldset class="facets-wrap facets-wrap-vertical">
+      <legend class="visually-hidden">Grade</legend>
+      <ul class="facets-layout facets-layout-list facets-layout-list--text facets__list--vertical list-unstyled" role="list">
+        {%- assign flat_grades = 'eg|Entry Grade,rg|Real Grade,pg|Perfect Grade,re_100|RE/100,fm|Full Mechanics,option-parts|Option parts,action-base|Action bases' | split: ',' -%}
+        {%- for flat_grade in flat_grades -%}
+          {%- assign flat_parts = flat_grade | split: '|' -%}
+          {%- assign flat_key = flat_parts[0] -%}
+          {%- assign flat_label = flat_parts[1] -%}
+          {%- assign flat_token = ',' | append: flat_key | append: ',' -%}
+          <li class="list-menu__item facets__item">
+            <label for="OvsMkGrade-{{ flat_key }}-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="facets__label facet-checkbox">
+              <input type="checkbox" id="OvsMkGrade-{{ flat_key }}-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="ovs-mk-grade-input" value="{{ flat_key }}" data-ovs-mk-grade="{{ flat_key }}" {% if ovs_mk_grades_padded contains flat_token %}checked{% endif %}>
+              {{- 'square.svg' | inline_asset_content -}}
+              <div class="svg-wrapper">{{- 'icon-checkmark.svg' | inline_asset_content -}}</div>
+              <span class="facet-checkbox__text" aria-hidden="true"><span class="facet-checkbox__text-label">{{ flat_label }}</span></span>
+            </label>
+          </li>
+        {%- endfor -%}
+        {%- assign nested_grades = 'sd|SD Gundam,hg|High Grade,mg|Master Grade' | split: ',' -%}
+        {%- for nested_grade in nested_grades -%}
+          {%- assign nested_parts = nested_grade | split: '|' -%}
+          {%- assign parent_key = nested_parts[0] | strip -%}
+          {%- assign parent_label = nested_parts[1] -%}
+          {%- assign parent_token = ',' | append: parent_key | append: ',' -%}
+          <li class="list-menu__item facets__item ovs-mk-filters__group">
+            <label for="OvsMkGrade-{{ parent_key }}-parent-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="facets__label facet-checkbox">
+              <input type="checkbox" id="OvsMkGrade-{{ parent_key }}-parent-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="ovs-mk-grade-input" value="{{ parent_key }}" data-ovs-mk-grade="{{ parent_key }}" data-ovs-mk-parent="true" {% if ovs_mk_grades_padded contains parent_token %}checked{% endif %}>
+              {{- 'square.svg' | inline_asset_content -}}
+              <div class="svg-wrapper">{{- 'icon-checkmark.svg' | inline_asset_content -}}</div>
+              <span class="facet-checkbox__text" aria-hidden="true"><span class="facet-checkbox__text-label ovs-mk-filters__parent-label">{{ parent_label }}</span></span>
+            </label>
+            <ul class="ovs-mk-filters__children list-unstyled" role="list">
+              {%- if parent_key == 'sd' -%}
+                {%- assign child_grades = 'ex_standard|EX-Standard,cross_silhouette|Cross Silhouette,sdw|SD World Heroes,bb_senshi|BB Senshi,g_generation|G Generation,sdbf|Build Fighters,gunpla_kun|Gunpla-kun' | split: ',' -%}
+              {%- elsif parent_key == 'hg' -%}
+                {%- assign child_grades = 'hguc|Universal Century,hgce|Gundam SEED,hgac|After Colony,hgibo|Iron-Blooded Orphans,hgbf|Build Fighters,hgbd|Build Divers' | split: ',' -%}
+              {%- else -%}
+                {%- assign child_grades = 'mg-standard|MG,ver_ka|MG Ver.Ka,mgex|MGEX,mgsd|MGSD' | split: ',' -%}
+              {%- endif -%}
+              {%- for child_grade in child_grades -%}
+                {%- assign child_parts = child_grade | split: '|' -%}
+                {%- assign child_key = child_parts[0] -%}
+                {%- assign child_label = child_parts[1] -%}
+                {%- assign child_token = ',' | append: child_key | append: ',' -%}
+                <li class="list-menu__item facets__item">
+                  <label for="OvsMkGrade-{{ child_key }}-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="facets__label facet-checkbox">
+                    <input type="checkbox" id="OvsMkGrade-{{ child_key }}-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="ovs-mk-grade-input" value="{{ child_key }}" data-ovs-mk-grade="{{ child_key }}" {% if ovs_mk_grades_padded contains child_token %}checked{% endif %}>
+                    {{- 'square.svg' | inline_asset_content -}}
+                    <div class="svg-wrapper">{{- 'icon-checkmark.svg' | inline_asset_content -}}</div>
+                    <span class="facet-checkbox__text" aria-hidden="true"><span class="facet-checkbox__text-label">{{ child_label }}</span></span>
+                  </label>
+                </li>
+              {%- endfor -%}
+            </ul>
+          </li>
+        {%- endfor -%}
+      </ul>
+    </fieldset>
+  </div>
+</details>

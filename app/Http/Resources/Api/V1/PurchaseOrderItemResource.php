@@ -56,6 +56,7 @@ final class PurchaseOrderItemResource extends JsonResource
             // Always return CAD unit cost for display/costing; for foreign vendors, uses FX on the parent PO.
             'unit_cost' => $this->money2($this->unitCostCadForItem($item)),
             'vendor_unit_cost' => $this->money2($item->vendor_unit_cost),
+            'shipping_per_unit' => $this->money2($item->shipping_per_unit),
             'qty_ordered' => $item->qty_ordered,
             'qty_shipped' => $item->qty_shipped,
             'qty_received' => $item->qty_received,

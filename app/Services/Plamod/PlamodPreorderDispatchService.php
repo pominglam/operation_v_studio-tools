@@ -14,11 +14,20 @@ final class PlamodPreorderDispatchService
     ) {}
 
     /**
-     * @return array{ok: bool, sync_log_id: int|null, error_message?: string}
+     * @return array{ok: bool, sync_log_id: int|null, error_message?: string, skipped?: bool}
      */
-    public function dispatch(): array
+    public function dispatch(bool $skipIfActive = false): array
     {
-        $ready = $this->health->assertPreordersExportReady();
+        if ($skipIfActive && $this->logger->hasActiveSync()) {
+            return [
+                'ok' => false,
+                'sync_log_id' => null,
+                'skipped' => true,
+                'error_message' => 'A PLAMOD preorders refresh is already running.',
+            ];
+        }
+
+        $ready = $this->health->assertPreorderCatalogSyncReady();
         if (! $ready['ok']) {
             return [
                 'ok' => false,

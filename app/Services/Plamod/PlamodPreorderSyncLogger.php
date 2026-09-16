@@ -8,6 +8,14 @@ use App\Models\PlamodPreorderSyncLog;
 
 final class PlamodPreorderSyncLogger
 {
+    public function hasActiveSync(): bool
+    {
+        return PlamodPreorderSyncLog::query()
+            ->whereIn('status', ['queued', 'running'])
+            ->whereNull('finished_at')
+            ->exists();
+    }
+
     public function queue(): PlamodPreorderSyncLog
     {
         PlamodPreorderSyncLog::query()

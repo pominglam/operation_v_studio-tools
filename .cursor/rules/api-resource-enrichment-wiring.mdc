@@ -1,0 +1,87 @@
+---
+description: Laravel API computed fields must reach JsonResource output — forbid request-bag wiring for per-row enrichments
+globs:
+  - "app/Http/Controllers/**"
+  - "app/Http/Resources/**"
+  - "resources/js/**"
+alwaysApply: true
+---
+
+# API resource enrichment wiring
+
+**Service returns data ≠ UI receives data.** A common failure: batch-compute enrichment in the controller, stash it on `$request->attributes`, read it inside `JsonResource::toArray()` — the service/tinker path passes while **HTTP JSON is always `null`**.
+
+Real example (fixed): `ModelKitSeriesResolutionService::resolveBatch()` worked; `series_resolution` in taxonomy verifications API was always `null` because paginated `Resource::collection()` did not reliably pass request attributes to each resource row.
+
+## Forbidden patterns
+
+| Pattern | Why it fails |
+| --- | --- |
+| `$request->attributes->set('foo_by_id', …)` then read in `JsonResource` | Request bag is not a reliable per-row side channel for paginated collections |
+| "Service/tinker returns X" as sole proof | Bypasses controller → resource → JSON path the SPA actually calls |
+| UI handoff when dialog reads `item.computed_field` but API field never spot-checked | Operator sees empty/fallback UI despite "wired" backend |
+
+```php
+// ❌ BAD — enrichment may never appear in JSON
+$request->attributes->set('series_resolutions_by_sku', $this->series->resolveBatch($products));
+return ProductTaxonomyVerificationResource::collection($paginator);
+```
+
+## Required patterns (pick one)
+
+**1. Runtime property on the row model/DTO (preferred for list endpoints)**
+
+Attach enrichment on each item **before** wrapping in a Resource:
+
+```php
+$resolutionsBySku = $this->series->resolveBatch($products);
+
+foreach ($paginator->getCollection() as $verification) {
+    $verification->loadedSeriesResolution = $resolutionsBySku[(string) $verification->product->sku] ?? null;
+}
+
+return ProductTaxonomyVerificationResource::collection($paginator);
+```
+
+Resource reads `$this->resource->loadedSeriesResolution` — document runtime-only properties on the model with `@property` / a public typed field.
+
+**2. Explicit resource construction** — `new MyResource($row, $enrichment)` when the collection is small or non-paginated.
+
+**3. Merge into the service result** — for single-object endpoints, return a DTO/array that already includes computed keys; Resource maps 1:1.
+
+Do **not** reintroduce request-bag side channels to avoid touching the model.
+
+## Cross-layer verification (mandatory for new computed API fields)
+
+When the SPA reads a **new or changed** JSON field (dialog, row badge, tooltip):
+
+1. **Service** — prove on realistic fixture (tinker/Pest/service test).
+2. **HTTP** — hit the **same route** the SPA uses; assert the JSON path is present and non-null when the service would populate it (`Invoke-RestMethod`, Pest `getJson`, or Playwright intercept — not tinker alone).
+3. **UI** — open the surface that consumes the field; empty fallback copy when data exists = **not done**.
+
+Intent contract line:
+
+> When [list/detail API for route X] → response row includes `[field]` with expected shape when [service preconditions hold].
+
+## Regression minimum (bug-fix or new enrichment)
+
+When fixing or adding computed list fields:
+
+- **Pest feature test** on the HTTP route asserting JSON path, **or**
+- **E2e** asserting the UI is not showing the empty/fallback state for a row that should have data.
+
+Test must fail on the request-bag wiring anti-pattern.
+
+## Checklist before handoff
+
+- [ ] Enrichment attached on the **row** (or explicit Resource arg), not on `$request->attributes`
+- [ ] `JsonResource` reads from `$this->resource`, not `$request->attributes->get(...)` for per-item data
+- [ ] HTTP response spot-checked on real route + sample row
+- [ ] UI/dialog checked when user-visible
+
+## Related
+
+- `intent-and-data-verification.mdc` — Act → Observe → Compare across layers
+- `verification-handoff-gate.mdc` — "HTTP 200 / grep in code" is not verification
+- `controllers.mdc` — thin controllers; mapping to resources
+- `bug-fix-regression-tests.mdc` — regression for reported wiring bugs

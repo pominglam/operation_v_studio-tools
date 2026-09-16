@@ -24,6 +24,7 @@ Controllers should delegate to services and return HTTP responses only.
 - **Prefer**: Form requests for validation
 - **Require**: Return types
 - **Use**: Laravel Resource classes for API responses
+- **Per-row computed fields**: Attach on the model/DTO or pass explicitly to the Resource — **never** via `$request->attributes` (see **`api-resource-enrichment-wiring.mdc`**)
 - **Error handling**: Try/catch should delegate to service layer
 
 ## What counts as business logic (and what does not)

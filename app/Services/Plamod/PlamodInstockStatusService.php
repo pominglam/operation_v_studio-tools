@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Services\Plamod;
 
 use App\Models\PlamodInstockSyncLog;
-use App\Services\Products\Http\PlamodScraper;
+use App\Support\Plamod\PlamodInstockFilterChunks;
 
 final class PlamodInstockStatusService
 {
     public function __construct(
-        private readonly PlamodScraper $scraper,
+        private readonly PlamodInstockExportProgressReader $progress,
     ) {}
 
     /**
@@ -30,13 +30,14 @@ final class PlamodInstockStatusService
                 'duration_ms' => null,
                 'counts' => [],
                 'error_summary' => null,
+                'failed_filters' => [],
             ];
         }
 
         $counts = $latest->counts_json ?? [];
 
         if (in_array((string) $latest->status, ['queued', 'running'], true)) {
-            $progress = $this->scraper->instockExportProgress();
+            $progress = $this->progress->read();
             if (($progress['active'] ?? false) === true) {
                 $counts = array_merge($counts, $progress);
             } elseif (($counts['phase'] ?? '') === '') {
@@ -52,6 +53,30 @@ final class PlamodInstockStatusService
             'duration_ms' => $latest->duration_ms,
             'counts' => $counts,
             'error_summary' => $latest->error_summary,
+            'failed_filters' => $this->failedFilters($latest),
         ];
+    }
+
+    /**
+     * @return array<int, array{name: string, tab: string, category_id: string|null, expected: int, rows: int, error: string|null}>
+     */
+    private function failedFilters(PlamodInstockSyncLog $latest): array
+    {
+        $chunks = is_array($latest->counts_json['filter_chunks'] ?? null)
+            ? $latest->counts_json['filter_chunks']
+            : [];
+        if ($chunks === []) {
+            /** @var PlamodInstockSyncLog|null $previous */
+            $previous = PlamodInstockSyncLog::query()
+                ->where('status', 'completed')
+                ->where('id', '!=', $latest->id)
+                ->orderByDesc('id')
+                ->first();
+            $chunks = is_array($previous?->counts_json['filter_chunks'] ?? null)
+                ? $previous->counts_json['filter_chunks']
+                : [];
+        }
+
+        return PlamodInstockFilterChunks::failed($chunks);
     }
 }

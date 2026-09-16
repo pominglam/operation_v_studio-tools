@@ -180,6 +180,38 @@ final class ToolFamilyProductResolver
         return 'cement';
     }
 
+    /**
+     * @return 'low'|'high'|null
+     */
+    public function resolveAdhesiveFlow(Product $product): ?string
+    {
+        if ($this->resolveDepartment($product) !== StorefrontDepartment::ADHESIVES) {
+            return null;
+        }
+
+        $sku = strtoupper(trim((string) $product->sku));
+
+        return match ($sku) {
+            'MG-01', 'ETC-02' => 'low',
+            'MG-02', 'ETC-01' => 'high',
+            default => null,
+        };
+    }
+
+    /**
+     * @return 'extra-thin'|'regular'|null
+     */
+    public function resolveAdhesiveThickness(Product $product): ?string
+    {
+        if ($this->resolveDepartment($product) !== StorefrontDepartment::ADHESIVES) {
+            return null;
+        }
+
+        $sku = strtoupper(trim((string) $product->sku));
+
+        return $sku === 'ETC-01' ? 'extra-thin' : 'regular';
+    }
+
     private function isExcluded(string $sku): bool
     {
         return str_starts_with($sku, 'E2E-');

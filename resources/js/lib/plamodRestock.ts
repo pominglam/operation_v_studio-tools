@@ -261,16 +261,26 @@ export function defaultPlamodRestockPageState(): PlamodRestockPageState {
     };
 }
 
+export const PLAMOD_RESTOCK_SERIES_NONE = '__none__';
+
+export function plamodRestockRowSeries(row: { series: string | null }): string {
+    return row.series?.trim() ?? '';
+}
+
 export function uniquePlamodRestockSeries(rows: PlamodRestockNewRow[]): string[] {
     const series = new Set<string>();
     for (const row of rows) {
-        const value = row.series?.trim() ?? '';
+        const value = plamodRestockRowSeries(row);
         if (value !== '') {
             series.add(value);
         }
     }
 
     return [...series].sort((a, b) => a.localeCompare(b));
+}
+
+export function hasPlamodRestockRowsWithoutSeries(rows: PlamodRestockNewRow[]): boolean {
+    return rows.some((row) => plamodRestockRowSeries(row) === '');
 }
 
 export function filterPlamodRestockNewRows(
@@ -283,6 +293,7 @@ export function filterPlamodRestockNewRows(
         includedOnly: boolean;
         recentOnly: boolean;
         series: string;
+        hideDismissed?: boolean;
     },
 ): PlamodRestockNewRow[] {
     let filtered = rows;
@@ -303,6 +314,8 @@ export function filterPlamodRestockNewRows(
 
     if (selectedStatuses.size > 0) {
         filtered = filtered.filter((row) => selectedStatuses.has(row.status));
+    } else if (options.hideDismissed) {
+        filtered = filtered.filter((row) => row.status !== 'dismissed');
     }
 
     if (options.recentOnly) {
@@ -310,8 +323,10 @@ export function filterPlamodRestockNewRows(
     }
 
     const seriesFilter = options.series.trim();
-    if (seriesFilter !== '') {
-        filtered = filtered.filter((row) => (row.series ?? '').trim() === seriesFilter);
+    if (seriesFilter === PLAMOD_RESTOCK_SERIES_NONE) {
+        filtered = filtered.filter((row) => plamodRestockRowSeries(row) === '');
+    } else if (seriesFilter !== '') {
+        filtered = filtered.filter((row) => plamodRestockRowSeries(row) === seriesFilter);
     }
 
     const query = options.search.trim();
@@ -387,6 +402,48 @@ export function formatPlamodInstockSyncCompleteMessage(
     }
 
     return `PLAMOD in-stock catalog refreshed: ${imported} SKUs.`;
+}
+
+export type PlamodInstockFailedFilter = {
+    name: string;
+    tab: string;
+    category_id: string | null;
+    expected: number;
+    rows: number;
+    error: string | null;
+};
+
+export function parsePlamodInstockFailedFilters(raw: unknown): PlamodInstockFailedFilter[] {
+    if (!Array.isArray(raw)) {
+        return [];
+    }
+
+    const parsed: PlamodInstockFailedFilter[] = [];
+    for (const item of raw) {
+        if (item === null || typeof item !== 'object') {
+            continue;
+        }
+        const row = item as Record<string, unknown>;
+        const name = String(row.name ?? '').trim();
+        if (name === '') {
+            continue;
+        }
+        const error = String(row.error ?? '').trim();
+        parsed.push({
+            name,
+            tab: String(row.tab ?? 'BRAND').trim() || 'BRAND',
+            category_id: String(row.category_id ?? '').trim() || null,
+            expected: Number(row.expected ?? 0) || 0,
+            rows: Number(row.rows ?? 0) || 0,
+            error: error !== '' ? error : null,
+        });
+    }
+
+    return parsed;
+}
+
+export function plamodInstockFailedFilterKey(filter: PlamodInstockFailedFilter): string {
+    return `${filter.tab}\t${filter.name}`;
 }
 
 export type PlamodRestockSearchableRow = {
@@ -659,6 +716,19 @@ export const PLAMOD_RESTOCK_CART_DISMISSED_RUN_KEY = 'plamod-restock-dismissed-c
 export const PLAMOD_RESTOCK_ORDER_VERIFY_DISMISSED_AT_KEY =
     'plamod-restock-dismissed-order-verify-at';
 export const PLAMOD_RESTOCK_ORDER_VERIFY_TIMEOUT_MS = 180_000;
+export const PLAMOD_RESTOCK_SYNC_QUEUE_TIMEOUT_MS = 15_000;
+
+export function plamodRestockRequestErrorMessage(error: unknown, fallback: string): string {
+    if (error instanceof Error && error.message.toLowerCase().includes('timeout')) {
+        return 'The request timed out. PLAMOD refresh keeps running in the background and usually takes several minutes — wait for the progress button to finish, then reload if the snapshot is still missing.';
+    }
+
+    if (error instanceof Error && error.message.trim() !== '') {
+        return error.message;
+    }
+
+    return fallback;
+}
 
 export function formatPlamodRestockOrderVerifyHeadline(
     summary: PlamodRestockCartReportSummary | null | undefined,
@@ -750,4 +820,250 @@ export function formatPlamodRestockCartRetryConfirmMessage(
         `Set ${skus.length} mismatched line(s) to their exact requested final quantity?\n\n` +
         'Missing and partial lines will be increased. Over-added lines will be lowered. PLAMOD constraints will be reported without claiming success.'
     );
+}
+
+export const PLAMOD_RESTOCK_NEW_PAGE_SIZE = 50;
+
+export type PlamodRestockDecisionPayload = {
+    sku: string;
+    status: PlamodRestockNewRow['status'];
+    order_qty: number | null;
+    planned_maintain_qty: number | null;
+};
+
+export function plamodRestockNewLineTotal(
+    row: PlamodRestockNewRow,
+    orderQty: number | null,
+): PlamodRestockCostBreakdown | null {
+    if (orderQty === null || orderQty <= 0 || row.new_landed_cost === null) {
+        return null;
+    }
+
+    const product = (orderQty * Number(row.new_landed_cost.product)).toFixed(2);
+
+    return {
+        product,
+        shipping: '0.00',
+        landed: product,
+    };
+}
+
+export function recomputePlamodRestockTotals(
+    existing: PlamodRestockExistingRow[],
+    newProducts: PlamodRestockNewRow[],
+    shippingPercent: number,
+): PlamodRestockTotals {
+    const existingTotals = plamodRestockTotalsBreakdown(existing, 'proposed_qty', shippingPercent);
+    const includedNew = newProducts.filter((row) => row.status === 'included');
+    const newTotals = plamodRestockTotalsBreakdown(includedNew, 'order_qty', shippingPercent);
+
+    return {
+        unique_products: existingTotals.unique_products + newTotals.unique_products,
+        units: existingTotals.units + newTotals.units,
+        product: sumMoney(existingTotals.product, newTotals.product),
+        shipping: sumMoney(existingTotals.shipping, newTotals.shipping),
+        landed: sumMoney(existingTotals.landed, newTotals.landed),
+        lines_with_missing_price:
+            existingTotals.lines_with_missing_price + newTotals.lines_with_missing_price,
+        existing: existingTotals,
+        new_products: newTotals,
+    };
+}
+
+function plamodRestockTotalsBreakdown(
+    lines: Array<PlamodRestockExistingRow | PlamodRestockNewRow>,
+    quantityKey: 'proposed_qty' | 'order_qty',
+    shippingPercent: number,
+): PlamodRestockTotalsBreakdown {
+    let units = 0;
+    let productTotal = 0;
+    let missingPriceLines = 0;
+    const uniqueSkus = new Set<string>();
+
+    lines.forEach((line, index) => {
+        const qty =
+            quantityKey === 'proposed_qty'
+                ? (line as PlamodRestockExistingRow).proposed_qty
+                : ((line as PlamodRestockNewRow).order_qty ?? 0);
+        if (qty <= 0) {
+            return;
+        }
+
+        uniqueSkus.add(line.sku !== '' ? line.sku : `__line_${index}`);
+        units += qty;
+        if (line.new_landed_cost === null) {
+            missingPriceLines += 1;
+            return;
+        }
+
+        productTotal += qty * Number(line.new_landed_cost.product);
+    });
+
+    const shippingTotal = Math.round(productTotal * (shippingPercent / 100) * 100) / 100;
+
+    return {
+        unique_products: uniqueSkus.size,
+        units,
+        product: productTotal.toFixed(2),
+        shipping: shippingTotal.toFixed(2),
+        landed: (productTotal + shippingTotal).toFixed(2),
+        lines_with_missing_price: missingPriceLines,
+    };
+}
+
+function sumMoney(first: string, second: string): string {
+    return (Number(first) + Number(second)).toFixed(2);
+}
+
+export function recountPlamodRestockNewMeta(
+    newProducts: PlamodRestockNewRow[],
+    existingCount: number,
+): PlamodRestockProposal['meta'] {
+    let dismissed_count = 0;
+    let undecided_new_count = 0;
+    let included_new_count = 0;
+    let later_new_count = 0;
+    let new_missing_price_count = 0;
+
+    for (const row of newProducts) {
+        if (row.price_missing) {
+            new_missing_price_count += 1;
+        }
+        if (row.status === 'dismissed') {
+            dismissed_count += 1;
+        } else if (row.status === 'included') {
+            included_new_count += 1;
+        } else if (row.status === 'later') {
+            later_new_count += 1;
+        } else {
+            undecided_new_count += 1;
+        }
+    }
+
+    return {
+        existing_count: existingCount,
+        new_count: newProducts.length,
+        dismissed_count,
+        undecided_new_count,
+        included_new_count,
+        later_new_count,
+        new_missing_price_count,
+    };
+}
+
+export function applyPlamodRestockNewDecision(
+    proposal: PlamodRestockProposal,
+    decision: PlamodRestockDecisionPayload,
+): PlamodRestockProposal {
+    return applyPlamodRestockNewDecisions(proposal, [decision]);
+}
+
+export function applyPlamodRestockNewDecisions(
+    proposal: PlamodRestockProposal,
+    decisions: PlamodRestockDecisionPayload[],
+): PlamodRestockProposal {
+    if (decisions.length === 0) {
+        return proposal;
+    }
+
+    const bySku = new Map(decisions.map((decision) => [decision.sku, decision]));
+    const new_products = proposal.new_products.map((row) => {
+        const decision = bySku.get(row.sku);
+        if (decision === undefined) {
+            return row;
+        }
+
+        return {
+            ...row,
+            status: decision.status,
+            order_qty: decision.order_qty,
+            planned_maintain_qty: decision.planned_maintain_qty,
+            line_total: plamodRestockNewLineTotal(row, decision.order_qty),
+        };
+    });
+
+    return {
+        ...proposal,
+        new_products,
+        totals: recomputePlamodRestockTotals(
+            proposal.existing,
+            new_products,
+            proposal.shipping_percent,
+        ),
+        meta: recountPlamodRestockNewMeta(new_products, proposal.existing.length),
+    };
+}
+
+export function mergePlamodRestockProposalSections(
+    existingPart: PlamodRestockProposal,
+    newPart: PlamodRestockProposal,
+): PlamodRestockProposal {
+    return {
+        snapshot: newPart.snapshot,
+        shipping_percent: newPart.shipping_percent,
+        exclusions: newPart.exclusions,
+        existing: existingPart.existing,
+        new_products: newPart.new_products,
+        totals: recomputePlamodRestockTotals(
+            existingPart.existing,
+            newPart.new_products,
+            newPart.shipping_percent,
+        ),
+        meta: recountPlamodRestockNewMeta(newPart.new_products, existingPart.existing.length),
+    };
+}
+
+export function paginatePlamodRestockRows<T>(rows: T[], page: number, pageSize: number): T[] {
+    const safePage = Math.max(1, page);
+    const start = (safePage - 1) * pageSize;
+
+    return rows.slice(start, start + pageSize);
+}
+
+export function applyInclusiveSkuRangeSelection(
+    selected: Record<string, boolean>,
+    orderedSkus: string[],
+    fromSku: string,
+    toSku: string,
+): Record<string, boolean> {
+    const from = orderedSkus.indexOf(fromSku);
+    const to = orderedSkus.indexOf(toSku);
+    if (from < 0 || to < 0) {
+        return { ...selected, [toSku]: true };
+    }
+
+    const lo = Math.min(from, to);
+    const hi = Math.max(from, to);
+    const next = { ...selected };
+    for (let index = lo; index <= hi; index += 1) {
+        next[orderedSkus[index]] = true;
+    }
+
+    return next;
+}
+
+export function applySkuCheckboxChange(input: {
+    selected: Record<string, boolean>;
+    orderedSkus: string[];
+    sku: string;
+    checked: boolean;
+    shiftKey: boolean;
+    anchorSku: string | null;
+}): { selected: Record<string, boolean>; anchorSku: string | null } {
+    if (input.shiftKey && input.anchorSku !== null) {
+        return {
+            selected: applyInclusiveSkuRangeSelection(
+                input.selected,
+                input.orderedSkus,
+                input.anchorSku,
+                input.sku,
+            ),
+            anchorSku: input.anchorSku,
+        };
+    }
+
+    return {
+        selected: { ...input.selected, [input.sku]: input.checked },
+        anchorSku: input.sku,
+    };
 }

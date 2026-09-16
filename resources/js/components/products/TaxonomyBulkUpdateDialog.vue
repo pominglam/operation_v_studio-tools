@@ -113,8 +113,9 @@ function submit(): void {
                     Bulk update {{ selectedCount }} selected
                 </h2>
                 <p class="mt-1 text-sm text-slate-600">
-                    Checked fields replace the proposed values and are saved as operator overrides.
-                    Pick from the list or choose “Add new…” to type a value. Test SKUs are skipped.
+                    Checked fields are written to ERP for every selected row (proposed, verified, or
+                    overridden). Pick from the list or choose “Add new…” to type a value. Test SKUs
+                    are skipped.
                 </p>
             </div>
             <p v-if="localError" class="text-sm text-red-700">{{ localError }}</p>

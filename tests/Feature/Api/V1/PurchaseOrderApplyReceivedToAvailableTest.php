@@ -114,7 +114,7 @@ it('rejects apply when any PO line is missing qty received', function (): void {
         'sku' => 'PO-ADD-PARTIAL',
         'vendor' => 'Plamod',
         'qty_ordered' => 1,
-        'qty_received' => 0,
+        'qty_received' => null,
     ]);
 
     $res = $this->postJson("/api/v1/purchase-orders/{$po->uuid}/apply-received-to-available");

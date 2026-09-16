@@ -68,6 +68,18 @@ final class ShopifyAdminGraphQlMutations
         }
         GQL;
 
+    public const string PRODUCT_DELETE = <<<'GQL'
+        mutation productDelete($input: ProductDeleteInput!) {
+            productDelete(input: $input) {
+                deletedProductId
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GQL;
+
     public const string TAGS_REMOVE = <<<'GQL'
         mutation tagsRemove($id: ID!, $tags: [String!]!) {
             tagsRemove(id: $id, tags: $tags) {
@@ -87,6 +99,21 @@ final class ShopifyAdminGraphQlMutations
             tagsAdd(id: $id, tags: $tags) {
                 node {
                     id
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GQL;
+
+    public const string METAFIELDS_SET = <<<'GQL'
+        mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
+            metafieldsSet(metafields: $metafields) {
+                metafields {
+                    id
+                    key
                 }
                 userErrors {
                     field
@@ -164,6 +191,76 @@ final class ShopifyAdminGraphQlMutations
             inventorySetQuantities(input: $input) {
                 inventoryAdjustmentGroup {
                     reason
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GQL;
+
+    public const string DRAFT_ORDER_CREATE = <<<'GQL'
+        mutation draftOrderCreate($input: DraftOrderInput!) {
+            draftOrderCreate(input: $input) {
+                draftOrder {
+                    id
+                    legacyResourceId
+                    name
+                    invoiceUrl
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GQL;
+
+    public const string DRAFT_ORDER_INVOICE_SEND = <<<'GQL'
+        mutation draftOrderInvoiceSend($id: ID!) {
+            draftOrderInvoiceSend(id: $id) {
+                draftOrder {
+                    id
+                    legacyResourceId
+                    name
+                    invoiceUrl
+                    invoiceSentAt
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GQL;
+
+    public const string THEME_FILES_UPSERT = <<<'GQL'
+        mutation themeFilesUpsert($themeId: ID!, $files: [OnlineStoreThemeFilesUpsertFileInput!]!) {
+            themeFilesUpsert(themeId: $themeId, files: $files) {
+                upsertedThemeFiles {
+                    filename
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GQL;
+
+    public const string CUSTOMER_CREATE = <<<'GQL'
+        mutation customerCreate($input: CustomerInput!) {
+            customerCreate(input: $input) {
+                customer {
+                    id
+                    legacyResourceId
+                    displayName
+                    firstName
+                    lastName
+                    defaultEmailAddress {
+                        emailAddress
+                    }
                 }
                 userErrors {
                     field

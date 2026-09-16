@@ -139,12 +139,16 @@ final class ProductTaxonomyReclassifyService
             $product->type,
         ], static fn (mixed $value): bool => is_string($value) && trim($value) !== '')));
         $sku = mb_strtoupper(trim((string) $product->sku));
+        $type = mb_strtoupper(trim((string) $product->type));
 
         foreach ($patterns as $pattern) {
             $matched = match ($pattern) {
                 'keychain' => preg_match('/\b(?:KEYCHAIN|RUBBER MASCOT|MASCOT KEYCHAIN)\b/', $text) === 1,
                 'figures' => str_starts_with($sku, 'CCS') || preg_match('/\bCCS (?:TOYS|EVANGELION)\b/', $text) === 1,
                 'dspiae-mp' => $sku === 'MP-05',
+                'panel-liner' => $type === 'PANEL LINER'
+                    || str_contains($text, 'PANEL LINER')
+                    || preg_match('/^MP-(?:1\d|2\d)/', $sku) === 1,
                 default => false,
             };
             if ($matched) {

@@ -61,6 +61,55 @@ Responses:
 - Restore is destructive and must require explicit confirmation in the UI.
 - Backups created automatically by the system should use `created_by=system` and set a descriptive `description`.
 
+## Scheduled backups & retention
+
+The Laravel scheduler (Docker `scheduler` service / `schedule:work`) runs:
+
+| Job | Schedule (America/Toronto) | Command |
+| --- | --- | --- |
+| Daily backup + off-site push | **02:30** (host orchestrator) | `pricing-tool-backup-and-offsite-push.sh` — backup then push latest ZIP |
+| Daily backup (in-container) | 02:30 | `db:backup` — **skipped when** `DB_BACKUP_HOST_ORCHESTRATOR=true` |
+| Weekly purge (local) | Sunday 03:30 | `db:backup:purge --yes` |
+
+Disable in-container daily backup when using host orchestrator: `DB_BACKUP_HOST_ORCHESTRATOR=true`.
+
+### Retention policy (config: `config/database_backup.php`)
+
+| Tier | Default | Behavior |
+| --- | --- | --- |
+| Recent | 14 days (`DB_BACKUP_RETENTION_RECENT_DAYS`) | Keep every backup |
+| Weekly history | 180 days (`DB_BACKUP_RETENTION_WEEKLY_DAYS`) | Keep one backup per ISO week |
+| Safety floor | 5 (`DB_BACKUP_RETENTION_MINIMUM`) | Never purge below N newest backups |
+
+Manual preview: `php artisan db:backup:purge --dry-run`.
+
+Purged artifacts: ZIP file under `storage/backups/` plus `database_backups` row.
+
+### Before migrations (lean prod)
+
+On production-like MySQL (including local Docker treated as prod):
+
+1. `php artisan db:backup --yes --description="Pre-migrate …" --created-by=system`
+2. `php artisan migrate --pretend` — review SQL
+3. Then `php artisan migrate`
+
+Agents run this checklist **autonomously** — backup UUID is the rollback/undo; operator approval is not required. See **`operator-expectations.mdc`**.
+
+### Off-site copy (consolidation droplet)
+
+Automated push **PC → droplet** (not the same path as ATA daily pull — avoids circular backup):
+
+| Item | Value |
+| --- | --- |
+| Source | `storage/backups/*.zip` (latest only per daily run) |
+| Destination | `134.209.213.143:/srv/stack/backups/offsite/pricing-tool/` |
+| Push schedule | Sequential after backup — **02:30** host orchestrator |
+| Droplet off-site | 3d all + weekly 45d, min 2, max 4; purge after each push + droplet cron |
+
+Setup and ops: `local-llm/docs/server-consolidation/pricing-tool-offsite-backup.md`, manifest `~/workspace/Backups/OPERATION-V/manifest.md`.
+
+MySQL **binlog** (when enabled) is a separate ops-level safety net for point-in-time recovery; it does not replace scheduled mysqldump backups.
+
 ## Tests
 
 ### Schema

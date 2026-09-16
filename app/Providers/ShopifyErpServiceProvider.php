@@ -51,7 +51,9 @@ final class ShopifyErpServiceProvider extends ServiceProvider
             );
         });
         $this->app->singleton(ShopifyInventoryLevelSyncRunner::class, function () use ($pageSize): ShopifyInventoryLevelSyncRunner {
-            return new ShopifyInventoryLevelSyncRunner($pageSize);
+            $itemBatchSize = max(1, min(250, (int) config('shopify.inventory_item_batch_size', 200)));
+
+            return new ShopifyInventoryLevelSyncRunner($pageSize, $itemBatchSize);
         });
         $this->app->singleton(ShopifyOrderSyncRunner::class, function ($app) use ($pageSize): ShopifyOrderSyncRunner {
             return new ShopifyOrderSyncRunner(

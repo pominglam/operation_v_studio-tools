@@ -29,6 +29,21 @@ final class PlamodScraperHealthService
     /**
      * @return array{ok: bool, error_message?: string}
      */
+    public function assertPreorderCatalogSyncReady(): array
+    {
+        return $this->assertRoutesReady([
+            'POST /export-preorders-csv',
+            'POST /export-manufacturer-preorders-csv',
+            'POST /export-manufacturer-preorder-merged',
+            'GET /preorder-export-progress',
+            'POST /list-manufacturer-preorders-filters',
+            'POST /search-retailer-preorders',
+        ]);
+    }
+
+    /**
+     * @return array{ok: bool, error_message?: string}
+     */
     public function assertRestockCartReady(): array
     {
         return $this->assertRoutesReady([

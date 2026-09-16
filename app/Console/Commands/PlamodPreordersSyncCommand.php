@@ -17,7 +17,14 @@ final class PlamodPreordersSyncCommand extends Command
 
     public function handle(PlamodPreorderDispatchService $dispatch): int
     {
-        $result = $dispatch->dispatch();
+        $result = $dispatch->dispatch(skipIfActive: true);
+        if (($result['ok'] ?? false) !== true) {
+            $message = (string) ($result['error_message'] ?? 'Could not queue PLAMOD preorders refresh.');
+            $this->warn($message);
+
+            return (($result['skipped'] ?? false) === true) ? self::SUCCESS : self::FAILURE;
+        }
+
         $this->info('Plamod preorders sync queued.');
         $this->line('sync_log_id: '.(string) ($result['sync_log_id'] ?? ''));
 

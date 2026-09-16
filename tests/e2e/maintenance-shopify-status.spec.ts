@@ -12,7 +12,8 @@ test('maintenance Shopify status auto-updates without a manual refresh', async (
             contentType: 'application/json',
             body: JSON.stringify({
                 data: {
-                    order_reconcile_interval_hours: 12,
+                    order_reconcile_interval_minutes: 30,
+                    order_reconcile_interval_hours: 1,
                     tasks: [
                         {
                             key: 'inventory_pull',

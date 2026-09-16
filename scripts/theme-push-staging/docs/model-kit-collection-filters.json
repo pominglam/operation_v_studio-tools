@@ -1,0 +1,517 @@
+{
+    "version": 1,
+    "availability": "native-shopify-last",
+    "profileGroups": {
+        "gunpla-hub": [
+            "grade-gunpla",
+            "series-uc",
+            "series-au",
+            "franchise",
+            "price"
+        ],
+        "uc-hub": [
+            "grade-gunpla",
+            "series-uc",
+            "price"
+        ],
+        "au-hub": [
+            "grade-gunpla",
+            "series-au",
+            "price"
+        ],
+        "uc-other-hub": [
+            "grade-gunpla",
+            "series-uc-other",
+            "price"
+        ],
+        "au-other-hub": [
+            "grade-gunpla",
+            "series-au-other",
+            "price"
+        ],
+        "grade-simple": [
+            "grade-gunpla",
+            "series-gundam",
+            "price"
+        ],
+        "subline-shelf": [
+            "grade-gunpla",
+            "series-gundam",
+            "price"
+        ],
+        "series-leaf": [
+            "grade-gunpla",
+            "price"
+        ],
+        "franchise-leaf": [
+            "grade-gunpla",
+            "price"
+        ],
+        "franchise-rollup": [
+            "franchise",
+            "grade-gunpla",
+            "price"
+        ],
+        "30mm-hub": [
+            "line-30mm",
+            "price"
+        ],
+        "30mm-leaf": [
+            "line-30mm",
+            "price"
+        ],
+        "brand-leaf": [
+            "grade-gunpla",
+            "price"
+        ],
+        "accessories": [
+            "price"
+        ]
+    },
+    "groupLabels": {
+        "grade-gunpla": "Grade",
+        "series-uc": "Gundam series (UC)",
+        "series-au": "Gundam series (AU)",
+        "series-uc-other": "UC series",
+        "series-au-other": "AU series",
+        "series-gundam": "Gundam series",
+        "franchise": "Franchise",
+        "line-30mm": "30 Minutes line",
+        "price": "Price"
+    },
+    "urlParams": {
+        "grade-gunpla": "ovs_mk_grade",
+        "series-uc": "ovs_mk_series",
+        "series-au": "ovs_mk_series",
+        "series-uc-other": "ovs_mk_series",
+        "series-au-other": "ovs_mk_series",
+        "series-gundam": "ovs_mk_series",
+        "franchise": "ovs_mk_franchise",
+        "line-30mm": "ovs_mk_line",
+        "price": "ovs_mk_price"
+    },
+    "handles": {
+        "gunpla": "gunpla-hub",
+        "entry-grade-eg": "grade-simple",
+        "high-grade-hg": "grade-simple",
+        "real-grade-rg": "grade-simple",
+        "perfect-grade-pg": "grade-simple",
+        "master-grade-mg": "grade-simple",
+        "mg-standard": "subline-shelf",
+        "mg-ver-ka": "subline-shelf",
+        "mgex": "subline-shelf",
+        "master-grade-sd-mgsd": "subline-shelf",
+        "sd-gundam": "grade-simple",
+        "sd-ex-standard": "subline-shelf",
+        "sd-cross-silhouette": "subline-shelf",
+        "sd-world-heroes": "subline-shelf",
+        "sd-bb-senshi": "subline-shelf",
+        "sd-g-generation": "subline-shelf",
+        "sd-build-fighters": "subline-shelf",
+        "sd-gunpla-kun": "subline-shelf",
+        "gunpla-option-parts": "accessories",
+        "action-base": "accessories",
+        "hg-universal-century": "subline-shelf",
+        "hg-gundam-seed": "subline-shelf",
+        "hg-after-colony": "subline-shelf",
+        "hg-iron-blooded-orphans": "subline-shelf",
+        "hg-build-fighters": "subline-shelf",
+        "hg-build-divers": "subline-shelf",
+        "gundam-universal-century": "uc-hub",
+        "gundam-alternate-universes": "au-hub",
+        "gundam-other-uc-series": "uc-other-hub",
+        "gundam-other-au-series": "au-other-hub",
+        "gundam-mobile-suit-gundam": "series-leaf",
+        "gundam-zeta": "series-leaf",
+        "gundam-zz": "series-leaf",
+        "gundam-chars-counterattack": "series-leaf",
+        "gundam-0080": "series-leaf",
+        "gundam-f91": "series-leaf",
+        "gundam-0083": "series-leaf",
+        "gundam-08th-ms-team": "series-leaf",
+        "gundam-the-origin": "series-leaf",
+        "gundam-thunderbolt": "series-leaf",
+        "gundam-narrative": "series-leaf",
+        "gundam-sentinel": "series-leaf",
+        "gundam-unicorn": "series-leaf",
+        "gundam-seed": "series-leaf",
+        "gundam-wing": "series-leaf",
+        "gundam-00": "series-leaf",
+        "g-gundam": "series-leaf",
+        "gundam-build-fighters": "series-leaf",
+        "gundam-build-divers": "series-leaf",
+        "gundam-age": "series-leaf",
+        "gundam-hathaway": "series-leaf",
+        "gundam-iron-blooded-orphans": "series-leaf",
+        "gundam-witch-from-mercury": "series-leaf",
+        "gundam-reconguista-in-g": "series-leaf",
+        "gundam-x": "series-leaf",
+        "gundam-requiem-for-vengeance": "series-leaf",
+        "patlabor": "franchise-leaf",
+        "macross-delta": "franchise-leaf",
+        "armored-trooper-votoms": "franchise-leaf",
+        "mazinger": "franchise-leaf",
+        "getter-robo": "franchise-leaf",
+        "kotetsu-jeeg": "franchise-leaf",
+        "super-robot-wars": "franchise-leaf",
+        "armored-core": "franchise-leaf",
+        "doraemon": "franchise-leaf",
+        "sakura-wars": "franchise-leaf",
+        "linebarrels-of-iron": "franchise-leaf",
+        "other-series": "franchise-rollup",
+        "30-minutes-missions": "30mm-hub",
+        "30-minutes-armored-core": "30mm-leaf",
+        "30-minutes-sisters": "30mm-leaf",
+        "30-minutes-fantasy": "30mm-leaf",
+        "30-minutes-preference": "30mm-leaf",
+        "30-minutes-accessories": "30mm-leaf",
+        "pokemon": "brand-leaf",
+        "kotobukiya": "brand-leaf",
+        "moderoid": "brand-leaf",
+        "keroro": "brand-leaf",
+        "snaa": "brand-leaf",
+        "one-piece": "brand-leaf",
+        "eureka-seven": "brand-leaf",
+        "mechatrowego": "brand-leaf",
+        "plamax": "brand-leaf",
+        "evangelion": "brand-leaf"
+    },
+    "shelves": [
+        {
+            "handle": "gunpla",
+            "title": "Gunpla"
+        },
+        {
+            "handle": "entry-grade-eg",
+            "title": "Entry Grade"
+        },
+        {
+            "handle": "high-grade-hg",
+            "title": "High Grade (HG)"
+        },
+        {
+            "handle": "real-grade-rg",
+            "title": "Real Grade (RG)"
+        },
+        {
+            "handle": "perfect-grade-pg",
+            "title": "Perfect Grade (PG)"
+        },
+        {
+            "handle": "master-grade-mg",
+            "title": "Master Grade (MG)"
+        },
+        {
+            "handle": "mg-standard",
+            "title": "MG"
+        },
+        {
+            "handle": "mg-ver-ka",
+            "title": "MG Ver.Ka"
+        },
+        {
+            "handle": "mgex",
+            "title": "MGEX"
+        },
+        {
+            "handle": "master-grade-sd-mgsd",
+            "title": "Master Grade SD (MGSD)"
+        },
+        {
+            "handle": "sd-gundam",
+            "title": "SD Gundam"
+        },
+        {
+            "handle": "sd-ex-standard",
+            "title": "SD EX-Standard"
+        },
+        {
+            "handle": "sd-cross-silhouette",
+            "title": "SD Cross Silhouette"
+        },
+        {
+            "handle": "sd-world-heroes",
+            "title": "SD World Heroes"
+        },
+        {
+            "handle": "sd-bb-senshi",
+            "title": "SD BB Senshi"
+        },
+        {
+            "handle": "sd-g-generation",
+            "title": "SD G Generation"
+        },
+        {
+            "handle": "sd-build-fighters",
+            "title": "SD Build Fighters"
+        },
+        {
+            "handle": "sd-gunpla-kun",
+            "title": "Gunpla-kun"
+        },
+        {
+            "handle": "gunpla-option-parts",
+            "title": "Gunpla Option Parts"
+        },
+        {
+            "handle": "action-base",
+            "title": "Action Bases"
+        },
+        {
+            "handle": "hg-universal-century",
+            "title": "HG Universal Century"
+        },
+        {
+            "handle": "hg-gundam-seed",
+            "title": "HG Gundam SEED"
+        },
+        {
+            "handle": "hg-after-colony",
+            "title": "HG After Colony"
+        },
+        {
+            "handle": "hg-iron-blooded-orphans",
+            "title": "HG Iron-Blooded Orphans"
+        },
+        {
+            "handle": "hg-build-fighters",
+            "title": "HG Build Fighters"
+        },
+        {
+            "handle": "hg-build-divers",
+            "title": "HG Build Divers"
+        },
+        {
+            "handle": "gundam-universal-century",
+            "title": "Gundam Universal Century"
+        },
+        {
+            "handle": "gundam-alternate-universes",
+            "title": "Gundam Alternate Universes"
+        },
+        {
+            "handle": "gundam-other-uc-series",
+            "title": "Other UC series"
+        },
+        {
+            "handle": "gundam-other-au-series",
+            "title": "Other AU series"
+        },
+        {
+            "handle": "gundam-mobile-suit-gundam",
+            "title": "Mobile Suit Gundam"
+        },
+        {
+            "handle": "gundam-zeta",
+            "title": "Zeta Gundam"
+        },
+        {
+            "handle": "gundam-zz",
+            "title": "Gundam ZZ"
+        },
+        {
+            "handle": "gundam-chars-counterattack",
+            "title": "Char's Counterattack"
+        },
+        {
+            "handle": "gundam-0080",
+            "title": "Gundam 0080: War in the Pocket"
+        },
+        {
+            "handle": "gundam-f91",
+            "title": "Gundam F91"
+        },
+        {
+            "handle": "gundam-0083",
+            "title": "Gundam 0083: Stardust Memory"
+        },
+        {
+            "handle": "gundam-08th-ms-team",
+            "title": "The 08th MS Team"
+        },
+        {
+            "handle": "gundam-the-origin",
+            "title": "Gundam: The Origin"
+        },
+        {
+            "handle": "gundam-thunderbolt",
+            "title": "Gundam Thunderbolt"
+        },
+        {
+            "handle": "gundam-narrative",
+            "title": "Gundam Narrative"
+        },
+        {
+            "handle": "gundam-sentinel",
+            "title": "Gundam Sentinel"
+        },
+        {
+            "handle": "gundam-unicorn",
+            "title": "Gundam Unicorn"
+        },
+        {
+            "handle": "gundam-seed",
+            "title": "Gundam SEED"
+        },
+        {
+            "handle": "gundam-wing",
+            "title": "Gundam Wing"
+        },
+        {
+            "handle": "gundam-00",
+            "title": "Gundam 00"
+        },
+        {
+            "handle": "g-gundam",
+            "title": "G Gundam"
+        },
+        {
+            "handle": "gundam-build-fighters",
+            "title": "Gundam Build Fighters"
+        },
+        {
+            "handle": "gundam-build-divers",
+            "title": "Gundam Build Divers"
+        },
+        {
+            "handle": "gundam-age",
+            "title": "Gundam Age"
+        },
+        {
+            "handle": "gundam-hathaway",
+            "title": "Gundam Hathaway's Flash"
+        },
+        {
+            "handle": "gundam-iron-blooded-orphans",
+            "title": "Gundam Iron-Blooded Orphans"
+        },
+        {
+            "handle": "gundam-witch-from-mercury",
+            "title": "Gundam The Witch from Mercury"
+        },
+        {
+            "handle": "gundam-reconguista-in-g",
+            "title": "Gundam Reconguista in G"
+        },
+        {
+            "handle": "gundam-x",
+            "title": "After War Gundam X"
+        },
+        {
+            "handle": "gundam-requiem-for-vengeance",
+            "title": "Gundam: Requiem for Vengeance"
+        },
+        {
+            "handle": "patlabor",
+            "title": "Patlabor"
+        },
+        {
+            "handle": "macross-delta",
+            "title": "Macross Delta"
+        },
+        {
+            "handle": "armored-trooper-votoms",
+            "title": "Armored Trooper Votoms"
+        },
+        {
+            "handle": "mazinger",
+            "title": "Mazinger"
+        },
+        {
+            "handle": "getter-robo",
+            "title": "Getter Robo"
+        },
+        {
+            "handle": "kotetsu-jeeg",
+            "title": "Kotetsu Jeeg"
+        },
+        {
+            "handle": "super-robot-wars",
+            "title": "Super Robot Wars"
+        },
+        {
+            "handle": "armored-core",
+            "title": "Armored Core"
+        },
+        {
+            "handle": "doraemon",
+            "title": "Doraemon"
+        },
+        {
+            "handle": "sakura-wars",
+            "title": "Sakura Wars"
+        },
+        {
+            "handle": "linebarrels-of-iron",
+            "title": "Linebarrels of Iron"
+        },
+        {
+            "handle": "other-series",
+            "title": "Other series"
+        },
+        {
+            "handle": "30-minutes-missions",
+            "title": "30 Minutes Missions"
+        },
+        {
+            "handle": "30-minutes-armored-core",
+            "title": "30 Minutes Missions Armored Core"
+        },
+        {
+            "handle": "30-minutes-sisters",
+            "title": "30 Minutes Sisters"
+        },
+        {
+            "handle": "30-minutes-fantasy",
+            "title": "30 Minutes Fantasy"
+        },
+        {
+            "handle": "30-minutes-preference",
+            "title": "30 Minutes Preference"
+        },
+        {
+            "handle": "30-minutes-accessories",
+            "title": "30 Minutes Accessories"
+        },
+        {
+            "handle": "pokemon",
+            "title": "Pok\u00e9mon"
+        },
+        {
+            "handle": "kotobukiya",
+            "title": "Kotobukiya"
+        },
+        {
+            "handle": "moderoid",
+            "title": "MODEROID"
+        },
+        {
+            "handle": "keroro",
+            "title": "Keroro"
+        },
+        {
+            "handle": "snaa",
+            "title": "SNAA"
+        },
+        {
+            "handle": "one-piece",
+            "title": "One Piece"
+        },
+        {
+            "handle": "eureka-seven",
+            "title": "Eureka Seven"
+        },
+        {
+            "handle": "mechatrowego",
+            "title": "MechatroWeGo"
+        },
+        {
+            "handle": "plamax",
+            "title": "PLAMAX"
+        },
+        {
+            "handle": "evangelion",
+            "title": "Evangelion"
+        }
+    ]
+}

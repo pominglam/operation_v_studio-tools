@@ -8,6 +8,10 @@ use App\Models\PlamodPreorderSyncLog;
 
 final class PlamodPreorderStatusService
 {
+    public function __construct(
+        private readonly PlamodPreorderExportProgressReader $progress,
+    ) {}
+
     /**
      * @return array<string, mixed>
      */
@@ -30,6 +34,12 @@ final class PlamodPreorderStatusService
 
         $counts = $latest->counts_json ?? [];
         $status = (string) $latest->status;
+        if (in_array($status, ['queued', 'running'], true)) {
+            $progress = $this->progress->read();
+            if (($progress['active'] ?? false) === true) {
+                $counts = array_merge($counts, $progress);
+            }
+        }
         if ($status === 'running') {
             $phase = (string) ($counts['phase'] ?? '');
             $total = (int) ($counts['images_total'] ?? 0);

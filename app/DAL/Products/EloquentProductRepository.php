@@ -142,10 +142,7 @@ final class EloquentProductRepository implements ProductRepository
             $q->whereIn('type', $typesForWhereIn);
         }
 
-        $vendors = array_values(array_filter(array_map('trim', $vendors), static fn (string $v): bool => $v !== ''));
-        if ($vendors !== []) {
-            $q->whereIn('vendor', $vendors);
-        }
+        $this->applyNullableStringListFilter($q, 'vendor', $vendors);
     }
 
     /**
@@ -158,6 +155,7 @@ final class EloquentProductRepository implements ProductRepository
             'manufacturers' => 'manufacturer',
             'franchises' => 'franchise',
             'product_lines' => 'product_line',
+            'workshop_shelves' => 'workshop_shelf',
             'sublines' => 'subline',
             'grades' => 'grade',
             'series_values' => 'series',
@@ -165,14 +163,54 @@ final class EloquentProductRepository implements ProductRepository
         ];
 
         foreach ($columns as $filterKey => $column) {
-            $values = array_values(array_unique(array_filter(array_map(
-                static fn (string $value): string => trim($value),
-                $filters[$filterKey] ?? [],
-            ), static fn (string $value): bool => $value !== '')));
-            if ($values !== []) {
-                $query->whereIn($column, $values);
-            }
+            $this->applyNullableStringListFilter($query, $column, $filters[$filterKey] ?? []);
         }
+    }
+
+    /**
+     * @param  array<int, string>  $values
+     */
+    private function applyNullableStringListFilter($query, string $column, array $values): void
+    {
+        $values = array_values(array_unique(array_filter(array_map(
+            static fn (string $value): string => trim($value),
+            $values,
+        ), static fn (string $value): bool => $value !== '')));
+        if ($values === []) {
+            return;
+        }
+
+        $wantEmpty = false;
+        $matched = [];
+        foreach ($values as $value) {
+            if (strtolower($value) === self::MAIN_TYPE_EMPTY_SENTINEL) {
+                $wantEmpty = true;
+
+                continue;
+            }
+            $matched[] = $value;
+        }
+
+        if ($wantEmpty && $matched !== []) {
+            $query->where(function ($sub) use ($column, $matched): void {
+                $sub->whereIn($column, $matched)
+                    ->orWhereNull($column)
+                    ->orWhere($column, '=', '');
+            });
+
+            return;
+        }
+
+        if ($wantEmpty) {
+            $query->where(function ($sub) use ($column): void {
+                $sub->whereNull($column)
+                    ->orWhere($column, '=', '');
+            });
+
+            return;
+        }
+
+        $query->whereIn($column, $matched);
     }
 
     /**
@@ -214,6 +252,7 @@ final class EloquentProductRepository implements ProductRepository
             'po_total_cost' => 'po_total_cost',
             'updated_at' => 'updated_at',
             'created_at' => 'created_at',
+            'is_urgent' => 'is_urgent',
         ];
 
         $sortColumn = $sortBy !== null && array_key_exists($sortBy, $sortMap) ? $sortMap[$sortBy] : 'sku';
@@ -296,6 +335,18 @@ final class EloquentProductRepository implements ProductRepository
             inner join purchase_orders po on po.id = poi.purchase_order_id
             where poi.product_id = products.id
               and po.received_date is not null
+        )';
+    }
+
+    private function listThumbnailAssetIdSubquery(): string
+    {
+        return '(
+            select pea.id
+            from product_external_assets pea
+            where pea.product_id = products.id
+              and (pea.kind = \'image\' or pea.mime_type like \'image/%\')
+            order by (pea.sort_order is null), pea.sort_order, pea.id
+            limit 1
         )';
     }
 
@@ -498,7 +549,7 @@ final class EloquentProductRepository implements ProductRepository
      * @param  array<int, string>  $productFlags
      * @param  array<int, string>  $shipmentMethods
      */
-    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false, array $canonicalTaxonomyFilters = []): LengthAwarePaginator
+    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false, array $canonicalTaxonomyFilters = [], string $storePreorderFilter = 'exclude'): LengthAwarePaginator
     {
         $q = $this->buildFilteredListQuery(
             $search,
@@ -526,6 +577,7 @@ final class EloquentProductRepository implements ProductRepository
             $missingLandedCost,
             $hasLandedCost,
             $canonicalTaxonomyFilters,
+            $storePreorderFilter,
         );
 
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
@@ -534,7 +586,7 @@ final class EloquentProductRepository implements ProductRepository
         return $q->paginate(perPage: $perPage);
     }
 
-    public function listFiltered(?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false, array $canonicalTaxonomyFilters = []): Collection
+    public function listFiltered(?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false, array $canonicalTaxonomyFilters = [], string $storePreorderFilter = 'exclude'): Collection
     {
         $q = $this->buildFilteredListQuery(
             $search,
@@ -562,6 +614,7 @@ final class EloquentProductRepository implements ProductRepository
             $missingLandedCost,
             $hasLandedCost,
             $canonicalTaxonomyFilters,
+            $storePreorderFilter,
         );
 
         [$sortColumn, $sortDir] = $this->resolveSort($sortBy, $sortDir);
@@ -609,6 +662,7 @@ final class EloquentProductRepository implements ProductRepository
         bool $missingLandedCost,
         bool $hasLandedCost,
         array $canonicalTaxonomyFilters,
+        string $storePreorderFilter,
     ) {
         $q = Product::query()
             ->with(['sellingPrice'])
@@ -620,6 +674,7 @@ final class EloquentProductRepository implements ProductRepository
         $totalOrderedReceivedQtyExpr = $this->totalOrderedReceivedQtyExpression();
 
         $this->applyArchivedFilter($q, $archivedFilter);
+        $this->applyStorePreorderFilter($q, $storePreorderFilter);
 
         $q->addSelect([
             DB::raw("EXISTS(
@@ -646,6 +701,8 @@ final class EloquentProductRepository implements ProductRepository
             DB::raw("{$totalOrderedReceivedQtyExpr} as total_ordered_qty"),
             DB::raw("({$totalOrderedReceivedQtyExpr} - coalesce(products.available_qty, 0)) as total_sold_qty"),
             DB::raw($this->latestPoReceivedDateSubquery().' as latest_po_received_date'),
+            DB::raw($this->listThumbnailAssetIdSubquery().' as list_thumbnail_asset_id'),
+            DB::raw($this->storePreorderStatusSubquery().' as store_preorder_status'),
         ]);
 
         $purchaseOrderUuids = array_values(array_unique(array_filter(array_map(
@@ -696,6 +753,8 @@ final class EloquentProductRepository implements ProductRepository
 
     private function applyListOrdering($q, string $sortColumn, string $sortDir): void
     {
+        $q->orderByRaw('products.maintain_qty is null desc');
+
         if ($sortColumn === '__selling_price') {
             $expr = "(select nullif(trim(sps.selling_price), '') from product_selling_prices sps where sps.product_id = products.id limit 1)";
             $q->orderByRaw("{$expr} is null asc");
@@ -764,6 +823,35 @@ final class EloquentProductRepository implements ProductRepository
         };
     }
 
+    private function applyStorePreorderFilter($q, string $storePreorderFilter): void
+    {
+        match ($storePreorderFilter) {
+            'open' => $q->whereExists($this->openStorePreorderExists()),
+            'all' => null,
+            default => $q->whereNotExists($this->openStorePreorderExists()),
+        };
+    }
+
+    private function openStorePreorderExists(): \Closure
+    {
+        return static function ($sub): void {
+            $sub->select(DB::raw('1'))
+                ->from('store_preorders')
+                ->whereColumn('store_preorders.product_id', 'products.id')
+                ->where('store_preorders.status', '=', 'open');
+        };
+    }
+
+    private function storePreorderStatusSubquery(): string
+    {
+        return '(
+            select sp.status from store_preorders sp
+            where sp.product_id = products.id
+            order by case when sp.status = \'open\' then 0 else 1 end, sp.id desc
+            limit 1
+        )';
+    }
+
     private function applyReadyFilter($q, ?string $ready): void
     {
         $ready = strtolower(trim((string) $ready));
@@ -806,13 +894,16 @@ final class EloquentProductRepository implements ProductRepository
             return;
         }
 
-        $allowed = ['critical', 'discontinued', 'hazardous_shipment'];
+        $allowed = ['urgent', 'critical', 'discontinued', 'hazardous_shipment'];
         $productFlags = array_values(array_intersect($productFlags, $allowed));
         if ($productFlags === []) {
             return;
         }
 
         $q->where(function ($sub) use ($productFlags): void {
+            if (in_array('urgent', $productFlags, true)) {
+                $sub->orWhere('is_urgent', '=', true);
+            }
             if (in_array('critical', $productFlags, true)) {
                 $sub->orWhere('is_critical', '=', true);
             }
@@ -1188,6 +1279,23 @@ final class EloquentProductRepository implements ProductRepository
             ->get();
     }
 
+    public function listForShopifyPushPreviewByUuids(array $uuids): Collection
+    {
+        $uuids = array_values(array_unique(array_filter(array_map('trim', $uuids), static fn (string $v): bool => $v !== '')));
+        if ($uuids === []) {
+            return collect();
+        }
+
+        return Product::query()
+            ->with(['sellingPrice'])
+            ->whereIn('uuid', $uuids)
+            ->whereHas('sellingPrice', function ($q): void {
+                $q->whereNotNull('selling_price')->where('selling_price', '<>', '');
+            })
+            ->orderBy('sku', 'asc')
+            ->get();
+    }
+
     /**
      * @return Collection<int, Product>
      */
@@ -1358,6 +1466,34 @@ final class EloquentProductRepository implements ProductRepository
     public function distinctSublines(): array
     {
         return $this->distinctCanonicalValues('subline');
+    }
+
+    public function emptyCanonicalFields(): array
+    {
+        $empty = [];
+        foreach ([
+            'department',
+            'manufacturer',
+            'franchise',
+            'product_line',
+            'subline',
+            'grade',
+            'scale',
+            'series',
+            'vendor',
+        ] as $column) {
+            $exists = Product::query()
+                ->where(static function ($query) use ($column): void {
+                    $query->whereNull($column)
+                        ->orWhere($column, '=', '');
+                })
+                ->exists();
+            if ($exists) {
+                $empty[] = $column;
+            }
+        }
+
+        return $empty;
     }
 
     /**

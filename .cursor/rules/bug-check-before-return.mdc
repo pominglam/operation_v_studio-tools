@@ -7,7 +7,7 @@ alwaysApply: true
 
 Do **not** return to the user until you have **actively looked for bugs** in what you changed or claimed is fixed. Code that "looks correct" or passes unrelated tests is **not enough**.
 
-This rule complements **`always-test-before-done.mdc`**, **`verify-ui-before-done.mdc`**, **`rigorous-qa-before-handoff.mdc`**, and **`definition_of_done.mdc`**.
+This rule complements **`intent-and-data-verification.mdc`**, **`always-test-before-done.mdc`**, **`verify-ui-before-done.mdc`**, **`rigorous-qa-before-handoff.mdc`**, and **`definition_of_done.mdc`**.
 
 ## Mandatory before every handoff
 
@@ -25,6 +25,7 @@ This rule complements **`always-test-before-done.mdc`**, **`verify-ui-before-don
 | Scraper / sync | Inspect output for reported SKUs; restart service if Node changed; smoke live endpoint when feasible |
 | Parser / extractor change | Regression test with **realistic** sample text/DOM (including edge cases user showed) |
 | "Optimized" or refactored path | Confirm the happy path still works end-to-end, not only that code is shorter |
+| Any user-reported bug fix | Add automated regression test per **`bug-fix-regression-tests.mdc`** (manifest + e2e for storefront) |
 
 ## Same-control browser proof
 
@@ -49,6 +50,6 @@ If live verification is blocked (auth, credentials, service down), say so explic
 
 ## Final reply must include
 
-- What bug symptom was checked and the **result** (pass/fail + evidence: SKU, field value, log line, URL).
+- What bug symptom was checked and the **result** (pass/fail + brief evidence: SKU, field, URL).
 - Which targeted tests/commands were run.
-- Any known gaps still open — do not imply the bug is gone if it is not verified.
+- Any known gaps — do not imply the bug is gone if it is not verified. Full detail tables only if the user asks or verification failed.

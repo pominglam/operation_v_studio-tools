@@ -27,7 +27,7 @@ interface ProductRepository
      * @param  array<int, string>  $productFlags
      * @param  array<int, string>  $shipmentMethods
      */
-    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false, array $canonicalTaxonomyFilters = []): LengthAwarePaginator;
+    public function paginate(int $perPage, ?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false, array $canonicalTaxonomyFilters = [], string $storePreorderFilter = 'exclude'): LengthAwarePaginator;
 
     /**
      * @param  array<int, string>  $mainTypes
@@ -40,7 +40,7 @@ interface ProductRepository
      * @param  array<int, string>  $shipmentMethods
      * @return Collection<int, Product>
      */
-    public function listFiltered(?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false, array $canonicalTaxonomyFilters = []): Collection;
+    public function listFiltered(?string $search = null, array $mainTypes = [], array $types = [], array $vendors = [], array $missing = [], ?string $sortBy = null, string $sortDir = 'asc', array $purchaseOrderUuids = [], array $searchTerms = [], string $archivedFilter = 'active', ?string $poProductNovelty = null, ?string $ready = null, ?string $published = null, ?int $availableMin = null, ?int $availableMax = null, ?int $notArrived = null, ?int $notArrivedMin = null, ?int $reorder = null, bool $reorderGtOne = false, array $productFlags = [], array $shipmentMethods = [], bool $notArrivedIncludeDraftOrders = true, ?float $sellingPriceMin = null, ?float $sellingPriceMax = null, bool $missingLandedCost = false, bool $hasLandedCost = false, array $canonicalTaxonomyFilters = [], string $storePreorderFilter = 'exclude'): Collection;
 
     /**
      * @param  array<int, string>  $types
@@ -121,6 +121,14 @@ interface ProductRepository
     public function listForShopifyContentExportByUuids(array $uuids): Collection;
 
     /**
+     * Bulk Shopify push preview: selling price only (no PDP/assets). Same priced-product filter as content export.
+     *
+     * @param  array<int, string>  $uuids
+     * @return Collection<int, Product>
+     */
+    public function listForShopifyPushPreviewByUuids(array $uuids): Collection;
+
+    /**
      * @return Collection<int, Product>
      */
     public function listMissingType(): Collection;
@@ -179,6 +187,13 @@ interface ProductRepository
 
     /** @return array<int, string> */
     public function distinctSublines(): array;
+
+    /**
+     * Canonical columns that currently have at least one null/blank product value.
+     *
+     * @return array<int, string>
+     */
+    public function emptyCanonicalFields(): array;
 
     /**
      * @param  array<int, string>  $skus

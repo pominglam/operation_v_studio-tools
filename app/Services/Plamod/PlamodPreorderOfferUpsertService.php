@@ -27,16 +27,16 @@ final class PlamodPreorderOfferUpsertService
                 continue;
             }
 
+            $offerId = $this->nullableString($offer['offer_id'] ?? null);
             $quantity = $this->parseQuantity($offer['quantity'] ?? null);
-            if ($quantity <= 0) {
+            $price = $this->parseMoney($this->stringValue($offer['price_preorder'] ?? null));
+            if ($quantity <= 0 && $offerId === null && $price === null) {
                 continue;
             }
-
-            $offerId = $this->nullableString($offer['offer_id'] ?? null);
             $etaDate = $this->parseDate($this->stringValue($offer['eta_date'] ?? null));
             $offerKey = $offerId !== null
                 ? $offerId
-                : sha1($sku.'|'.($etaDate ?? '').'|'.$quantity);
+                : sha1($sku.'|'.($etaDate ?? '').'|'.($price ?? '').'|'.$quantity);
 
             $normalized[$offerKey] = [
                 'sku' => $sku,
@@ -45,19 +45,22 @@ final class PlamodPreorderOfferUpsertService
                 'quantity' => $quantity,
                 'eta_date' => $etaDate,
                 'po_due_date' => $this->parseDate($this->stringValue($offer['po_due_date'] ?? null)),
-                'price_preorder' => $this->parseMoney($this->stringValue($offer['price_preorder'] ?? null)),
+                'price_preorder' => $price,
                 'last_seen_at' => $now,
             ];
         }
 
-        DB::transaction(function () use ($sku, $normalized, $now): void {
+        DB::transaction(function () use ($sku, $normalized): void {
             if ($normalized === []) {
                 PlamodPreorderOffer::query()->where('sku', '=', $sku)->delete();
 
                 return;
             }
 
-            $seenKeys = array_keys($normalized);
+            $keepKeys = [];
+            foreach (array_keys($normalized) as $key) {
+                $keepKeys[(string) $key] = true;
+            }
             foreach ($normalized as $row) {
                 PlamodPreorderOffer::query()->updateOrCreate(
                     ['sku' => $sku, 'offer_key' => $row['offer_key']],
@@ -65,10 +68,15 @@ final class PlamodPreorderOfferUpsertService
                 );
             }
 
-            PlamodPreorderOffer::query()
+            $staleIds = PlamodPreorderOffer::query()
                 ->where('sku', '=', $sku)
-                ->whereNotIn('offer_key', $seenKeys)
-                ->delete();
+                ->get(['id', 'offer_key'])
+                ->filter(static fn (PlamodPreorderOffer $row): bool => ! isset($keepKeys[(string) $row->offer_key]))
+                ->pluck('id')
+                ->all();
+            if ($staleIds !== []) {
+                PlamodPreorderOffer::query()->whereIn('id', $staleIds)->delete();
+            }
         });
     }
 

@@ -35,6 +35,7 @@ final class PlamodPreorderSearchRowAssembler
             ->whereIn('sku', $skus)
             ->get()
             ->keyBy(static fn (PlamodPreorder $row): string => (string) $row->sku);
+        $this->query->attachStorePreorderStateToCollection($rowsBySku);
 
         $resolved = [];
         foreach ($skus as $sku) {

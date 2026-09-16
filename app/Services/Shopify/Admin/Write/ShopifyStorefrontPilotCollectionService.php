@@ -8,6 +8,7 @@ use App\Contracts\Shopify\ShopifyAdminGraphQlClientInterface;
 use App\Exceptions\Shopify\ShopifyGraphQlException;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlMutations;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlQueries;
+use App\Support\Products\Storefront\MiscShelfCatalog;
 use App\Support\Products\Storefront\ModelKitShelfCatalog;
 use App\Support\Products\Storefront\StorefrontTag;
 use Illuminate\Support\Facades\Log;
@@ -102,6 +103,11 @@ final class ShopifyStorefrontPilotCollectionService
             'handle' => 'weathering',
             'title' => 'Weathering',
             'tag' => StorefrontTag::DEPT_WEATHERING,
+        ],
+        'cutting-mats' => [
+            'handle' => 'cutting-mats',
+            'title' => 'Cutting mats',
+            'tag' => StorefrontTag::DEPT_CUTTING_MATS,
         ],
     ];
 
@@ -231,6 +237,44 @@ final class ShopifyStorefrontPilotCollectionService
     }
 
     /**
+     * @return array<string, array{gid: string, handle: string, title: string, product_count: int, url: string}>
+     */
+    public function ensureMiscShelfCollections(): array
+    {
+        $this->scopeGuard->assertWriteProductsScope();
+
+        $baseUrl = rtrim((string) config('storefront_classification.storefront_base_url', 'https://operationvstudio.com'), '/');
+        $out = [];
+
+        foreach (MiscShelfCatalog::shelves() as $key => $meta) {
+            $gid = $this->upsertSmartCollection($meta['handle'], $meta['title'], (string) $meta['tag']);
+
+            $this->publishAllChannels->publishToAllChannels($gid, 'collection:'.$meta['handle']);
+            $preview = $this->collectionPreview($gid);
+            $count = is_int($preview['productsCount']['count'] ?? null)
+                ? (int) $preview['productsCount']['count']
+                : 0;
+
+            $out[$key] = [
+                'gid' => $gid,
+                'handle' => $meta['handle'],
+                'title' => $meta['title'],
+                'product_count' => $count,
+                'url' => $baseUrl.'/collections/'.$meta['handle'],
+            ];
+
+            Log::channel('shopify')->info('shopify.write.misc_shelf_collection.ready', [
+                'shelf' => $key,
+                'handle' => $meta['handle'],
+                'gid' => $gid,
+                'product_count' => $count,
+            ]);
+        }
+
+        return $out;
+    }
+
+    /**
      * Model kits at or below the beginner price cap (Shopify variant price rule + mk dept tag).
      *
      * @return array{gid: string, handle: string, title: string, product_count: int, url: string}
@@ -269,6 +313,58 @@ final class ShopifyStorefrontPilotCollectionService
             'product_count' => $count,
             'max_price_cad' => $maxPriceCad,
         ]);
+
+        return [
+            'gid' => $gid,
+            'handle' => $handle,
+            'title' => $title,
+            'product_count' => $count,
+            'url' => $baseUrl.'/collections/'.$handle,
+        ];
+    }
+
+    /**
+     * Customer Pre-orders shelf (open store-preorder tag only). Not added to nav.
+     *
+     * @return array{gid: string, handle: string, title: string, product_count: int, url: string}
+     */
+    public function ensureStorePreordersCollection(): array
+    {
+        $this->scopeGuard->assertWriteProductsScope();
+
+        $baseUrl = rtrim((string) config('storefront_classification.storefront_base_url', 'https://operationvstudio.com'), '/');
+        $handle = 'pre-orders';
+        $title = 'Pre-orders';
+        $existing = $this->collectionByHandle($handle);
+        $input = [
+            'title' => $title,
+            'handle' => $handle,
+            'descriptionHtml' => '<p>These kits are <strong>pre-orders</strong>. Each card shows the full price and the deposit due today. The remaining balance is due when the kit arrives.</p>',
+            'sortOrder' => 'MANUAL',
+            'ruleSet' => [
+                'appliedDisjunctively' => false,
+                'rules' => [
+                    [
+                        'column' => 'TAG',
+                        'relation' => 'EQUALS',
+                        'condition' => StorefrontTag::STORE_PREORDER,
+                    ],
+                ],
+            ],
+        ];
+        $gid = $existing !== null
+            ? $this->mutateCollection(
+                ShopifyAdminGraphQlMutations::COLLECTION_UPDATE,
+                [...$input, 'id' => $existing],
+                'collectionUpdate',
+            )
+            : $this->mutateCollection(ShopifyAdminGraphQlMutations::COLLECTION_CREATE, $input, 'collectionCreate');
+
+        $this->publishAllChannels->publishToAllChannels($gid, 'collection:'.$handle);
+        $preview = $this->collectionPreview($gid);
+        $count = is_int($preview['productsCount']['count'] ?? null)
+            ? (int) $preview['productsCount']['count']
+            : 0;
 
         return [
             'gid' => $gid,

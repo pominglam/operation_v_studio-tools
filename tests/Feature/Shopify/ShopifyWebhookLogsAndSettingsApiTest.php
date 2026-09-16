@@ -57,7 +57,8 @@ it('updates shopify settings reconcile interval', function (): void {
     ]);
 
     $response->assertOk()
-        ->assertJsonPath('data.order_reconcile_interval_hours', 24);
+        ->assertJsonPath('data.order_reconcile_interval_hours', 24)
+        ->assertJsonPath('data.order_reconcile_interval_minutes', 1440);
 });
 
 it('returns shopify ops status with task snapshots', function (): void {
@@ -75,6 +76,7 @@ it('returns shopify ops status with task snapshots', function (): void {
     $response->assertOk()
         ->assertJsonStructure([
             'data' => [
+                'order_reconcile_interval_minutes',
                 'order_reconcile_interval_hours',
                 'orders_last_success_at',
                 'next_order_reconcile_due_at',

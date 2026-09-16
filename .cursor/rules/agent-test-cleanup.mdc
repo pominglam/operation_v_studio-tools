@@ -51,6 +51,7 @@ If you created products, PO lines, taxonomy verifications, Plamod rows, or any E
 
 - User explicitly asks for tests or permanent fixtures.
 - User opens a PR and requests test coverage.
+- **Bug-fix regression tests** added per **`bug-fix-regression-tests.mdc`** (manifest + e2e) — keep them.
 - Minimal fix to an **existing** broken test the user owns.
 
 ## Forbidden handoffs

@@ -108,7 +108,7 @@ final class PriceResearchQueryService
             'selling_price' => 'sps.selling_price',
         ];
         $sortColumn = $sortBy !== null && array_key_exists($sortBy, $sortMap) ? $sortMap[$sortBy] : 'price_researched_at';
-        $shippingPerUnitExpr = PurchaseOrderAllocation::perUnitTotalSql('po.shipping_total');
+        $shippingPerUnitExpr = PurchaseOrderAllocation::lineOrAllocatedShippingSql();
         $surchargePerUnitExpr = PurchaseOrderAllocation::perUnitTotalSql('po.surcharge_total');
 
         $q = Product::query()

@@ -24,6 +24,11 @@ final class PurchaseOrderShipmentMethodService
         return in_array($method, ['air', 'sea'], true) ? $method : null;
     }
 
+    public function defaultForVendor(string $vendor): ?string
+    {
+        return strcasecmp(trim($vendor), 'Plamod') === 0 ? 'air' : null;
+    }
+
     /**
      * @param  iterable<int, Product>  $products
      */
@@ -89,5 +94,4 @@ final class PurchaseOrderShipmentMethodService
         $po->shipment_method = $inferred;
         $po->save();
     }
-
 }

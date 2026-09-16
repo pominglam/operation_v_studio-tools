@@ -45,18 +45,19 @@ Children (A–Z, then footer):
 1. Adhesives → `/collections/adhesives`
 2. Airbrush → `/collections/airbrush`
 3. Brushes → `/collections/brushes`
-4. Decals → `/collections/decals`
-5. Drills & bits → `/collections/drills`
-6. Markers → `/collections/markers`
-7. Nippers & knives → `/collections/nippers-and-knives`
-8. Panel liners → `/collections/panel-liners`
-9. Paints → `/collections/paints`
-10. Sanding → `/collections/sanding`
-11. Scribing tools → `/collections/scribing-tools`
-12. Tapes → `/collections/tapes`
-13. Tweezers → `/collections/tweezers`
-14. **All tools & supplies** → `/collections/tools-and-supplies` (footer row)
-15. **Other** → `/collections/workshop-misc` (footer row)
+4. Cutting mats → `/collections/cutting-mats`
+5. Decals → `/collections/decals`
+6. Drills & bits → `/collections/drills`
+7. Markers → `/collections/markers`
+8. Nippers & knives → `/collections/nippers-and-knives`
+9. Panel liners → `/collections/panel-liners`
+10. Paints → `/collections/paints`
+11. Sanding → `/collections/sanding`
+12. Scribing tools → `/collections/scribing-tools`
+13. Tapes → `/collections/tapes`
+14. Tweezers → `/collections/tweezers`
+15. **All tools & supplies** → `/collections/tools-and-supplies` (footer row)
+16. **Other** → `/collections/workshop-misc` (footer row)
 
 Canonical order: `StorefrontTag::toolsAndSuppliesNavMenuChildren()`.
 

@@ -21,6 +21,14 @@ final class PlamodRestockProposalShowRequest extends FormRequest
         return [
             'hide_dismissed' => ['sometimes', 'boolean'],
             'only_included_new' => ['sometimes', 'boolean'],
+            'section' => ['sometimes', 'string', 'in:all,existing,new'],
         ];
+    }
+
+    public function section(): string
+    {
+        $section = $this->validated('section', 'all');
+
+        return is_string($section) ? $section : 'all';
     }
 }

@@ -325,7 +325,11 @@ describe('PlamodRestockPage', () => {
         await wrapper.get('[data-testid="restock-refresh-plamod"]').trigger('click');
         await flushPromises();
 
-        expect(apiPost).toHaveBeenCalledWith('/api/v1/plamod/restock/sync');
+        expect(apiPost).toHaveBeenCalledWith(
+            '/api/v1/plamod/restock/sync',
+            {},
+            expect.objectContaining({ timeout: 15_000 }),
+        );
     });
 
     it('resumes cart polling after loading an active run', async () => {

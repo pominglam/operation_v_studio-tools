@@ -6,7 +6,9 @@ const {
   listManufacturerPreorderFilters,
   exportManufacturerPreordersCsv,
   exportManufacturerInstockMerged,
+  exportManufacturerPreorderMerged,
   readInstockExportProgress,
+  readPreorderExportProgress,
   searchRetailerPreorders,
   resetPlamodScraperSessions,
   enrichPreorderPdpFields,
@@ -62,6 +64,7 @@ async function withTimeout(promise, timeoutMs) {
 
 const port = Number.parseInt(process.env.PORT || '3001', 10);
 const requestTimeoutMs = Number.parseInt(process.env.PLAMOD_REQUEST_TIMEOUT_MS || '360000', 10);
+const preorderHubTimeoutMs = Number.parseInt(process.env.PLAMOD_PREORDER_HUB_TIMEOUT_MS || '900000', 10);
 const instockMergedTimeoutMs = Number.parseInt(process.env.PLAMOD_INSTOCK_MERGED_TIMEOUT_MS || '10800000', 10);
 const restockCartTimeoutMs = Number.parseInt(process.env.PLAMOD_RESTOCK_CART_TIMEOUT_MS || '7200000', 10);
 const restockVerifyTimeoutMs = Number.parseInt(process.env.PLAMOD_RESTOCK_VERIFY_TIMEOUT_MS || '180000', 10);
@@ -77,6 +80,8 @@ const server = http.createServer(async (req, res) => {
           'POST /export-manufacturer-preorders-csv',
           'POST /export-manufacturer-instock-merged',
           'GET /instock-export-progress',
+          'POST /export-manufacturer-preorder-merged',
+          'GET /preorder-export-progress',
           'POST /list-manufacturer-preorders-filters',
           'POST /search-retailer-preorders',
           'POST /reset-scraper-sessions',
@@ -136,7 +141,7 @@ const server = http.createServer(async (req, res) => {
       console.log('[plamod] export-preorders-csv start');
 
       try {
-        const out = await withTimeout(exportPlamodPreordersCsv(), requestTimeoutMs);
+        const out = await withTimeout(exportPlamodPreordersCsv(), preorderHubTimeoutMs);
         // eslint-disable-next-line no-console
         console.log(`[plamod] export-preorders-csv end ok=${Boolean(out?.ok)} ms=${Date.now() - started}`);
         return sendJson(res, 200, out);
@@ -191,20 +196,29 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, readInstockExportProgress());
     }
 
+    if (req.method === 'GET' && req.url === '/preorder-export-progress') {
+      return sendJson(res, 200, readPreorderExportProgress());
+    }
+
     if (req.method === 'POST' && req.url === '/export-manufacturer-instock-merged') {
       const payload = await readJson(req);
       const manufacturerId = payload.manufacturer_id ?? payload.manufacturerId ?? 1;
       const maxFiltersRaw = payload.max_filters ?? payload.maxFilters ?? 0;
       const maxFilters = Number.parseInt(String(maxFiltersRaw), 10) || 0;
+      const onlyFilters = Array.isArray(payload.only_filters)
+        ? payload.only_filters
+        : Array.isArray(payload.onlyFilters)
+          ? payload.onlyFilters
+          : [];
       const started = Date.now();
       // eslint-disable-next-line no-console
       console.log(
-        `[plamod] export-manufacturer-instock-merged start id=${manufacturerId}${maxFilters > 0 ? ` max_filters=${maxFilters}` : ''}`,
+        `[plamod] export-manufacturer-instock-merged start id=${manufacturerId}${maxFilters > 0 ? ` max_filters=${maxFilters}` : ''}${onlyFilters.length > 0 ? ` only_filters=${onlyFilters.length}` : ''}`,
       );
 
       try {
         const out = await withTimeout(
-          exportManufacturerInstockMerged({ manufacturerId, maxFilters }),
+          exportManufacturerInstockMerged({ manufacturerId, maxFilters, onlyFilters }),
           instockMergedTimeoutMs,
         );
         // eslint-disable-next-line no-console
@@ -216,6 +230,36 @@ const server = http.createServer(async (req, res) => {
         // eslint-disable-next-line no-console
         console.log(
           `[plamod] export-manufacturer-instock-merged error msg=${String(e?.message || 'Unknown error')} ms=${Date.now() - started}`,
+        );
+        return sendJson(res, 200, { ok: false, error_message: String(e?.message || 'Unknown error'), duration_ms: Date.now() - started });
+      }
+    }
+
+    if (req.method === 'POST' && req.url === '/export-manufacturer-preorder-merged') {
+      const payload = await readJson(req);
+      const manufacturerId = payload.manufacturer_id ?? payload.manufacturerId ?? 1;
+      const maxFiltersRaw = payload.max_filters ?? payload.maxFilters ?? 0;
+      const maxFilters = Number.parseInt(String(maxFiltersRaw), 10) || 0;
+      const started = Date.now();
+      // eslint-disable-next-line no-console
+      console.log(
+        `[plamod] export-manufacturer-preorder-merged start id=${manufacturerId}${maxFilters > 0 ? ` max_filters=${maxFilters}` : ''}`,
+      );
+
+      try {
+        const out = await withTimeout(
+          exportManufacturerPreorderMerged({ manufacturerId, maxFilters }),
+          instockMergedTimeoutMs,
+        );
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plamod] export-manufacturer-preorder-merged end ok=${Boolean(out?.ok)} rows=${out?.row_count ?? 0} ms=${Date.now() - started}`,
+        );
+        return sendJson(res, 200, out);
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `[plamod] export-manufacturer-preorder-merged error msg=${String(e?.message || 'Unknown error')} ms=${Date.now() - started}`,
         );
         return sendJson(res, 200, { ok: false, error_message: String(e?.message || 'Unknown error'), duration_ms: Date.now() - started });
       }

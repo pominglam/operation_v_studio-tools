@@ -11,7 +11,7 @@ final class ProductsTaxonomyReclassifyCommand extends Command
 {
     protected $signature = 'products:taxonomy-reclassify
         {--run-id= : Optional research run id; defaults to latest completed run}
-        {--patterns=keychain,figures,dspiae-mp : Comma-separated pattern groups to scan}
+        {--patterns=keychain,figures,dspiae-mp,panel-liner : Comma-separated pattern groups to scan}
         {--no-auto-approve : Leave reclassified rows in proposed status}';
 
     protected $description = 'Re-open verified taxonomy rows when current rules disagree with applied product values';

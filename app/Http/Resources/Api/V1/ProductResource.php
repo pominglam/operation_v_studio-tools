@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Resources\Api\V1;
 
 use App\Models\Product;
+use App\Support\Products\ProductExternalAssetUrlBuilder;
 use App\Support\Products\Storefront\ProductStorefrontClassifier;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -76,9 +77,11 @@ final class ProductResource extends JsonResource
             'published_on_shopify' => (bool) $product->published_on_shopify,
             'archived_at' => optional($product->archived_at)->toISOString(),
             'is_archived' => $product->archived_at !== null,
+            'store_preorder_status' => $this->nullableStatus($product->getAttribute('store_preorder_status')),
             'is_ready' => (bool) $product->is_ready,
             'latest_arrival' => (bool) $product->latest_arrival,
             'is_critical' => (bool) $product->is_critical,
+            'is_urgent' => (bool) $product->is_urgent,
             'is_discontinued' => (bool) $product->is_discontinued,
             'is_hazardous_shipment' => (bool) $product->is_hazardous_shipment,
             'shipment_method' => $product->shipment_method,
@@ -90,6 +93,7 @@ final class ProductResource extends JsonResource
                 'has_description' => $this->hasExternalDescription($product),
                 'plamod_image_count' => (int) ($product->plamod_image_assets_count ?? 0),
             ],
+            'thumbnail_url' => $this->thumbnailUrl($product),
             'order' => $product->order_qty,
             'filled' => $product->filled_qty,
             'total_ordered' => max(0, (int) ($product->getAttribute('total_ordered_qty') ?? 0)),
@@ -106,6 +110,26 @@ final class ProductResource extends JsonResource
             'created_at' => optional($product->created_at)->toISOString(),
             'updated_at' => optional($product->updated_at)->toISOString(),
         ];
+    }
+
+    private function nullableStatus(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+
+    private function thumbnailUrl(Product $product): ?string
+    {
+        $id = $product->getAttribute('list_thumbnail_asset_id');
+        if (! is_numeric($id)) {
+            return null;
+        }
+
+        return ProductExternalAssetUrlBuilder::thumbUrl((int) $id);
     }
 
     private function hasExternalDescription(Product $product): bool

@@ -7,7 +7,7 @@ namespace App\Http\Resources\Api\V1;
 use App\DTOs\Products\ProductInfoData;
 use App\Models\ProductExternalAsset;
 use App\Models\ProductExternalContent;
-use App\Support\Products\ProductExternalAssetUrlBuilder;
+use App\Support\Products\ProductExternalAssetApiArray;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -40,27 +40,7 @@ final class ProductInfoResource extends JsonResource
                 $data->contents,
             ),
             'assets' => array_map(
-                static function (ProductExternalAsset $a): array {
-                    return [
-                        'id' => (int) $a->id,
-                        'source' => (string) $a->source,
-                        'kind' => (string) $a->kind,
-                        'filename' => (string) $a->filename,
-                        'mime_type' => $a->mime_type,
-                        'size_bytes' => $a->size_bytes,
-                        'origin_url' => $a->origin_url,
-                        'origin_width' => $a->origin_width,
-                        'origin_height' => $a->origin_height,
-                        'checksum_sha256' => $a->checksum_sha256,
-                        'sort_order' => $a->sort_order,
-                        'shopify_enabled' => (bool) ($a->shopify_enabled ?? true),
-                        'download_url' => ProductExternalAssetUrlBuilder::downloadUrl((int) $a->id),
-                        'view_url' => ProductExternalAssetUrlBuilder::viewUrl((int) $a->id),
-                        'thumb_url' => $a->kind === 'image'
-                            ? ProductExternalAssetUrlBuilder::thumbUrl((int) $a->id)
-                            : null,
-                    ];
-                },
+                static fn (ProductExternalAsset $a): array => ProductExternalAssetApiArray::from($a),
                 $data->assets,
             ),
         ];

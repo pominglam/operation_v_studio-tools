@@ -1,0 +1,51 @@
+{% comment %}
+  Price band filters (CAD). Requires ovs-model-kit-filters-params assigns.
+{% endcomment %}
+{%- assign ovs_price_options = 'under-35,35-60,60-100,100-plus' | split: ',' -%}
+<details class="facets__disclosure-vertical js-filter ovs-mk-filters" id="OvsMkPrice-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" open>
+  <summary class="facets__summary caption-large focus-offset">
+    <div>
+      <span class="facets__summary-label">Price</span>
+      {{- 'icon-caret.svg' | inline_asset_content -}}
+    </div>
+  </summary>
+  <div class="facets__display-vertical">
+    <fieldset class="facets-wrap facets-wrap-vertical">
+      <legend class="visually-hidden">Price</legend>
+      <ul class="facets-layout facets-layout-list facets-layout-list--text facets__list--vertical list-unstyled" role="list">
+        {%- for price_key in ovs_price_options -%}
+          {%- liquid
+            assign price_label = price_key
+            if price_key == 'under-35'
+              assign price_label = 'Under $35'
+            elsif price_key == '35-60'
+              assign price_label = '$35–$60'
+            elsif price_key == '60-100'
+              assign price_label = '$60–$100'
+            elsif price_key == '100-plus'
+              assign price_label = '$100+'
+            endif
+            assign price_token = ',' | append: price_key | append: ','
+          -%}
+          <li class="list-menu__item facets__item">
+            <label for="OvsMkPrice-{{ price_key }}-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}" class="facets__label facet-checkbox">
+              <input
+                type="checkbox"
+                id="OvsMkPrice-{{ price_key }}-{{ ovs_mk_section_id }}{{ ovs_mk_filter_suffix }}"
+                class="ovs-mk-price-input"
+                value="{{ price_key }}"
+                data-ovs-mk-price="{{ price_key }}"
+                {% if ovs_mk_prices_padded contains price_token %}
+                  checked
+                {% endif %}
+              >
+              {{- 'square.svg' | inline_asset_content -}}
+              <div class="svg-wrapper">{{- 'icon-checkmark.svg' | inline_asset_content -}}</div>
+              <span class="facet-checkbox__text" aria-hidden="true"><span class="facet-checkbox__text-label">{{ price_label }}</span></span>
+            </label>
+          </li>
+        {%- endfor -%}
+      </ul>
+    </fieldset>
+  </div>
+</details>

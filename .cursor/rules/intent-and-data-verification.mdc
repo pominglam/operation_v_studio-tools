@@ -1,0 +1,82 @@
+---
+description: Verify user intent and data correctness on every handoff — interaction alone is not proof
+alwaysApply: true
+---
+
+# Intent & Data Correctness Verification
+
+**Passing a click, HTTP 200, or unit test is not enough.** Before handoff, prove the change does what the **user expects the data to become**, not merely that the control responded.
+
+Complements **`rigorous-qa-before-handoff.mdc`**, **`verify-ui-before-done.mdc`**, **`bug-check-before-return.mdc`**, and **`definition_of_done.mdc`**.
+
+## The failure mode to avoid
+
+| What agents often check | What users actually care about |
+| --- | --- |
+| Button click fires | **Only** the intended rows/items remain |
+| Page loads | **Every visible field** is correct on real data |
+| API returns 200 | **Response body** matches what the UI will show |
+| Service/tinker returns field X | **HTTP JSON** on the SPA route includes X (see **`api-resource-enrichment-wiring.mdc`**) |
+| "Looks wired up" | **Sibling controls** behave the same way |
+
+## Step 1 — Write an Intent Contract (before saying done)
+
+For **each** new or changed behavior (filter, button, form, job, export, API field), write one line:
+
+> **When** [user action] **→ expect** [observable outcome on real data]
+
+Examples:
+
+- When user clicks **Rejected** → list shows **only** rejected orders; row count = pill count.
+- When user saves deposit → **Balance** column and API `balance` field both update on that row.
+- When sync job finishes → reported counts match DB rows; no skipped SKUs the user will miss.
+
+If you cannot state the expected outcome in one line, you do not understand the requirement yet — clarify or infer from siblings/spec before handoff.
+
+## Step 2 — Act → Observe → Compare (mandatory)
+
+After performing the user action on the **real path** (browser, API, job, export file):
+
+1. **Observe** — record counts, sample row IDs/SKUs, field values, URL/query, toasts, file contents.
+2. **Compare** — every observation must match the Intent Contract.
+3. **Purity check** — scan **all** visible results (not just the first row). Any item that violates the contract = **fail**.
+4. **Count check** — when the UI shows a number (pill, badge, total, pagination), the list length or aggregate must match.
+5. **Cross-layer** — when UI reads an API/DB field, spot-check that layer too for at least one sample row.
+6. **Sibling consistency** — controls that look or sit together (tabs, group pills, column filters) must follow the **same selection semantics** unless spec says otherwise.
+
+## Applies to (not only filters)
+
+| Surface | Compare against |
+| --- | --- |
+| List/table filters & sorts | Visible rows + counts + key column values |
+| Forms & inline edit | Saved value in UI reload + API/DB |
+| Dialogs & bulk actions | Affected row count + persisted state |
+| Reports & exports | Column semantics, totals, row count |
+| API endpoints | Typed contract + realistic seeded/live payload |
+| Jobs & sync | Log counters vs actual rows; no silent partial failure |
+
+## Stop conditions (not done)
+
+- Visible rows include items that should be excluded.
+- Displayed count ≠ actual count.
+- Field shows null/wrong value on a row the user will see.
+- Behavior differs from a sibling control without an documented reason.
+- Only the happy path was checked; no clear, deselect, error, or empty state.
+
+## Forbidden handoffs
+
+- "Clicked it and the page updated" without outcome evidence.
+- "Tests pass" when Intent Contract was not checked on real data.
+- "Should work" / "try hard refresh" instead of fixing or listing gaps.
+
+If blocked (auth, no data, service down), say **incomplete** and what was not verified.
+
+## Agent vs user
+
+| Agent (mandatory, internal) | User reply (default) |
+| --- | --- |
+| Full Intent Contract + Act → Observe → Compare | Brief **Verified** note with outcomes |
+| Purity, counts, cross-layer, siblings | No wall of tables unless asked or failed |
+| Fix until pass or disclose blocked | Clear gaps only when something could not run |
+
+The user should not need to re-test to discover wrong data — that is the agent’s job, not the agent’s homework to paste into chat.

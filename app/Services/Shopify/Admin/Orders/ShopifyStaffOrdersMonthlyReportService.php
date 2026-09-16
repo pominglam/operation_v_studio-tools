@@ -6,6 +6,8 @@ namespace App\Services\Shopify\Admin\Orders;
 
 use App\Contracts\Shopify\ShopifyAdminGraphQlClientInterface;
 use App\Models\Shopify\ShopifyOrder;
+use App\Support\Shopify\Admin\Orders\ShopifyOrderAttributionSignals;
+use App\Support\Shopify\Admin\Orders\ShopifyOrderGraphQlPaymentGateways;
 use App\Support\Shopify\Admin\Orders\ShopifyOrderGraphQlSubtotal;
 use Carbon\CarbonImmutable;
 
@@ -20,6 +22,7 @@ query StaffOrdersAttributionBackfill($first: Int!, $after: String, $query: Strin
       legacyResourceId
       createdAt
       sourceName
+      paymentGatewayNames
       cancelledAt
       displayFinancialStatus
       channelInformation { channelDefinition { channelName } }
@@ -130,6 +133,7 @@ GQL;
 
                 $attributes = $this->staffAttribution->attributesFromGraphQlNode($node);
                 $attributes['subtotal_shop_amount'] = ShopifyOrderGraphQlSubtotal::subtotalShopAmount($node);
+                $attributes['payment_gateway_names'] = ShopifyOrderGraphQlPaymentGateways::names($node);
                 $ordersUpdated += ShopifyOrder::query()->where('gid', $gid)->update($attributes);
             }
 
@@ -189,11 +193,14 @@ GQL;
                 continue;
             }
 
+            $signals = ShopifyOrderAttributionSignals::fromOrder($order);
             $bucket = $this->classifier->classify(
                 $order->source_name,
                 $order->pos_user_id !== null ? (int) $order->pos_user_id : null,
                 is_string($order->channel_name) ? $order->channel_name : null,
                 $staffByUserId,
+                $signals['tags'],
+                $signals['payment_gateways'],
             );
             $day = $this->orderDay($order, $timezone);
             if ($day === null || ! isset($daily[$day][$bucket])) {

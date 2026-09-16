@@ -32,10 +32,32 @@ type ManifestCombinationCase = {
     steps: ManifestCombinationStep[];
 };
 
+type ManifestPurityStep = {
+    checkboxSelector: string;
+    check: boolean;
+};
+
+type ManifestPurityCase = {
+    name: string;
+    steps: ManifestPurityStep[];
+    expectExactVisibleProducts?: number;
+    expectVisibleTextAny?: string[];
+    expectAbsentVisibleText?: string[];
+};
+
 export type FilterCombinationCase = {
     name: string;
     path: string;
     steps: ManifestCombinationStep[];
+};
+
+export type FilterPurityCase = {
+    name: string;
+    path: string;
+    steps: ManifestPurityStep[];
+    expectExactVisibleProducts?: number;
+    expectVisibleTextAny?: string[];
+    expectAbsentVisibleText?: string[];
 };
 
 type ManifestCollection = {
@@ -44,6 +66,7 @@ type ManifestCollection = {
     snippets: string[];
     toggleCases: ManifestToggleCase[];
     combinationCases?: ManifestCombinationCase[];
+    purityCases?: ManifestPurityCase[];
     mobileSmoke: {
         checkboxSelector: string;
         paramKey: string;
@@ -56,10 +79,29 @@ type ManifestSkippedCollection = {
     reason: string;
 };
 
+export type ListingUniquenessCase = {
+    name: string;
+    path: string;
+};
+
+export type ListingCtaCase = {
+    name: string;
+    path: string;
+    gridSelector?: string;
+    allowEmpty?: boolean;
+    expectMinVisibleProducts?: number;
+    expectCardCtas?: Array<{
+        titleContains: string;
+        cta: string;
+    }>;
+};
+
 export type StorefrontTsCollectionFiltersManifest = {
     version: number;
     collectionsWithCheckboxFilters: ManifestCollection[];
     collectionsWithoutCheckboxFilters: ManifestSkippedCollection[];
+    listingUniquenessCases?: ListingUniquenessCase[];
+    listingCtaCases?: ListingCtaCase[];
 };
 
 const E2E_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -127,6 +169,21 @@ export function flattenCombinationCases(
             name: combinationCase.name,
             path: collection.path,
             steps: combinationCase.steps,
+        })),
+    );
+}
+
+export function flattenPurityCases(
+    manifest: StorefrontTsCollectionFiltersManifest,
+): FilterPurityCase[] {
+    return manifest.collectionsWithCheckboxFilters.flatMap((collection) =>
+        (collection.purityCases ?? []).map((purityCase) => ({
+            name: purityCase.name,
+            path: collection.path,
+            steps: purityCase.steps,
+            expectExactVisibleProducts: purityCase.expectExactVisibleProducts,
+            expectVisibleTextAny: purityCase.expectVisibleTextAny,
+            expectAbsentVisibleText: purityCase.expectAbsentVisibleText,
         })),
     );
 }

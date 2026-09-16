@@ -40,6 +40,13 @@ interface PurchaseOrderRepository
      */
     public function distinctVendors(): array;
 
+    /**
+     * All purchase orders for product-grid PO filter dropdowns (filter sort, item counts).
+     *
+     * @return Collection<int, PurchaseOrder>
+     */
+    public function listForProductFilter(): Collection;
+
     public function findByUuidOrFail(string $uuid): PurchaseOrder;
 
     /**

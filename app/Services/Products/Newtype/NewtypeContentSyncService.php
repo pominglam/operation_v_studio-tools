@@ -10,6 +10,7 @@ use App\DAL\Products\ProductRepository;
 use App\Models\Product;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\Products\ProductPdpSearchTermsService;
+use App\Services\StorePreorders\StorePreorderUsesPlamodImagesOnly;
 use App\Support\Products\ProductGradeResolver;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -26,6 +27,7 @@ final class NewtypeContentSyncService
         private readonly ProductExternalContentRepository $contents,
         private readonly ProductExternalAssetRepository $assets,
         private readonly ProductGradeResolver $gradeResolver,
+        private readonly StorePreorderUsesPlamodImagesOnly $storePreorderPlamodImagesOnly,
     ) {}
 
     /**
@@ -33,6 +35,12 @@ final class NewtypeContentSyncService
      */
     public function syncForProduct(Product $product, ?string $syncUuid = null, ?callable $trace = null): void
     {
+        if ($this->storePreorderPlamodImagesOnly->appliesToProduct($product)) {
+            $this->trace($trace, 'summary', ['result' => 'skipped_store_preorder']);
+
+            return;
+        }
+
         $sku = is_string($product->sku ?? null) ? trim((string) $product->sku) : '';
         $name = is_string($product->description ?? null) ? trim((string) $product->description) : '';
 

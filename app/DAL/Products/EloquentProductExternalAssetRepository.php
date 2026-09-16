@@ -90,13 +90,22 @@ final class EloquentProductExternalAssetRepository implements ProductExternalAss
             return;
         }
 
-        DB::transaction(function () use ($assetIdToSortOrder): void {
-            foreach ($assetIdToSortOrder as $id => $sortOrder) {
-                ProductExternalAsset::query()
-                    ->where('id', '=', $id)
-                    ->update(['sort_order' => $sortOrder]);
-            }
-        });
+        $cases = [];
+        $bindings = [];
+        foreach ($assetIdToSortOrder as $id => $sortOrder) {
+            $cases[] = 'WHEN ? THEN ?';
+            $bindings[] = $id;
+            $bindings[] = $sortOrder;
+        }
+
+        $idPlaceholders = implode(',', array_fill(0, count($assetIdToSortOrder), '?'));
+        $sql = 'UPDATE product_external_assets SET sort_order = CASE id '.implode(' ', $cases).' END, updated_at = ? WHERE id IN ('.$idPlaceholders.')';
+        $bindings[] = now()->format('Y-m-d H:i:s');
+        foreach (array_keys($assetIdToSortOrder) as $id) {
+            $bindings[] = $id;
+        }
+
+        DB::update($sql, $bindings);
     }
 
     public function findById(int $id): ?ProductExternalAsset
@@ -111,6 +120,22 @@ final class EloquentProductExternalAssetRepository implements ProductExternalAss
     {
         ProductExternalAsset::query()
             ->where('id', '=', $id)
+            ->update(['shopify_enabled' => $enabled]);
+    }
+
+    public function setShopifyEnabledForProductIds(int $productId, array $ids, bool $enabled): int
+    {
+        $ids = array_values(array_unique(array_filter(
+            $ids,
+            static fn (int $id): bool => $id > 0,
+        )));
+        if ($ids === []) {
+            return 0;
+        }
+
+        return ProductExternalAsset::query()
+            ->where('product_id', '=', $productId)
+            ->whereIn('id', $ids)
             ->update(['shopify_enabled' => $enabled]);
     }
 

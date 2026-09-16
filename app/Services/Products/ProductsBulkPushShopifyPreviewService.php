@@ -9,9 +9,10 @@ use App\DTOs\Shopify\ShopifyProductPushOptionsDTO;
 use App\Models\Product;
 use App\Services\Shopify\Admin\Write\ShopifyInventoryLocationResolver;
 use App\Services\Shopify\Admin\Write\ShopifyProductMirrorBySkuResolver;
-use App\Services\Shopify\Admin\Write\ShopifyProductMirrorRefreshService;
 use App\Services\Shopify\Admin\Write\ShopifyWriteScopeGuard;
 use App\Services\Shopify\CloudflaredTunnel;
+use App\Services\Shopify\CloudflaredTunnelService;
+use App\Services\StorePreorders\StorePreorderShopifyPushOverride;
 use App\Support\Products\ProductHoldQty;
 use Illuminate\Support\Facades\DB;
 
@@ -22,7 +23,6 @@ final class ProductsBulkPushShopifyPreviewService
         private readonly ShopifyWriteScopeGuard $scopeGuard,
         private readonly ShopifyInventoryLocationResolver $locationResolver,
         private readonly ShopifyProductMirrorBySkuResolver $mirrorBySku,
-        private readonly ShopifyProductMirrorRefreshService $mirrorRefresh,
         private readonly CloudflaredTunnel $tunnel,
     ) {}
 
@@ -50,11 +50,11 @@ final class ProductsBulkPushShopifyPreviewService
         $productUuids = array_values(array_unique(array_filter(array_map('strval', $productUuids), static fn (string $v): bool => trim($v) !== '')));
 
         $locationGid = $this->locationResolver->resolveLocationGid();
-        $tunnelStatus = $this->tunnel->status();
+        $tunnelStatus = $this->tunnelStatusForPreview();
         $tunnelUrl = is_string($tunnelStatus['tunnel_url'] ?? null) ? trim($tunnelStatus['tunnel_url']) : '';
         $imagesEnabled = ($tunnelStatus['running'] ?? false) === true && $tunnelUrl !== '';
 
-        $existing = $this->products->listForShopifyContentExportByUuids($productUuids);
+        $existing = $this->products->listForShopifyPushPreviewByUuids($productUuids)->keyBy('uuid');
         $mirrorsBySku = $this->mirrorBySku->resolveMany(
             $existing->pluck('sku')->filter(static fn (mixed $sku): bool => is_string($sku) && trim($sku) !== '')->map(static fn (mixed $sku): string => trim((string) $sku))->all(),
         );
@@ -62,26 +62,25 @@ final class ProductsBulkPushShopifyPreviewService
             $this->inventoryItemGidsFromMirrors($mirrorsBySku),
             $locationGid,
         );
+        $storePreordersByProductId = StorePreorderShopifyPushOverride::mapOpenByProductIds(
+            $existing->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all(),
+        );
 
         $rows = [];
         foreach ($productUuids as $uuid) {
-            $product = $existing->firstWhere('uuid', $uuid);
+            $product = $existing->get($uuid);
             if ($product === null) {
                 continue;
             }
             $sku = trim((string) $product->sku);
-            $mirror = $mirrorsBySku[$sku] ?? null;
-            if ($mirror === null || ! $this->mirrorBySku->isUpsertableMirror($mirror)) {
-                $storedHandle = is_string($product->handle) ? trim($product->handle) : '';
-                if ($storedHandle !== '' && $sku !== '') {
-                    $this->mirrorRefresh->tryLinkBySku($sku);
-                    $mirror = $this->mirrorBySku->resolve($sku);
-                    if ($mirror !== null) {
-                        $mirrorsBySku[$sku] = $mirror;
-                    }
-                }
-            }
-            $rows[] = $this->buildProductRow($product, $locationGid, $options, $mirror, $inventoryQtyByItemGid);
+            $rows[] = $this->buildProductRow(
+                $product,
+                $locationGid,
+                $options,
+                $mirrorsBySku[$sku] ?? null,
+                $inventoryQtyByItemGid,
+                $storePreordersByProductId[(int) $product->id] ?? null,
+            );
         }
 
         return $this->summarizePreview($options, $locationGid, $imagesEnabled, $tunnelUrl, $rows);
@@ -162,6 +161,7 @@ final class ProductsBulkPushShopifyPreviewService
         ShopifyProductPushOptionsDTO $options,
         ?array $mirror,
         array $inventoryQtyByItemGid,
+        ?StorePreorderShopifyPushOverride $storePreorder,
     ): array {
         $sku = trim((string) $product->sku);
         $selling = $product->sellingPrice?->selling_price;
@@ -176,19 +176,20 @@ final class ProductsBulkPushShopifyPreviewService
         $optionIndependentSkip = null;
         if ($sku === '') {
             $optionIndependentSkip = 'missing_sku';
-        } elseif ($storedHandle !== '' && ! $hasUpsertableMirror) {
+        } elseif ($mirror !== null && ! $hasUpsertableMirror) {
             $optionIndependentSkip = 'missing_shopify_mirror';
         }
 
+        $treatAsUpdate = $hasUpsertableMirror || ($storedHandle !== '' && $mirror === null);
         $skipReason = $this->resolveSkipReason(
             $options,
             $locationGid,
-            $hasUpsertableMirror,
+            $treatAsUpdate,
             $hasPrice,
             $optionIndependentSkip,
         );
 
-        $action = $hasUpsertableMirror ? 'update' : 'create';
+        $action = $treatAsUpdate ? 'update' : 'create';
 
         $shopifyQty = null;
         if ($mirror !== null && is_string($mirror['inventory_item_gid'] ?? null) && $mirror['inventory_item_gid'] !== '') {
@@ -197,7 +198,8 @@ final class ProductsBulkPushShopifyPreviewService
 
         $erpAvailable = max(0, (int) ($product->available_qty ?? 0));
         $erpHold = ProductHoldQty::normalized($product->hold_qty);
-        $shopifyPushQty = ProductHoldQty::sellableFromAvailable($erpAvailable, $erpHold);
+        $shopifyPushQty = $storePreorder?->quantity()
+            ?? ProductHoldQty::sellableFromAvailable($erpAvailable, $erpHold);
 
         return [
             'product_uuid' => (string) $product->uuid,
@@ -208,9 +210,12 @@ final class ProductsBulkPushShopifyPreviewService
             'erp_hold_qty' => $erpHold,
             'shopify_push_qty' => $shopifyPushQty,
             'shopify_available_qty' => $shopifyQty,
-            'selling_price' => $hasPrice ? trim((string) $selling) : null,
+            'selling_price' => $hasPrice
+                ? ($storePreorder?->price() ?? trim((string) $selling))
+                : null,
             'has_selling_price' => $hasPrice,
             'published_on_shopify' => (bool) ($product->published_on_shopify ?? false),
+            'store_preorder_status' => $storePreorder !== null ? 'open' : null,
             'push_action' => $action,
             'option_independent_skip' => $optionIndependentSkip,
             'push_eligible' => $skipReason === null,
@@ -221,7 +226,7 @@ final class ProductsBulkPushShopifyPreviewService
     private function resolveSkipReason(
         ShopifyProductPushOptionsDTO $options,
         string $locationGid,
-        bool $hasUpsertableMirror,
+        bool $treatAsUpdate,
         bool $hasPrice,
         ?string $optionIndependentSkip,
     ): ?string {
@@ -233,7 +238,7 @@ final class ProductsBulkPushShopifyPreviewService
             return 'no_fields_selected';
         }
 
-        if ($hasUpsertableMirror) {
+        if ($treatAsUpdate) {
             if ($options->price && ! $hasPrice) {
                 return 'missing_selling_price';
             }
@@ -311,5 +316,17 @@ final class ProductsBulkPushShopifyPreviewService
         }
 
         return $qtyByItemGid;
+    }
+
+    /**
+     * @return array{running?: bool, tunnel_url?: string|null}
+     */
+    private function tunnelStatusForPreview(): array
+    {
+        if ($this->tunnel instanceof CloudflaredTunnelService) {
+            return $this->tunnel->status(verifyReachability: false);
+        }
+
+        return $this->tunnel->status();
     }
 }

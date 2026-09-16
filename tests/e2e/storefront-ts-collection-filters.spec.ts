@@ -4,6 +4,8 @@ import {
 
     flattenCombinationCases,
 
+    flattenPurityCases,
+
     flattenToggleCases,
 
     loadStorefrontTsCollectionFiltersManifest,
@@ -12,11 +14,16 @@ import {
 
     type FilterCombinationCase,
 
+    type FilterPurityCase,
+
     type FilterToggleCase,
 
     validateManifestAgainstTheme,
 
 } from './helpers/storefront-ts-collection-filters-manifest';
+
+import { assertVisibleListingCardsHaveCtas, flattenTsListingCtaCases } from './helpers/storefront-listing-cta';
+import { assertUniqueVisibleProductHandles } from './helpers/storefront-unique-product-handles';
 
 
 
@@ -31,6 +38,8 @@ const manifest = loadStorefrontTsCollectionFiltersManifest();
 const FILTER_TOGGLE_CASES = flattenToggleCases(manifest);
 
 const FILTER_COMBINATION_CASES = flattenCombinationCases(manifest);
+
+const FILTER_PURITY_CASES = flattenPurityCases(manifest);
 
 const MOBILE_SMOKE_CASES = mobileSmokeCases(manifest);
 
@@ -128,6 +137,8 @@ async function assertFilterCheckThenUncheck(
 
     expect(filteredCount).toBeLessThanOrEqual(baselineCount);
 
+    await assertUniqueVisibleProductHandles(page);
+
 
 
     await setOvsCheckbox(desktopCheckbox, false);
@@ -155,6 +166,8 @@ async function assertFilterCheckThenUncheck(
         expect(afterUncheckCount).toBeGreaterThanOrEqual(filteredCount);
 
     }
+
+    await assertUniqueVisibleProductHandles(page);
 
 }
 
@@ -215,6 +228,8 @@ async function assertFilterCombination(
     const combinedCount = await visibleGridCount(page);
 
     expect(combinedCount).toBeLessThanOrEqual(previousCount);
+
+    await assertUniqueVisibleProductHandles(page);
 
 
 
@@ -280,7 +295,64 @@ test.describe('Storefront T&S collection filters — check then uncheck', () => 
 
 });
 
+async function visibleTitles(page: import('@playwright/test').Page): Promise<string[]> {
+    const titles = await page
+        .locator('#product-grid .grid__item:not([hidden]):not(.hidden) .card__heading')
+        .allTextContents();
+    return titles.map((title) => title.replace(/\s+/g, ' ').trim()).filter((title) => title !== '');
+}
 
+async function assertFilterPurity(
+    page: import('@playwright/test').Page,
+    purityCase: FilterPurityCase,
+): Promise<void> {
+    await page.goto(`${STOREFRONT_BASE_URL}${purityCase.path}`, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#product-grid')).toBeVisible();
+
+    for (const step of purityCase.steps) {
+        const checkbox = page.locator('#main-collection-filters').locator(step.checkboxSelector).first();
+        await expect(checkbox).toBeVisible();
+        const label = page
+            .locator('#main-collection-filters label')
+            .filter({ has: page.locator(step.checkboxSelector) })
+            .first();
+        await label.click();
+        if (step.check) {
+            await expect(checkbox).toBeChecked();
+        } else {
+            await expect(checkbox).not.toBeChecked();
+        }
+        await page.waitForTimeout(400);
+    }
+
+    await assertUniqueVisibleProductHandles(page);
+
+    const uniqueTitles = [...new Set(await visibleTitles(page))];
+
+    if (purityCase.expectExactVisibleProducts !== undefined) {
+        expect(await visibleGridCount(page)).toBe(purityCase.expectExactVisibleProducts);
+    }
+
+    if ((purityCase.expectVisibleTextAny ?? []).length > 0) {
+        const needles = purityCase.expectVisibleTextAny ?? [];
+        expect(uniqueTitles.some((title) => needles.some((needle) => title.includes(needle)))).toBe(true);
+    }
+
+    for (const absent of purityCase.expectAbsentVisibleText ?? []) {
+        expect(uniqueTitles.some((title) => title.includes(absent))).toBe(false);
+    }
+}
+
+test.describe('Storefront T&S collection filters — row purity', () => {
+    test.describe.configure({ mode: 'serial' });
+
+    for (const purityCase of FILTER_PURITY_CASES) {
+        test(purityCase.name, async ({ page }) => {
+            await page.setViewportSize({ width: 1400, height: 1100 });
+            await assertFilterPurity(page, purityCase);
+        });
+    }
+});
 
 test.describe('Storefront T&S collection filters — multigroup combinations', () => {
 
@@ -360,10 +432,39 @@ test.describe('Storefront T&S collection filters — mobile drawer mirrors deskt
 
             expect(afterUncheckCount).toBeGreaterThan(filteredCount);
 
+            await assertUniqueVisibleProductHandles(page);
+
         });
 
     }
 
+});
+
+test.describe('Storefront T&S listing uniqueness — one handle per card', () => {
+    test.describe.configure({ mode: 'serial' });
+
+    for (const listingCase of manifest.listingUniquenessCases ?? []) {
+        test(listingCase.name, async ({ page }) => {
+            await page.setViewportSize({ width: 1280, height: 900 });
+            await page.goto(`${STOREFRONT_BASE_URL}${listingCase.path}`, { waitUntil: 'domcontentloaded' });
+            await expect(page.locator('#product-grid')).toBeVisible();
+            await assertUniqueVisibleProductHandles(page);
+        });
+    }
+});
+
+test.describe('Storefront listing CTAs — every T&S collection', () => {
+    test.setTimeout(60_000);
+
+    for (const listingCase of flattenTsListingCtaCases()) {
+        test(listingCase.name, async ({ page }) => {
+            await page.setViewportSize({ width: 1400, height: 900 });
+            await page.goto(`${STOREFRONT_BASE_URL}${listingCase.path}`, { waitUntil: 'domcontentloaded' });
+            await expect(page.locator('#product-grid, ul.product-grid').first()).toBeVisible({ timeout: 20000 });
+            await page.waitForTimeout(1500);
+            await assertVisibleListingCardsHaveCtas(page, listingCase);
+        });
+    }
 });
 
 

@@ -2,6 +2,11 @@ export type InventoryByMainTypeReportRow = {
     type: string;
     type_label: string;
     main_type: string;
+    department?: string;
+    product_line?: string;
+    workshop_shelf?: string;
+    grade?: string;
+    subline?: string;
     catalog_skus: number;
     skus_on_hand: number;
     quantity_on_hand: number;
@@ -12,9 +17,10 @@ export type InventoryByMainTypeReportRow = {
     skus_missing_landed_cost: number;
     units_received: number;
     units_sold: number;
-    /** Set when multiple main_type rows were merged for the same type label. */
-    drill_down_main_types?: string[];
-    /** Set when multiple type variants were merged (e.g. case differences). */
+    drill_down_departments?: string[];
+    drill_down_product_lines?: string[];
+    drill_down_workshop_shelves?: string[];
+    drill_down_grades?: string[];
     drill_down_types?: string[];
 };
 
@@ -58,17 +64,17 @@ export type InventoryByMainTypeSortKey =
     | 'not_arrived_skus'
     | 'not_arrived'
     | 'units_received'
-    | 'units_sold';
+    | 'units_sold'
+    | 'sold_pct';
 
-const STOREFRONT_NAVBAR_GROUPS = [
-    { key: 'model-kits', label: 'Model kits', mainTypes: ['model kit'] },
-    {
-        key: 'tools-supplies',
-        label: 'Tools & Supplies',
-        mainTypes: ['tools', 'supplies', 'paints'],
-    },
-    { key: 'water-decals', label: 'Water decals', mainTypes: ['water decals'] },
-    { key: 'miscellaneous', label: 'Miscellaneous', mainTypes: ['misc'] },
+const TAXONOMY_DEPARTMENT_GROUPS = [
+    { key: 'model-kits', label: 'Model kits', departments: ['model kits'] },
+    { key: 'tools', label: 'Tools', departments: ['tools'] },
+    { key: 'supplies', label: 'Supplies', departments: ['supplies'] },
+    { key: 'paints', label: 'Paints', departments: ['paints'] },
+    { key: 'figures', label: 'Figures', departments: ['figures'] },
+    { key: 'accessories', label: 'Accessories', departments: ['accessories'] },
+    { key: 'miscellaneous', label: 'Miscellaneous', departments: ['misc'] },
 ] as const;
 
 export function parseInventoryByMainTypeReportResponse(
@@ -85,6 +91,23 @@ export function parseInventoryByMainTypeReportResponse(
     }
 
     return report;
+}
+
+export function inventorySoldPercent(received: number, sold: number): number | null {
+    if (received <= 0) {
+        return null;
+    }
+
+    return (sold / received) * 100;
+}
+
+export function formatInventorySoldPercent(received: number, sold: number): string {
+    const percent = inventorySoldPercent(received, sold);
+    if (percent === null) {
+        return '—';
+    }
+
+    return `${percent.toFixed(1)}%`;
 }
 
 export function formatInventoryLandedValue(amount: string, currency = 'CAD'): string {
@@ -113,6 +136,18 @@ export function compareInventoryByMainTypeRows(
         result = left.type_label.localeCompare(right.type_label, undefined, {
             sensitivity: 'base',
         });
+    } else if (sortBy === 'sold_pct') {
+        const leftPercent = inventorySoldPercent(left.units_received, left.units_sold);
+        const rightPercent = inventorySoldPercent(right.units_received, right.units_sold);
+        if (leftPercent === null || rightPercent === null) {
+            if (leftPercent === null && rightPercent === null) {
+                return 0;
+            }
+
+            return leftPercent === null ? 1 : -1;
+        }
+
+        result = leftPercent - rightPercent;
     } else {
         const leftValue = left[sortBy];
         const rightValue = right[sortBy];
@@ -130,17 +165,19 @@ export function groupInventoryRowsByStorefrontNavbar(
     sortBy: InventoryByMainTypeSortKey,
     sortDir: 'asc' | 'desc',
 ): InventoryByMainTypeNavbarGroup[] {
-    const knownGroups = STOREFRONT_NAVBAR_GROUPS.map((definition) => ({
+    const knownGroups = TAXONOMY_DEPARTMENT_GROUPS.map((definition) => ({
         key: definition.key,
         label: definition.label,
         rows: rows.filter((row) =>
-            (definition.mainTypes as readonly string[]).includes(normalizeMainType(row.main_type)),
+            (definition.departments as readonly string[]).includes(departmentKey(row)),
         ),
     }));
-    const knownMainTypes = new Set(
-        STOREFRONT_NAVBAR_GROUPS.flatMap((definition) => definition.mainTypes as readonly string[]),
+    const knownDepartments = new Set(
+        TAXONOMY_DEPARTMENT_GROUPS.flatMap(
+            (definition) => definition.departments as readonly string[],
+        ),
     );
-    const otherRows = rows.filter((row) => !knownMainTypes.has(normalizeMainType(row.main_type)));
+    const otherRows = rows.filter((row) => !knownDepartments.has(departmentKey(row)));
     const groups = [...knownGroups, { key: 'other', label: 'Other', rows: otherRows }].filter(
         (group) => group.rows.length > 0,
     );
@@ -169,8 +206,8 @@ export function groupInventoryRowsByStorefrontNavbar(
     );
 }
 
-function normalizeMainType(mainType: string): string {
-    return mainType.trim().toLocaleLowerCase();
+function departmentKey(row: InventoryByMainTypeReportRow): string {
+    return (row.department || row.main_type).trim().toLocaleLowerCase();
 }
 
 function normalizeTypeKey(type: string): string {
@@ -200,15 +237,22 @@ export function mergeInventoryRowsByType(
 function mergeTypeBucket(rows: InventoryByMainTypeReportRow[]): InventoryByMainTypeReportRow {
     const primary = [...rows].sort((left, right) => right.catalog_skus - left.catalog_skus)[0]!;
     const totals = sumInventoryRows(rows);
-    const mainTypes = uniqueNonEmpty(rows.map((row) => row.main_type));
+    const departments = uniqueNonEmpty(rows.map((row) => row.department || row.main_type));
+    const productLines = uniqueNonEmpty(rows.map((row) => row.product_line ?? ''));
+    const workshopShelves = uniqueNonEmpty(rows.map((row) => row.workshop_shelf ?? ''));
     const types = uniqueNonEmpty(rows.map((row) => row.type));
 
     return {
         ...primary,
         ...totals,
         type_label: primary.type_label,
-        main_type: primary.main_type,
-        drill_down_main_types: mainTypes.length > 1 ? mainTypes : undefined,
+        main_type: primary.department || primary.main_type,
+        department: primary.department || primary.main_type,
+        product_line: primary.product_line ?? '',
+        workshop_shelf: primary.workshop_shelf ?? '',
+        drill_down_departments: departments.length > 1 ? departments : undefined,
+        drill_down_product_lines: productLines.length > 1 ? productLines : undefined,
+        drill_down_workshop_shelves: workshopShelves.length > 1 ? workshopShelves : undefined,
         drill_down_types: types.length > 1 ? types : undefined,
     };
 }
@@ -224,7 +268,9 @@ function sortGroupRows(
     return sorted;
 }
 
-function sumInventoryRows(rows: InventoryByMainTypeReportRow[]): InventoryByMainTypeReportTotals {
+export function sumInventoryRows(
+    rows: InventoryByMainTypeReportRow[],
+): InventoryByMainTypeReportTotals {
     return rows.reduce<InventoryByMainTypeReportTotals>(
         (totals, row) => ({
             catalog_skus: totals.catalog_skus + row.catalog_skus,

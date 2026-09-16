@@ -1,13 +1,39 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { api } from '../lib/api';
+import { api, extractApiError } from '../lib/api';
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
+import {
+    cloneProductsListView,
+    defaultProductsListView,
+    parseProductsListViewSnapshot,
+    productsListViewsEqual,
+    productsQueryWithoutListFilters,
+    type ProductsListViewSnapshot,
+} from '../lib/productsListView';
+import {
+    findMatchingProductsSavedView,
+    sortProductsSavedViews,
+    type ProductsSavedView,
+} from '../lib/productsSavedViews';
+import {
+    deleteProductSavedViewRemote,
+    importLocalProductSavedViews,
+    listProductSavedViews,
+    updateProductSavedViewRemote,
+    upsertProductSavedViewRemote,
+} from '../lib/productsSavedViewsApi';
 import {
     isProductsFiltersFromUrl,
     parseProductsUrlFilterState,
     type ProductsUrlFilterState,
 } from '../lib/productsUrlFilters';
+import {
+    defaultProductsTableVisibleColumns,
+    parseProductsTableVisibleColumns,
+    productsTableColumnsEqual,
+    type ProductsTableColumnKey,
+} from '../lib/productsTableColumns';
 import { splitBulkSearchTerms } from '../lib/productsBulkSearch';
 import AddProductForm, {
     type CreateProductPayload,
@@ -30,11 +56,21 @@ import type { ShopifyProductPushOptions } from '../components/products/BulkPushS
 import PlamodDrawer from '../components/products/PlamodDrawer.vue';
 import ProductDemandDetailDialog from '../components/products/ProductDemandDetailDialog.vue';
 import ProductPoLinesDrawer from '../components/products/ProductPoLinesDrawer.vue';
+import ProductsSavedViewsBar from '../components/products/ProductsSavedViewsBar.vue';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
 import {
     purchaseOrderFilterMultiSelectOption,
     type PurchaseOrderFilterSource,
 } from '../lib/purchaseOrderFilterOption';
+import {
+    catalogValues,
+    hasEmptyField,
+    keepValidSelections,
+    toMultiSelectOptions,
+    withEmptyOption,
+    type LabeledFilterOption,
+    type ProductFilterOptionsPayload,
+} from '../lib/productFilterOptions';
 import ConfirmDialog from '../components/ui/ConfirmDialog.vue';
 import PaginationControls from '../components/ui/PaginationControls.vue';
 
@@ -341,12 +377,14 @@ async function bulkPushShopifySelected(
 
 async function createDraftPurchaseOrderFromSelectedProducts(ids: string[]): Promise<{
     purchase_order_uuid: string;
+    vendor: string;
     added: number;
     skipped_existing: number;
     skipped_vendor_mismatch: number;
 }> {
     const res = await api.post<{
         purchase_order_uuid: string;
+        vendor: string;
         added: number;
         skipped_existing: number;
         skipped_vendor_mismatch: number;
@@ -396,6 +434,11 @@ const selectedDepartments = ref<string[]>([]);
 const selectedManufacturers = ref<string[]>([]);
 const selectedFranchises = ref<string[]>([]);
 const selectedProductLines = ref<string[]>([]);
+const selectedWorkshopShelves = ref<string[]>([]);
+const selectedSublines = ref<string[]>([]);
+const selectedGrades = ref<string[]>([]);
+const selectedScales = ref<string[]>([]);
+const selectedSeries = ref<string[]>([]);
 const selectedVendors = ref<string[]>([]);
 const selectedMissing = ref<string[]>([]);
 const purchaseOrderUuids = ref<string[]>([]);
@@ -407,6 +450,8 @@ type PublishedFilter = 'all' | 'published' | 'not_published';
 const publishedFilter = ref<PublishedFilter>('all');
 type ArchivedFilter = 'active' | 'all' | 'archived';
 const archivedFilter = ref<ArchivedFilter>('active');
+type StorePreorderFilter = 'exclude' | 'open' | 'all';
+const storePreorderFilter = ref<StorePreorderFilter>('exclude');
 const availableMinFilter = ref('');
 const availableMaxFilter = ref('');
 const notArrivedFilter = ref('');
@@ -433,18 +478,19 @@ const purchaseOrderOptions = computed<MultiSelectOption[]>(() => {
     return purchaseOrders.value.map((po) => purchaseOrderFilterMultiSelectOption(po));
 });
 
-const productFlagOptions: MultiSelectOption[] = [
+const productFlagOptions = ref<MultiSelectOption[]>([
+    { value: 'urgent', label: 'Urgent' },
     { value: 'critical', label: 'Critical' },
     { value: 'discontinued', label: 'Discontinued' },
     { value: 'hazardous_shipment', label: 'Hazardous shipment' },
-];
+]);
 
 const selectedProductFlags = ref<string[]>([]);
 
-const shipmentMethodOptions: MultiSelectOption[] = [
+const shipmentMethodOptions = ref<MultiSelectOption[]>([
     { value: 'air', label: 'Air' },
     { value: 'sea', label: 'Sea' },
-];
+]);
 
 const selectedShipmentMethods = ref<string[]>([]);
 
@@ -460,6 +506,32 @@ const missingOptions = ref<MultiSelectOption[]>([
     { value: 'handle', label: 'Handle' },
 ]);
 
+const readyOptions = ref<LabeledFilterOption[]>([
+    { value: 'all', label: 'All' },
+    { value: 'ready', label: 'Ready only' },
+    { value: 'not_ready', label: 'Not ready only' },
+]);
+const archivedOptions = ref<LabeledFilterOption[]>([
+    { value: 'active', label: 'Active only' },
+    { value: 'all', label: 'All (active + archived)' },
+    { value: 'archived', label: 'Archived only' },
+]);
+const storePreorderOptions = ref<LabeledFilterOption[]>([
+    { value: 'exclude', label: 'Hide store preorders' },
+    { value: 'open', label: 'Open store preorders only' },
+    { value: 'all', label: 'All products' },
+]);
+const publishedOptions = ref<LabeledFilterOption[]>([
+    { value: 'all', label: 'All' },
+    { value: 'published', label: 'Published only' },
+    { value: 'not_published', label: 'Not published only' },
+]);
+const poNoveltyOptions = ref<LabeledFilterOption[]>([
+    { value: 'all', label: 'New + existing' },
+    { value: 'new', label: 'New in selected PO' },
+    { value: 'existing', label: 'Existing in selected PO' },
+]);
+
 const syncMissingOpen = ref(false);
 const syncMissingBusy = ref(false);
 const syncMissingCount = ref<number | null>(null);
@@ -472,6 +544,7 @@ const departmentOptions = ref<MultiSelectOption[]>([]);
 const manufacturerOptions = ref<MultiSelectOption[]>([]);
 const franchiseOptions = ref<MultiSelectOption[]>([]);
 const productLineOptions = ref<MultiSelectOption[]>([]);
+const sublineOptions = ref<MultiSelectOption[]>([]);
 const vendorOptions = ref<MultiSelectOption[]>([]);
 const gradeOptions = ref<MultiSelectOption[]>([]);
 const scaleOptions = ref<MultiSelectOption[]>([]);
@@ -602,6 +675,22 @@ const selectionScopeKey = computed<string>(() => {
             .map((v) => v.trim())
             .filter(Boolean)
             .sort(),
+        sublines: [...selectedSublines.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
+        grades: [...selectedGrades.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
+        scales: [...selectedScales.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
+        series_values: [...selectedSeries.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
         vendors,
         missing,
         product_flags: productFlags,
@@ -622,6 +711,7 @@ const selectionScopeKey = computed<string>(() => {
         selling_price_min: parseNonNegativeDecimalFilter(sellingPriceMinFilter.value) ?? null,
         selling_price_max: parseNonNegativeDecimalFilter(sellingPriceMaxFilter.value) ?? null,
         archived: archivedFilter.value,
+        store_preorder: storePreorderFilter.value,
     });
 });
 
@@ -642,6 +732,12 @@ function productsListParams(per_page: number, pageNum: number): Record<string, u
         franchises: selectedFranchises.value.length > 0 ? selectedFranchises.value : undefined,
         product_lines:
             selectedProductLines.value.length > 0 ? selectedProductLines.value : undefined,
+        workshop_shelves:
+            selectedWorkshopShelves.value.length > 0 ? selectedWorkshopShelves.value : undefined,
+        sublines: selectedSublines.value.length > 0 ? selectedSublines.value : undefined,
+        grades: selectedGrades.value.length > 0 ? selectedGrades.value : undefined,
+        scales: selectedScales.value.length > 0 ? selectedScales.value : undefined,
+        series_values: selectedSeries.value.length > 0 ? selectedSeries.value : undefined,
         vendors: selectedVendors.value.length > 0 ? selectedVendors.value : undefined,
         missing: selectedMissing.value.length > 0 ? selectedMissing.value : undefined,
         product_flags:
@@ -662,6 +758,8 @@ function productsListParams(per_page: number, pageNum: number): Record<string, u
         selling_price_min: parseNonNegativeDecimalFilter(sellingPriceMinFilter.value),
         selling_price_max: parseNonNegativeDecimalFilter(sellingPriceMaxFilter.value),
         archived: archivedFilter.value !== 'active' ? archivedFilter.value : undefined,
+        store_preorder:
+            storePreorderFilter.value !== 'exclude' ? storePreorderFilter.value : undefined,
     };
 
     if (isBulkActive.value) {
@@ -755,6 +853,22 @@ function buildLoadKey(): string {
             .map((v) => v.trim())
             .filter(Boolean)
             .sort(),
+        sublines: [...selectedSublines.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
+        grades: [...selectedGrades.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
+        scales: [...selectedScales.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
+        series_values: [...selectedSeries.value]
+            .map((v) => v.trim())
+            .filter(Boolean)
+            .sort(),
         vendors,
         missing,
         product_flags: productFlags,
@@ -775,6 +889,7 @@ function buildLoadKey(): string {
         selling_price_min: parseNonNegativeDecimalFilter(sellingPriceMinFilter.value) ?? null,
         selling_price_max: parseNonNegativeDecimalFilter(sellingPriceMaxFilter.value) ?? null,
         archived: archivedFilter.value,
+        store_preorder: storePreorderFilter.value,
     });
 }
 
@@ -827,6 +942,10 @@ function sortProducts(list: ProductRow[], key: ProductSortKey, dir: 'asc' | 'des
     const factor = dir === 'asc' ? 1 : -1;
     const copy = [...list];
     copy.sort((a, b) => {
+        const missingMaintain = Number(a.maintain !== null) - Number(b.maintain !== null);
+        if (missingMaintain !== 0) {
+            return missingMaintain;
+        }
         let cmp = 0;
         if (key === 'available') {
             cmp = compareNullableNumbers(a.available, b.available);
@@ -885,6 +1004,8 @@ function sortProducts(list: ProductRow[], key: ProductSortKey, dir: 'asc' | 'des
                 parseNullableNumber(a.po_total_cost),
                 parseNullableNumber(b.po_total_cost),
             );
+        } else if (key === 'is_urgent') {
+            cmp = Number(a.is_urgent ?? false) - Number(b.is_urgent ?? false);
         } else {
             const va = (a as Record<string, unknown>)[key];
             const vb = (b as Record<string, unknown>)[key];
@@ -922,6 +1043,7 @@ const PRODUCT_SORT_KEYS: readonly ProductSortKey[] = [
     'not_arrived',
     'reorder',
     'po_total_cost',
+    'is_urgent',
 ] as const;
 
 function isProductSortKey(value: unknown): value is ProductSortKey {
@@ -1040,70 +1162,134 @@ function mergeProductRowFromApi(existing: ProductRow, api: ProductRow): ProductR
         vendor: api.vendor,
         available: api.available,
         maintain: api.maintain,
+        thumbnail_url: api.thumbnail_url ?? existing.thumbnail_url ?? null,
     };
+}
+
+function applyLabeledOptions(
+    target: { value: LabeledFilterOption[] },
+    incoming: LabeledFilterOption[] | undefined,
+): void {
+    if (incoming !== undefined && incoming.length > 0) {
+        target.value = incoming;
+    }
+}
+
+function applyDistinctFilterOptions(
+    data: ProductFilterOptionsPayload,
+    emptyFields: string[],
+): void {
+    mainTypeOptions.value = withEmptyOption(toMultiSelectOptions(data.main_types ?? []), true);
+    typeOptions.value = toMultiSelectOptions(data.types ?? []);
+    departmentOptions.value = withEmptyOption(
+        toMultiSelectOptions(data.departments ?? []),
+        hasEmptyField(emptyFields, 'department'),
+    );
+    manufacturerOptions.value = withEmptyOption(
+        toMultiSelectOptions(data.manufacturers ?? []),
+        hasEmptyField(emptyFields, 'manufacturer'),
+    );
+    franchiseOptions.value = withEmptyOption(
+        toMultiSelectOptions(data.franchises ?? []),
+        hasEmptyField(emptyFields, 'franchise'),
+    );
+    productLineOptions.value = withEmptyOption(
+        toMultiSelectOptions(data.product_lines ?? []),
+        hasEmptyField(emptyFields, 'product_line'),
+    );
+    sublineOptions.value = withEmptyOption(
+        toMultiSelectOptions(data.sublines ?? []),
+        hasEmptyField(emptyFields, 'subline'),
+    );
+    vendorOptions.value = withEmptyOption(
+        toMultiSelectOptions(data.vendors ?? []),
+        hasEmptyField(emptyFields, 'vendor'),
+    );
+    gradeOptions.value = withEmptyOption(
+        toMultiSelectOptions(data.grades ?? []),
+        hasEmptyField(emptyFields, 'grade'),
+    );
+    scaleOptions.value = withEmptyOption(
+        toMultiSelectOptions(data.scales ?? []),
+        hasEmptyField(emptyFields, 'scale'),
+    );
+    seriesOptions.value = withEmptyOption(
+        toMultiSelectOptions(data.series ?? []),
+        hasEmptyField(emptyFields, 'series'),
+    );
+}
+
+function pruneInvalidFilterSelections(): void {
+    selectedMainTypes.value = keepValidSelections(selectedMainTypes.value, mainTypeOptions.value);
+    selectedTypes.value = keepValidSelections(selectedTypes.value, typeOptions.value);
+    selectedDepartments.value = keepValidSelections(
+        selectedDepartments.value,
+        departmentOptions.value,
+    );
+    selectedManufacturers.value = keepValidSelections(
+        selectedManufacturers.value,
+        manufacturerOptions.value,
+    );
+    selectedFranchises.value = keepValidSelections(
+        selectedFranchises.value,
+        franchiseOptions.value,
+    );
+    selectedProductLines.value = keepValidSelections(
+        selectedProductLines.value,
+        productLineOptions.value,
+    );
+    selectedSublines.value = keepValidSelections(selectedSublines.value, sublineOptions.value);
+    selectedGrades.value = keepValidSelections(selectedGrades.value, gradeOptions.value);
+    selectedScales.value = keepValidSelections(selectedScales.value, scaleOptions.value);
+    selectedSeries.value = keepValidSelections(selectedSeries.value, seriesOptions.value);
+    selectedVendors.value = keepValidSelections(selectedVendors.value, vendorOptions.value);
+    selectedMissing.value = keepValidSelections(selectedMissing.value, missingOptions.value);
+    selectedProductFlags.value = keepValidSelections(
+        selectedProductFlags.value,
+        productFlagOptions.value,
+    );
+    selectedShipmentMethods.value = keepValidSelections(
+        selectedShipmentMethods.value,
+        shipmentMethodOptions.value,
+    );
+    const poIds = new Set(purchaseOrders.value.map((po) => po.id));
+    purchaseOrderUuids.value = purchaseOrderUuids.value.filter((id) => poIds.has(id));
 }
 
 async function loadFilterOptions(): Promise<void> {
     try {
-        const res = await api.get<{
-            data: {
-                types: string[];
-                main_types?: string[];
-                departments?: string[];
-                manufacturers?: string[];
-                franchises?: string[];
-                product_lines?: string[];
-                vendors?: string[];
-                grades?: string[];
-                scales?: string[];
-                series?: string[];
-            };
-        }>('/api/v1/products/filter-options');
-        const mainTypeDefaults = ['model kit', 'tools', 'paints', 'supplies'];
-        const mainTypes = Array.from(
-            new Set([
-                ...mainTypeDefaults,
-                ...(res.data.data.main_types ?? []).map((t) => String(t).trim()).filter(Boolean),
-            ]),
-        ).sort((a, b) => a.localeCompare(b));
-        mainTypeOptions.value = [
-            { value: '__empty__', label: '(empty)' },
-            ...mainTypes.map((t) => ({ value: t, label: t })),
-        ];
-        typeOptions.value = res.data.data.types.map((t) => ({ value: t, label: t }));
-        departmentOptions.value = (res.data.data.departments ?? []).map((v) => ({
-            value: v,
-            label: v,
-        }));
-        manufacturerOptions.value = (res.data.data.manufacturers ?? []).map((v) => ({
-            value: v,
-            label: v,
-        }));
-        franchiseOptions.value = (res.data.data.franchises ?? []).map((v) => ({
-            value: v,
-            label: v,
-        }));
-        productLineOptions.value = (res.data.data.product_lines ?? []).map((v) => ({
-            value: v,
-            label: v,
-        }));
-        vendorOptions.value = (res.data.data.vendors ?? []).map((v) => ({ value: v, label: v }));
-        gradeOptions.value = (res.data.data.grades ?? []).map((v) => ({ value: v, label: v }));
-        scaleOptions.value = (res.data.data.scales ?? []).map((v) => ({ value: v, label: v }));
-        seriesOptions.value = (res.data.data.series ?? []).map((v) => ({ value: v, label: v }));
+        const res = await api.get<{ data: ProductFilterOptionsPayload }>(
+            '/api/v1/products/filter-options',
+        );
+        const data = res.data.data;
+        applyDistinctFilterOptions(data, data.empty_fields ?? []);
+
+        applyLabeledOptions(missingOptions, data.missing_info);
+        applyLabeledOptions(productFlagOptions, data.product_flags);
+        applyLabeledOptions(shipmentMethodOptions, data.shipment_methods);
+        applyLabeledOptions(readyOptions, data.ready);
+        applyLabeledOptions(archivedOptions, data.archived);
+        applyLabeledOptions(storePreorderOptions, data.store_preorder);
+        applyLabeledOptions(publishedOptions, data.published);
+        applyLabeledOptions(poNoveltyOptions, data.po_novelty);
+
+        if (data.purchase_orders !== undefined) {
+            purchaseOrders.value = data.purchase_orders;
+        } else {
+            await loadPurchaseOrders();
+        }
+
+        pruneInvalidFilterSelections();
     } catch {
-        const mainTypeDefaults = ['model kit', 'tools', 'paints', 'supplies'];
-        mainTypeOptions.value = [
-            { value: '__empty__', label: '(empty)' },
-            ...mainTypeDefaults.map((t) => ({ value: t, label: t })),
-        ];
+        mainTypeOptions.value = withEmptyOption([], true);
+        await loadPurchaseOrders();
     }
 }
 
 async function loadPurchaseOrders(): Promise<void> {
     try {
         const res = await api.get<Paginated<PurchaseOrderOption>>('/api/v1/purchase-orders', {
-            params: { per_page: 200, sort_by: 'filter' },
+            params: { per_page: 1000, sort_by: 'filter' },
         });
         purchaseOrders.value = res.data.data ?? [];
     } catch {
@@ -1401,6 +1587,45 @@ async function toggleProductLatestArrival(id: string, latestArrival: boolean): P
     }
 }
 
+async function toggleProductUrgent(id: string, isUrgent: boolean): Promise<void> {
+    const prev = products.value.find((p) => p.id === id)?.is_urgent ?? false;
+
+    products.value = products.value.map((p) => (p.id === id ? { ...p, is_urgent: isUrgent } : p));
+    try {
+        const res = await api.patch(
+            `/api/v1/products/${id}/urgent`,
+            { is_urgent: isUrgent },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const anyData = res.data as any;
+            const msgRaw: unknown = anyData?.message ?? anyData?.error ?? anyData?.errors;
+            let details = '';
+            if (typeof msgRaw === 'string') details = msgRaw.trim();
+            else if (msgRaw !== null && msgRaw !== undefined) {
+                try {
+                    details = JSON.stringify(msgRaw);
+                } catch {
+                    details = String(msgRaw);
+                }
+            }
+            throw new Error(
+                `Failed to update urgent product flag (HTTP ${res.status}).${details ? ` ${details}` : ''}`,
+            );
+        }
+
+        const next = (res.data as any)?.data?.is_urgent;
+        if (typeof next === 'boolean') {
+            products.value = products.value.map((p) =>
+                p.id === id ? { ...p, is_urgent: next } : p,
+            );
+        }
+    } catch (e: unknown) {
+        products.value = products.value.map((p) => (p.id === id ? { ...p, is_urgent: prev } : p));
+        throw e;
+    }
+}
+
 async function toggleProductCritical(id: string, isCritical: boolean): Promise<void> {
     const prev = products.value.find((p) => p.id === id)?.is_critical ?? false;
 
@@ -1595,6 +1820,218 @@ let syncBatchPollTimer: number | null = null;
 
 const STATE_KEY = 'page_state:products';
 const hydrating = ref(true);
+const savedViews = ref<ProductsSavedView[]>([]);
+const savedViewsBusy = ref(false);
+const savedViewsError = ref<string | null>(null);
+const activeSavedViewId = ref<string | null>(null);
+const visibleColumns = ref<ProductsTableColumnKey[]>(defaultProductsTableVisibleColumns());
+
+function captureListViewSnapshot(): ProductsListViewSnapshot {
+    return cloneProductsListView({
+        search: search.value,
+        searchMode: searchMode.value,
+        bulkSearchText: bulkSearchText.value,
+        perPage: perPage.value,
+        sortBy: isProductSortKey(sortBy.value) ? sortBy.value : 'received_date',
+        sortDir: sortDir.value,
+        selectedMainTypes: selectedMainTypes.value,
+        selectedTypes: selectedTypes.value,
+        selectedDepartments: selectedDepartments.value,
+        selectedManufacturers: selectedManufacturers.value,
+        selectedFranchises: selectedFranchises.value,
+        selectedProductLines: selectedProductLines.value,
+        selectedWorkshopShelves: selectedWorkshopShelves.value,
+        selectedSublines: selectedSublines.value,
+        selectedGrades: selectedGrades.value,
+        selectedScales: selectedScales.value,
+        selectedSeries: selectedSeries.value,
+        selectedVendors: selectedVendors.value,
+        selectedMissing: selectedMissing.value,
+        selectedProductFlags: selectedProductFlags.value,
+        selectedShipmentMethods: selectedShipmentMethods.value,
+        readyFilter: readyFilter.value,
+        publishedFilter: publishedFilter.value,
+        archivedFilter: archivedFilter.value,
+        storePreorderFilter: storePreorderFilter.value,
+        availableMinFilter: availableMinFilter.value,
+        availableMaxFilter: availableMaxFilter.value,
+        notArrivedFilter: notArrivedFilter.value,
+        notArrivedMinFilter: notArrivedMinFilter.value,
+        notArrivedIncludeDraftOrders: notArrivedIncludeDraftOrders.value,
+        missingLandedCostFilter: missingLandedCostFilter.value,
+        hasLandedCostFilter: hasLandedCostFilter.value,
+        reorderFilter: reorderFilter.value,
+        reorderGtOne: reorderGtOne.value,
+        sellingPriceMinFilter: sellingPriceMinFilter.value,
+        sellingPriceMaxFilter: sellingPriceMaxFilter.value,
+        purchaseOrderUuids: purchaseOrderUuids.value,
+        poProductNovelty: poProductNovelty.value,
+    });
+}
+
+function applyListViewSnapshot(snapshot: ProductsListViewSnapshot): void {
+    search.value = snapshot.search;
+    searchMode.value = snapshot.searchMode;
+    bulkSearchText.value = snapshot.bulkSearchText;
+    perPage.value = snapshot.perPage;
+    page.value = 1;
+    sortBy.value = isProductSortKey(snapshot.sortBy) ? snapshot.sortBy : 'received_date';
+    sortDir.value = snapshot.sortDir;
+    selectedMainTypes.value = [...snapshot.selectedMainTypes];
+    selectedTypes.value = [...snapshot.selectedTypes];
+    selectedDepartments.value = [...snapshot.selectedDepartments];
+    selectedManufacturers.value = [...snapshot.selectedManufacturers];
+    selectedFranchises.value = [...snapshot.selectedFranchises];
+    selectedProductLines.value = [...snapshot.selectedProductLines];
+    selectedWorkshopShelves.value = [...snapshot.selectedWorkshopShelves];
+    selectedSublines.value = [...snapshot.selectedSublines];
+    selectedGrades.value = [...snapshot.selectedGrades];
+    selectedScales.value = [...snapshot.selectedScales];
+    selectedSeries.value = [...snapshot.selectedSeries];
+    selectedVendors.value = [...snapshot.selectedVendors];
+    selectedMissing.value = [...snapshot.selectedMissing];
+    selectedProductFlags.value = [...snapshot.selectedProductFlags];
+    selectedShipmentMethods.value = [...snapshot.selectedShipmentMethods];
+    readyFilter.value = snapshot.readyFilter;
+    publishedFilter.value = snapshot.publishedFilter;
+    archivedFilter.value = snapshot.archivedFilter;
+    storePreorderFilter.value = snapshot.storePreorderFilter;
+    availableMinFilter.value = snapshot.availableMinFilter;
+    availableMaxFilter.value = snapshot.availableMaxFilter;
+    notArrivedFilter.value = snapshot.notArrivedFilter;
+    notArrivedMinFilter.value = snapshot.notArrivedMinFilter;
+    notArrivedIncludeDraftOrders.value = snapshot.notArrivedIncludeDraftOrders;
+    missingLandedCostFilter.value = snapshot.missingLandedCostFilter;
+    hasLandedCostFilter.value = snapshot.hasLandedCostFilter;
+    reorderFilter.value = snapshot.reorderFilter;
+    reorderGtOne.value = snapshot.reorderGtOne;
+    sellingPriceMinFilter.value = snapshot.sellingPriceMinFilter;
+    sellingPriceMaxFilter.value = snapshot.sellingPriceMaxFilter;
+    purchaseOrderUuids.value = [...snapshot.purchaseOrderUuids];
+    poProductNovelty.value = snapshot.poProductNovelty;
+}
+
+const savedViewIsDirty = computed<boolean>(() => {
+    const active = savedViews.value.find((view) => view.id === activeSavedViewId.value);
+    if (!active) return false;
+    return (
+        !productsListViewsEqual(active.snapshot, captureListViewSnapshot()) ||
+        !productsTableColumnsEqual(active.visibleColumns, visibleColumns.value)
+    );
+});
+
+function applySavedView(id: string): void {
+    const view = savedViews.value.find((item) => item.id === id);
+    if (!view) return;
+    applyListViewSnapshot(view.snapshot);
+    visibleColumns.value = [...view.visibleColumns];
+    activeSavedViewId.value = view.id;
+    void clearListFilterQuery();
+}
+
+function replaceSavedView(view: ProductsSavedView): void {
+    savedViews.value = sortProductsSavedViews([
+        ...savedViews.value.filter(
+            (item) => item.id !== view.id && item.name.toLowerCase() !== view.name.toLowerCase(),
+        ),
+        view,
+    ]);
+    activeSavedViewId.value = view.id;
+}
+
+function syncActiveSavedViewMatch(): void {
+    const matchedView = findMatchingProductsSavedView(
+        savedViews.value,
+        captureListViewSnapshot(),
+        productsListViewsEqual,
+        visibleColumns.value,
+    );
+    if (matchedView) {
+        activeSavedViewId.value = matchedView.id;
+        return;
+    }
+    if (
+        activeSavedViewId.value &&
+        !savedViews.value.some((view) => view.id === activeSavedViewId.value)
+    ) {
+        activeSavedViewId.value = null;
+    }
+}
+
+async function hydrateSharedSavedViews(): Promise<void> {
+    savedViewsBusy.value = true;
+    savedViewsError.value = null;
+    try {
+        const shared = await listProductSavedViews();
+        savedViews.value = await importLocalProductSavedViews(shared);
+        syncActiveSavedViewMatch();
+    } catch (err) {
+        savedViewsError.value = extractApiError(err);
+    } finally {
+        savedViewsBusy.value = false;
+    }
+}
+
+async function saveCurrentView(name: string): Promise<void> {
+    savedViewsBusy.value = true;
+    savedViewsError.value = null;
+    try {
+        replaceSavedView(
+            await upsertProductSavedViewRemote(
+                name,
+                captureListViewSnapshot(),
+                visibleColumns.value,
+            ),
+        );
+    } catch (err) {
+        savedViewsError.value = extractApiError(err);
+    } finally {
+        savedViewsBusy.value = false;
+    }
+}
+
+async function updateActiveSavedView(): Promise<void> {
+    const active = savedViews.value.find((view) => view.id === activeSavedViewId.value);
+    if (!active) return;
+    savedViewsBusy.value = true;
+    savedViewsError.value = null;
+    try {
+        replaceSavedView(
+            await updateProductSavedViewRemote(
+                active.id,
+                active.name,
+                captureListViewSnapshot(),
+                visibleColumns.value,
+            ),
+        );
+    } catch (err) {
+        savedViewsError.value = extractApiError(err);
+    } finally {
+        savedViewsBusy.value = false;
+    }
+}
+
+async function deleteActiveSavedView(id: string): Promise<void> {
+    savedViewsBusy.value = true;
+    savedViewsError.value = null;
+    try {
+        await deleteProductSavedViewRemote(id);
+        savedViews.value = savedViews.value.filter((view) => view.id !== id);
+        if (activeSavedViewId.value === id) {
+            activeSavedViewId.value = null;
+        }
+    } catch (err) {
+        savedViewsError.value = extractApiError(err);
+    } finally {
+        savedViewsBusy.value = false;
+    }
+}
+
+async function clearListFilterQuery(): Promise<void> {
+    const nextQuery = productsQueryWithoutListFilters(route.query);
+    if (JSON.stringify(nextQuery) === JSON.stringify(route.query)) return;
+    await router.replace({ path: route.path, query: nextQuery, hash: route.hash });
+}
 
 function stopSyncBatchPoll(): void {
     if (syncBatchPollTimer !== null) {
@@ -1710,17 +2147,56 @@ function onSortChange(next: ProductSortKey): void {
     }
 
     sortBy.value = next;
-    sortDir.value = next === 'received_date' ? 'desc' : 'asc';
+    sortDir.value = next === 'received_date' || next === 'is_urgent' ? 'desc' : 'asc';
 }
 
 function onPageChange(next: number): void {
     page.value = Math.max(1, next);
 }
 
+const SINGLE_SEARCH_DEBOUNCE_MS = 750;
+
+let filterTimer: number | null = null;
 let searchTimer: number | null = null;
+
+function queueProductsLoad(delayMs: number, timer: 'filter' | 'search'): void {
+    if (hydrating.value) return;
+    page.value = 1;
+    if (filterTimer) window.clearTimeout(filterTimer);
+    if (searchTimer) window.clearTimeout(searchTimer);
+    filterTimer = null;
+    searchTimer = null;
+    const handle = window.setTimeout(() => void load(), delayMs);
+    if (timer === 'search') {
+        searchTimer = handle;
+    } else {
+        filterTimer = handle;
+    }
+}
+
+function flushProductsSearchNow(): void {
+    if (hydrating.value) return;
+    if (filterTimer) window.clearTimeout(filterTimer);
+    if (searchTimer) window.clearTimeout(searchTimer);
+    filterTimer = null;
+    searchTimer = null;
+    page.value = 1;
+    void load();
+}
+
+function onSingleSearchBlur(): void {
+    if (searchTimer) {
+        flushProductsSearchNow();
+    }
+}
+
+watch(search, () => {
+    if (hydrating.value || searchMode.value !== 'single') return;
+    queueProductsLoad(SINGLE_SEARCH_DEBOUNCE_MS, 'search');
+});
+
 watch(
     [
-        search,
         bulkSearchText,
         searchMode,
         perPage,
@@ -1730,6 +2206,11 @@ watch(
         selectedManufacturers,
         selectedFranchises,
         selectedProductLines,
+        selectedWorkshopShelves,
+        selectedSublines,
+        selectedGrades,
+        selectedScales,
+        selectedSeries,
         selectedVendors,
         selectedMissing,
         selectedProductFlags,
@@ -1737,6 +2218,7 @@ watch(
         readyFilter,
         publishedFilter,
         archivedFilter,
+        storePreorderFilter,
         availableMinFilter,
         availableMaxFilter,
         notArrivedFilter,
@@ -1755,10 +2237,8 @@ watch(
     ],
     () => {
         if (hydrating.value) return;
-        page.value = 1;
-        if (searchTimer) window.clearTimeout(searchTimer);
         const delay = searchMode.value === 'bulk' ? 500 : 250;
-        searchTimer = window.setTimeout(() => void load(), delay);
+        queueProductsLoad(delay, 'filter');
     },
 );
 
@@ -1781,38 +2261,7 @@ watch(page, () => {
 });
 
 function applyDefaultListFilters(): void {
-    search.value = '';
-    searchMode.value = 'single';
-    bulkSearchText.value = '';
-    page.value = 1;
-    sortBy.value = 'received_date';
-    sortDir.value = 'desc';
-    selectedMainTypes.value = [];
-    selectedTypes.value = [];
-    selectedDepartments.value = [];
-    selectedManufacturers.value = [];
-    selectedFranchises.value = [];
-    selectedProductLines.value = [];
-    selectedVendors.value = [];
-    selectedMissing.value = [];
-    selectedProductFlags.value = [];
-    selectedShipmentMethods.value = [];
-    readyFilter.value = 'all';
-    publishedFilter.value = 'all';
-    archivedFilter.value = 'active';
-    availableMinFilter.value = '';
-    availableMaxFilter.value = '';
-    notArrivedFilter.value = '';
-    notArrivedMinFilter.value = '';
-    notArrivedIncludeDraftOrders.value = true;
-    missingLandedCostFilter.value = false;
-    hasLandedCostFilter.value = false;
-    reorderFilter.value = '';
-    reorderGtOne.value = false;
-    sellingPriceMinFilter.value = '';
-    sellingPriceMaxFilter.value = '';
-    purchaseOrderUuids.value = [];
-    poProductNovelty.value = 'all';
+    applyListViewSnapshot(defaultProductsListView());
 }
 
 function applyProductsUrlFilterState(state: ProductsUrlFilterState): void {
@@ -1820,6 +2269,11 @@ function applyProductsUrlFilterState(state: ProductsUrlFilterState): void {
     activeTab.value = 'list';
     selectedMainTypes.value = [...state.mainTypes];
     selectedTypes.value = [...state.types];
+    selectedDepartments.value = [...(state.departments ?? [])];
+    selectedProductLines.value = [...(state.productLines ?? [])];
+    selectedWorkshopShelves.value = [...(state.workshopShelves ?? [])];
+    selectedGrades.value = [...(state.grades ?? [])];
+    selectedSublines.value = [...(state.sublines ?? [])];
     archivedFilter.value = state.archived;
     availableMinFilter.value = state.availableMin;
     availableMaxFilter.value = state.availableMax;
@@ -1836,131 +2290,24 @@ onMounted(() => {
     if (urlFilters) {
         applyProductsUrlFilterState(urlFilters);
     } else {
-        const saved = loadPageState<{
-            activeTab?: ProductsToolTab;
-            search?: string;
-            searchMode?: SearchMode;
-            bulkSearchText?: string;
-            perPage?: number;
-            page?: number;
-            sortBy?: ProductSortKey;
-            sortDir?: 'asc' | 'desc';
-            selectedMainTypes?: string[];
-            selectedTypes?: string[];
-            selectedDepartments?: string[];
-            selectedManufacturers?: string[];
-            selectedFranchises?: string[];
-            selectedProductLines?: string[];
-            selectedVendors?: string[];
-            selectedMissing?: string[];
-            selectedProductFlags?: string[];
-            selectedShipmentMethods?: string[];
-            readyFilter?: ReadyFilter;
-            publishedFilter?: PublishedFilter;
-            archivedFilter?: ArchivedFilter;
-            availableFilter?: string;
-            availableMinFilter?: string;
-            availableMaxFilter?: string;
-            notArrivedFilter?: string;
-            notArrivedIncludeDraftOrders?: boolean;
-            reorderFilter?: string;
-            reorderGtOne?: boolean;
-            sellingPriceMinFilter?: string;
-            sellingPriceMaxFilter?: string;
-            purchaseOrderUuid?: string; // legacy
-            purchaseOrderUuids?: string[];
-            poProductNovelty?: PoProductNovelty;
-        }>(STATE_KEY);
-
+        const saved = loadPageState<Record<string, unknown>>(STATE_KEY);
         if (saved) {
-            if (saved.activeTab) activeTab.value = saved.activeTab;
-            if (typeof saved.search === 'string') search.value = saved.search;
-            if (saved.searchMode === 'single' || saved.searchMode === 'bulk')
-                searchMode.value = saved.searchMode;
-            if (typeof saved.bulkSearchText === 'string')
-                bulkSearchText.value = saved.bulkSearchText;
-            if (typeof saved.perPage === 'number') perPage.value = saved.perPage;
+            const snapshot = parseProductsListViewSnapshot(saved);
+            if (snapshot) applyListViewSnapshot(snapshot);
+            if (
+                saved.activeTab === 'list' ||
+                saved.activeTab === 'add' ||
+                saved.activeTab === 'import' ||
+                saved.activeTab === 'export'
+            ) {
+                activeTab.value = saved.activeTab;
+            }
             if (typeof saved.page === 'number') page.value = saved.page;
-            if (isProductSortKey(saved.sortBy)) sortBy.value = saved.sortBy;
-            if (saved.sortDir) sortDir.value = saved.sortDir;
-            if (Array.isArray(saved.selectedMainTypes))
-                selectedMainTypes.value = saved.selectedMainTypes;
-            if (Array.isArray(saved.selectedTypes)) selectedTypes.value = saved.selectedTypes;
-            if (Array.isArray(saved.selectedDepartments))
-                selectedDepartments.value = saved.selectedDepartments;
-            if (Array.isArray(saved.selectedManufacturers))
-                selectedManufacturers.value = saved.selectedManufacturers;
-            if (Array.isArray(saved.selectedFranchises))
-                selectedFranchises.value = saved.selectedFranchises;
-            if (Array.isArray(saved.selectedProductLines))
-                selectedProductLines.value = saved.selectedProductLines;
-            if (Array.isArray(saved.selectedVendors)) selectedVendors.value = saved.selectedVendors;
-            if (Array.isArray(saved.selectedMissing)) selectedMissing.value = saved.selectedMissing;
-            if (Array.isArray(saved.selectedProductFlags)) {
-                selectedProductFlags.value = saved.selectedProductFlags.filter((f) =>
-                    productFlagOptions.some((o) => o.value === f),
-                );
+            if (typeof saved.activeSavedViewId === 'string') {
+                activeSavedViewId.value = saved.activeSavedViewId;
             }
-            if (Array.isArray(saved.selectedShipmentMethods)) {
-                selectedShipmentMethods.value = saved.selectedShipmentMethods.filter((m) =>
-                    shipmentMethodOptions.some((o) => o.value === m),
-                );
-            }
-            if (
-                saved.readyFilter === 'all' ||
-                saved.readyFilter === 'ready' ||
-                saved.readyFilter === 'not_ready'
-            ) {
-                readyFilter.value = saved.readyFilter;
-            }
-            if (
-                saved.publishedFilter === 'all' ||
-                saved.publishedFilter === 'published' ||
-                saved.publishedFilter === 'not_published'
-            ) {
-                publishedFilter.value = saved.publishedFilter;
-            }
-            if (
-                saved.archivedFilter === 'active' ||
-                saved.archivedFilter === 'all' ||
-                saved.archivedFilter === 'archived'
-            ) {
-                archivedFilter.value = saved.archivedFilter;
-            }
-            if (typeof saved.availableMinFilter === 'string') {
-                availableMinFilter.value = saved.availableMinFilter;
-            } else if (typeof saved.availableFilter === 'string') {
-                availableMinFilter.value = saved.availableFilter;
-            }
-            if (typeof saved.availableMaxFilter === 'string') {
-                availableMaxFilter.value = saved.availableMaxFilter;
-            }
-            if (typeof saved.notArrivedFilter === 'string')
-                notArrivedFilter.value = saved.notArrivedFilter;
-            if (typeof saved.notArrivedIncludeDraftOrders === 'boolean') {
-                notArrivedIncludeDraftOrders.value = saved.notArrivedIncludeDraftOrders;
-            }
-            if (typeof saved.reorderFilter === 'string') reorderFilter.value = saved.reorderFilter;
-            if (typeof saved.reorderGtOne === 'boolean') reorderGtOne.value = saved.reorderGtOne;
-            if (typeof saved.sellingPriceMinFilter === 'string') {
-                sellingPriceMinFilter.value = saved.sellingPriceMinFilter;
-            }
-            if (typeof saved.sellingPriceMaxFilter === 'string') {
-                sellingPriceMaxFilter.value = saved.sellingPriceMaxFilter;
-            }
-            if (Array.isArray(saved.purchaseOrderUuids))
-                purchaseOrderUuids.value = saved.purchaseOrderUuids;
-            else if (
-                typeof saved.purchaseOrderUuid === 'string' &&
-                saved.purchaseOrderUuid.trim() !== ''
-            )
-                purchaseOrderUuids.value = [saved.purchaseOrderUuid.trim()];
-            if (
-                saved.poProductNovelty === 'all' ||
-                saved.poProductNovelty === 'new' ||
-                saved.poProductNovelty === 'existing'
-            ) {
-                poProductNovelty.value = saved.poProductNovelty;
+            if (saved.visibleColumns !== undefined) {
+                visibleColumns.value = parseProductsTableVisibleColumns(saved.visibleColumns);
             }
         }
 
@@ -1978,11 +2325,12 @@ onMounted(() => {
         }
     }
 
-    hydrating.value = false;
-
-    void loadFilterOptions();
-    void loadPurchaseOrders();
-    void load();
+    void (async () => {
+        await hydrateSharedSavedViews();
+        hydrating.value = false;
+        void loadFilterOptions();
+        void load();
+    })();
 
     try {
         const last = window.localStorage.getItem('last_sync_batch_id');
@@ -2031,6 +2379,11 @@ watch(
         selectedManufacturers,
         selectedFranchises,
         selectedProductLines,
+        selectedWorkshopShelves,
+        selectedSublines,
+        selectedGrades,
+        selectedScales,
+        selectedSeries,
         selectedVendors,
         selectedMissing,
         selectedProductFlags,
@@ -2038,6 +2391,7 @@ watch(
         readyFilter,
         publishedFilter,
         archivedFilter,
+        storePreorderFilter,
         availableMinFilter,
         availableMaxFilter,
         notArrivedFilter,
@@ -2053,42 +2407,24 @@ watch(
         sortDir,
         purchaseOrderUuids,
         poProductNovelty,
+        visibleColumns,
     ],
     () => {
         if (hydrating.value) return;
         if (isProductsFiltersFromUrl(route.query)) return;
+        const match = findMatchingProductsSavedView(
+            savedViews.value,
+            captureListViewSnapshot(),
+            productsListViewsEqual,
+            visibleColumns.value,
+        );
+        if (match) activeSavedViewId.value = match.id;
         savePageState(STATE_KEY, {
+            ...captureListViewSnapshot(),
             activeTab: activeTab.value,
-            search: search.value,
-            searchMode: searchMode.value,
-            bulkSearchText: bulkSearchText.value,
-            perPage: perPage.value,
             page: page.value,
-            sortBy: sortBy.value,
-            sortDir: sortDir.value,
-            selectedMainTypes: selectedMainTypes.value,
-            selectedTypes: selectedTypes.value,
-            selectedDepartments: selectedDepartments.value,
-            selectedManufacturers: selectedManufacturers.value,
-            selectedFranchises: selectedFranchises.value,
-            selectedProductLines: selectedProductLines.value,
-            selectedVendors: selectedVendors.value,
-            selectedMissing: selectedMissing.value,
-            selectedProductFlags: selectedProductFlags.value,
-            selectedShipmentMethods: selectedShipmentMethods.value,
-            readyFilter: readyFilter.value,
-            publishedFilter: publishedFilter.value,
-            archivedFilter: archivedFilter.value,
-            availableMinFilter: availableMinFilter.value,
-            availableMaxFilter: availableMaxFilter.value,
-            notArrivedFilter: notArrivedFilter.value,
-            notArrivedIncludeDraftOrders: notArrivedIncludeDraftOrders.value,
-            reorderFilter: reorderFilter.value,
-            reorderGtOne: reorderGtOne.value,
-            sellingPriceMinFilter: sellingPriceMinFilter.value,
-            sellingPriceMaxFilter: sellingPriceMaxFilter.value,
-            purchaseOrderUuids: purchaseOrderUuids.value,
-            poProductNovelty: poProductNovelty.value,
+            activeSavedViewId: activeSavedViewId.value,
+            visibleColumns: visibleColumns.value,
         });
     },
     { deep: true },
@@ -2097,7 +2433,9 @@ watch(
 function resetListState(): void {
     clearPageState(STATE_KEY);
     applyDefaultListFilters();
-    perPage.value = 200;
+    visibleColumns.value = defaultProductsTableVisibleColumns();
+    activeSavedViewId.value = null;
+    void clearListFilterQuery();
     void load();
 }
 </script>
@@ -2111,7 +2449,17 @@ function resetListState(): void {
                     Products currently stored in the database.
                 </p>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center justify-end gap-2">
+                <ProductsSavedViewsBar
+                    :views="savedViews"
+                    :active-view-id="activeSavedViewId"
+                    :is-dirty="savedViewIsDirty"
+                    :busy="savedViewsBusy"
+                    @apply="applySavedView"
+                    @save="saveCurrentView"
+                    @update="updateActiveSavedView"
+                    @delete="deleteActiveSavedView"
+                />
                 <button
                     class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:opacity-50"
                     type="button"
@@ -2133,6 +2481,14 @@ function resetListState(): void {
         </div>
 
         <div
+            v-if="savedViewsError"
+            class="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            data-testid="products-saved-views-error"
+        >
+            {{ savedViewsError }}
+        </div>
+
+        <div
             v-if="error"
             class="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
             data-testid="products-error"
@@ -2140,7 +2496,7 @@ function resetListState(): void {
             {{ error }}
         </div>
 
-        <div class="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div class="rounded-lg border border-slate-200 bg-white">
             <div class="border-b border-slate-200 bg-slate-50 px-3 pt-2">
                 <div
                     class="flex flex-wrap items-end gap-2"
@@ -2252,7 +2608,9 @@ function resetListState(): void {
                                     v-model="search"
                                     class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
                                     type="text"
-                                    placeholder="Search SKU / barcode / name…"
+                                    placeholder="Search SKU / barcode / name… (Enter)"
+                                    @keydown.enter.prevent="flushProductsSearchNow"
+                                    @blur="onSingleSearchBlur"
                                 />
 
                                 <div v-else class="mt-1">
@@ -2325,6 +2683,38 @@ function resetListState(): void {
                             />
 
                             <MultiSelectFilter
+                                v-model="selectedSublines"
+                                label="Subline"
+                                :options="sublineOptions"
+                                placeholder="All sublines"
+                                test-id="products-filter-subline"
+                            />
+
+                            <MultiSelectFilter
+                                v-model="selectedGrades"
+                                label="Grade"
+                                :options="gradeOptions"
+                                placeholder="All grades"
+                                test-id="products-filter-grade"
+                            />
+
+                            <MultiSelectFilter
+                                v-model="selectedScales"
+                                label="Scale"
+                                :options="scaleOptions"
+                                placeholder="All scales"
+                                test-id="products-filter-scale"
+                            />
+
+                            <MultiSelectFilter
+                                v-model="selectedSeries"
+                                label="Series"
+                                :options="seriesOptions"
+                                placeholder="All series"
+                                test-id="products-filter-series"
+                            />
+
+                            <MultiSelectFilter
                                 v-model="selectedVendors"
                                 label="Vendor"
                                 :options="vendorOptions"
@@ -2351,9 +2741,13 @@ function resetListState(): void {
                                     class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                                     data-testid="products-filter-po-novelty"
                                 >
-                                    <option value="all">New + existing</option>
-                                    <option value="new">New in selected PO</option>
-                                    <option value="existing">Existing in selected PO</option>
+                                    <option
+                                        v-for="opt in poNoveltyOptions"
+                                        :key="opt.value"
+                                        :value="opt.value"
+                                    >
+                                        {{ opt.label }}
+                                    </option>
                                 </select>
                             </div>
 
@@ -2392,9 +2786,13 @@ function resetListState(): void {
                                     class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                                     data-testid="products-filter-ready"
                                 >
-                                    <option value="all">All</option>
-                                    <option value="ready">Ready only</option>
-                                    <option value="not_ready">Not ready only</option>
+                                    <option
+                                        v-for="opt in readyOptions"
+                                        :key="opt.value"
+                                        :value="opt.value"
+                                    >
+                                        {{ opt.label }}
+                                    </option>
                                 </select>
                             </div>
 
@@ -2410,9 +2808,35 @@ function resetListState(): void {
                                     class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                                     data-testid="products-filter-archived"
                                 >
-                                    <option value="active">Active only</option>
-                                    <option value="all">All (active + archived)</option>
-                                    <option value="archived">Archived only</option>
+                                    <option
+                                        v-for="opt in archivedOptions"
+                                        :key="opt.value"
+                                        :value="opt.value"
+                                    >
+                                        {{ opt.label }}
+                                    </option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label
+                                    for="products-store-preorder-filter"
+                                    class="block text-xs font-semibold uppercase tracking-wide text-slate-600"
+                                    >Store preorders</label
+                                >
+                                <select
+                                    id="products-store-preorder-filter"
+                                    v-model="storePreorderFilter"
+                                    class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
+                                    data-testid="products-filter-store-preorder"
+                                >
+                                    <option
+                                        v-for="opt in storePreorderOptions"
+                                        :key="opt.value"
+                                        :value="opt.value"
+                                    >
+                                        {{ opt.label }}
+                                    </option>
                                 </select>
                             </div>
 
@@ -2428,9 +2852,13 @@ function resetListState(): void {
                                     class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm"
                                     data-testid="products-filter-published"
                                 >
-                                    <option value="all">All</option>
-                                    <option value="published">Published only</option>
-                                    <option value="not_published">Not published only</option>
+                                    <option
+                                        v-for="opt in publishedOptions"
+                                        :key="opt.value"
+                                        :value="opt.value"
+                                    >
+                                        {{ opt.label }}
+                                    </option>
                                 </select>
                             </div>
 
@@ -2644,6 +3072,7 @@ function resetListState(): void {
                     </div>
 
                     <ProductsTable
+                        v-model:visible-columns="visibleColumns"
                         :loading="loading"
                         :products="products"
                         :total-matching="total"
@@ -2669,6 +3098,7 @@ function resetListState(): void {
                         :on-toggle-ready="toggleProductReady"
                         :on-toggle-latest-arrival="toggleProductLatestArrival"
                         :on-toggle-critical="toggleProductCritical"
+                        :on-toggle-urgent="toggleProductUrgent"
                         :on-toggle-discontinue="toggleProductDiscontinued"
                         :on-toggle-hazardous-shipment="toggleProductHazardousShipment"
                         :on-update-shipment-method="updateProductShipmentMethod"
@@ -2676,16 +3106,16 @@ function resetListState(): void {
                         :on-open-plamod="openPlamodDrawer"
                         :on-open-po-lines="openPoLinesDrawer"
                         :on-open-demand="openDemandDialog"
-                        :vendor-options="vendorOptions.map((v) => v.value)"
+                        :vendor-options="catalogValues(vendorOptions)"
                         :main-type-options="mainTypeOptions.map((v) => v.value)"
                         :type-options="typeOptions.map((v) => v.value)"
-                        :department-options="departmentOptions.map((v) => v.value)"
-                        :manufacturer-options="manufacturerOptions.map((v) => v.value)"
-                        :franchise-options="franchiseOptions.map((v) => v.value)"
-                        :product-line-options="productLineOptions.map((v) => v.value)"
-                        :grade-options="gradeOptions.map((v) => v.value)"
-                        :scale-options="scaleOptions.map((v) => v.value)"
-                        :series-options="seriesOptions.map((v) => v.value)"
+                        :department-options="catalogValues(departmentOptions)"
+                        :manufacturer-options="catalogValues(manufacturerOptions)"
+                        :franchise-options="catalogValues(franchiseOptions)"
+                        :product-line-options="catalogValues(productLineOptions)"
+                        :grade-options="catalogValues(gradeOptions)"
+                        :scale-options="catalogValues(scaleOptions)"
+                        :series-options="catalogValues(seriesOptions)"
                     />
 
                     <PaginationControls
@@ -2703,13 +3133,13 @@ function resetListState(): void {
                     :error="createError"
                     :message="createMessage"
                     :on-create="create"
-                    :vendor-options="vendorOptions.map((v) => v.value)"
+                    :vendor-options="catalogValues(vendorOptions)"
                     :main-type-options="mainTypeOptions.map((v) => v.value)"
                     :type-options="typeOptions.map((v) => v.value)"
-                    :department-options="departmentOptions.map((v) => v.value)"
-                    :manufacturer-options="manufacturerOptions.map((v) => v.value)"
-                    :franchise-options="franchiseOptions.map((v) => v.value)"
-                    :product-line-options="productLineOptions.map((v) => v.value)"
+                    :department-options="catalogValues(departmentOptions)"
+                    :manufacturer-options="catalogValues(manufacturerOptions)"
+                    :franchise-options="catalogValues(franchiseOptions)"
+                    :product-line-options="catalogValues(productLineOptions)"
                     :embedded="true"
                 />
                 <ImportProductsCard v-show="activeTab === 'import'" :embedded="true" />

@@ -4,34 +4,38 @@ import ColumnHeaderHelp from '../components/ColumnHeaderHelp.vue';
 import { api } from '../lib/api';
 import {
     formatInventoryLandedValue,
-    groupInventoryRowsByStorefrontNavbar,
+    formatInventorySoldPercent,
     parseInventoryByMainTypeReportResponse,
     type InventoryByMainTypeReport,
-    type InventoryByMainTypeNavbarGroup,
     type InventoryByMainTypeSortKey,
 } from '../lib/inventoryByMainTypeReport';
 import {
     buildInventoryByMainTypeProductsUrl,
-    drillDownTargetFromReportRow,
     type InventoryReportUniqueSkuSlice,
 } from '../lib/inventoryByMainTypeProductsLinks';
-import type { InventoryByMainTypeReportRow } from '../lib/inventoryByMainTypeReport';
+import {
+    buildInventoryTaxonomyTree,
+    DEFAULT_INVENTORY_TREE_EXPANDED,
+    flattenVisibleInventoryTree,
+    type InventoryTaxonomyDrillDown,
+    type InventoryTaxonomyTreeNode,
+} from '../lib/inventoryByMainTypeTree';
 
 const loading = ref(false);
 const error = ref<string | null>(null);
 const report = ref<InventoryByMainTypeReport | null>(null);
 const sortBy = ref<InventoryByMainTypeSortKey>('type_label');
 const sortDir = ref<'asc' | 'desc'>('asc');
-const expandedGroups = ref<Set<string>>(
-    new Set(['model-kits', 'tools-supplies', 'water-decals', 'miscellaneous', 'other']),
-);
+const expandedGroups = ref<Set<string>>(new Set(DEFAULT_INVENTORY_TREE_EXPANDED));
 
 const currency = computed<string>(() => report.value?.currency ?? 'CAD');
 const totals = computed(() => report.value?.totals ?? null);
 
-const groupedRows = computed<InventoryByMainTypeNavbarGroup[]>(() =>
-    groupInventoryRowsByStorefrontNavbar(report.value?.rows ?? [], sortBy.value, sortDir.value),
+const tree = computed(() =>
+    buildInventoryTaxonomyTree(report.value?.rows ?? [], sortBy.value, sortDir.value),
 );
+
+const visibleNodes = computed(() => flattenVisibleInventoryTree(tree.value, expandedGroups.value));
 
 const missingLandedTotal = computed<number>(() => totals.value?.skus_missing_landed_cost ?? 0);
 
@@ -63,12 +67,9 @@ function formatMoney(amount: string): string {
 
 function uniqueSkuCountHref(
     slice: InventoryReportUniqueSkuSlice,
-    row: InventoryByMainTypeReportRow | null,
+    target: InventoryTaxonomyDrillDown | null,
 ): string {
-    return buildInventoryByMainTypeProductsUrl(
-        slice,
-        row === null ? null : drillDownTargetFromReportRow(row),
-    );
+    return buildInventoryByMainTypeProductsUrl(slice, target);
 }
 
 function canDrillDownCount(value: number): boolean {
@@ -89,16 +90,31 @@ function toggleGroup(groupKey: string): void {
     expandedGroups.value = next;
 }
 
-function typeTestId(type: string): string {
-    const suffix = type
-        .trim()
-        .toLocaleLowerCase()
-        .replace(/[^a-z0-9]+/g, '-');
+function nodeTestId(node: InventoryTaxonomyTreeNode): string {
+    const suffix = node.key.toLocaleLowerCase().replace(/[^a-z0-9]+/g, '-');
     return `type-row-${suffix || 'unset'}`;
 }
 
-const stickyHeaderGroupClass =
-    'sticky top-0 z-30 bg-slate-50 shadow-[0_1px_0_0_rgb(226_232_240)]';
+function nodeRowClass(node: InventoryTaxonomyTreeNode): string {
+    if (node.depth === 0) {
+        return 'bg-slate-100/80 font-semibold text-slate-900';
+    }
+    if (node.depth === 1 && node.children.length > 0) {
+        return 'bg-slate-50 font-medium text-slate-900';
+    }
+
+    return 'text-slate-900 hover:bg-slate-50';
+}
+
+function nodeLabelPadClass(node: InventoryTaxonomyTreeNode): string {
+    if (node.depth === 0) {
+        return 'px-4';
+    }
+
+    return node.depth === 1 ? 'pr-4 pl-9' : 'pr-4 pl-14';
+}
+
+const stickyHeaderGroupClass = 'sticky top-0 z-30 bg-slate-50 shadow-[0_1px_0_0_rgb(226_232_240)]';
 const stickyHeaderColumnClass =
     'sticky top-[2.125rem] z-20 bg-slate-50 shadow-[0_1px_0_0_rgb(226_232_240)]';
 
@@ -130,7 +146,9 @@ onMounted(() => void load());
             <div>
                 <h2 class="text-lg font-semibold text-slate-900">Inventory by type</h2>
                 <p class="mt-1 text-sm text-slate-600">
-                    On-hand columns use
+                    Grouped like the storefront mega menu: Model kits by grade (then series), Tools
+                    & Supplies by job then shelf, Miscellaneous as Keychains / CCS Toys. On-hand
+                    columns use
                     <code class="rounded bg-slate-100 px-1">available_qty</code>. Not arrived sums
                     PO line qty until the PO is fully on shelves (includes draft POs, same as
                     Products grid default).
@@ -179,7 +197,7 @@ onMounted(() => void load());
                                 :class="[sortHeaderClass('type_label'), stickyHeaderGroupClass]"
                                 @click="toggleSort('type_label')"
                             >
-                                Type{{ sortIndicator('type_label') }}
+                                Category{{ sortIndicator('type_label') }}
                             </th>
                             <th
                                 rowspan="2"
@@ -190,7 +208,7 @@ onMounted(() => void load());
                                 Catalog SKUs{{ sortIndicator('catalog_skus') }}
                             </th>
                             <th
-                                colspan="2"
+                                colspan="3"
                                 class="border-l border-slate-200 px-4 py-2 text-center text-slate-700"
                                 :class="stickyHeaderGroupClass"
                             >
@@ -216,7 +234,10 @@ onMounted(() => void load());
                         >
                             <th
                                 class="cursor-pointer border-l border-slate-200 px-4 py-3 text-right tabular-nums"
-                                :class="[sortHeaderClass('units_received'), stickyHeaderColumnClass]"
+                                :class="[
+                                    sortHeaderClass('units_received'),
+                                    stickyHeaderColumnClass,
+                                ]"
                                 @click="toggleSort('units_received')"
                             >
                                 <span class="inline-flex items-center justify-end gap-1">
@@ -239,6 +260,18 @@ onMounted(() => void load());
                                 </span>
                             </th>
                             <th
+                                class="cursor-pointer px-4 py-3 text-right tabular-nums"
+                                :class="[sortHeaderClass('sold_pct'), stickyHeaderColumnClass]"
+                                @click="toggleSort('sold_pct')"
+                            >
+                                <span class="inline-flex items-center justify-end gap-1">
+                                    Sold %{{ sortIndicator('sold_pct') }}
+                                    <ColumnHeaderHelp
+                                        label="Sold units ÷ received units. Em dash when nothing has been received."
+                                    />
+                                </span>
+                            </th>
+                            <th
                                 class="cursor-pointer border-l border-slate-200 px-4 py-3 text-right tabular-nums"
                                 :class="[sortHeaderClass('skus_on_hand'), stickyHeaderColumnClass]"
                                 @click="toggleSort('skus_on_hand')"
@@ -247,21 +280,30 @@ onMounted(() => void load());
                             </th>
                             <th
                                 class="cursor-pointer px-4 py-3 text-right tabular-nums"
-                                :class="[sortHeaderClass('quantity_on_hand'), stickyHeaderColumnClass]"
+                                :class="[
+                                    sortHeaderClass('quantity_on_hand'),
+                                    stickyHeaderColumnClass,
+                                ]"
                                 @click="toggleSort('quantity_on_hand')"
                             >
                                 Units{{ sortIndicator('quantity_on_hand') }}
                             </th>
                             <th
                                 class="cursor-pointer px-4 py-3 text-right tabular-nums"
-                                :class="[sortHeaderClass('estimated_landed_value'), stickyHeaderColumnClass]"
+                                :class="[
+                                    sortHeaderClass('estimated_landed_value'),
+                                    stickyHeaderColumnClass,
+                                ]"
                                 @click="toggleSort('estimated_landed_value')"
                             >
                                 Value ({{ currency }}){{ sortIndicator('estimated_landed_value') }}
                             </th>
                             <th
                                 class="cursor-pointer px-4 py-3 text-right tabular-nums"
-                                :class="[sortHeaderClass('skus_missing_landed_cost'), stickyHeaderColumnClass]"
+                                :class="[
+                                    sortHeaderClass('skus_missing_landed_cost'),
+                                    stickyHeaderColumnClass,
+                                ]"
                                 @click="toggleSort('skus_missing_landed_cost')"
                             >
                                 <span class="inline-flex items-center justify-end gap-1">
@@ -273,7 +315,10 @@ onMounted(() => void load());
                             </th>
                             <th
                                 class="cursor-pointer border-l border-slate-200 px-4 py-3 text-right tabular-nums"
-                                :class="[sortHeaderClass('not_arrived_skus'), stickyHeaderColumnClass]"
+                                :class="[
+                                    sortHeaderClass('not_arrived_skus'),
+                                    stickyHeaderColumnClass,
+                                ]"
                                 @click="toggleSort('not_arrived_skus')"
                             >
                                 <span class="inline-flex items-center justify-end gap-1">
@@ -315,166 +360,124 @@ onMounted(() => void load());
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
-                        <template v-for="group in groupedRows" :key="group.key">
-                            <tr class="bg-slate-100/80 font-semibold text-slate-900">
-                                <td class="px-4 py-3">
-                                    <button
-                                        type="button"
-                                        class="inline-flex items-center gap-2 text-left hover:text-blue-700"
-                                        :aria-expanded="isGroupExpanded(group.key)"
-                                        :aria-label="`${isGroupExpanded(group.key) ? 'Collapse' : 'Expand'} ${group.label}`"
-                                        @click="toggleGroup(group.key)"
+                        <tr
+                            v-for="node in visibleNodes"
+                            :key="node.key"
+                            :data-testid="nodeTestId(node)"
+                            :class="nodeRowClass(node)"
+                        >
+                            <td class="py-3" :class="nodeLabelPadClass(node)">
+                                <button
+                                    v-if="node.children.length > 0"
+                                    type="button"
+                                    class="inline-flex items-center gap-2 text-left hover:text-blue-700"
+                                    :aria-expanded="isGroupExpanded(node.key)"
+                                    :aria-label="`${isGroupExpanded(node.key) ? 'Collapse' : 'Expand'} ${node.label}`"
+                                    @click="toggleGroup(node.key)"
+                                >
+                                    <svg
+                                        class="h-3.5 w-3.5 shrink-0 transition-transform"
+                                        :class="{ 'rotate-90': isGroupExpanded(node.key) }"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2.5"
+                                        aria-hidden="true"
                                     >
-                                        <svg
-                                            class="h-3.5 w-3.5 shrink-0 transition-transform"
-                                            :class="{ 'rotate-90': isGroupExpanded(group.key) }"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            stroke-width="2.5"
-                                            aria-hidden="true"
-                                        >
-                                            <path
-                                                stroke-linecap="round"
-                                                stroke-linejoin="round"
-                                                d="m9 18 6-6-6-6"
-                                            />
-                                        </svg>
-                                        {{ group.label }}
-                                    </button>
-                                </td>
-                                <td
-                                    class="border-l border-slate-200 px-4 py-3 text-right tabular-nums"
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="m9 18 6-6-6-6"
+                                        />
+                                    </svg>
+                                    {{ node.label }}
+                                </button>
+                                <span v-else>{{ node.label }}</span>
+                            </td>
+                            <td class="border-l border-slate-100 px-4 py-3 text-right tabular-nums">
+                                <a
+                                    v-if="canDrillDownCount(node.totals.catalog_skus)"
+                                    :href="uniqueSkuCountHref('catalog_skus', node.drillDown)"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="text-blue-700 underline decoration-blue-700/30 underline-offset-2 hover:decoration-blue-700"
+                                    :title="`View ${node.totals.catalog_skus} active catalog SKU(s) in Products`"
                                 >
-                                    {{ group.totals.catalog_skus }}
-                                </td>
-                                <td
-                                    class="border-l border-slate-200 px-4 py-3 text-right tabular-nums"
+                                    {{ node.totals.catalog_skus }}
+                                </a>
+                                <span v-else>{{ node.totals.catalog_skus }}</span>
+                            </td>
+                            <td class="border-l border-slate-100 px-4 py-3 text-right tabular-nums">
+                                {{ node.totals.units_received }}
+                            </td>
+                            <td class="px-4 py-3 text-right tabular-nums">
+                                {{ node.totals.units_sold }}
+                            </td>
+                            <td class="px-4 py-3 text-right tabular-nums">
+                                {{
+                                    formatInventorySoldPercent(
+                                        node.totals.units_received,
+                                        node.totals.units_sold,
+                                    )
+                                }}
+                            </td>
+                            <td class="border-l border-slate-100 px-4 py-3 text-right tabular-nums">
+                                <a
+                                    v-if="canDrillDownCount(node.totals.skus_on_hand)"
+                                    :href="uniqueSkuCountHref('skus_on_hand', node.drillDown)"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="text-blue-700 underline decoration-blue-700/30 underline-offset-2 hover:decoration-blue-700"
+                                    :title="`View ${node.totals.skus_on_hand} on-hand SKU(s) in Products`"
                                 >
-                                    {{ group.totals.units_received }}
-                                </td>
-                                <td class="px-4 py-3 text-right tabular-nums">
-                                    {{ group.totals.units_sold }}
-                                </td>
-                                <td
-                                    class="border-l border-slate-200 px-4 py-3 text-right tabular-nums"
+                                    {{ node.totals.skus_on_hand }}
+                                </a>
+                                <span v-else>{{ node.totals.skus_on_hand }}</span>
+                            </td>
+                            <td class="px-4 py-3 text-right tabular-nums">
+                                {{ node.totals.quantity_on_hand }}
+                            </td>
+                            <td class="px-4 py-3 text-right tabular-nums">
+                                {{ formatMoney(node.totals.estimated_landed_value) }}
+                            </td>
+                            <td class="px-4 py-3 text-right tabular-nums">
+                                <a
+                                    v-if="canDrillDownCount(node.totals.skus_missing_landed_cost)"
+                                    :href="
+                                        uniqueSkuCountHref(
+                                            'skus_missing_landed_cost',
+                                            node.drillDown,
+                                        )
+                                    "
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="text-blue-700 underline decoration-blue-700/30 underline-offset-2 hover:decoration-blue-700"
+                                    :title="`View ${node.totals.skus_missing_landed_cost} on-hand SKU(s) missing landed cost`"
                                 >
-                                    {{ group.totals.skus_on_hand }}
-                                </td>
-                                <td class="px-4 py-3 text-right tabular-nums">
-                                    {{ group.totals.quantity_on_hand }}
-                                </td>
-                                <td class="px-4 py-3 text-right tabular-nums">
-                                    {{ formatMoney(group.totals.estimated_landed_value) }}
-                                </td>
-                                <td class="px-4 py-3 text-right tabular-nums">
-                                    {{ group.totals.skus_missing_landed_cost }}
-                                </td>
-                                <td
-                                    class="border-l border-slate-200 px-4 py-3 text-right tabular-nums"
+                                    {{ node.totals.skus_missing_landed_cost }}
+                                </a>
+                                <span v-else>{{ node.totals.skus_missing_landed_cost }}</span>
+                            </td>
+                            <td class="border-l border-slate-100 px-4 py-3 text-right tabular-nums">
+                                <a
+                                    v-if="canDrillDownCount(node.totals.not_arrived_skus)"
+                                    :href="uniqueSkuCountHref('not_arrived_skus', node.drillDown)"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="text-blue-700 underline decoration-blue-700/30 underline-offset-2 hover:decoration-blue-700"
+                                    :title="`View ${node.totals.not_arrived_skus} SKU(s) with not-arrived PO qty`"
                                 >
-                                    {{ group.totals.not_arrived_skus }}
-                                </td>
-                                <td class="px-4 py-3 text-right tabular-nums">
-                                    {{ group.totals.not_arrived }}
-                                </td>
-                                <td class="px-4 py-3 text-right tabular-nums">
-                                    {{ formatMoney(group.totals.estimated_not_landed_value) }}
-                                </td>
-                            </tr>
-                            <tr
-                                v-for="row in isGroupExpanded(group.key) ? group.rows : []"
-                                :key="`${group.key}:${row.type}`"
-                                :data-testid="typeTestId(row.type)"
-                                class="hover:bg-slate-50"
-                            >
-                                <td class="py-3 pr-4 pl-9 text-slate-900">
-                                    {{ row.type_label }}
-                                </td>
-                                <td
-                                    class="border-l border-slate-100 px-4 py-3 text-right tabular-nums text-slate-900"
-                                >
-                                    <a
-                                        v-if="canDrillDownCount(row.catalog_skus)"
-                                        :href="uniqueSkuCountHref('catalog_skus', row)"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        class="text-blue-700 underline decoration-blue-700/30 underline-offset-2 hover:decoration-blue-700"
-                                        :title="`View ${row.catalog_skus} active catalog SKU(s) in Products`"
-                                    >
-                                        {{ row.catalog_skus }}
-                                    </a>
-                                    <span v-else>{{ row.catalog_skus }}</span>
-                                </td>
-                                <td
-                                    class="border-l border-slate-100 px-4 py-3 text-right tabular-nums text-slate-900"
-                                >
-                                    {{ row.units_received }}
-                                </td>
-                                <td class="px-4 py-3 text-right tabular-nums text-slate-900">
-                                    {{ row.units_sold }}
-                                </td>
-                                <td
-                                    class="border-l border-slate-100 px-4 py-3 text-right tabular-nums text-slate-900"
-                                >
-                                    <a
-                                        v-if="canDrillDownCount(row.skus_on_hand)"
-                                        :href="uniqueSkuCountHref('skus_on_hand', row)"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        class="text-blue-700 underline decoration-blue-700/30 underline-offset-2 hover:decoration-blue-700"
-                                        :title="`View ${row.skus_on_hand} on-hand SKU(s) in Products`"
-                                    >
-                                        {{ row.skus_on_hand }}
-                                    </a>
-                                    <span v-else>{{ row.skus_on_hand }}</span>
-                                </td>
-                                <td class="px-4 py-3 text-right tabular-nums text-slate-900">
-                                    {{ row.quantity_on_hand }}
-                                </td>
-                                <td class="px-4 py-3 text-right tabular-nums text-slate-900">
-                                    {{ formatMoney(row.estimated_landed_value) }}
-                                </td>
-                                <td class="px-4 py-3 text-right tabular-nums text-slate-900">
-                                    <a
-                                        v-if="canDrillDownCount(row.skus_missing_landed_cost)"
-                                        :href="
-                                            uniqueSkuCountHref('skus_missing_landed_cost', row)
-                                        "
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        class="text-blue-700 underline decoration-blue-700/30 underline-offset-2 hover:decoration-blue-700"
-                                        :title="`View ${row.skus_missing_landed_cost} on-hand SKU(s) missing landed cost`"
-                                    >
-                                        {{ row.skus_missing_landed_cost }}
-                                    </a>
-                                    <span v-else>{{ row.skus_missing_landed_cost }}</span>
-                                </td>
-                                <td
-                                    class="border-l border-slate-100 px-4 py-3 text-right tabular-nums text-slate-900"
-                                >
-                                    <a
-                                        v-if="canDrillDownCount(row.not_arrived_skus)"
-                                        :href="
-                                            uniqueSkuCountHref('not_arrived_skus', row)
-                                        "
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        class="text-blue-700 underline decoration-blue-700/30 underline-offset-2 hover:decoration-blue-700"
-                                        :title="`View ${row.not_arrived_skus} SKU(s) with not-arrived PO qty`"
-                                    >
-                                        {{ row.not_arrived_skus }}
-                                    </a>
-                                    <span v-else>{{ row.not_arrived_skus }}</span>
-                                </td>
-                                <td class="px-4 py-3 text-right tabular-nums text-slate-900">
-                                    {{ row.not_arrived }}
-                                </td>
-                                <td class="px-4 py-3 text-right tabular-nums text-slate-900">
-                                    {{ formatMoney(row.estimated_not_landed_value) }}
-                                </td>
-                            </tr>
-                        </template>
+                                    {{ node.totals.not_arrived_skus }}
+                                </a>
+                                <span v-else>{{ node.totals.not_arrived_skus }}</span>
+                            </td>
+                            <td class="px-4 py-3 text-right tabular-nums">
+                                {{ node.totals.not_arrived }}
+                            </td>
+                            <td class="px-4 py-3 text-right tabular-nums">
+                                {{ formatMoney(node.totals.estimated_not_landed_value) }}
+                            </td>
+                        </tr>
                     </tbody>
                     <tfoot v-if="totals" class="bg-slate-50">
                         <tr class="font-semibold text-slate-900">
@@ -496,6 +499,14 @@ onMounted(() => void load());
                             </td>
                             <td class="px-4 py-3 text-right tabular-nums">
                                 {{ totals.units_sold }}
+                            </td>
+                            <td class="px-4 py-3 text-right tabular-nums">
+                                {{
+                                    formatInventorySoldPercent(
+                                        totals.units_received,
+                                        totals.units_sold,
+                                    )
+                                }}
                             </td>
                             <td class="border-l border-slate-200 px-4 py-3 text-right tabular-nums">
                                 <a

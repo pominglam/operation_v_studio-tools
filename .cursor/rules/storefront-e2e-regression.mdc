@@ -1,0 +1,29 @@
+---
+description: Mandatory Playwright e2e for ovs-shopify-theme storefront changes
+alwaysApply: true
+---
+
+# Storefront E2E regression (Shopify theme)
+
+When editing **`ovs-shopify-theme/**`** (filters, nav, collection grids, theme JS/Liquid with customer-visible behavior):
+
+1. Read **`ovs-shopify-theme/.cursor/rules/storefront-e2e-regression.mdc`**
+2. Update the relevant manifest under `ovs-shopify-theme/docs/`
+3. Extend `pricing-tool/tests/e2e/storefront-*-collection-filters.spec.ts` via manifest — assert **counts + visible row purity**, not only that a checkbox toggles
+4. Run the matching `npm run test:e2e:storefront-*-filters` before handoff
+
+Multiselect / union filters **require** a `combinationCases` entry with `expectVisibleTextAny` or `expectCountTextMin`.
+
+**Bug fixes** on filters/grids **require** a `prefilterStabilityCases` (or equivalent) entry per **`bug-fix-regression-tests.mdc`**.
+
+## Photo badges / overlays (mandatory)
+
+A card badge that must sit **on the product photo** (Sold out, Preorder closed, Sale) needs a **geometry** e2e, not only text.
+
+| Not enough | Required |
+| --- | --- |
+| `expectVisibleTextAny: ["Sold out"]` | `expectOnPhotoBadgeSelector` + `expectOnPhotoBadgeMin` — badge is `position:absolute` and sits in the **square photo** (top `inner.width` of `.card__inner`), not the strip under the image |
+
+Text can be in the DOM **under the photo** and still pass `allInnerTexts`. That is a failed customer outcome. The SNAA Sold out case is the regression for this.
+
+Run `npx playwright test tests/e2e/storefront-mk-collection-filters.spec.ts --grep "Sold out"` after any filtered-card / badge change.

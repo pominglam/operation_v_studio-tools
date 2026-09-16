@@ -205,6 +205,16 @@ final class ProductUpdateService
         return $this->products->save($product);
     }
 
+    public function updateUrgent(string $uuid, bool $isUrgent): Product
+    {
+        $product = $this->products->findByUuidOrFail($uuid);
+        $product->fill([
+            'is_urgent' => $isUrgent,
+        ]);
+
+        return $this->products->save($product);
+    }
+
     public function updateDiscontinued(string $uuid, bool $isDiscontinued): Product
     {
         $product = $this->products->findByUuidOrFail($uuid);

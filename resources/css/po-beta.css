@@ -893,7 +893,7 @@ button.po-beta__btn.po-beta__btn--primary {
     font-size: 12px;
 }
 
-/* Embedded workspace (inside main App shell — custom orders, etc.) */
+/* Embedded workspace (inside main App shell — special orders, etc.) */
 .po-beta.po-beta--embedded {
     height: auto;
     overflow: visible;

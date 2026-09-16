@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Resources\Api\V1;
 
+use App\DTOs\Products\ModelKitSeriesResolution;
 use App\Models\ProductTaxonomyVerification;
 use App\Support\Products\ProductTaxonomyFields;
 use Illuminate\Http\Request;
@@ -17,6 +18,8 @@ final class ProductTaxonomyVerificationResource extends JsonResource
     {
         $verification = $this->resource;
         $product = $verification->product;
+
+        $seriesResolution = $verification->loadedSeriesResolution;
 
         return [
             'id' => $verification->uuid,
@@ -40,6 +43,9 @@ final class ProductTaxonomyVerificationResource extends JsonResource
                 'published_on_shopify' => (bool) $product->published_on_shopify,
                 ...ProductTaxonomyFields::fromProduct($product),
             ],
+            'series_resolution' => $seriesResolution instanceof ModelKitSeriesResolution
+                ? $seriesResolution->toArray()
+                : null,
         ];
     }
 }

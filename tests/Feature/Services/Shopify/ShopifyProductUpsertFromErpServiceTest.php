@@ -60,7 +60,7 @@ function upsertTestRecordingClient(string $productGid, string $handle, string $s
                 ]);
             }
 
-            if (str_contains($graphql, 'inventoryItem(id:')) {
+            if (str_contains($graphql, 'InventoryItemsByIds') || str_contains($graphql, 'inventoryItem(id:')) {
                 return FakeShopifyAdminGraphQlClient::wrapInventoryItem(
                     'gid://shopify/InventoryItem/9403',
                     [
@@ -141,7 +141,7 @@ function upsertTestMaybeMirrorRefreshResponse(string $graphql, string $productGi
         return FakeShopifyAdminGraphQlClient::wrapProductMirrorNode($productGid, $handle, $sku);
     }
 
-    if (str_contains($graphql, 'inventoryItem(id:')) {
+    if (str_contains($graphql, 'InventoryItemsByIds') || str_contains($graphql, 'inventoryItem(id:')) {
         return FakeShopifyAdminGraphQlClient::wrapInventoryItem(
             'gid://shopify/InventoryItem/9403',
             [
@@ -192,6 +192,7 @@ it('includes productOptions when updating variants with quantities only', functi
         ],
     ]);
     expect($productSet)->not->toHaveKey('title');
+    expect($productSet)->not->toHaveKey('tags');
     expect($productSet['variants'][0]['inventoryQuantities'][0]['quantity'] ?? null)->toBe(3);
 });
 
@@ -915,6 +916,7 @@ it('renames image assets to SEO filenames before pushing images', function (): v
     );
     expect($productSetCall)->not->toBeNull();
     expect($productSetCall['productSet']['files'][0]['filename'] ?? null)->toBe($asset->filename);
+    expect($productSetCall['productSet'])->not->toHaveKey('tags');
 });
 
 it('throws when Shopify media processing fails after productSet', function (): void {
@@ -1003,7 +1005,8 @@ it('throws when Shopify media processing fails after productSet', function (): v
     ))->toThrow(\App\Exceptions\Shopify\ShopifyGraphQlException::class, 'Tunnel closed before Shopify could fetch');
 });
 
-it('includes storefront ts tags on images-only updates when product is classified', function (): void {
+it('omits tags on images-only updates so Shopify keeps existing tags', function (): void {
+    upsertTestFakeImageHttp();
     config(['shopify.oauth_scopes' => 'read_products,write_products']);
 
     $productGid = 'gid://shopify/Product/9901';
@@ -1028,7 +1031,7 @@ it('includes storefront ts tags on images-only updates when product is classifie
         'handle' => 'mt-02',
         'title' => 'Madworks Masking Tape 2mm',
         'status' => 'ACTIVE',
-        'payload_json' => ['tags' => ['supplies', 'Others']],
+        'payload_json' => ['tags' => ['supplies', 'Others', 'sp:store-preorder']],
     ]);
     ShopifyProductVariant::query()->create([
         'gid' => 'gid://shopify/ProductVariant/9902',
@@ -1036,19 +1039,75 @@ it('includes storefront ts tags on images-only updates when product is classifie
         'sku' => 'MT-02',
     ]);
 
-    $fake = upsertTestRecordingClient($productGid, 'mt-02');
+    $fake = new class($productGid) implements ShopifyAdminGraphQlClientInterface
+    {
+        /** @var list<array<string, mixed>> */
+        public array $variableCalls = [];
+
+        public function __construct(private readonly string $productGid) {}
+
+        public function query(string $graphql, array $variables = []): array
+        {
+            $this->variableCalls[] = $variables;
+            if (str_contains($graphql, 'ProductMediaIds')) {
+                return FakeShopifyAdminGraphQlClient::wrapProductMediaIds([]);
+            }
+            if (str_contains($graphql, 'productSet')) {
+                return FakeShopifyAdminGraphQlClient::wrapProductSet($this->productGid, 'mt-02');
+            }
+            if (str_contains($graphql, 'ProductMediaStatus')) {
+                return upsertTestMediaStatusResponse([
+                    [
+                        'id' => 'gid://shopify/MediaImage/9903',
+                        'status' => 'READY',
+                        'mediaContentType' => 'IMAGE',
+                        'mediaErrors' => [],
+                    ],
+                ]);
+            }
+
+            $mirrorRefresh = upsertTestMaybeMirrorRefreshResponse(
+                $graphql,
+                $this->productGid,
+                'mt-02',
+                'MT-02',
+            );
+            if ($mirrorRefresh !== null) {
+                return $mirrorRefresh;
+            }
+
+            throw new RuntimeException('Unexpected GraphQL operation: '.$graphql);
+        }
+    };
     app()->instance(ShopifyAdminGraphQlClientInterface::class, $fake);
+
+    $storagePath = 'manual_upload/images/'.$product->uuid.'/mt-02.png';
+    Storage::disk('local')->put($storagePath, base64_decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        true,
+    ));
+    ProductExternalAsset::query()->create([
+        'product_id' => $product->id,
+        'source' => 'manual_upload',
+        'kind' => 'image',
+        'storage_path' => $storagePath,
+        'filename' => 'mt-02.png',
+        'mime_type' => 'image/png',
+        'shopify_enabled' => true,
+        'sort_order' => 1,
+    ]);
+    $product->load('shopifyImageAssets');
 
     $service = app()->make(ShopifyProductUpsertFromErpService::class);
     $usedHandles = [];
     $service->upsertFromProduct(
         $product,
-        null,
+        'https://tunnel.example',
         '',
         $usedHandles,
         new ShopifyProductPushOptionsDTO(
             info: false,
-            images: false,
+            images: true,
             quantities: false,
             price: false,
             publishStatus: false,
@@ -1061,9 +1120,7 @@ it('includes storefront ts tags on images-only updates when product is classifie
     );
 
     expect($productSetCall)->not->toBeNull();
-    expect($productSetCall['productSet']['tags'] ?? null)->toBe([
-        'ts:dept:tapes',
-        'ts:tape:masking',
-        'ts:tape:width:2',
-    ]);
+    expect($productSetCall['productSet'])->toHaveKey('files');
+    expect($productSetCall['productSet'])->not->toHaveKey('tags');
+    expect($productSetCall['productSet'])->not->toHaveKey('title');
 });

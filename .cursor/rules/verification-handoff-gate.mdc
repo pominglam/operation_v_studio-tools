@@ -1,0 +1,110 @@
+---
+description: Mandatory pre-handoff gate — stop recurring false "verified" handoffs (intent vs infrastructure)
+alwaysApply: true
+---
+
+# Verification handoff gate (anti-pattern block)
+
+## When to read (every session, every turn)
+
+**Not new-chat-only.** This rule applies in the **current chat and every later turn** once the file exists — not only after starting a fresh session.
+
+| When | Why |
+| --- | --- |
+| **Task start** (UI, storefront, filters, nav, anything user-visible) | Orient on intent before coding or pushing |
+| **Immediately before handoff** | Mandatory gate before `Verified`, `done`, `fixed`, or `### Layout verification` |
+| **After mid-chat rule edits** | Prior turns did not have the update; re-read before the next handoff |
+
+If you are about to write completion language and have not re-read this file since the last user message, **stop and read it now.**
+
+The rules already require browser QA, intent contracts, and layout gates (`definition_of_done.mdc`, `intent-and-data-verification.mdc`, `browser-first-mandatory.mdc`, `layout-visual-gate-before-handoff.mdc`). **This file names the recurring failure mode** agents keep falling into despite those rules.
+
+**The operator is not QA.** A handoff that passes code/tests/deploy but fails the operator’s stated purpose is **not verified** — it is a process failure.
+
+---
+
+## The recurring pattern (do not repeat)
+
+Agents repeatedly hand off work after checking **infrastructure** or **partial signals**, while the operator needed **intent** proof on **their path**.
+
+| Anti-pattern (what agents do) | What the operator actually needed |
+| --- | --- |
+| Theme push / GraphQL upsert returned 200 | Customer sees the change on **their URL** (correct theme, hard refresh) |
+| HTTP 200 on `/collections/{handle}` | Destination has the **right filters**, counts, and row purity |
+| Service/tinker proves computed field; API/UI never checked | **HTTP JSON** on the SPA route includes the field; UI dialog/row shows it (**`api-resource-enrichment-wiring.mdc`**) |
+| Grep/snapshot finds label text somewhere on page | The **specific control** (facet column, drawer panel, mega menu row) shows the **full expected set** |
+| One sample URL or one viewport | **Representative matrix** for the feature class (e.g. grade hub + subline shelf + series leaf) |
+| “Filter exists” / “Grade filter present” | **Every option the user named** is visible (e.g. all grades for cross-grade jump) |
+| Layout screenshot of **a** UI surface | Screenshot of the surface named in the **Intent Contract** |
+| Verified mega menu **links** | Verified **landing page behavior** (filters, pre-checks, navigation) |
+| Brief **Verified** line without internal checklist | Full DoD checklist done internally; brevity is for the **message**, not QA |
+| `preview_theme_id=196218716241` only, operator on live | Default is **live Rise**. Dest-only is incomplete unless the operator asked for dest. |
+
+**Root cause:** Treating “something responded” or “something deployed” as proof of “what the user asked for.”
+
+---
+
+## Mandatory pre-handoff gate (all must be YES)
+
+Before any completion language on user-visible work:
+
+1. **Intent Contract written in user words** — at least one line per changed behavior:  
+   *When [operator/customer action on real URL] → expect [observable outcome].*  
+   Derive from the **request**, not from what the code happens to do.
+
+2. **Wrong-environment check** — URL includes correct tenant/theme/preview when work is theme/storefront; if operator may use live URL, state **verified on preview only** or verify live explicitly.
+
+3. **Right surface check** — QA targeted the **exact UI region** the contract mentions (left facet column, mobile drawer filter stack, mega menu panel — not “page loaded” or nav/footer grep).
+
+4. **Completeness check** — For lists/trees/filters: confirm **every item the user expects to see** is visible, not only the current shelf’s subset. If JS hides empty options, that is a **bug** until the user accepts it.
+
+5. **Negative proof** — Ask: *What would the operator screenshot to show I’m wrong?* If you did not look at that exact thing, you are not done.
+
+6. **Primary action on real data** — Click/type the **same control** the customer uses; compare outcome to the contract (counts, URL, checked state, navigation target).
+
+If any gate is **NO** → fix, re-check, or hand off as **incomplete** with what was not verified. **Do not say verified.**
+
+---
+
+## What never counts as verification (storefront / filters / nav)
+
+- Bulk link HTTP audits without landing-page filter/nav behavior
+- `themeFilesUpsert` success alone
+- Manifest / PHP profile / Liquid router “looks correct” in code
+- Unit tests or manifest verify CLI with no browser
+- Snapshot grep matching a string anywhere on the page
+- Layout table with screenshots that **don’t** show the contract outcome (e.g. product grid only when the task was facet options)
+- Checking **one** collection when the task was “all mega menu links” or “all grade shelves”
+
+---
+
+## Minimum matrix (when scope is “all” or a menu section)
+
+When the user says **all links**, **every filter**, **whole section**, or points at a **menu column**:
+
+| Layer | Minimum |
+| --- | --- |
+| Links / routes | Every href in scope → loads 200 **and** spot-check **worst** landing pages (hub + leaf + empty shelf) |
+| Filters | Hub + one subline shelf + one series/franchise shelf; desktop facet **and** mobile drawer if both exist |
+| Pre-selection | Land without query params → correct default checked state |
+| Cross-navigation | One “jump” action (e.g. check another grade) → correct collection URL |
+
+Sample-of-one is **not** enough for “all” scope.
+
+---
+
+## Handoff wording
+
+- **Verified** — only if all gates above pass; cite **URL + contract outcome** (e.g. “MG hub facet shows EG…PG; HG click → `/collections/high-grade-hg`”).
+- **Incomplete** — name what was not checked and what URL/theme unblocks it.
+- **Preview only** — only when the operator asked for dest. Default handoff is **live Rise**. Dest-only when they wanted live is incomplete.
+
+---
+
+## Related rules (read together)
+
+- `operator-expectations.mdc` — handoff self-check
+- `intent-and-data-verification.mdc` — Act → Observe → Compare
+- `verify-ui-before-done.mdc` — filter combos, drawer sync
+- `layout-visual-gate-before-handoff.mdc` — screenshot must show changed surface
+- `bug-check-before-return.mdc` — reproduce operator path first on bugfixes

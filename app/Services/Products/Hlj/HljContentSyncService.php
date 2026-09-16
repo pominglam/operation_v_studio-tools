@@ -8,6 +8,7 @@ use App\DAL\Products\ProductExternalAssetRepository;
 use App\DAL\Products\ProductExternalContentRepository;
 use App\Models\Product;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
+use App\Services\StorePreorders\StorePreorderUsesPlamodImagesOnly;
 use Illuminate\Support\Facades\Storage;
 
 final class HljContentSyncService implements HljContentSync
@@ -21,10 +22,15 @@ final class HljContentSyncService implements HljContentSync
         private readonly HljPdpResolverService $pdpResolver,
         private readonly ProductExternalContentRepository $contents,
         private readonly ProductExternalAssetRepository $assets,
+        private readonly StorePreorderUsesPlamodImagesOnly $storePreorderPlamodImagesOnly,
     ) {}
 
     public function syncForProduct(Product $product): void
     {
+        if ($this->storePreorderPlamodImagesOnly->appliesToProduct($product)) {
+            return;
+        }
+
         $pdpUrl = $this->pdpResolver->resolvePdpUrlForProduct($product);
         if ($pdpUrl === null) {
             // If we can no longer resolve an HLJ PDP for this product, clear previously stored HLJ content/assets

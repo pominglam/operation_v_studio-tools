@@ -42,6 +42,50 @@ final class CharmPricingCalculator
     }
 
     /**
+     * Pick the X.99 CAD price closest to cost × multiplier. Ties prefer the higher tier.
+     */
+    public static function nearestSellingPriceX99FromCost(?string $unitCost, string $multiplier): ?string
+    {
+        $unitCost = $unitCost !== null ? trim($unitCost) : null;
+        if ($unitCost === null || $unitCost === '') {
+            return null;
+        }
+
+        $cents = self::moneyToCents($unitCost);
+        if ($cents <= 0) {
+            return null;
+        }
+
+        [$num, $den] = self::decimalToFraction($multiplier);
+        if ($num <= 0 || $den <= 0) {
+            return null;
+        }
+
+        $raw = $cents * $num;
+        $targetCents = intdiv($raw + intdiv($den, 2), $den);
+
+        return self::centsToMoney(self::nearestX99Cents($targetCents));
+    }
+
+    /**
+     * Snap an entered CAD price to the closest X.99 (ties go up). Same grid as catalog set-prices.
+     */
+    public static function nearestX99Price(?string $price): ?string
+    {
+        $price = $price !== null ? trim($price) : null;
+        if ($price === null || $price === '') {
+            return null;
+        }
+
+        $cents = self::moneyToCents($price);
+        if ($cents <= 0) {
+            return null;
+        }
+
+        return self::centsToMoney(self::nearestX99Cents($cents));
+    }
+
+    /**
      * Prefer one X.99 tier below the formula price when the formula price is over 1.55× cost
      * and the reduced price remains at least 1.45× cost.
      */
@@ -77,6 +121,27 @@ final class CharmPricingCalculator
         }
 
         return number_format($reducedValue, 2, '.', '');
+    }
+
+    private static function nearestX99Cents(int $targetCents): int
+    {
+        if ($targetCents <= 99) {
+            return 99;
+        }
+
+        if ($targetCents % 100 === 99) {
+            return $targetCents;
+        }
+
+        $dollars = intdiv($targetCents, 100);
+        $upper = ($dollars * 100) + 99;
+        $lower = (($dollars - 1) * 100) + 99;
+
+        if (abs($targetCents - $lower) < abs($upper - $targetCents)) {
+            return $lower;
+        }
+
+        return $upper;
     }
 
     private static function moneyToCents(string $amount): int

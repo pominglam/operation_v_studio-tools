@@ -42,6 +42,7 @@ final class BulkUpdateProductsRequest extends FormRequest
             'changes.maintain' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'changes.extended' => ['sometimes', 'nullable', 'numeric'],
             'changes.is_critical' => ['sometimes', 'required', 'boolean'],
+            'changes.is_urgent' => ['sometimes', 'required', 'boolean'],
             'changes.is_discontinued' => ['sometimes', 'required', 'boolean'],
             'changes.is_hazardous_shipment' => ['sometimes', 'required', 'boolean'],
             'changes.shipment_method' => ['sometimes', 'nullable', 'string', Rule::in(['air', 'sea'])],

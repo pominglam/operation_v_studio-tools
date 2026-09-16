@@ -14,7 +14,7 @@ export type PoSetPricePreviewRow = {
     current_multiplier: string | null;
     proposed_price: string | null;
     proposed_multiplier: string | null;
-    keep_reason?: 'current_higher_than_formula' | null;
+    keep_reason?: 'current_higher_than_formula' | 'diff_within_one_dollar' | null;
 };
 
 export type PoSetPricePreview = {
@@ -384,10 +384,9 @@ watch(
                         Set/review selling prices
                     </div>
                     <div v-if="preview" class="mt-1 text-xs text-slate-600">
-                        Formula: landed cost × {{ preview.multiplier }}, rounded up to the next X.99
-                        CAD at or above that target; we then suggest one X.99 tier lower only when
-                        that formula price is over 1.55× landed and the lower tier remains at least
-                        1.45×.
+                        Formula: landed cost × {{ preview.multiplier }}, then the X.99 CAD price
+                        closest to that target (ties go up). We do not suggest a change when the
+                        difference is $1.00 or less.
                         <span class="font-semibold text-slate-900">{{ preview.apply_count }}</span>
                         product(s) will change if you apply.
                         <span v-if="overrides.length" class="font-semibold text-amber-800">
@@ -823,8 +822,9 @@ watch(
                                         >
                                             Apply won't update these SKUs unless you edit Override
                                             or click Use suggested. Current is the catalog price.
-                                            Override shows the formula price; when Current is higher
-                                            than the formula, we keep Current.
+                                            Override shows the formula price. We skip suggestions
+                                            when the difference is $1.00 or less, and we keep
+                                            Current when it is higher than the formula.
                                         </th>
                                     </tr>
                                 </thead>

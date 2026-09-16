@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\DTOs\Products\ModelKitSeriesResolution;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
@@ -27,9 +28,12 @@ use Illuminate\Support\Str;
  * @property string|null $verified_by
  * @property-read Product $product
  * @property-read ProductTaxonomyResearchRun|null $researchRun
+ * @property ModelKitSeriesResolution|null $loadedSeriesResolution Runtime-only; set on taxonomy index.
  */
 final class ProductTaxonomyVerification extends Model
 {
+    public ?ModelKitSeriesResolution $loadedSeriesResolution = null;
+
     /** @var array<int, string> */
     protected $fillable = [
         'uuid',

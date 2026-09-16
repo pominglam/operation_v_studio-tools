@@ -11,7 +11,9 @@ use App\Models\Product;
 use App\Services\Products\ProductExportService;
 use App\Services\Products\ShopifyContentExportService;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlMutations;
+use App\Services\StorePreorders\StorePreorderShopifyPushOverride;
 use App\Support\Products\ProductHoldQty;
+use App\Support\Products\Storefront\StorefrontTag;
 use Illuminate\Support\Facades\Log;
 
 final class ShopifyProductCreateFromErpService
@@ -56,8 +58,9 @@ final class ShopifyProductCreateFromErpService
         $handle = $this->exports->shopifyHandleForProduct($product, $usedHandles);
         $usedHandles[$handle] = true;
 
+        $storePreorder = StorePreorderShopifyPushOverride::forProduct($product);
         $selling = $product->sellingPrice?->selling_price;
-        $price = is_string($selling) ? trim($selling) : '';
+        $price = $storePreorder?->price() ?? (is_string($selling) ? trim($selling) : '');
         if ($price === '') {
             throw new \InvalidArgumentException(sprintf('Product %s is missing selling price.', (string) $product->sku));
         }
@@ -79,7 +82,9 @@ final class ShopifyProductCreateFromErpService
             $variant['barcode'] = $barcode;
         }
 
-        if ($includeInventory && $locationGid !== '') {
+        if ($storePreorder !== null && $includeInventory) {
+            $storePreorder->applyInventory($variant, $locationGid);
+        } elseif ($includeInventory && $locationGid !== '') {
             $variant['inventoryItem'] = ['tracked' => true];
             $variant['inventoryQuantities'] = [
                 [
@@ -97,11 +102,14 @@ final class ShopifyProductCreateFromErpService
         }
 
         $productSet = [
-            'title' => (string) $product->description,
-            'descriptionHtml' => $this->contentExport->bodyHtmlForProduct($product),
+            'title' => $storePreorder?->shopifyTitle((string) $product->description)
+                ?? (string) $product->description,
+            'descriptionHtml' => ($storePreorder?->descriptionPrefixHtml() ?? '').$this->contentExport->bodyHtmlForProduct($product),
             'handle' => $handle,
-            'productType' => trim((string) ($product->type ?? '')),
-            'tags' => $this->exports->shopifyTagsListForProduct($product),
+            'productType' => $storePreorder !== null ? 'Pre-order' : trim((string) ($product->type ?? '')),
+            'tags' => $storePreorder !== null
+                ? [StorefrontTag::STORE_PREORDER]
+                : $this->exports->shopifyTagsListForProduct($product),
             'status' => $this->exports->shopifyStatusEnumForProduct($product),
             'productOptions' => [
                 [

@@ -4,6 +4,9 @@ const {
     buildVerificationStatus,
     summarizeReport,
     parseMoqFromBlockText,
+    parseCartonSize,
+    parseInStockPieceTotal,
+    inStockQuantityPlan,
     parseCartRowQty,
     isCartSnapshotCredible,
     buildExtraCartLines,
@@ -20,6 +23,63 @@ const {
     cartLineTargetInStockQty,
     isRestockCartRequestedQty,
 } = require('../src/plamod-restock-cart');
+
+test('inStockQuantityPlan never uses cartons — requested qty is always loose pieces', () => {
+    assert.deepEqual(inStockQuantityPlan(2, 20), { packQty: 0, pieceQty: 2, pieceTotal: 2 });
+    assert.deepEqual(inStockQuantityPlan(41, 20), { packQty: 0, pieceQty: 41, pieceTotal: 41 });
+    assert.deepEqual(inStockQuantityPlan(2, 1), { packQty: 0, pieceQty: 2, pieceTotal: 2 });
+    assert.deepEqual(inStockQuantityPlan(2, 72), { packQty: 0, pieceQty: 2, pieceTotal: 2 });
+});
+
+test('parseCartonSize reads the carton size label', () => {
+    assert.equal(parseCartonSize('CARTON: 20 MOQ: 1'), 20);
+    assert.equal(parseCartonSize('MOQ: 1 TOTAL 2'), 0);
+});
+
+test('parseInStockPieceTotal reads piece TOTAL, never money TOTAL or carton combo', () => {
+    assert.equal(
+        parseInStockPieceTotal(
+            'IN-STOCK CARTON: 72 PACK: 1 MOQ: 1 2 1 145 TOTAL PRICE: $8.33 TOTAL: $1,207.85',
+        ),
+        145,
+    );
+    assert.equal(
+        parseInStockPieceTotal(
+            'IN-STOCK CARTON: 20 MOQ: 1 2 1 41 TOTAL PRICE: $15.47 TOTAL: $634.27',
+        ),
+        41,
+    );
+    assert.equal(parseInStockPieceTotal('IN-STOCK MOQ: 1 TOTAL010 PRICE'), 10);
+});
+
+test('parseCartRowQty counts carton SKUs as pieces, not pack clicks', () => {
+    assert.equal(
+        parseCartRowQty(
+            'IN-STOCK CARTON: 20 MOQ: 1 2 1 41 TOTAL PRICE: $15.47 TOTAL: $634.27',
+            '2',
+            ['2'],
+            ['41'],
+        ),
+        41,
+    );
+    assert.equal(
+        parseCartRowQty('IN-STOCK CARTON: 20 PACK: 2 MOQ: 1 40 TOTAL PRICE', '2', ['2'], []),
+        40,
+    );
+    assert.equal(
+        parseCartRowQty(
+            'IN-STOCK CARTON: 72 PACK: 1 MOQ: 1 2 1 145 TOTAL PRICE: $8.33 TOTAL: $1,207.85',
+            '2',
+            ['2'],
+            ['145'],
+        ),
+        145,
+    );
+    assert.equal(
+        parseCartRowQty('IN-STOCK CARTON: 72 PACK: 2 MOQ: 1', '2', ['2'], []),
+        144,
+    );
+});
 
 test('parseCartRowQty prefers TOTAL over combobox', () => {
     assert.equal(parseCartRowQty('IN-STOCK MOQ: 1 TOTAL010 PRICE', '10'), 10);

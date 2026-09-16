@@ -13,8 +13,12 @@ use App\Services\Products\PlamodAssetFilenameService;
 use App\Services\Products\ProductExportService;
 use App\Services\Products\ShopifyContentExportService;
 use App\Services\Shopify\Admin\GraphQl\ShopifyAdminGraphQlMutations;
+use App\Services\Storefront\ModelKitStorefrontIndexPokeService;
+use App\Services\StorePreorders\StorePreorderShopifyPushOverride;
 use App\Support\Products\ProductHoldQty;
+use App\Support\Shopify\ShopifyProductCatalogMetafields;
 use App\Support\Shopify\ShopifyProductTaxonomyMetafields;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 final class ShopifyProductUpsertFromErpService
@@ -33,6 +37,8 @@ final class ShopifyProductUpsertFromErpService
         private readonly ShopifyProductMediaProcessingWaiter $mediaWaiter,
         private readonly ShopifyProductPushTagsResolver $pushTags,
         private readonly ShopifyProductMirrorRefreshService $mirrorRefresh,
+        private readonly ShopifyProductCatalogMetafields $catalogMetafields,
+        private readonly ModelKitStorefrontIndexPokeService $indexPoke,
     ) {}
 
     /**
@@ -71,12 +77,19 @@ final class ShopifyProductUpsertFromErpService
         }
 
         $isUpdate = $mirror !== null && $this->mirrorBySku->isUpsertableMirror($mirror);
+        $forgotStaleMirror = false;
 
-        if ($isUpdate) {
-            return $this->upsertExisting($product, $tunnelBaseUrl, $locationGid, $mirror, $options);
+        if ($isUpdate && $mirror !== null) {
+            $updated = $this->tryUpsertExisting($product, $tunnelBaseUrl, $locationGid, $mirror, $options);
+            if ($updated !== null) {
+                $this->indexPoke->pokeForProduct($product);
+
+                return $updated;
+            }
+            $forgotStaleMirror = true;
         }
 
-        if ($storedHandle !== '') {
+        if ($storedHandle !== '' && ! $forgotStaleMirror) {
             throw new \InvalidArgumentException(sprintf(
                 'Product %s has handle %s but no Shopify mirror (ACTIVE/DRAFT). Run product sync or pull handles first.',
                 (string) $product->sku,
@@ -84,7 +97,10 @@ final class ShopifyProductUpsertFromErpService
             ));
         }
 
-        return $this->upsertCreate($product, $tunnelBaseUrl, $locationGid, $usedHandles, $options);
+        $created = $this->upsertCreate($product, $tunnelBaseUrl, $locationGid, $usedHandles, $options);
+        $this->indexPoke->pokeForProduct($product);
+
+        return $created;
     }
 
     /**
@@ -101,8 +117,54 @@ final class ShopifyProductUpsertFromErpService
      *   shopify_gid: string,
      *   handle: string,
      *   action: 'updated'
-     * }
+     * }|null
      */
+    private function tryUpsertExisting(
+        Product $product,
+        ?string $tunnelBaseUrl,
+        string $locationGid,
+        array $mirror,
+        ShopifyProductPushOptionsDTO $options,
+    ): ?array {
+        try {
+            return $this->upsertExisting($product, $tunnelBaseUrl, $locationGid, $mirror, $options);
+        } catch (ShopifyGraphQlException $exception) {
+            if (! str_contains($exception->getMessage(), 'Product does not exist')) {
+                throw $exception;
+            }
+            $this->forgetStaleMirror($mirror);
+
+            return null;
+        }
+    }
+
+    /**
+     * @param  array{
+     *   product_gid: string,
+     *   variant_gid: string,
+     *   inventory_item_gid: string|null,
+     *   shopify_handle: string|null,
+     *   shopify_status: string|null
+     * }  $mirror
+     */
+    private function forgetStaleMirror(array $mirror): void
+    {
+        $productGid = trim((string) ($mirror['product_gid'] ?? ''));
+        $variantGid = trim((string) ($mirror['variant_gid'] ?? ''));
+        $itemGid = trim((string) ($mirror['inventory_item_gid'] ?? ''));
+        if ($variantGid !== '') {
+            DB::table('shopify_product_variants')->where('gid', $variantGid)->delete();
+        }
+        if ($itemGid !== '') {
+            DB::table('shopify_inventory_levels')->where('inventory_item_gid', $itemGid)->delete();
+            DB::table('shopify_inventory_items')->where('gid', $itemGid)->delete();
+        }
+        if ($productGid !== '') {
+            DB::table('shopify_product_variants')->where('product_gid', $productGid)->delete();
+            DB::table('shopify_products')->where('gid', $productGid)->delete();
+        }
+    }
+
     private function upsertExisting(
         Product $product,
         ?string $tunnelBaseUrl,
@@ -282,8 +344,10 @@ final class ShopifyProductUpsertFromErpService
             ],
         ];
 
+        $storePreorder = StorePreorderShopifyPushOverride::forProduct($product);
+
         if ($options->price || ! $isUpdate) {
-            $variant['price'] = $this->requireSellingPrice($product);
+            $variant['price'] = $storePreorder?->price() ?? $this->requireSellingPrice($product);
         }
 
         if ($options->info || ! $isUpdate) {
@@ -294,7 +358,9 @@ final class ShopifyProductUpsertFromErpService
             }
         }
 
-        if ($options->quantities && $locationGid !== '') {
+        if ($storePreorder !== null && $options->quantities) {
+            $storePreorder->applyInventory($variant, $locationGid);
+        } elseif ($options->quantities && $locationGid !== '') {
             $variant['inventoryItem'] = ['tracked' => true];
             $variant['inventoryQuantities'] = [
                 [
@@ -316,32 +382,45 @@ final class ShopifyProductUpsertFromErpService
             'productOptions' => $this->defaultProductOptions(),
         ];
 
+        $shopifyTitle = $storePreorder?->shopifyTitle((string) $product->description)
+            ?? (string) $product->description;
+
         if (! $isUpdate) {
             $productSet['handle'] = $handle;
-            $productSet['title'] = (string) $product->description;
+            $productSet['title'] = $shopifyTitle;
         }
 
         if ($options->info || ! $isUpdate) {
-            $productSet['title'] = (string) $product->description;
-            $productSet['descriptionHtml'] = $this->contentExport->bodyHtmlForProduct($product);
-            $productType = trim((string) ($product->type ?? ''));
+            $productSet['title'] = $shopifyTitle;
+            $prefix = $storePreorder?->descriptionPrefixHtml() ?? '';
+            $productSet['descriptionHtml'] = $prefix.$this->contentExport->bodyHtmlForProduct($product);
+            $productType = $storePreorder !== null
+                ? 'Pre-order'
+                : trim((string) ($product->type ?? ''));
             if ($productType !== '') {
                 $productSet['productType'] = $productType;
             }
         }
 
-        $pushTags = $this->pushTags->tagsForProductSet(
-            $product,
-            $existingProductGid,
-            $isUpdate,
-            $options->info,
-        );
-        if ($pushTags !== null) {
-            $productSet['tags'] = $pushTags;
+        if ($options->info || ! $isUpdate) {
+            $pushTags = $this->pushTags->tagsForProductSet(
+                $product,
+                $existingProductGid,
+                $isUpdate,
+                $options->info,
+            );
+            if ($pushTags !== null) {
+                $productSet['tags'] = $pushTags;
+            }
         }
 
         if ($options->info || ! $isUpdate) {
             $metafields = ShopifyProductTaxonomyMetafields::forProductSet($product);
+            $metafields = [...$metafields, ...$this->catalogMetafields->forProductSet($product)];
+            $offerMetafields = StorePreorderShopifyPushOverride::forAnyProduct($product);
+            if ($offerMetafields !== null) {
+                $metafields = [...$metafields, ...$offerMetafields->metafields()];
+            }
             if ($metafields !== []) {
                 $productSet['metafields'] = $metafields;
             }

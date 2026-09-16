@@ -11,11 +11,11 @@ final class MarkerProductResolver
     public function belongsToMarkersDepartment(Product $product): bool
     {
         $sku = strtoupper(trim((string) $product->sku));
-        if ($this->isExcludedFromMarkers($sku)) {
+        $type = strtoupper(trim((string) ($product->type ?? '')));
+        $description = strtolower(trim((string) $product->description));
+        if ($this->isExcludedFromMarkers($sku, $type, $description)) {
             return false;
         }
-
-        $type = strtoupper(trim((string) ($product->type ?? '')));
 
         return $type === 'MARKERS'
             || preg_match('/^(?:MK|MKF|MKM|DMM|MA)-/', $sku) === 1
@@ -119,13 +119,21 @@ final class MarkerProductResolver
         return null;
     }
 
-    private function isExcludedFromMarkers(string $sku): bool
+    private function isExcludedFromMarkers(string $sku, string $type, string $description): bool
     {
         if (str_starts_with($sku, 'E2E-')) {
             return true;
         }
 
-        return $sku === 'MS-58';
+        if ($sku === 'MS-58') {
+            return true;
+        }
+
+        if ($type === 'PANEL LINER' || str_contains($description, 'panel liner')) {
+            return true;
+        }
+
+        return preg_match('/^MP-(?:1\d|2\d)/', $sku) === 1;
     }
 
     private function isMetallicMarker(string $sku, string $description): bool
@@ -134,7 +142,7 @@ final class MarkerProductResolver
             return true;
         }
 
-        if (preg_match('/^DMM-(?:2\d|3[01])$/', $sku) === 1) {
+        if (preg_match('/^DMM-\d+$/', $sku) === 1) {
             return true;
         }
 

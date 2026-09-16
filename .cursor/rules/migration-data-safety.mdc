@@ -1,0 +1,64 @@
+---
+description: Migration and schema-change data safety — never drop live data without verification
+globs:
+  - "database/migrations/**"
+alwaysApply: false
+---
+
+# Migration data safety
+
+Applies to every migration and schema change. Complements `dal.mdc` (reversible migrations), `database-backup-operations.mdc` (backup before migrate), and `operator-expectations.mdc` (autonomous migrate with backup as undo).
+
+## Root failure mode (Special Orders incident)
+
+A rename migration saw **both** `custom_asia_orders` (data) and an empty `special_orders` (duplicate create migration) and **dropped the legacy table without copying**. Recovery required MySQL binlog replay.
+
+## Never DROP without row-count proof
+
+Before `Schema::drop($table)` on a table that may hold production data:
+
+1. Count rows in the source table and any replacement/target table.
+2. If the target exists and is **empty** while the source **has rows** → **copy or rename first**, never drop-only.
+3. If source row count **>** target row count → **throw** with counts in the message; do not drop.
+4. Prefer `Schema::rename()` when only the table name changes.
+
+```php
+// Forbidden pattern when both tables may exist
+if (Schema::hasTable('legacy') && Schema::hasTable('new')) {
+    Schema::drop('legacy'); // NEVER without copy + count check
+    return;
+}
+```
+
+## No duplicate create migrations
+
+- Do **not** add a new `create_*` migration for a table that already exists under another name in the same release.
+- Before deploy, scan batches for two migrations that create the same final table name.
+- Empty shadow tables cause “drop legacy because target exists” data-loss paths.
+
+## Before migrate on production-like databases
+
+User’s lean setup uses local Docker MySQL as prod. See **`operator-expectations.mdc`** — agents run migrate **autonomously** after backup; restore is the undo.
+
+1. Run `php artisan db:backup --yes --description="Pre-migrate {migration or batch}" --created-by=system`.
+2. Record backup **filename + UUID** (for rollback in handoff).
+3. Run `php artisan migrate --pretend` and review emitted SQL (flag unexpected DROP/TRUNCATE).
+4. Run `php artisan migrate`.
+5. Smoke-check affected data; if broken, **restore** from step 1 backup before retrying.
+
+`migrate:fresh` / `db:wipe`: require the same fresh backup; use only when the task explicitly needs an empty schema — never as casual debugging.
+
+Ad-hoc `Schema::drop` in tinker on prod-like DB: forbidden.
+
+## Rename migrations checklist
+
+- [ ] Single path: only legacy **or** only target exists → rename or create as appropriate.
+- [ ] Both exist → copy if target empty; throw if counts disagree; only then drop legacy.
+- [ ] `down()` reverses rename/copy safely where feasible.
+- [ ] Index/FK renames updated after table rename.
+
+## Agent review gate
+
+When editing migrations, flag every `Schema::drop`, `dropIfExists`, and `DB::statement('DROP …')`. Require copy/rename alternative or documented empty-table proof (e.g. brand-new table never deployed).
+
+See `scripts/recover-special-orders-binlog-replay.sh` and `docs/requirements/maintenance-db-backups.md` for recovery and backup context.

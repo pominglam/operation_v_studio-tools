@@ -37,6 +37,11 @@ final class ProductInfoQueryService
                 return false;
             }
 
+            // Keep an explicit Manual / source=other override even when the body is blank.
+            if (strtolower(trim((string) $c->source)) === 'other') {
+                return true;
+            }
+
             $url = is_string($c->source_url) ? trim($c->source_url) : '';
             if ($url !== '') {
                 return true;

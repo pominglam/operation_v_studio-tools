@@ -17,4 +17,11 @@ interface DatabaseBackupRepository
      * @return Collection<int, DatabaseBackup>
      */
     public function listRecent(int $limit = 100): Collection;
+
+    /**
+     * @return Collection<int, DatabaseBackup>
+     */
+    public function listAllOrderedByNewest(): Collection;
+
+    public function deleteByUuid(string $uuid): void;
 }

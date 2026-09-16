@@ -14,8 +14,11 @@ final class PlamodInstockCsvImportService
     /**
      * @return array{rows_parsed: int, rows_upserted: int, rows_skipped: int}
      */
-    public function importFromStoragePath(string $csvStoragePath, int $syncLogId): array
-    {
+    public function importFromStoragePath(
+        string $csvStoragePath,
+        int $syncLogId,
+        bool $replaceMissing = true,
+    ): array {
         $disk = Storage::disk('local');
         if (! $disk->exists($csvStoragePath)) {
             throw new \InvalidArgumentException("CSV not found at {$csvStoragePath}");
@@ -39,7 +42,7 @@ final class PlamodInstockCsvImportService
             $skipped = 0;
             $baseUrl = rtrim((string) config('services.plamod.base_url', 'https://plamod.com'), '/');
 
-            DB::transaction(function () use ($handle, $map, $now, $syncLogId, $baseUrl, &$seenSkus, &$parsed, &$skipped): void {
+            DB::transaction(function () use ($handle, $map, $now, $syncLogId, $baseUrl, $replaceMissing, &$seenSkus, &$parsed, &$skipped): void {
                 while (($row = fgetcsv($handle, escape: '\\')) !== false) {
                     if (! is_array($row) || $this->rowIsEmpty($row)) {
                         continue;
@@ -57,23 +60,26 @@ final class PlamodInstockCsvImportService
                     $releaseRaw = $this->cell($row, $map, 'Release Date');
                     $releaseDate = $this->parseReleaseDate($releaseRaw);
 
-                    PlamodInstockItem::query()->updateOrCreate(['sku' => $sku], [
-                        'barcode' => $this->nullableCell($row, $map, 'Barcode'),
-                        'product_name' => $this->cell($row, $map, 'Product Name') ?: $sku,
-                        'series' => $this->nullableCell($row, $map, 'Series'),
-                        'release_date' => $releaseDate,
-                        'release_date_label' => $releaseRaw !== '' ? $releaseRaw : null,
-                        'manufacturer' => $this->nullableCell($row, $map, 'Manufacturer'),
-                        'category' => $this->nullableCell($row, $map, 'Category'),
-                        'price_stock' => $this->parseMoney($this->cell($row, $map, 'Price Stock')),
-                        'source_image_url' => $this->nullableCell($row, $map, 'Image URL'),
-                        'plamod_pdp_url' => "{$baseUrl}/retailer/products/{$sku}",
-                        'last_seen_at' => $now,
-                        'sync_log_id' => $syncLogId,
-                    ]);
+                    PlamodInstockItem::query()->updateOrCreate(
+                        ['sku' => $sku],
+                        $this->overlayExistingListingFields($sku, [
+                            'barcode' => $this->nullableCell($row, $map, 'Barcode'),
+                            'product_name' => $this->cell($row, $map, 'Product Name') ?: $sku,
+                            'series' => $this->nullableCell($row, $map, 'Series'),
+                            'release_date' => $releaseDate,
+                            'release_date_label' => $releaseRaw !== '' ? $releaseRaw : null,
+                            'manufacturer' => $this->nullableCell($row, $map, 'Manufacturer'),
+                            'category' => $this->nullableCell($row, $map, 'Category'),
+                            'price_stock' => $this->parseMoney($this->cell($row, $map, 'Price Stock')),
+                            'source_image_url' => $this->nullableCell($row, $map, 'Image URL'),
+                            'plamod_pdp_url' => "{$baseUrl}/retailer/products/{$sku}",
+                            'last_seen_at' => $now,
+                            'sync_log_id' => $syncLogId,
+                        ]),
+                    );
                 }
 
-                if ($seenSkus !== []) {
+                if ($replaceMissing && $seenSkus !== []) {
                     PlamodInstockItem::query()
                         ->whereNotIn('sku', $seenSkus)
                         ->delete();
@@ -177,5 +183,38 @@ final class PlamodInstockCsvImportService
         }
 
         return number_format((float) $value, 2, '.', '');
+    }
+
+    /**
+     * @param  array<string, mixed>  $incoming
+     * @return array<string, mixed>
+     */
+    private function overlayExistingListingFields(string $sku, array $incoming): array
+    {
+        $existing = PlamodInstockItem::query()->where('sku', $sku)->first();
+        if ($existing === null) {
+            return $incoming;
+        }
+
+        $incomingName = trim((string) ($incoming['product_name'] ?? ''));
+        $existingName = trim((string) $existing->product_name);
+        if ($this->nameMissingOrSku($incomingName, $sku) && ! $this->nameMissingOrSku($existingName, $sku)) {
+            $incoming['product_name'] = $existingName;
+        }
+
+        foreach (['source_image_url', 'series', 'category', 'barcode'] as $column) {
+            $incomingValue = trim((string) ($incoming[$column] ?? ''));
+            $existingValue = trim((string) ($existing->{$column} ?? ''));
+            if ($incomingValue === '' && $existingValue !== '') {
+                $incoming[$column] = $existingValue;
+            }
+        }
+
+        return $incoming;
+    }
+
+    private function nameMissingOrSku(string $name, string $sku): bool
+    {
+        return $name === '' || strcasecmp($name, $sku) === 0;
     }
 }

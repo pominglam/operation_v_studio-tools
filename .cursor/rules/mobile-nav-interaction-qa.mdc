@@ -1,0 +1,12 @@
+---
+description: MANDATORY click-through QA for mobile ovs-mobile-nav on AI Dev theme only
+alwaysApply: true
+---
+
+# Mobile nav — test every interaction in browser
+
+See **`ovs-shopify-theme/.cursor/rules/mobile-nav-interaction-qa.mdc`** for the full matrix.
+
+Storefront mobile mega menu work defaults to **live Rise** (`operationvstudio.com`, no `preview_theme_id`) unless the operator asks for dest / AI Dev.
+
+Every drill-down row, back, accordion, and close control must be clicked in a real browser before handoff.

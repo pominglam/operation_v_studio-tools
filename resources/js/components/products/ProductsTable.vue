@@ -11,6 +11,15 @@ import BulkPushShopifyDialog, {
 } from './BulkPushShopifyDialog.vue';
 import { formatMoney2 } from '../../lib/money';
 import { parseNonNegativeIntOrNull } from '../../lib/numbers';
+import {
+    defaultProductsTableVisibleColumns,
+    isProductsTableColumnVisible,
+    productsTableTaxonomyVisible,
+    setProductsTableTaxonomyVisible,
+    toggleProductsTableColumn,
+    type ProductsTableColumnKey,
+} from '../../lib/productsTableColumns';
+import ProductsColumnPicker from './ProductsColumnPicker.vue';
 
 const FILTER_EMPTY_MAIN_TYPE_TOKEN = '__empty__';
 
@@ -36,10 +45,12 @@ export type ProductRow = {
     vendor: string | null;
     archived_at?: string | null;
     is_archived?: boolean;
+    store_preorder_status?: 'open' | 'closed' | null;
     published_on_shopify?: boolean;
     is_ready?: boolean;
     latest_arrival?: boolean;
     is_critical?: boolean;
+    is_urgent?: boolean;
     is_discontinued?: boolean;
     is_hazardous_shipment?: boolean;
     shipment_method?: 'air' | 'sea' | null;
@@ -52,6 +63,7 @@ export type ProductRow = {
         has_description: boolean;
         plamod_image_count: number;
     };
+    thumbnail_url?: string | null;
     total_ordered?: number | null;
     shopify_orders_count?: number | null;
     available: number | null;
@@ -76,6 +88,10 @@ function isMissingPdpDescription(p: ProductRow): boolean {
 
 function isMissingPdpImages(p: ProductRow): boolean {
     return (p.pdp?.plamod_image_count ?? 0) <= 0;
+}
+
+function isMissingMaintainQty(p: ProductRow): boolean {
+    return p.maintain === null;
 }
 
 export type UpdateProductPayload = {
@@ -117,6 +133,7 @@ export type BulkUpdateProductChanges = {
     published_on_shopify?: boolean;
     latest_arrival?: boolean;
     is_critical?: boolean;
+    is_urgent?: boolean;
     is_discontinued?: boolean;
     is_hazardous_shipment?: boolean;
     shipment_method?: 'air' | 'sea' | null;
@@ -149,7 +166,8 @@ export type ProductSortKey =
     | 'demand'
     | 'maintain'
     | 'not_arrived'
-    | 'reorder';
+    | 'reorder'
+    | 'is_urgent';
 
 const props = defineProps<{
     loading: boolean;
@@ -172,6 +190,7 @@ const props = defineProps<{
     ) => Promise<void>;
     onCreateDraftPurchaseOrder?: (ids: string[]) => Promise<{
         purchase_order_uuid: string;
+        vendor: string;
         added: number;
         skipped_existing: number;
         skipped_vendor_mismatch: number;
@@ -183,6 +202,7 @@ const props = defineProps<{
     onToggleReady: (id: string, isReady: boolean) => Promise<void>;
     onToggleLatestArrival: (id: string, latestArrival: boolean) => Promise<void>;
     onToggleCritical: (id: string, isCritical: boolean) => Promise<void>;
+    onToggleUrgent: (id: string, isUrgent: boolean) => Promise<void>;
     onToggleDiscontinue: (id: string, isDiscontinued: boolean) => Promise<void>;
     onToggleHazardousShipment: (id: string, isHazardousShipment: boolean) => Promise<void>;
     onUpdateShipmentMethod: (id: string, shipmentMethod: 'air' | 'sea' | null) => Promise<void>;
@@ -201,6 +221,30 @@ const props = defineProps<{
     scaleOptions?: string[];
     seriesOptions?: string[];
 }>();
+
+const visibleColumns = defineModel<ProductsTableColumnKey[]>('visibleColumns', {
+    default: () => defaultProductsTableVisibleColumns(),
+});
+
+function isCol(key: ProductsTableColumnKey): boolean {
+    return isProductsTableColumnVisible(visibleColumns.value, key);
+}
+
+const showCost = computed(() => isCol('cost'));
+const showClassificationColumns = computed(() =>
+    productsTableTaxonomyVisible(visibleColumns.value),
+);
+
+function toggleCostVisibility(): void {
+    visibleColumns.value = toggleProductsTableColumn(visibleColumns.value, 'cost');
+}
+
+function toggleTaxonomyVisibility(): void {
+    visibleColumns.value = setProductsTableTaxonomyVisible(
+        visibleColumns.value,
+        !showClassificationColumns.value,
+    );
+}
 
 const vendorChoices = computed<string[]>(() => {
     const base = (props.vendorOptions ?? []).map((v) => v.trim()).filter((v) => v !== '');
@@ -282,8 +326,9 @@ const bulkArchiving = ref(false);
 const bulkUpdating = ref(false);
 const bulkExporting = ref(false);
 const creatingDraftPo = ref(false);
-const showCost = ref(false);
-const showClassificationColumns = ref(true);
+const missingMaintainCount = computed<number>(
+    () => props.products.filter((row) => isMissingMaintainQty(row)).length,
+);
 const bulkMessage = ref<string | null>(null);
 const bulkError = ref<string | null>(null);
 const confirmBulkDeleteOpen = ref(false);
@@ -303,6 +348,7 @@ const rowError = ref<string | null>(null);
 const togglingReady = ref<Record<string, true>>({});
 const togglingLatestArrival = ref<Record<string, true>>({});
 const togglingCritical = ref<Record<string, true>>({});
+const togglingUrgent = ref<Record<string, true>>({});
 const togglingDiscontinue = ref<Record<string, true>>({});
 const togglingHazardousShipment = ref<Record<string, true>>({});
 const updatingShipmentMethod = ref<Record<string, true>>({});
@@ -456,6 +502,10 @@ function isTogglingCritical(id: string): boolean {
     return togglingCritical.value[id] === true;
 }
 
+function isTogglingUrgent(id: string): boolean {
+    return togglingUrgent.value[id] === true;
+}
+
 function isTogglingDiscontinue(id: string): boolean {
     return togglingDiscontinue.value[id] === true;
 }
@@ -504,6 +554,19 @@ async function toggleCritical(id: string, isCritical: boolean): Promise<void> {
     } finally {
         const { [id]: _omit, ...rest } = togglingCritical.value;
         togglingCritical.value = rest;
+    }
+}
+
+async function toggleUrgent(id: string, isUrgent: boolean): Promise<void> {
+    if (isTogglingUrgent(id)) return;
+    togglingUrgent.value = { ...togglingUrgent.value, [id]: true };
+    try {
+        await props.onToggleUrgent(id, isUrgent);
+    } catch (e: unknown) {
+        rowError.value = formatBulkError(e, 'Failed to update urgent product flag.');
+    } finally {
+        const { [id]: _omit, ...rest } = togglingUrgent.value;
+        togglingUrgent.value = rest;
     }
 }
 
@@ -656,10 +719,24 @@ const allOnPageSelected = computed(
     () => props.products.length > 0 && props.products.every((p) => selected.value.has(p.id)),
 );
 
-const emptyRowColspan = computed(() => {
-    const total = showCost.value ? 25 : 24;
-    return showClassificationColumns.value ? total : total - 7;
-});
+const emptyRowColspan = computed(() => 3 + visibleColumns.value.length);
+
+const failedThumbnailIds = ref<Set<string>>(new Set());
+
+function thumbnailUrl(p: ProductRow): string | null {
+    const url = p.thumbnail_url?.trim() ?? '';
+    if (url === '' || failedThumbnailIds.value.has(p.id)) {
+        return null;
+    }
+
+    return url;
+}
+
+function markThumbnailFailed(id: string): void {
+    const next = new Set(failedThumbnailIds.value);
+    next.add(id);
+    failedThumbnailIds.value = next;
+}
 
 function totalSold(p: ProductRow): number {
     return Number(p.total_ordered ?? 0) - Number(p.available ?? 0);
@@ -711,6 +788,7 @@ function sortLabel(key: ProductSortKey): string {
         maintain: 'Maintain',
         not_arrived: 'Not arrived',
         reorder: 'Reorder',
+        is_urgent: 'Urgent',
     };
     return map[key];
 }
@@ -1077,7 +1155,7 @@ async function createDraftPurchaseOrder(): Promise<void> {
         }
         const out = await props.onCreateDraftPurchaseOrder(ids);
         bulkMessage.value =
-            `Draft PO created (${out.purchase_order_uuid.slice(0, 8)}). ` +
+            `Draft PO created as ${out.vendor} (${out.purchase_order_uuid.slice(0, 8)}). ` +
             `Added ${out.added}, skipped vendor mismatch: ${out.skipped_vendor_mismatch}.`;
         window.location.assign(`/purchase-orders/${out.purchase_order_uuid}`);
     } catch (e: unknown) {
@@ -1180,7 +1258,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div class="overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <div class="rounded-lg border border-slate-200 bg-white">
         <div class="relative">
             <div
                 v-if="loading"
@@ -1195,7 +1273,7 @@ onUnmounted(() => {
                 </span>
             </div>
 
-            <div class="overflow-x-auto" :class="loading ? 'opacity-60' : ''">
+            <div :class="loading ? 'opacity-60' : ''">
                 <div
                     v-if="selected.size > 0"
                     class="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm"
@@ -1300,7 +1378,7 @@ onUnmounted(() => {
                             class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
                             type="button"
                             data-testid="toggle-cost-visibility"
-                            @click="showCost = !showCost"
+                            @click="toggleCostVisibility"
                         >
                             {{ showCost ? 'Hide cost' : 'Show cost' }}
                         </button>
@@ -1308,10 +1386,11 @@ onUnmounted(() => {
                             class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
                             type="button"
                             data-testid="toggle-taxonomy-visibility"
-                            @click="showClassificationColumns = !showClassificationColumns"
+                            @click="toggleTaxonomyVisibility"
                         >
                             {{ showClassificationColumns ? 'Hide taxonomy' : 'Show taxonomy' }}
                         </button>
+                        <ProductsColumnPicker v-model:visible-columns="visibleColumns" />
                         <RouterLink
                             class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
                             to="/products/taxonomy"
@@ -1322,13 +1401,13 @@ onUnmounted(() => {
                 </div>
                 <div
                     v-else
-                    class="flex items-center justify-end border-b border-slate-200 bg-white px-4 py-2"
+                    class="flex flex-wrap items-center justify-end gap-2 border-b border-slate-200 bg-white px-4 py-2"
                 >
                     <button
                         class="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
                         type="button"
                         data-testid="toggle-cost-visibility"
-                        @click="showCost = !showCost"
+                        @click="toggleCostVisibility"
                     >
                         {{ showCost ? 'Hide cost' : 'Show cost' }}
                     </button>
@@ -1336,10 +1415,18 @@ onUnmounted(() => {
                         class="ml-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
                         type="button"
                         data-testid="toggle-taxonomy-visibility"
-                        @click="showClassificationColumns = !showClassificationColumns"
+                        @click="toggleTaxonomyVisibility"
                     >
                         {{ showClassificationColumns ? 'Hide taxonomy' : 'Show taxonomy' }}
                     </button>
+                    <ProductsColumnPicker class="ml-2" v-model:visible-columns="visibleColumns" />
+                    <span
+                        v-if="missingMaintainCount > 0"
+                        class="ml-2 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900"
+                        data-testid="products-missing-maintain-hint"
+                    >
+                        {{ missingMaintainCount }} without maintain — listed first
+                    </span>
                     <RouterLink
                         class="ml-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-slate-50"
                         to="/products/taxonomy"
@@ -1390,7 +1477,9 @@ onUnmounted(() => {
                 </div>
 
                 <table class="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead class="bg-slate-50">
+                    <thead
+                        class="sticky z-20 bg-slate-50 shadow-[0_1px_0_0_rgb(226_232_240)] [&_th]:bg-slate-50 top-[var(--app-nav-height,4.5rem)]"
+                    >
                         <tr class="text-left text-xs font-semibold tracking-wide text-slate-600">
                             <th class="w-12 px-4 py-3">
                                 <input
@@ -1401,17 +1490,29 @@ onUnmounted(() => {
                                     @change="toggleAll(($event.target as HTMLInputElement).checked)"
                                 />
                             </th>
+                            <th class="w-24 px-1.5 py-3" aria-hidden="true"></th>
                             <th class="px-4 py-3">
-                                <button
-                                    type="button"
-                                    class="hover:underline"
-                                    :class="sortHeaderClass('description')"
-                                    @click="onSortChange('description')"
-                                >
-                                    Product{{ sortIndicator('description') }}
-                                </button>
+                                <div class="flex flex-col items-start gap-0.5">
+                                    <button
+                                        type="button"
+                                        class="hover:underline"
+                                        :class="sortHeaderClass('description')"
+                                        @click="onSortChange('description')"
+                                    >
+                                        Product{{ sortIndicator('description') }}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="hover:underline"
+                                        :class="sortHeaderClass('is_urgent')"
+                                        data-testid="products-sort-urgent"
+                                        @click="onSortChange('is_urgent')"
+                                    >
+                                        Urgent{{ sortIndicator('is_urgent') }}
+                                    </button>
+                                </div>
                             </th>
-                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                            <th v-if="isCol('department')" class="px-4 py-3">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1421,7 +1522,7 @@ onUnmounted(() => {
                                     {{ sortLabel('department') }}{{ sortIndicator('department') }}
                                 </button>
                             </th>
-                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                            <th v-if="isCol('manufacturer')" class="px-4 py-3">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1432,7 +1533,7 @@ onUnmounted(() => {
                                     }}{{ sortIndicator('manufacturer') }}
                                 </button>
                             </th>
-                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                            <th v-if="isCol('franchise')" class="px-4 py-3">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1442,7 +1543,7 @@ onUnmounted(() => {
                                     {{ sortLabel('franchise') }}{{ sortIndicator('franchise') }}
                                 </button>
                             </th>
-                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                            <th v-if="isCol('product_line')" class="px-4 py-3">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1453,7 +1554,7 @@ onUnmounted(() => {
                                     }}{{ sortIndicator('product_line') }}
                                 </button>
                             </th>
-                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                            <th v-if="isCol('grade')" class="px-4 py-3">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1463,7 +1564,7 @@ onUnmounted(() => {
                                     {{ sortLabel('grade') }}{{ sortIndicator('grade') }}
                                 </button>
                             </th>
-                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                            <th v-if="isCol('scale')" class="px-4 py-3">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1473,7 +1574,7 @@ onUnmounted(() => {
                                     {{ sortLabel('scale') }}{{ sortIndicator('scale') }}
                                 </button>
                             </th>
-                            <th v-if="showClassificationColumns" class="px-4 py-3">
+                            <th v-if="isCol('series')" class="px-4 py-3">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1483,7 +1584,7 @@ onUnmounted(() => {
                                     {{ sortLabel('series') }}{{ sortIndicator('series') }}
                                 </button>
                             </th>
-                            <th class="px-4 py-3">
+                            <th v-if="isCol('vendor')" class="px-4 py-3">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1493,7 +1594,7 @@ onUnmounted(() => {
                                     {{ sortLabel('vendor') }}{{ sortIndicator('vendor') }}
                                 </button>
                             </th>
-                            <th class="px-4 py-3 whitespace-nowrap">
+                            <th v-if="isCol('received_date')" class="px-4 py-3 whitespace-nowrap">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1504,7 +1605,7 @@ onUnmounted(() => {
                                     }}{{ sortIndicator('received_date') }}
                                 </button>
                             </th>
-                            <th class="px-4 py-3 text-right">
+                            <th v-if="isCol('selling_price')" class="px-4 py-3 text-right">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1515,7 +1616,7 @@ onUnmounted(() => {
                                     }}{{ sortIndicator('selling_price') }}
                                 </button>
                             </th>
-                            <th v-if="showCost" class="px-4 py-3 text-right">
+                            <th v-if="isCol('cost')" class="px-4 py-3 text-right">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1526,7 +1627,7 @@ onUnmounted(() => {
                                     }}{{ sortIndicator('latest_landed_unit_cost') }}
                                 </button>
                             </th>
-                            <th class="px-4 py-3 text-right">
+                            <th v-if="isCol('total_ordered')" class="px-4 py-3 text-right">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1538,7 +1639,7 @@ onUnmounted(() => {
                                     }}{{ sortIndicator('total_ordered') }}
                                 </button>
                             </th>
-                            <th class="px-4 py-3 text-right">
+                            <th v-if="isCol('total_sold')" class="px-4 py-3 text-right">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1549,7 +1650,7 @@ onUnmounted(() => {
                                     {{ sortLabel('total_sold') }}{{ sortIndicator('total_sold') }}
                                 </button>
                             </th>
-                            <th class="px-4 py-3 text-right">
+                            <th v-if="isCol('available')" class="px-4 py-3 text-right">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1559,8 +1660,8 @@ onUnmounted(() => {
                                     {{ sortLabel('available') }}{{ sortIndicator('available') }}
                                 </button>
                             </th>
-                            <th class="px-4 py-3 text-right">Hold</th>
-                            <th class="min-w-[5.5rem] px-4 py-3 text-right">
+                            <th v-if="isCol('hold')" class="px-4 py-3 text-right">Hold</th>
+                            <th v-if="isCol('demand')" class="min-w-[5.5rem] px-4 py-3 text-right">
                                 <button
                                     type="button"
                                     class="whitespace-nowrap hover:underline"
@@ -1571,7 +1672,7 @@ onUnmounted(() => {
                                     {{ sortLabel('demand') }}{{ sortIndicator('demand') }}
                                 </button>
                             </th>
-                            <th class="px-4 py-3 text-right">
+                            <th v-if="isCol('maintain')" class="px-4 py-3 text-right">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1581,7 +1682,7 @@ onUnmounted(() => {
                                     {{ sortLabel('maintain') }}{{ sortIndicator('maintain') }}
                                 </button>
                             </th>
-                            <th class="px-4 py-3 text-right">
+                            <th v-if="isCol('not_arrived')" class="px-4 py-3 text-right">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1592,7 +1693,7 @@ onUnmounted(() => {
                                     {{ sortLabel('not_arrived') }}{{ sortIndicator('not_arrived') }}
                                 </button>
                             </th>
-                            <th class="px-4 py-3 text-right">
+                            <th v-if="isCol('reorder')" class="px-4 py-3 text-right">
                                 <button
                                     type="button"
                                     class="hover:underline"
@@ -1603,11 +1704,13 @@ onUnmounted(() => {
                                     {{ sortLabel('reorder') }}{{ sortIndicator('reorder') }}
                                 </button>
                             </th>
-                            <th class="px-4 py-3">Info</th>
-                            <th class="px-4 py-3">Ready</th>
-                            <th class="px-4 py-3">Latest arrival</th>
-                            <th class="px-4 py-3">Published on Shopify</th>
-                            <th class="px-4 py-3 text-right">Actions</th>
+                            <th v-if="isCol('info')" class="px-4 py-3">Info</th>
+                            <th v-if="isCol('ready')" class="px-4 py-3">Ready</th>
+                            <th v-if="isCol('latest_arrival')" class="px-4 py-3">Latest arrival</th>
+                            <th v-if="isCol('published')" class="px-4 py-3">
+                                Published on Shopify
+                            </th>
+                            <th v-if="isCol('actions')" class="px-4 py-3 text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
@@ -1621,9 +1724,16 @@ onUnmounted(() => {
                             v-for="p in products"
                             :key="p.id"
                             class="hover:bg-slate-50"
-                            :class="p.is_archived ? 'bg-slate-50/80' : ''"
+                            :class="
+                                isMissingMaintainQty(p)
+                                    ? 'bg-amber-50'
+                                    : p.is_archived
+                                      ? 'bg-slate-50/80'
+                                      : ''
+                            "
+                            :data-missing-maintain="isMissingMaintainQty(p) ? '1' : '0'"
                         >
-                            <td class="px-4 py-3">
+                            <td class="px-4 py-3 align-middle">
                                 <input
                                     class="h-4 w-4 rounded border-slate-300"
                                     type="checkbox"
@@ -1631,6 +1741,29 @@ onUnmounted(() => {
                                     @change="
                                         toggleOne(p.id, ($event.target as HTMLInputElement).checked)
                                     "
+                                />
+                            </td>
+                            <td class="w-24 px-1.5 py-1.5 align-middle">
+                                <button
+                                    v-if="thumbnailUrl(p) !== null"
+                                    type="button"
+                                    class="block h-24 w-24 shrink-0 overflow-hidden rounded-sm bg-slate-100"
+                                    :aria-label="`Open info for ${p.description || p.sku}`"
+                                    data-testid="products-row-thumb"
+                                    @click="props.onOpenPlamod(p.id)"
+                                >
+                                    <img
+                                        :src="thumbnailUrl(p) ?? ''"
+                                        :alt="p.description || p.sku"
+                                        class="h-full w-full object-contain object-center"
+                                        loading="lazy"
+                                        @error="markThumbnailFailed(p.id)"
+                                    />
+                                </button>
+                                <div
+                                    v-else
+                                    class="h-24 w-24 rounded-sm bg-slate-100"
+                                    aria-hidden="true"
                                 />
                             </td>
 
@@ -1692,6 +1825,20 @@ onUnmounted(() => {
                                         >
                                             {{ p.description }}
                                             <span
+                                                v-if="isMissingMaintainQty(p)"
+                                                class="ml-2 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800"
+                                                data-testid="product-missing-maintain-badge"
+                                            >
+                                                No maintain
+                                            </span>
+                                            <span
+                                                v-if="p.store_preorder_status === 'open'"
+                                                class="ml-2 inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800"
+                                                data-testid="product-store-preorder-badge"
+                                            >
+                                                Store preorder
+                                            </span>
+                                            <span
                                                 v-if="p.is_archived"
                                                 class="ml-2 inline-flex rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700"
                                                 data-testid="product-archived-badge"
@@ -1723,6 +1870,26 @@ onUnmounted(() => {
                                         </div>
                                     </div>
                                     <div class="mt-1.5 flex flex-wrap gap-x-4 gap-y-1" @click.stop>
+                                        <label
+                                            class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
+                                        >
+                                            <input
+                                                class="h-3.5 w-3.5 rounded border-slate-300"
+                                                type="checkbox"
+                                                :checked="p.is_urgent ?? false"
+                                                :disabled="
+                                                    editingId === p.id || isTogglingUrgent(p.id)
+                                                "
+                                                @change="
+                                                    toggleUrgent(
+                                                        p.id,
+                                                        ($event.target as HTMLInputElement).checked,
+                                                    )
+                                                "
+                                                data-testid="product-urgent-toggle"
+                                            />
+                                            <span class="select-none">Urgent</span>
+                                        </label>
                                         <label
                                             class="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600"
                                         >
@@ -1798,7 +1965,7 @@ onUnmounted(() => {
                                 </template>
                             </td>
 
-                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                            <td v-if="isCol('department')" class="px-4 py-3 text-slate-700">
                                 <template v-if="editingId === p.id">
                                     <select
                                         v-model="draft!.department"
@@ -1828,7 +1995,7 @@ onUnmounted(() => {
                                 </template>
                             </td>
 
-                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                            <td v-if="isCol('manufacturer')" class="px-4 py-3 text-slate-700">
                                 <template v-if="editingId === p.id">
                                     <select
                                         v-model="draft!.manufacturer"
@@ -1858,7 +2025,7 @@ onUnmounted(() => {
                                 </template>
                             </td>
 
-                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                            <td v-if="isCol('franchise')" class="px-4 py-3 text-slate-700">
                                 <template v-if="editingId === p.id">
                                     <select
                                         v-model="draft!.franchise"
@@ -1888,7 +2055,7 @@ onUnmounted(() => {
                                 </template>
                             </td>
 
-                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                            <td v-if="isCol('product_line')" class="px-4 py-3 text-slate-700">
                                 <template v-if="editingId === p.id">
                                     <select
                                         v-model="draft!.product_line"
@@ -1918,7 +2085,7 @@ onUnmounted(() => {
                                 </template>
                             </td>
 
-                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                            <td v-if="isCol('grade')" class="px-4 py-3 text-slate-700">
                                 <template v-if="editingId === p.id">
                                     <select
                                         v-model="draft!.grade"
@@ -1947,7 +2114,7 @@ onUnmounted(() => {
                                 </template>
                             </td>
 
-                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                            <td v-if="isCol('scale')" class="px-4 py-3 text-slate-700">
                                 <template v-if="editingId === p.id">
                                     <select
                                         v-model="draft!.scale"
@@ -1976,7 +2143,7 @@ onUnmounted(() => {
                                 </template>
                             </td>
 
-                            <td v-if="showClassificationColumns" class="px-4 py-3 text-slate-700">
+                            <td v-if="isCol('series')" class="px-4 py-3 text-slate-700">
                                 <template v-if="editingId === p.id">
                                     <select
                                         v-model="draft!.series"
@@ -2006,7 +2173,7 @@ onUnmounted(() => {
                                 </template>
                             </td>
 
-                            <td class="px-4 py-3 text-slate-700">
+                            <td v-if="isCol('vendor')" class="px-4 py-3 text-slate-700">
                                 <template v-if="editingId === p.id">
                                     <select
                                         v-model="draft!.vendor"
@@ -2031,16 +2198,22 @@ onUnmounted(() => {
                                 </template>
                             </td>
 
-                            <td class="px-4 py-3 whitespace-nowrap text-slate-700">
+                            <td
+                                v-if="isCol('received_date')"
+                                class="px-4 py-3 whitespace-nowrap text-slate-700"
+                            >
                                 {{ formatReceivedDate(p.received_date) }}
                             </td>
 
-                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                            <td
+                                v-if="isCol('selling_price')"
+                                class="px-4 py-3 text-right tabular-nums text-slate-700"
+                            >
                                 {{ p.selling_price ? formatMoney2(p.selling_price) : '—' }}
                             </td>
 
                             <td
-                                v-if="showCost"
+                                v-if="isCol('cost')"
                                 class="px-4 py-3 text-right tabular-nums text-slate-700"
                             >
                                 {{
@@ -2050,11 +2223,15 @@ onUnmounted(() => {
                                 }}
                             </td>
 
-                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                            <td
+                                v-if="isCol('total_ordered')"
+                                class="px-4 py-3 text-right tabular-nums text-slate-700"
+                            >
                                 {{ Math.max(0, Number(p.total_ordered ?? 0)) }}
                             </td>
 
                             <td
+                                v-if="isCol('total_sold')"
                                 class="px-4 py-3 text-right whitespace-nowrap tabular-nums text-slate-700"
                             >
                                 <span class="inline-flex items-center justify-end gap-1">
@@ -2075,7 +2252,10 @@ onUnmounted(() => {
                                 </span>
                             </td>
 
-                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                            <td
+                                v-if="isCol('available')"
+                                class="px-4 py-3 text-right tabular-nums text-slate-700"
+                            >
                                 <template v-if="editingId === p.id">
                                     <input
                                         v-model.number="draft!.available"
@@ -2109,7 +2289,10 @@ onUnmounted(() => {
                                 </template>
                             </td>
 
-                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                            <td
+                                v-if="isCol('hold')"
+                                class="px-4 py-3 text-right tabular-nums text-slate-700"
+                            >
                                 <input
                                     class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
                                     type="number"
@@ -2133,7 +2316,10 @@ onUnmounted(() => {
                                 />
                             </td>
 
-                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                            <td
+                                v-if="isCol('demand')"
+                                class="px-4 py-3 text-right tabular-nums text-slate-700"
+                            >
                                 <button
                                     v-if="props.onOpenDemand"
                                     type="button"
@@ -2146,7 +2332,10 @@ onUnmounted(() => {
                                 <span v-else>{{ Number(p.sold_4w ?? 0) }}</span>
                             </td>
 
-                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                            <td
+                                v-if="isCol('maintain')"
+                                class="px-4 py-3 text-right tabular-nums text-slate-700"
+                            >
                                 <template v-if="editingId === p.id">
                                     <input
                                         v-model.number="draft!.maintain"
@@ -2157,7 +2346,12 @@ onUnmounted(() => {
                                 </template>
                                 <template v-else>
                                     <input
-                                        class="w-20 rounded-md border border-slate-200 px-2 py-1 text-sm text-right"
+                                        class="w-20 rounded-md border px-2 py-1 text-right text-sm"
+                                        :class="
+                                            isMissingMaintainQty(p)
+                                                ? 'border-amber-300 bg-amber-50'
+                                                : 'border-slate-200'
+                                        "
                                         type="number"
                                         min="0"
                                         inputmode="numeric"
@@ -2180,11 +2374,15 @@ onUnmounted(() => {
                                 </template>
                             </td>
 
-                            <td class="px-4 py-3 text-right tabular-nums text-slate-700">
+                            <td
+                                v-if="isCol('not_arrived')"
+                                class="px-4 py-3 text-right tabular-nums text-slate-700"
+                            >
                                 {{ Math.max(0, Number(p.not_arrived ?? 0)) }}
                             </td>
 
                             <td
+                                v-if="isCol('reorder')"
                                 class="px-4 py-3 text-right tabular-nums font-semibold text-slate-900"
                             >
                                 <span :data-testid="`product-reorder-value:${p.id}`">
@@ -2192,7 +2390,7 @@ onUnmounted(() => {
                                 </span>
                             </td>
 
-                            <td class="px-4 py-3">
+                            <td v-if="isCol('info')" class="px-4 py-3">
                                 <button
                                     v-if="editingId !== p.id"
                                     class="flex cursor-pointer flex-wrap gap-1 rounded-md text-left transition hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
@@ -2279,7 +2477,7 @@ onUnmounted(() => {
                                 </div>
                             </td>
 
-                            <td class="px-4 py-3">
+                            <td v-if="isCol('ready')" class="px-4 py-3">
                                 <label
                                     class="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
                                 >
@@ -2302,7 +2500,7 @@ onUnmounted(() => {
                                 </label>
                             </td>
 
-                            <td class="px-4 py-3">
+                            <td v-if="isCol('latest_arrival')" class="px-4 py-3">
                                 <label
                                     class="inline-flex items-center gap-2 text-xs font-semibold text-slate-700"
                                 >
@@ -2327,7 +2525,7 @@ onUnmounted(() => {
                                 </label>
                             </td>
 
-                            <td class="px-4 py-3">
+                            <td v-if="isCol('published')" class="px-4 py-3">
                                 <span
                                     class="rounded-full border px-2 py-0.5 text-[11px] font-semibold"
                                     :class="
@@ -2340,7 +2538,7 @@ onUnmounted(() => {
                                 </span>
                             </td>
 
-                            <td class="px-4 py-3 text-right">
+                            <td v-if="isCol('actions')" class="px-4 py-3 text-right">
                                 <div class="flex justify-end">
                                     <button
                                         class="mr-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 transition hover:bg-slate-50"

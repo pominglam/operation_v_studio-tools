@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import ColumnHeaderHelp from '../components/ColumnHeaderHelp.vue';
+import PlamodInstockFailedFiltersCard from '../components/PlamodInstockFailedFiltersCard.vue';
 import PlamodRestockImageOverlay from '../components/PlamodRestockImageOverlay.vue';
 import PlamodRestockPreorderQtyCell from '../components/PlamodRestockPreorderQtyCell.vue';
 import { api } from '../lib/api';
@@ -13,12 +14,16 @@ import {
     calculatePlamodRestockSuggestedSummary,
     defaultPlamodRestockPageState,
     erpProductSearchUrl,
+    applySkuCheckboxChange,
+    applyPlamodRestockNewDecisions,
     filterPlamodRestockExistingRows,
     filterPlamodRestockNewRows,
     formatCostDeltaBadge,
     formatLineTotal,
     formatProductPrice,
     formatPlamodInstockSyncCompleteMessage,
+    parsePlamodInstockFailedFilters,
+    type PlamodInstockFailedFilter,
     formatPlamodRestockCartReportHeadline,
     formatPlamodRestockCartRetryConfirmMessage,
     formatPlamodRestockOrderVerifyHeadline,
@@ -33,10 +38,15 @@ import {
     NEW_STATUS_TOOLTIP,
     NOT_ARRIVED_TOOLTIP,
     PREORDER_COMMITTED_TOOLTIP,
+    mergePlamodRestockProposalSections,
+    paginatePlamodRestockRows,
     PLAMOD_RESTOCK_CART_DISMISSED_RUN_KEY,
     PLAMOD_RESTOCK_ORDER_VERIFY_DISMISSED_AT_KEY,
     PLAMOD_RESTOCK_ORDER_VERIFY_TIMEOUT_MS,
+    PLAMOD_RESTOCK_NEW_PAGE_SIZE,
     PLAMOD_RESTOCK_PAGE_STATE_KEY,
+    PLAMOD_RESTOCK_SYNC_QUEUE_TIMEOUT_MS,
+    plamodRestockRequestErrorMessage,
     plamodRestockCartVerificationLabel,
     RECENT_RELEASE_TOOLTIP,
     REORDER_OVERRIDE_TOOLTIP,
@@ -46,6 +56,8 @@ import {
     SUGGESTED_REORDER_TOOLTIP,
     uniquePlamodRestockExistingTypes,
     uniquePlamodRestockSeries,
+    hasPlamodRestockRowsWithoutSeries,
+    PLAMOD_RESTOCK_SERIES_NONE,
     type PlamodRestockExistingSortKey,
     type PlamodRestockNewRow,
     type PlamodRestockNewSortKey,
@@ -53,8 +65,10 @@ import {
     type PlamodRestockProposal,
     type PlamodRestockCartReport,
     type PlamodRestockCartReportLine,
+    type PlamodRestockDecisionPayload,
     type PlamodRestockOrderVerifyStatus,
 } from '../lib/plamodRestock';
+import PaginationControls from '../components/ui/PaginationControls.vue';
 
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -93,6 +107,7 @@ const reorderSavingSku = ref<string | null>(null);
 const maintainDrafts = ref<Record<string, string>>({});
 const maintainSavingUuid = ref<string | null>(null);
 const syncFailed = ref(false);
+const failedFilters = ref<PlamodInstockFailedFilter[]>([]);
 const activeTab = ref<'existing' | 'new'>('existing');
 const tableSearch = ref('');
 const existingSearch = ref('');
@@ -112,7 +127,14 @@ const newSortDir = ref<'asc' | 'desc'>('desc');
 const newOrderDrafts = ref<Record<string, string>>({});
 const newMaintainDrafts = ref<Record<string, string>>({});
 const newDecisionSavingSku = ref<string | null>(null);
+const newPage = ref(1);
 const selectedNewSkus = ref<Record<string, boolean>>({});
+const newBulkAnchorSku = ref<string | null>(null);
+const newBulkShiftPending = ref(false);
+const newCartShiftPending = ref(false);
+const existingCartShiftPending = ref(false);
+const newCartAnchorSku = ref<string | null>(null);
+const existingCartAnchorSku = ref<string | null>(null);
 const selectedCartSkus = ref<Record<string, boolean>>({});
 const bulkIncludeDraft = ref<{ skus: string[]; orderQty: string; maintainQty: string } | null>(
     null,
@@ -123,6 +145,7 @@ const imageOverlay = ref<{ imageUrl: string; alt: string } | null>(null);
 let syncPollTimer: ReturnType<typeof setInterval> | null = null;
 let cartPollTimer: ReturnType<typeof setInterval> | null = null;
 let proposalRequestSequence = 0;
+let syncPollInFlight = false;
 
 function applyPageState(): void {
     const saved = loadPageState<PlamodRestockPageState>(PLAMOD_RESTOCK_PAGE_STATE_KEY);
@@ -191,18 +214,61 @@ function syncReorderDrafts(): void {
     maintainDrafts.value = nextMaintain;
 }
 
-const requestHideDismissed = computed<boolean>(
-    () => hideDismissed.value && !filterDismissedOnly.value,
-);
-const requestOnlyIncludedNew = computed<boolean>(
-    () =>
-        onlyIncludedNew.value &&
-        !filterUndecidedOnly.value &&
-        !filterLaterOnly.value &&
-        !filterDismissedOnly.value,
-);
+type PlamodRestockProposalSection = 'all' | 'existing' | 'new';
 
-async function loadProposal(options: { silent?: boolean } = {}): Promise<void> {
+async function fetchProposalSection(
+    section: Exclude<PlamodRestockProposalSection, 'all'>,
+): Promise<PlamodRestockProposal> {
+    const res = await api.get<{ ok: boolean; data: PlamodRestockProposal }>(
+        '/api/v1/plamod/restock/proposal',
+        {
+            params: {
+                section,
+                hide_dismissed: 0,
+                only_included_new: 0,
+            },
+        },
+    );
+
+    return res.data.data;
+}
+
+async function fetchMergedProposal(
+    section: PlamodRestockProposalSection,
+): Promise<PlamodRestockProposal> {
+    if (section === 'existing' && proposal.value) {
+        return mergePlamodRestockProposalSections(
+            await fetchProposalSection('existing'),
+            proposal.value,
+        );
+    }
+    if (section === 'new' && proposal.value) {
+        return mergePlamodRestockProposalSections(
+            proposal.value,
+            await fetchProposalSection('new'),
+        );
+    }
+
+    const [existingPart, newPart] = await Promise.all([
+        fetchProposalSection('existing'),
+        fetchProposalSection('new'),
+    ]);
+
+    return mergePlamodRestockProposalSections(existingPart, newPart);
+}
+
+function applyNewDecisions(decisions: PlamodRestockDecisionPayload[]): void {
+    if (!proposal.value || decisions.length === 0) {
+        return;
+    }
+
+    proposal.value = applyPlamodRestockNewDecisions(proposal.value, decisions);
+    syncNewProductDrafts();
+}
+
+async function loadProposal(
+    options: { silent?: boolean; section?: PlamodRestockProposalSection } = {},
+): Promise<void> {
     const requestSequence = ++proposalRequestSequence;
     const showLoading = !options.silent && proposal.value === null;
     if (showLoading) {
@@ -210,30 +276,22 @@ async function loadProposal(options: { silent?: boolean } = {}): Promise<void> {
     }
     error.value = null;
     try {
-        const res = await api.get<{ ok: boolean; data: PlamodRestockProposal }>(
-            '/api/v1/plamod/restock/proposal',
-            {
-                params: {
-                    hide_dismissed: requestHideDismissed.value ? 1 : 0,
-                    only_included_new: requestOnlyIncludedNew.value ? 1 : 0,
-                },
-            },
-        );
+        const next = await fetchMergedProposal(options.section ?? 'all');
         if (requestSequence !== proposalRequestSequence) {
             return;
         }
-        proposal.value = res.data.data;
-        if (proposal.value) {
-            shippingPercentInput.value = String(proposal.value.shipping_percent);
-            syncReorderDrafts();
-            syncNewProductDrafts();
-        }
+        proposal.value = next;
+        shippingPercentInput.value = String(next.shipping_percent);
+        syncReorderDrafts();
+        syncNewProductDrafts();
     } catch (e: unknown) {
         if (requestSequence !== proposalRequestSequence) {
             return;
         }
-        const msg = e instanceof Error ? e.message : 'Failed to load restock proposal.';
-        error.value = msg;
+        if (syncing.value) {
+            return;
+        }
+        error.value = plamodRestockRequestErrorMessage(e, 'Failed to load restock proposal.');
     } finally {
         if (requestSequence === proposalRequestSequence) {
             loading.value = false;
@@ -305,32 +363,51 @@ async function removeExcludedProductTerm(term: string): Promise<void> {
 }
 
 async function pollSyncStatus(): Promise<void> {
-    const res = await api.get<{
-        data: {
-            status: string;
-            error_summary?: string | null;
-            counts?: Record<string, string | number | boolean>;
-        };
-    }>('/api/v1/plamod/restock/sync-status');
-    syncStatus.value = res.data.data.status;
-    syncCounts.value = res.data.data.counts ?? {};
-    if (syncStatus.value === 'completed') {
-        syncFailed.value = false;
-        syncMessage.value = formatPlamodInstockSyncCompleteMessage(syncCounts.value);
-        syncing.value = false;
-        stopSyncPoll();
-        await loadProposal();
-    } else if (syncStatus.value === 'failed') {
-        syncFailed.value = true;
-        syncMessage.value = res.data.data.error_summary ?? 'PLAMOD refresh failed.';
-        syncing.value = false;
-        stopSyncPoll();
-    } else if (syncStatus.value === 'queued' || syncStatus.value === 'running') {
-        syncing.value = true;
-        syncFailed.value = false;
-    } else {
-        syncFailed.value = false;
+    if (syncPollInFlight) {
+        return;
     }
+    syncPollInFlight = true;
+    try {
+        const res = await api.get<{
+            data: {
+                status: string;
+                error_summary?: string | null;
+                counts?: Record<string, string | number | boolean>;
+                failed_filters?: unknown;
+            };
+        }>('/api/v1/plamod/restock/sync-status', { timeout: 10_000 });
+        syncStatus.value = res.data.data.status;
+        syncCounts.value = res.data.data.counts ?? {};
+        failedFilters.value = parsePlamodInstockFailedFilters(res.data.data.failed_filters);
+        if (syncStatus.value === 'completed') {
+            syncFailed.value = false;
+            syncMessage.value = formatPlamodInstockSyncCompleteMessage(syncCounts.value);
+            syncing.value = false;
+            stopSyncPoll();
+            await loadProposal();
+        } else if (syncStatus.value === 'failed') {
+            syncFailed.value = true;
+            syncMessage.value = res.data.data.error_summary ?? 'PLAMOD refresh failed.';
+            syncing.value = false;
+            stopSyncPoll();
+        } else if (syncStatus.value === 'queued' || syncStatus.value === 'running') {
+            syncing.value = true;
+            syncFailed.value = false;
+        } else {
+            syncFailed.value = false;
+        }
+    } catch {
+        // Keep the last known progress. Overlapping polls must not fail the page.
+    } finally {
+        syncPollInFlight = false;
+    }
+}
+
+function startSyncPoll(): void {
+    stopSyncPoll();
+    syncPollTimer = setInterval(() => {
+        void pollSyncStatus();
+    }, 3000);
 }
 
 function stopSyncPoll(): void {
@@ -629,22 +706,45 @@ function orderVerifyLineDetail(line: PlamodRestockCartReportLine): string | null
     return `${preorderLabel} applied toward the planned quantity; required in-stock quantity is ${targetInStockQty}.`;
 }
 
+async function retryFailedFilters(filters: PlamodInstockFailedFilter[]): Promise<void> {
+    if (filters.length === 0) {
+        return;
+    }
+    syncing.value = true;
+    syncFailed.value = false;
+    error.value = null;
+    try {
+        await api.post(
+            '/api/v1/plamod/restock/sync-retry',
+            { filters },
+            { timeout: PLAMOD_RESTOCK_SYNC_QUEUE_TIMEOUT_MS },
+        );
+        syncStatus.value = 'queued';
+        startSyncPoll();
+        await pollSyncStatus();
+    } catch (e: unknown) {
+        syncing.value = false;
+        error.value = plamodRestockRequestErrorMessage(e, 'Failed to queue failed-filter retry.');
+    }
+}
+
 async function refreshFromPlamod(): Promise<void> {
     syncing.value = true;
     syncMessage.value = null;
     syncFailed.value = false;
     error.value = null;
     try {
-        await api.post('/api/v1/plamod/restock/sync');
+        await api.post(
+            '/api/v1/plamod/restock/sync',
+            {},
+            { timeout: PLAMOD_RESTOCK_SYNC_QUEUE_TIMEOUT_MS },
+        );
         syncStatus.value = 'queued';
-        stopSyncPoll();
-        syncPollTimer = setInterval(() => {
-            void pollSyncStatus();
-        }, 3000);
+        startSyncPoll();
         await pollSyncStatus();
     } catch (e: unknown) {
         syncing.value = false;
-        error.value = e instanceof Error ? e.message : 'Failed to queue PLAMOD refresh.';
+        error.value = plamodRestockRequestErrorMessage(e, 'Failed to queue PLAMOD refresh.');
     }
 }
 
@@ -671,7 +771,7 @@ async function saveReorderOverride(sku: string): Promise<void> {
         await api.put(`/api/v1/plamod/restock/reorder-overrides/${encodeURIComponent(sku)}`, {
             reorder_qty: parsed === row.reorder_qty ? null : parsed,
         });
-        await loadProposal({ silent: true });
+        await loadProposal({ silent: true, section: 'existing' });
     } catch (e: unknown) {
         error.value = e instanceof Error ? e.message : 'Failed to save reorder override.';
     } finally {
@@ -686,7 +786,7 @@ async function resetReorderOverride(sku: string): Promise<void> {
         await api.put(`/api/v1/plamod/restock/reorder-overrides/${encodeURIComponent(sku)}`, {
             reorder_qty: null,
         });
-        await loadProposal({ silent: true });
+        await loadProposal({ silent: true, section: 'existing' });
     } catch (e: unknown) {
         error.value = e instanceof Error ? e.message : 'Failed to reset reorder override.';
     } finally {
@@ -713,7 +813,7 @@ async function saveMaintainQty(productUuid: string): Promise<void> {
         await api.patch(`/api/v1/products/${productUuid}/maintain`, {
             maintain: parsed,
         });
-        await loadProposal({ silent: true });
+        await loadProposal({ silent: true, section: 'existing' });
     } catch (e: unknown) {
         error.value = e instanceof Error ? e.message : 'Failed to save maintain qty.';
     } finally {
@@ -744,14 +844,23 @@ async function setDecision(
     status: 'dismissed' | 'included' | 'later',
     orderQty?: number,
     plannedMaintainQty?: number,
-    options: { silent?: boolean } = {},
 ): Promise<void> {
-    await api.put(`/api/v1/plamod/restock/decisions/${encodeURIComponent(sku)}`, {
-        status,
-        order_qty: orderQty ?? null,
-        planned_maintain_qty: plannedMaintainQty ?? null,
-    });
-    await loadProposal({ silent: options.silent });
+    newDecisionSavingSku.value = sku;
+    try {
+        const res = await api.put<{ ok: boolean; data: PlamodRestockDecisionPayload }>(
+            `/api/v1/plamod/restock/decisions/${encodeURIComponent(sku)}`,
+            {
+                status,
+                order_qty: orderQty ?? null,
+                planned_maintain_qty: plannedMaintainQty ?? null,
+            },
+        );
+        applyNewDecisions([res.data.data]);
+    } finally {
+        if (newDecisionSavingSku.value === sku) {
+            newDecisionSavingSku.value = null;
+        }
+    }
 }
 
 async function dismissSku(sku: string): Promise<void> {
@@ -820,7 +929,7 @@ async function createDraftPo(): Promise<void> {
 const snapshotLabel = computed(() => {
     const syncedAt = proposal.value?.snapshot.synced_at;
     if (!syncedAt) return 'No PLAMOD in-stock snapshot yet';
-    return `Snapshot: ${formatLocalDateTime(syncedAt)} · ${proposal.value?.snapshot.item_count ?? 0} SKUs`;
+    return `Snapshot: ${formatLocalDateTime(syncedAt)} · ${proposal.value?.snapshot.item_count ?? 0} SKUs · Auto-refresh 5:00 AM daily`;
 });
 
 const restockTotals = computed(() => proposal.value?.totals ?? null);
@@ -892,13 +1001,38 @@ const filteredNewRows = computed(() => {
         includedOnly: onlyIncludedNew.value,
         recentOnly: filterRecentOnly.value,
         series: filterSeries.value,
+        hideDismissed: hideDismissed.value,
     });
 
     return sortPlamodRestockNewRows(filtered, newSortBy.value, newSortDir.value);
 });
 
+const newVisibleCatalogCount = computed(() => {
+    const rows = proposal.value?.new_products ?? [];
+    if (hideDismissed.value && !filterDismissedOnly.value) {
+        return rows.filter((row) => row.status !== 'dismissed').length;
+    }
+
+    return rows.length;
+});
+
+const newLastPage = computed(() =>
+    Math.max(1, Math.ceil(filteredNewRows.value.length / PLAMOD_RESTOCK_NEW_PAGE_SIZE)),
+);
+
+const pagedNewRows = computed(() =>
+    paginatePlamodRestockRows(filteredNewRows.value, newPage.value, PLAMOD_RESTOCK_NEW_PAGE_SIZE),
+);
+
+function setNewPage(page: number): void {
+    newPage.value = page;
+}
+
 const newSeriesOptions = computed(() =>
     uniquePlamodRestockSeries(proposal.value?.new_products ?? []),
+);
+const newHasRowsWithoutSeries = computed(() =>
+    hasPlamodRestockRowsWithoutSeries(proposal.value?.new_products ?? []),
 );
 const excludedSeries = computed<string[]>(() => proposal.value?.exclusions?.excluded_series ?? []);
 const excludedProductTerms = computed<string[]>(
@@ -957,6 +1091,16 @@ const syncProgressLabel = computed((): string => {
             return `Exporting filters ${processed}/${total}${suffix}`;
         }
         return 'Exporting PLAMOD in-stock catalog…';
+    }
+    if (phase === 'retry') {
+        const processed = Number(counts.filters_processed ?? 0);
+        const total = Number(counts.filters_total ?? 0);
+        const current = String(counts.current_filter ?? '').trim();
+        if (total > 0) {
+            const suffix = current !== '' ? ` · ${current}` : '';
+            return `Retrying missed filters ${processed}/${total}${suffix}`;
+        }
+        return 'Retrying missed PLAMOD filters…';
     }
     if (phase === 'pdp_enrich') {
         const done = Number(counts.pdp_enrich_done ?? 0);
@@ -1094,6 +1238,7 @@ function toggleSelectAllExistingCart(checked: boolean): void {
         next[row.sku] = checked;
     }
     selectedCartSkus.value = next;
+    existingCartAnchorSku.value = null;
 }
 
 function toggleSelectAllNewCart(checked: boolean): void {
@@ -1102,6 +1247,7 @@ function toggleSelectAllNewCart(checked: boolean): void {
         next[row.sku] = checked;
     }
     selectedCartSkus.value = next;
+    newCartAnchorSku.value = null;
 }
 
 function clearCartSelection(): void {
@@ -1187,8 +1333,28 @@ watch(
     { deep: true },
 );
 
-watch([requestHideDismissed, requestOnlyIncludedNew], () => {
-    void loadProposal();
+watch(
+    [
+        tableSearch,
+        hideDismissed,
+        onlyIncludedNew,
+        filterUndecidedOnly,
+        filterLaterOnly,
+        filterDismissedOnly,
+        filterRecentOnly,
+        filterSeries,
+        newSortBy,
+        newSortDir,
+    ],
+    () => {
+        newPage.value = 1;
+    },
+);
+
+watch(newLastPage, (lastPage) => {
+    if (newPage.value > lastPage) {
+        newPage.value = lastPage;
+    }
 });
 
 watch(
@@ -1216,8 +1382,11 @@ watch(
 
 onMounted(async () => {
     applyPageState();
-    await loadProposal();
     await pollSyncStatus();
+    if (syncing.value) {
+        startSyncPoll();
+    }
+    await loadProposal();
     await pollCartRunStatus();
     await loadOrderVerifyStatus();
 });
@@ -1259,6 +1428,68 @@ function toggleSelectAllNew(checked: boolean): void {
         next[row.sku] = checked;
     }
     selectedNewSkus.value = next;
+    newBulkAnchorSku.value = null;
+}
+
+function onNewBulkPointerDown(event: PointerEvent): void {
+    newBulkShiftPending.value = event.shiftKey;
+}
+
+function onNewBulkChange(event: Event, sku: string): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    const next = applySkuCheckboxChange({
+        selected: selectedNewSkus.value,
+        orderedSkus: filteredNewRows.value.map((row) => row.sku),
+        sku,
+        checked,
+        shiftKey: newBulkShiftPending.value,
+        anchorSku: newBulkAnchorSku.value,
+    });
+    newBulkShiftPending.value = false;
+    selectedNewSkus.value = next.selected;
+    newBulkAnchorSku.value = next.anchorSku;
+}
+
+function onNewCartPointerDown(event: PointerEvent): void {
+    newCartShiftPending.value = event.shiftKey;
+}
+
+function onNewCartChange(event: Event, sku: string): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    const next = applySkuCheckboxChange({
+        selected: selectedCartSkus.value,
+        orderedSkus: filteredNewRows.value
+            .filter((row) => isNewCartEligible(row))
+            .map((row) => row.sku),
+        sku,
+        checked,
+        shiftKey: newCartShiftPending.value,
+        anchorSku: newCartAnchorSku.value,
+    });
+    newCartShiftPending.value = false;
+    selectedCartSkus.value = next.selected;
+    newCartAnchorSku.value = next.anchorSku;
+}
+
+function onExistingCartPointerDown(event: PointerEvent): void {
+    existingCartShiftPending.value = event.shiftKey;
+}
+
+function onExistingCartChange(event: Event, sku: string): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    const next = applySkuCheckboxChange({
+        selected: selectedCartSkus.value,
+        orderedSkus: filteredExistingRows.value
+            .filter((row) => isExistingCartEligible(row))
+            .map((row) => row.sku),
+        sku,
+        checked,
+        shiftKey: existingCartShiftPending.value,
+        anchorSku: existingCartAnchorSku.value,
+    });
+    existingCartShiftPending.value = false;
+    selectedCartSkus.value = next.selected;
+    existingCartAnchorSku.value = next.anchorSku;
 }
 
 function openImageOverlay(row: PlamodRestockNewRow): void {
@@ -1293,14 +1524,11 @@ async function saveNewIncludedQtys(sku: string): Promise<void> {
         return;
     }
 
-    newDecisionSavingSku.value = sku;
     error.value = null;
     try {
-        await setDecision(sku, 'included', orderQty, maintainQty, { silent: true });
+        await setDecision(sku, 'included', orderQty, maintainQty);
     } catch (e: unknown) {
         error.value = e instanceof Error ? e.message : 'Failed to save included SKU qtys.';
-    } finally {
-        newDecisionSavingSku.value = null;
     }
 }
 
@@ -1335,15 +1563,18 @@ async function submitBulkInclude(): Promise<void> {
     try {
         const orderQty = Number.parseInt(bulkIncludeDraft.value.orderQty, 10);
         const maintainQty = Number.parseInt(bulkIncludeDraft.value.maintainQty, 10);
-        await api.post('/api/v1/plamod/restock/decisions/bulk', {
+        const res = await api.post<{
+            ok: boolean;
+            data: { updated: number; results: PlamodRestockDecisionPayload[] };
+        }>('/api/v1/plamod/restock/decisions/bulk', {
             skus: bulkIncludeDraft.value.skus,
             status: 'included',
             order_qty: orderQty,
             planned_maintain_qty: maintainQty,
         });
+        applyNewDecisions(res.data.data.results);
         bulkIncludeDraft.value = null;
         selectedNewSkus.value = {};
-        await loadProposal();
     } catch (e: unknown) {
         error.value = e instanceof Error ? e.message : 'Failed to bulk include SKUs.';
     } finally {
@@ -1360,12 +1591,15 @@ async function bulkDismissSelected(): Promise<void> {
     bulkSaving.value = true;
     error.value = null;
     try {
-        await api.post('/api/v1/plamod/restock/decisions/bulk', {
+        const res = await api.post<{
+            ok: boolean;
+            data: { updated: number; results: PlamodRestockDecisionPayload[] };
+        }>('/api/v1/plamod/restock/decisions/bulk', {
             skus,
             status: 'dismissed',
         });
+        applyNewDecisions(res.data.data.results);
         selectedNewSkus.value = {};
-        await loadProposal();
     } catch (e: unknown) {
         error.value = e instanceof Error ? e.message : 'Failed to bulk dismiss SKUs.';
     } finally {
@@ -1382,12 +1616,15 @@ async function bulkLaterSelected(): Promise<void> {
     bulkSaving.value = true;
     error.value = null;
     try {
-        await api.post('/api/v1/plamod/restock/decisions/bulk', {
+        const res = await api.post<{
+            ok: boolean;
+            data: { updated: number; results: PlamodRestockDecisionPayload[] };
+        }>('/api/v1/plamod/restock/decisions/bulk', {
             skus,
             status: 'later',
         });
+        applyNewDecisions(res.data.data.results);
         selectedNewSkus.value = {};
-        await loadProposal();
     } catch (e: unknown) {
         error.value = e instanceof Error ? e.message : 'Failed to bulk defer SKUs.';
     } finally {
@@ -1400,7 +1637,7 @@ async function bulkLaterSelected(): Promise<void> {
     <div class="mx-auto max-w-[1400px] space-y-6 p-4 md:p-6">
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-                <h1 class="text-2xl font-semibold text-slate-900">PLAMOD restock</h1>
+                <h1 class="text-2xl font-semibold text-slate-900">Plamod Restock</h1>
                 <p class="mt-1 text-sm text-slate-600">
                     Bandai Hobby · Plastic Model Kits · In-Stock intersected with ERP reorder needs.
                 </p>
@@ -1522,6 +1759,13 @@ async function bulkLaterSelected(): Promise<void> {
         >
             {{ syncMessage }}
         </div>
+        <PlamodInstockFailedFiltersCard
+            v-if="failedFilters.length > 0"
+            :filters="failedFilters"
+            :disabled="syncing || cartRunning"
+            :retrying="syncing && String(syncCounts.phase ?? '') === 'retry'"
+            @retry="retryFailedFilters"
+        />
         <div
             v-if="draftError"
             class="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
@@ -2035,7 +2279,7 @@ async function bulkLaterSelected(): Promise<void> {
             >
                 New on PLAMOD
                 <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs tabular-nums">
-                    {{ proposal?.meta.new_count ?? 0 }}
+                    {{ newVisibleCatalogCount }}
                 </span>
             </button>
         </nav>
@@ -2353,9 +2597,11 @@ async function bulkLaterSelected(): Promise<void> {
                             <td class="px-3 py-2">
                                 <input
                                     v-if="isExistingCartEligible(row)"
-                                    v-model="selectedCartSkus[row.sku]"
                                     type="checkbox"
+                                    :checked="selectedCartSkus[row.sku] === true"
                                     :data-testid="`restock-existing-cart-select-${row.sku}`"
+                                    @pointerdown="onExistingCartPointerDown"
+                                    @change="onExistingCartChange($event, row.sku)"
                                 />
                             </td>
                             <td class="px-3 py-2 font-mono text-xs">{{ row.sku }}</td>
@@ -2519,9 +2765,9 @@ async function bulkLaterSelected(): Promise<void> {
                                 ·
                                 <template v-if="tableSearchActive || newFiltersActive">
                                     {{ filteredNewRows.length }} of
-                                    {{ proposal?.meta.new_count ?? 0 }} rows
+                                    {{ newVisibleCatalogCount }} rows
                                 </template>
-                                <template v-else>{{ proposal?.meta.new_count ?? 0 }} rows</template>
+                                <template v-else>{{ filteredNewRows.length }} rows</template>
                             </span>
                         </h2>
                         <p
@@ -2598,6 +2844,12 @@ async function bulkLaterSelected(): Promise<void> {
                                 data-testid="restock-filter-series"
                             >
                                 <option value="">All</option>
+                                <option
+                                    v-if="newHasRowsWithoutSeries"
+                                    :value="PLAMOD_RESTOCK_SERIES_NONE"
+                                >
+                                    No series
+                                </option>
                                 <option
                                     v-for="series in newSeriesOptions"
                                     :key="series"
@@ -2922,27 +3174,31 @@ async function bulkLaterSelected(): Promise<void> {
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
-                        <tr v-for="row in filteredNewRows" :key="row.sku" class="hover:bg-slate-50">
+                        <tr v-for="row in pagedNewRows" :key="row.sku" class="hover:bg-slate-50">
                             <td class="px-3 py-2">
                                 <input
-                                    v-model="selectedNewSkus[row.sku]"
                                     type="checkbox"
+                                    :checked="selectedNewSkus[row.sku] === true"
                                     :data-testid="`restock-new-select-${row.sku}`"
+                                    @pointerdown="onNewBulkPointerDown"
+                                    @change="onNewBulkChange($event, row.sku)"
                                 />
                             </td>
                             <td class="px-3 py-2">
                                 <input
                                     v-if="isNewCartEligible(row)"
-                                    v-model="selectedCartSkus[row.sku]"
                                     type="checkbox"
+                                    :checked="selectedCartSkus[row.sku] === true"
                                     :data-testid="`restock-new-cart-select-${row.sku}`"
+                                    @pointerdown="onNewCartPointerDown"
+                                    @change="onNewCartChange($event, row.sku)"
                                 />
                             </td>
                             <td class="px-3 py-2">
                                 <button
                                     v-if="row.image_url"
                                     type="button"
-                                    class="block h-10 w-10 overflow-hidden rounded border border-slate-200 bg-white hover:ring-2 hover:ring-indigo-300"
+                                    class="block h-24 w-24 shrink-0 overflow-hidden rounded border border-slate-200 bg-white hover:ring-2 hover:ring-indigo-300"
                                     :data-testid="`restock-new-image-${row.sku}`"
                                     @click="openImageOverlay(row)"
                                 >
@@ -3032,7 +3288,8 @@ async function bulkLaterSelected(): Promise<void> {
                                     <button
                                         v-if="row.status !== 'included'"
                                         type="button"
-                                        class="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50"
+                                        class="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
+                                        :disabled="newDecisionSavingSku === row.sku"
                                         @click="openInclude(row)"
                                     >
                                         Include
@@ -3040,28 +3297,35 @@ async function bulkLaterSelected(): Promise<void> {
                                     <button
                                         v-if="row.status === 'undecided'"
                                         type="button"
-                                        class="rounded border border-violet-200 bg-violet-50 px-2 py-1 text-xs text-violet-900 hover:bg-violet-100"
+                                        class="rounded border border-violet-200 bg-violet-50 px-2 py-1 text-xs text-violet-900 hover:bg-violet-100 disabled:opacity-50"
                                         :data-testid="`restock-new-later-${row.sku}`"
+                                        :disabled="newDecisionSavingSku === row.sku"
                                         @click="laterSku(row.sku)"
                                     >
-                                        Later
+                                        {{ newDecisionSavingSku === row.sku ? 'Saving…' : 'Later' }}
                                     </button>
                                     <button
                                         v-if="row.status === 'included'"
                                         type="button"
-                                        class="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50"
+                                        class="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
                                         :data-testid="`restock-new-exclude-${row.sku}`"
+                                        :disabled="newDecisionSavingSku === row.sku"
                                         @click="excludeIncluded(row.sku)"
                                     >
-                                        Exclude
+                                        {{
+                                            newDecisionSavingSku === row.sku ? 'Saving…' : 'Exclude'
+                                        }}
                                     </button>
                                     <button
                                         v-if="row.status !== 'dismissed'"
                                         type="button"
-                                        class="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50"
+                                        class="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
+                                        :disabled="newDecisionSavingSku === row.sku"
                                         @click="dismissSku(row.sku)"
                                     >
-                                        Dismiss
+                                        {{
+                                            newDecisionSavingSku === row.sku ? 'Saving…' : 'Dismiss'
+                                        }}
                                     </button>
                                 </div>
                             </td>
@@ -3085,6 +3349,13 @@ async function bulkLaterSelected(): Promise<void> {
                     </tbody>
                 </table>
             </div>
+            <PaginationControls
+                v-if="filteredNewRows.length > 0"
+                :current-page="newPage"
+                :last-page="newLastPage"
+                :total="filteredNewRows.length"
+                :on-change="setNewPage"
+            />
         </section>
 
         <div

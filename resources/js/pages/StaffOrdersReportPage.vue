@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { RouterLink } from 'vue-router';
 import { api } from '../lib/api';
 import {
     formatStaffOrdersRevenue,
@@ -157,8 +158,9 @@ onMounted(() => void load());
             <div>
                 <h2 class="text-lg font-semibold text-slate-900">Staff orders</h2>
                 <p class="mt-1 text-sm text-slate-600">
-                    Daily order counts and revenue before tax by POS staff and sales channel for
-                    one calendar month.
+                    Daily order counts and revenue before tax by POS staff and sales channel for one
+                    calendar month.
+                    <RouterLink to="/orders" class="underline">Order list</RouterLink>
                 </p>
             </div>
 
@@ -213,7 +215,9 @@ onMounted(() => void load());
         >
             {{ ordersMissingAttribution }} eligible order(s) in this month are missing staff/channel
             attribution in the mirror. Run
-            <code class="rounded bg-white px-1">php artisan shopify:orders-backfill-staff-attribution {{ month }}</code>
+            <code class="rounded bg-white px-1"
+                >php artisan shopify:orders-backfill-staff-attribution {{ month }}</code
+            >
             once, or wait for the next order sync to backfill updated rows.
         </div>
 
@@ -223,7 +227,9 @@ onMounted(() => void load());
         >
             {{ ordersMissingSubtotal }} attributed order(s) are missing subtotal in the mirror, so
             revenue totals may be low. Re-run
-            <code class="rounded bg-white px-1">php artisan shopify:orders-backfill-staff-attribution {{ month }}</code>
+            <code class="rounded bg-white px-1"
+                >php artisan shopify:orders-backfill-staff-attribution {{ month }}</code
+            >
             after order sync picks up subtotals, or wait for the next incremental sync.
         </div>
 

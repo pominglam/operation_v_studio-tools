@@ -49,4 +49,14 @@ final class PurchaseOrderAllocation
             else coalesce({$totalExpression},0) / (nullif({$units},0) * 1.0)
         end";
     }
+
+    public static function lineOrAllocatedShippingSql(string $itemAlias = 'poi', string $poAlias = 'po'): string
+    {
+        $allocated = self::perUnitTotalSql("{$poAlias}.shipping_total", $poAlias);
+
+        return "case
+            when {$itemAlias}.shipping_per_unit is not null then {$itemAlias}.shipping_per_unit
+            else {$allocated}
+        end";
+    }
 }

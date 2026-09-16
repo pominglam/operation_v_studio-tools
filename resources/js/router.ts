@@ -6,6 +6,8 @@ import PriceResearchPage from './pages/PriceResearchPage.vue';
 import PriceResearchRunLogsPage from './pages/PriceResearchRunLogsPage.vue';
 import PriceResearchReportsPage from './pages/PriceResearchReportsPage.vue';
 import StaffOrdersReportPage from './pages/StaffOrdersReportPage.vue';
+import CustomerRetentionReportPage from './pages/CustomerRetentionReportPage.vue';
+import ShopifyOrdersPage from './pages/ShopifyOrdersPage.vue';
 import ReportsLayoutPage from './pages/ReportsLayoutPage.vue';
 import InventoryByMainTypeReportPage from './pages/InventoryByMainTypeReportPage.vue';
 import SyncProgressPage from './pages/SyncProgressPage.vue';
@@ -15,10 +17,13 @@ import PurchaseOrdersPage from './pages/PurchaseOrdersPage.vue';
 import PurchaseOrderDetailPage from './pages/PurchaseOrderDetailPage.vue';
 import PurchaseOrderDetailBetaPage from './pages/PurchaseOrderDetailBetaPage.vue';
 import TcgEventsPage from './pages/TcgEventsPage.vue';
+import StoreEventsPage from './pages/StoreEventsPage.vue';
+import StoreMarketingNotesPage from './pages/StoreMarketingNotesPage.vue';
 import PreordersPage from './pages/PreordersPage.vue';
+import StorePreordersPage from './pages/StorePreordersPage.vue';
 import PlamodRestockPage from './pages/PlamodRestockPage.vue';
-import CustomAsiaOrdersPage from './pages/CustomAsiaOrdersPage.vue';
-import CustomAsiaOrderDetailPage from './pages/CustomAsiaOrderDetailPage.vue';
+import SpecialOrdersPage from './pages/SpecialOrdersPage.vue';
+import SpecialOrderDetailPage from './pages/SpecialOrderDetailPage.vue';
 import EmployeeInventoryCountPage from './pages/EmployeeInventoryCountPage.vue';
 import { currentAccessRole } from './lib/accessRole';
 
@@ -40,12 +45,17 @@ const routes: RouteRecordRaw[] = [
         component: () => import('./pages/ProductTaxonomyReviewPage.vue'),
     },
     { path: '/purchase-orders', name: 'purchase-orders', component: PurchaseOrdersPage },
-    { path: '/custom-orders/asia', name: 'custom-asia-orders', component: CustomAsiaOrdersPage },
-    { path: '/custom-orders/asia/new', name: 'custom-asia-order-new', component: CustomAsiaOrderDetailPage },
+    { path: '/orders', name: 'shopify-orders', component: ShopifyOrdersPage },
+    { path: '/special-orders', name: 'special-orders', component: SpecialOrdersPage },
     {
-        path: '/custom-orders/asia/:id',
-        name: 'custom-asia-order-detail',
-        component: CustomAsiaOrderDetailPage,
+        path: '/special-orders/new',
+        name: 'special-order-new',
+        component: SpecialOrderDetailPage,
+    },
+    {
+        path: '/special-orders/:id',
+        name: 'special-order-detail',
+        component: SpecialOrderDetailPage,
     },
     {
         path: '/purchase-orders/:id/beta',
@@ -89,11 +99,19 @@ const routes: RouteRecordRaw[] = [
                 name: 'reports-inventory-by-main-type',
                 component: InventoryByMainTypeReportPage,
             },
+            {
+                path: 'customer-retention',
+                name: 'reports-customer-retention',
+                component: CustomerRetentionReportPage,
+            },
         ],
     },
     { path: '/sync-progress', name: 'sync-progress', component: SyncProgressPage },
     { path: '/tcg-events', name: 'tcg-events', component: TcgEventsPage },
+    { path: '/store-events', name: 'store-events', component: StoreEventsPage },
+    { path: '/marketing-notes', name: 'marketing-notes', component: StoreMarketingNotesPage },
     { path: '/preorders', name: 'preorders', component: PreordersPage },
+    { path: '/store-preorders', name: 'store-preorders', component: StorePreordersPage },
     { path: '/restocking/plamod', name: 'plamod-restock', component: PlamodRestockPage },
     { path: '/maintenance', name: 'maintenance', component: MaintenancePage },
     { path: '/shopify/webhooks', name: 'shopify-webhooks', component: ShopifyWebhookLogsPage },

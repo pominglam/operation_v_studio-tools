@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+
 import {
     formatAccessoryKind,
     formatWorkshopFacets,
@@ -13,19 +14,28 @@ import {
 
 const props = defineProps<{
     item: TaxonomyVerification;
+
     busy: boolean;
+
     selected: boolean;
 }>();
 
 const emit = defineEmits<{
     approve: [item: TaxonomyVerification, values: TaxonomyValues | null, notes: string | null];
+
+    'series-decide': [item: TaxonomyVerification];
+
     toggle: [id: string, selected: boolean];
 }>();
 
 const expanded = ref(false);
+
 const editing = ref(false);
+
 const editValues = ref<TaxonomyValues>(normalizeTaxonomyValues(props.item.proposed_values));
+
 const editFacetsJson = ref('');
+
 const editNotes = ref(props.item.operator_notes ?? '');
 
 function displayValue(value: string | null): string {
@@ -65,11 +75,27 @@ function cellValue(field: TaxonomyField): string | null {
     return currentValues(props.item)[field];
 }
 
+function seriesConfidenceClass(): string {
+    const confidence = props.item.series_resolution?.confidence;
+
+    if (confidence === 'high') return 'text-emerald-700';
+
+    if (confidence === 'medium') return 'text-amber-800';
+
+    if (confidence === 'review') return 'text-red-700';
+
+    return 'text-slate-800';
+}
+
 function startOverride(): void {
     editValues.value = { ...currentValues(props.item) };
+
     editFacetsJson.value = JSON.stringify(editValues.value.workshop_facets ?? {}, null, 2);
+
     editNotes.value = props.item.operator_notes ?? '';
+
     editing.value = true;
+
     expanded.value = true;
 }
 
@@ -83,14 +109,21 @@ function approveUnchanged(): void {
 
 function saveOverride(): void {
     const next = { ...editValues.value };
+
     try {
         const parsed = JSON.parse(editFacetsJson.value || '{}');
+
         next.workshop_facets =
             parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
     } catch {
         next.workshop_facets = {};
     }
+
     emit('approve', props.item, next, editNotes.value.trim() || null);
+}
+
+function openSeriesDecision(): void {
+    emit('series-decide', props.item);
 }
 </script>
 
@@ -102,58 +135,98 @@ function saveOverride(): void {
                 type="checkbox"
                 class="h-4 w-4 rounded border-slate-300"
                 :checked="selected"
-                :disabled="item.status !== 'proposed'"
                 @change="emit('toggle', item.id, ($event.target as HTMLInputElement).checked)"
             />
         </td>
+
         <td
             class="sticky left-10 z-10 bg-white px-3 py-2 font-mono text-xs font-semibold text-slate-900"
         >
             {{ item.product.sku }}
         </td>
+
         <td class="min-w-56 px-3 py-2 text-sm text-slate-800">
             <p>{{ item.product.description }}</p>
+
             <p v-if="item.product.archived" class="mt-1 text-xs text-amber-700">Archived</p>
         </td>
+
         <td class="px-3 py-2">
             <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
                 {{ item.status }}
             </span>
         </td>
+
         <td class="px-3 py-2 text-sm tabular-nums text-slate-800">
             {{ item.overall_confidence }}%
         </td>
+
         <td
             v-for="field in taxonomyFields"
             :key="`${item.id}-${field.key}`"
             class="min-w-28 px-3 py-2 text-sm"
         >
-            <span :class="{ 'font-semibold text-sky-800': valuesDiffer(field.key) }">
-                {{ displayValue(cellValue(field.key)) }}
-            </span>
-            <span
-                v-if="valuesDiffer(field.key)"
-                data-testid="taxonomy-current-value"
-                class="mt-0.5 block text-xs text-slate-500"
-            >
-                was {{ displayValue(item.previous_values[field.key]) }}
-            </span>
+            <template v-if="field.key === 'series'">
+                <button
+                    type="button"
+                    data-testid="taxonomy-series-cell"
+                    class="text-left hover:underline"
+                    :class="[
+                        valuesDiffer(field.key)
+                            ? 'font-semibold text-sky-800'
+                            : seriesConfidenceClass(),
+                    ]"
+                    :title="
+                        item.series_resolution
+                            ? `Open series sources (${item.series_resolution.confidence} confidence)`
+                            : 'Open series decision'
+                    "
+                    @click="openSeriesDecision"
+                >
+                    {{ displayValue(cellValue(field.key)) }}
+                </button>
+
+                <span
+                    v-if="item.series_resolution"
+                    class="mt-0.5 block text-[10px] uppercase tracking-wide text-sky-700"
+                >
+                    {{ item.series_resolution.confidence }} · click for sources
+                </span>
+            </template>
+
+            <template v-else>
+                <span :class="{ 'font-semibold text-sky-800': valuesDiffer(field.key) }">
+                    {{ displayValue(cellValue(field.key)) }}
+                </span>
+
+                <span
+                    v-if="valuesDiffer(field.key)"
+                    data-testid="taxonomy-current-value"
+                    class="mt-0.5 block text-xs text-slate-500"
+                >
+                    was {{ displayValue(item.previous_values[field.key]) }}
+                </span>
+            </template>
         </td>
+
         <td class="min-w-32 px-3 py-2 text-sm">
             <span :class="{ 'font-semibold text-sky-800': workshopShelfDiffers() }">
                 {{ displayValue(currentValues(item).workshop_shelf) }}
             </span>
         </td>
+
         <td class="min-w-48 px-3 py-2 text-xs text-slate-700">
             <span :class="{ 'font-semibold text-sky-800': workshopFacetsDiffer() }">
                 {{ formatWorkshopFacets(currentValues(item).workshop_facets) }}
             </span>
         </td>
+
         <td class="min-w-32 px-3 py-2 text-sm">
             <span :class="{ 'font-semibold text-sky-800': accessoryKindDiffers() }">
                 {{ formatAccessoryKind(currentValues(item).accessory_kind) }}
             </span>
         </td>
+
         <td class="sticky right-0 z-10 bg-white px-3 py-2">
             <div class="flex flex-col items-start gap-1">
                 <template v-if="item.status === 'proposed'">
@@ -166,14 +239,16 @@ function saveOverride(): void {
                     >
                         Approve
                     </button>
-                    <button
-                        type="button"
-                        class="text-sm font-semibold text-slate-700 hover:underline"
-                        @click="startOverride"
-                    >
-                        Edit
-                    </button>
                 </template>
+
+                <button
+                    type="button"
+                    class="text-sm font-semibold text-slate-700 hover:underline"
+                    @click="startOverride"
+                >
+                    Edit
+                </button>
+
                 <button
                     data-testid="taxonomy-evidence-toggle"
                     type="button"
@@ -185,19 +260,23 @@ function saveOverride(): void {
             </div>
         </td>
     </tr>
+
     <tr v-if="expanded" class="border-t border-slate-100 bg-slate-50">
-        <td :colspan="16" class="px-4 py-4">
+        <td :colspan="17" class="px-4 py-4">
             <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div
                     v-for="field in [
                         ...taxonomyFields,
+
                         ...workshopTaxonomyFields,
+
                         { key: 'accessory_kind', label: 'Accessory kind' },
                     ]"
                     :key="`evidence-${field.key}`"
                     class="text-sm"
                 >
                     <p class="font-semibold text-slate-800">{{ field.label }}</p>
+
                     <template v-if="item.evidence[field.key]">
                         <a
                             v-if="item.evidence[field.key]?.source_url"
@@ -208,13 +287,16 @@ function saveOverride(): void {
                         >
                             {{ item.evidence[field.key]?.source_label }}
                         </a>
+
                         <span v-else class="text-slate-600">{{
                             item.evidence[field.key]?.source_label
                         }}</span>
+
                         <span class="ml-2 text-xs text-slate-500">
                             {{ item.evidence[field.key]?.confidence }}%
                         </span>
                     </template>
+
                     <span v-else class="text-slate-500">No evidence recorded</span>
                 </div>
             </div>
@@ -231,22 +313,27 @@ function saveOverride(): void {
                         class="text-xs font-medium text-slate-700"
                     >
                         {{ field.label }}
+
                         <input
                             v-model="editValues[field.key]"
                             class="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
                             type="text"
                         />
                     </label>
+
                     <label class="text-xs font-medium text-slate-700">
                         T&amp;S shelf
+
                         <input
                             v-model="editValues.workshop_shelf"
                             class="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
                             type="text"
                         />
                     </label>
+
                     <label class="text-xs font-medium text-slate-700">
                         Accessory kind
+
                         <input
                             v-model="editValues.accessory_kind"
                             class="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
@@ -255,29 +342,35 @@ function saveOverride(): void {
                         />
                     </label>
                 </div>
+
                 <label class="block text-xs font-medium text-slate-700">
                     Workshop facets (JSON)
+
                     <textarea
                         v-model="editFacetsJson"
                         class="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-mono text-xs"
                         rows="4"
                     />
                 </label>
+
                 <label class="block text-xs font-medium text-slate-700">
                     Verification notes
+
                     <textarea
                         v-model="editNotes"
                         class="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
                         rows="2"
                     />
                 </label>
+
                 <div class="flex gap-2">
                     <button
                         type="submit"
                         class="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white"
                     >
-                        Save override
+                        Save to ERP
                     </button>
+
                     <button
                         type="button"
                         class="rounded-lg border border-slate-300 px-3 py-2 text-sm"

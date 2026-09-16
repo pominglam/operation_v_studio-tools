@@ -17,8 +17,9 @@ defineProps<{
         <img :src="logoUrl" alt="Operation V Studio" class="po-beta__logo" />
         <nav class="po-beta__context-nav" aria-label="Sourcing">
             <RouterLink class="is-active" to="/purchase-orders">Purchase orders</RouterLink>
-            <RouterLink to="/preorders">Preorders</RouterLink>
-            <RouterLink to="/restocking/plamod">Restock</RouterLink>
+            <RouterLink to="/preorders">Plamod preorders</RouterLink>
+            <RouterLink to="/store-preorders">Store preorders</RouterLink>
+            <RouterLink to="/restocking/plamod">Plamod Restock</RouterLink>
         </nav>
         <span style="flex: 1"></span>
         <nav class="po-beta__system-nav" aria-label="System">

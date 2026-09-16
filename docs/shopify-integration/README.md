@@ -49,13 +49,14 @@ Register each subscription in the Shopify app toward that webhook URL once the h
 ## Local commands
 
 - `php artisan shopify:sync {target}` where `target` is `full` or `locations|products|inventory_levels|orders|customers|collections`.
+- `inventory_levels` uses GraphQL `nodes(ids:)` batches (default 200 inventory items per request, max 250) rather than one query per SKU.
 - Inspect `shopify_sync_logs` rows for durations, totals, failures.
 
 ## Persistence
 
 Tables from migration `2026_05_13_120000_shopify_integration_foundation_tables.php`:
 
-- Entities: products, variants, inventory items & levels (unique per inventory item × location), locations, orders, customers, collections.
+- Entities: products, variants, inventory items & levels (unique per inventory item × location), locations, orders (including **`customer_gid` / `customer_email` / `customer_phone`**), customers (including **`phone`**), collections.
 - Ops logs: **`shopify_sync_logs`**, **`shopify_webhook_logs`**.
 
 ## Theme workflow (foundation)

@@ -19,8 +19,10 @@ final class ProductStorefrontClassifier
         private readonly DecalProductResolver $decalProductResolver,
         private readonly AirbrushProductResolver $airbrushProductResolver,
         private readonly WeatheringProductResolver $weatheringProductResolver,
+        private readonly CuttingMatProductResolver $cuttingMatProductResolver,
         private readonly ToolFamilyProductResolver $toolFamilyProductResolver,
         private readonly ModelKitStorefrontTagResolver $modelKitTagResolver,
+        private readonly MiscStorefrontTagResolver $miscTagResolver,
     ) {}
 
     public function classify(Product $product): StorefrontClassification
@@ -34,13 +36,14 @@ final class ProductStorefrontClassifier
             : [];
 
         $modelKitTags = $this->modelKitTagResolver->tagsForProduct($product);
+        $miscTags = $this->miscTagResolver->tagsForProduct($product);
 
-        $shopifyTags = $this->shopifyTagsForPush($product, $storefrontTags, $modelKitTags);
+        $shopifyTags = $this->shopifyTagsForPush($product, $storefrontTags, [...$modelKitTags, ...$miscTags]);
 
         return new StorefrontClassification(
             department: $department,
             legacyTags: $legacyTags,
-            storefrontTags: [...$storefrontTags, ...$modelKitTags],
+            storefrontTags: [...$storefrontTags, ...$modelKitTags, ...$miscTags],
             shopifyTags: $shopifyTags,
             warnings: $warnings,
         );
@@ -68,6 +71,10 @@ final class ProductStorefrontClassifier
 
         if ($this->isSandingProduct($product, $sku)) {
             return StorefrontDepartment::SANDING;
+        }
+
+        if ($this->cuttingMatProductResolver->belongsToCuttingMatsDepartment($product)) {
+            return StorefrontDepartment::CUTTING_MATS;
         }
 
         if ($this->cuttingProductResolver->resolveCategory($product) !== null) {
@@ -156,6 +163,7 @@ final class ProductStorefrontClassifier
             StorefrontDepartment::MARKERS => $this->markerTags($product),
             StorefrontDepartment::AIRBRUSH => $this->airbrushTags($product),
             StorefrontDepartment::WEATHERING => $this->weatheringTags(),
+            StorefrontDepartment::CUTTING_MATS => $this->cuttingMatTags($product),
             StorefrontDepartment::BRUSHES,
             StorefrontDepartment::DRILLS,
             StorefrontDepartment::TWEEZERS,
@@ -366,6 +374,27 @@ final class ProductStorefrontClassifier
     /**
      * @return array<int, string>
      */
+    private function cuttingMatTags(Product $product): array
+    {
+        $attrs = $this->cuttingMatProductResolver->filterAttributes($product);
+        $tags = [StorefrontTag::DEPT_CUTTING_MATS];
+
+        if ($attrs['series'] !== '') {
+            $tags[] = StorefrontTag::matSeries($attrs['series']);
+        }
+        if ($attrs['size'] !== '') {
+            $tags[] = StorefrontTag::matSize($attrs['size']);
+        }
+        if ($attrs['color'] !== '') {
+            $tags[] = StorefrontTag::matColor($attrs['color']);
+        }
+
+        return $tags;
+    }
+
+    /**
+     * @return array<int, string>
+     */
     private function toolFamilyTags(Product $product, string $department): array
     {
         $deptTag = StorefrontTag::deptTagForDepartment($department);
@@ -412,6 +441,16 @@ final class ProductStorefrontClassifier
             $adhesiveType = $this->toolFamilyProductResolver->resolveAdhesiveType($product);
             if ($adhesiveType !== null) {
                 $tags[] = StorefrontTag::adhesiveType($adhesiveType);
+            }
+
+            $adhesiveFlow = $this->toolFamilyProductResolver->resolveAdhesiveFlow($product);
+            if ($adhesiveFlow !== null) {
+                $tags[] = StorefrontTag::adhesiveFlow($adhesiveFlow);
+            }
+
+            $adhesiveThickness = $this->toolFamilyProductResolver->resolveAdhesiveThickness($product);
+            if ($adhesiveThickness !== null) {
+                $tags[] = StorefrontTag::adhesiveThickness($adhesiveThickness);
             }
         }
 

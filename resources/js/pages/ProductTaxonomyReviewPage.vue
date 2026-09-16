@@ -5,10 +5,13 @@ import TaxonomyReviewFilters, {
     type TaxonomyReviewFilterPayload,
 } from '../components/products/TaxonomyReviewFilters.vue';
 import TaxonomyBulkUpdateDialog from '../components/products/TaxonomyBulkUpdateDialog.vue';
+import TaxonomyResearchSelectedDialog from '../components/products/TaxonomyResearchSelectedDialog.vue';
+import TaxonomySeriesDecisionDialog from '../components/products/TaxonomySeriesDecisionDialog.vue';
 import TaxonomyVerificationTable from '../components/products/TaxonomyVerificationTable.vue';
 import ConfirmDialog from '../components/ui/ConfirmDialog.vue';
 import { api } from '../lib/api';
 import type {
+    TaxonomyResearchField,
     TaxonomySummary,
     TaxonomyValues,
     TaxonomyVerification,
@@ -19,7 +22,7 @@ const error = ref<string | null>(null);
 const notice = ref<string | null>(null);
 const reviewFilters = ref<TaxonomyReviewFilterPayload>({
     search: '',
-    status: 'proposed',
+    status: '',
     canonical: {
         department: '',
         manufacturer: '',
@@ -52,6 +55,7 @@ const filterOptions = ref<Record<CanonicalFilterKey, string[]>>({
 const page = ref(1);
 const perPage = 50;
 const lastPage = ref(1);
+const totalMatching = ref(0);
 const items = ref<TaxonomyVerification[]>([]);
 const summary = ref<TaxonomySummary>({
     total: 0,
@@ -67,6 +71,10 @@ const bulkUpdateOpen = ref(false);
 const bulkUpdateBusy = ref(false);
 const selectedIds = ref<string[]>([]);
 const exportBusy = ref(false);
+const researchSelectedOpen = ref(false);
+const researchSelectedBusy = ref(false);
+const seriesDialogOpen = ref(false);
+const seriesDialogItem = ref<TaxonomyVerification | null>(null);
 
 const summaryCards = computed(() => [
     { label: 'total researched', value: summary.value.total },
@@ -122,10 +130,11 @@ async function loadItems(): Promise<void> {
 
     const response = await api.get<{
         data: TaxonomyVerification[];
-        meta: { last_page: number };
+        meta: { last_page: number; total: number };
     }>('/api/v1/products/taxonomy/verifications', { params });
     items.value = response.data.data;
     lastPage.value = response.data.meta.last_page;
+    totalMatching.value = response.data.meta.total;
     const visible = new Set(items.value.map((item) => item.id));
     selectedIds.value = selectedIds.value.filter((id) => visible.has(id));
 }
@@ -202,18 +211,61 @@ async function approve(
     }
 }
 
-async function queueResearch(): Promise<void> {
-    loading.value = true;
+async function confirmResearchSelected(fields: TaxonomyResearchField[]): Promise<void> {
+    researchSelectedOpen.value = false;
+    researchSelectedBusy.value = true;
     error.value = null;
     try {
-        await api.post('/api/v1/products/taxonomy/research', {
-            research_version: 'canonical-v1.4',
+        const response = await api.post<{
+            data: { researched: number; skipped: number; failed: number };
+        }>('/api/v1/products/taxonomy/verifications/research', {
+            confirm: true,
+            verification_ids: selectedIds.value,
+            fields,
         });
-        notice.value = 'Research queued for all products.';
+        const result = response.data.data;
+        const fieldLabel =
+            fields.length === 1
+                ? fields[0]
+                : fields.length === 11
+                  ? 'all fields'
+                  : `${fields.length} fields`;
+        notice.value = `Researched ${result.researched} row(s) (${fieldLabel}). Skipped ${result.skipped}. Failed ${result.failed}. Review proposed values before approving.`;
+        selectedIds.value = [];
+        await Promise.all([loadSummary(), loadItems()]);
     } catch {
-        error.value = 'Unable to queue taxonomy research.';
+        error.value = 'Unable to research selected rows.';
     } finally {
-        loading.value = false;
+        researchSelectedBusy.value = false;
+    }
+}
+
+function openSeriesDecision(item: TaxonomyVerification): void {
+    seriesDialogItem.value = item;
+    seriesDialogOpen.value = true;
+}
+
+async function saveSeriesDecision(
+    item: TaxonomyVerification,
+    series: string | null,
+    notes: string | null,
+): Promise<void> {
+    busyId.value = item.id;
+    error.value = null;
+    try {
+        await api.patch(`/api/v1/products/taxonomy/verifications/${item.id}/approve`, {
+            values: { series },
+            operator: 'local-operator',
+            notes,
+        });
+        notice.value = `Saved series for ${item.product.sku}.`;
+        seriesDialogOpen.value = false;
+        seriesDialogItem.value = null;
+        await Promise.all([loadSummary(), loadItems()]);
+    } catch {
+        error.value = `Unable to save series for ${item.product.sku}.`;
+    } finally {
+        busyId.value = null;
     }
 }
 
@@ -259,7 +311,7 @@ async function confirmBulkUpdate(
             values,
         });
         const result = response.data.data;
-        notice.value = `Updated ${result.updated} proposals. Skipped ${result.skipped}. Failed ${result.failed}.`;
+        notice.value = `Updated ${result.updated} row(s). Skipped ${result.skipped}. Failed ${result.failed}.`;
         bulkUpdateOpen.value = false;
         selectedIds.value = [];
         await Promise.all([loadSummary(), loadItems()]);
@@ -305,7 +357,10 @@ onMounted(() => {
                 <h1 class="text-3xl font-bold text-slate-950">Taxonomy review</h1>
                 <p class="mt-1 max-w-3xl text-sm text-slate-600">
                     Verify evidence-backed canonical fields before Shopify receives additive
-                    taxonomy metafields. Existing storefront navigation is unchanged.
+                    taxonomy metafields. Click a <strong>Series</strong> value to compare ERP,
+                    Plamod, rules, wiki, and Bandai sources, then save your decision. Select any
+                    row (including verified) for bulk updates or to re-run taxonomy research on
+                    only those SKUs.
                 </p>
             </div>
             <div class="flex flex-wrap gap-2">
@@ -337,13 +392,15 @@ onMounted(() => {
                     Approve high-confidence
                 </button>
                 <button
-                    data-testid="taxonomy-research"
+                    data-testid="taxonomy-research-selected"
                     type="button"
-                    class="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-                    :disabled="loading"
-                    @click="queueResearch"
+                    class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-50 disabled:opacity-50"
+                    :disabled="loading || researchSelectedBusy || selectedIds.length === 0"
+                    @click="researchSelectedOpen = true"
                 >
-                    Research all products
+                    Research selected{{
+                        selectedIds.length > 0 ? ` (${selectedIds.length})` : ''
+                    }}
                 </button>
             </div>
         </header>
@@ -371,14 +428,34 @@ onMounted(() => {
             </article>
         </section>
 
-        <TaxonomyReviewFilters :options="filterOptions" @apply="applyFilters" />
+        <TaxonomyReviewFilters
+            v-model="reviewFilters"
+            :options="filterOptions"
+            @apply="applyFilters"
+        />
+
+        <p
+            v-if="!loading && summary.total > 0"
+            class="text-sm text-slate-600"
+            data-testid="taxonomy-result-count"
+        >
+            Showing page {{ page }} of {{ lastPage }} —
+            <strong>{{ totalMatching }}</strong> row(s) match the active filters (latest research
+            run has {{ summary.total }} total).
+        </p>
 
         <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div v-if="loading" class="p-8 text-center text-sm text-slate-500">
                 Loading taxonomy…
             </div>
-            <div v-else-if="items.length === 0" class="p-8 text-center text-sm text-slate-500">
-                No taxonomy records match these filters.
+            <div v-else-if="items.length === 0" class="space-y-3 p-8 text-center text-sm text-slate-600">
+                <p>No taxonomy records match the <strong>active</strong> filters.</p>
+                <p class="mx-auto max-w-xl text-slate-700">
+                    Loaded status filter:
+                    <strong>{{ reviewFilters.status === '' ? 'All' : reviewFilters.status }}</strong
+                    >. Summary cards count the whole latest run ({{ summary.total }}), not only what
+                    is on screen.
+                </p>
             </div>
             <TaxonomyVerificationTable
                 v-else
@@ -386,6 +463,7 @@ onMounted(() => {
                 :busy-id="busyId"
                 :selected-ids="selectedIds"
                 @approve="approve"
+                @series-decide="openSeriesDecision"
                 @update:selected-ids="selectedIds = $event"
             />
         </section>
@@ -399,6 +477,18 @@ onMounted(() => {
             @cancel="bulkUpdateOpen = false"
         />
 
+        <TaxonomySeriesDecisionDialog
+            :open="seriesDialogOpen"
+            :item="seriesDialogItem"
+            :series-options="filterOptions.series"
+            :busy="busyId !== null"
+            @confirm="saveSeriesDecision"
+            @cancel="
+                seriesDialogOpen = false;
+                seriesDialogItem = null;
+            "
+        />
+
         <ConfirmDialog
             :open="confirmBulkOpen"
             title="Approve high-confidence proposals?"
@@ -408,6 +498,14 @@ onMounted(() => {
             :busy="bulkBusy"
             @confirm="confirmBulkApprove"
             @cancel="confirmBulkOpen = false"
+        />
+
+        <TaxonomyResearchSelectedDialog
+            :open="researchSelectedOpen"
+            :selected-count="selectedIds.length"
+            :busy="researchSelectedBusy"
+            @confirm="confirmResearchSelected"
+            @cancel="researchSelectedOpen = false"
         />
 
         <footer class="flex items-center justify-between text-sm text-slate-600">

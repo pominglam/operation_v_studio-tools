@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
+import { onBeforeUnmount } from 'vue';
 
 export type CanonicalFilterKey =
     | 'department'
@@ -23,32 +23,16 @@ export type TaxonomyReviewFilterPayload = {
     missingField: CanonicalFilterKey | '';
 };
 
-defineProps<{
+const props = defineProps<{
     options: Record<CanonicalFilterKey, string[]>;
+    modelValue: TaxonomyReviewFilterPayload;
 }>();
 
 const emit = defineEmits<{
     apply: [filters: TaxonomyReviewFilterPayload];
+    'update:modelValue': [filters: TaxonomyReviewFilterPayload];
 }>();
 
-const search = ref('');
-const status = ref('proposed');
-const canonical = reactive<Record<CanonicalFilterKey, string>>({
-    department: '',
-    manufacturer: '',
-    franchise: '',
-    product_line: '',
-    subline: '',
-    grade: '',
-    series: '',
-    scale: '',
-    workshop_shelf: '',
-    accessory_kind: '',
-});
-const maximumConfidence = ref('');
-const archived = ref<'active' | 'all' | 'archived'>('all');
-const differencesOnly = ref(false);
-const missingField = ref<CanonicalFilterKey | ''>('');
 const canonicalFields: Array<{ key: CanonicalFilterKey; label: string }> = [
     { key: 'department', label: 'Department' },
     { key: 'manufacturer', label: 'Manufacturer' },
@@ -62,39 +46,99 @@ const canonicalFields: Array<{ key: CanonicalFilterKey; label: string }> = [
     { key: 'accessory_kind', label: 'Accessory kind' },
 ];
 
-function submit(): void {
-    emit('apply', {
-        search: search.value.trim(),
-        status: status.value,
-        canonical: { ...canonical },
-        maximumConfidence: maximumConfidence.value,
-        archived: archived.value,
-        differencesOnly: differencesOnly.value,
-        missingField: missingField.value,
+function statusLabel(value: string): string {
+    if (value === '') {
+        return 'All';
+    }
+    if (value === 'proposed') {
+        return 'Proposed';
+    }
+    if (value === 'verified') {
+        return 'Verified';
+    }
+    if (value === 'overridden') {
+        return 'Overridden';
+    }
+
+    return value;
+}
+
+function commit(next: TaxonomyReviewFilterPayload): void {
+    emit('update:modelValue', next);
+    emit('apply', next);
+}
+
+function patch(partial: Partial<TaxonomyReviewFilterPayload>): void {
+    commit({ ...props.modelValue, ...partial });
+}
+
+function patchCanonical(key: CanonicalFilterKey, value: string): void {
+    commit({
+        ...props.modelValue,
+        canonical: { ...props.modelValue.canonical, [key]: value },
     });
 }
+
+const SEARCH_DEBOUNCE_MS = 300;
+
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearSearchDebounce(): void {
+    if (searchDebounceTimer !== null) {
+        window.clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = null;
+    }
+}
+
+function applySearch(value: string): void {
+    commit({
+        ...props.modelValue,
+        search: value.trim(),
+    });
+}
+
+function updateSearch(value: string): void {
+    emit('update:modelValue', { ...props.modelValue, search: value });
+    clearSearchDebounce();
+    searchDebounceTimer = window.setTimeout(() => {
+        searchDebounceTimer = null;
+        applySearch(value);
+    }, SEARCH_DEBOUNCE_MS);
+}
+
+function submitSearch(): void {
+    clearSearchDebounce();
+    applySearch(props.modelValue.search);
+}
+
+onBeforeUnmount(() => {
+    clearSearchDebounce();
+});
 </script>
 
 <template>
     <form
         class="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-4"
-        @submit.prevent="submit"
+        @submit.prevent="submitSearch"
     >
         <label class="text-sm font-medium text-slate-700">
             Search SKU or product name
             <input
                 data-testid="taxonomy-search"
-                v-model="search"
+                :value="modelValue.search"
                 class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                 type="search"
+                placeholder="Search SKU or title…"
+                @input="updateSearch(($event.target as HTMLInputElement).value)"
             />
         </label>
         <label class="text-sm font-medium text-slate-700">
             Status
             <select
                 data-testid="taxonomy-status"
-                v-model="status"
+                :value="modelValue.status"
                 class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                @change="patch({ status: ($event.target as HTMLSelectElement).value })"
             >
                 <option value="">All</option>
                 <option value="proposed">Proposed</option>
@@ -110,8 +154,11 @@ function submit(): void {
             {{ field.label }}
             <select
                 :data-testid="`taxonomy-${field.key.replace('_', '-')}`"
-                v-model="canonical[field.key]"
+                :value="modelValue.canonical[field.key]"
                 class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                @change="
+                    patchCanonical(field.key, ($event.target as HTMLSelectElement).value)
+                "
             >
                 <option value="">All {{ field.label.toLocaleLowerCase() }}</option>
                 <option v-for="option in options[field.key]" :key="option" :value="option">
@@ -123,8 +170,11 @@ function submit(): void {
             Maximum confidence
             <select
                 data-testid="taxonomy-confidence"
-                v-model="maximumConfidence"
+                :value="modelValue.maximumConfidence"
                 class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                @change="
+                    patch({ maximumConfidence: ($event.target as HTMLSelectElement).value })
+                "
             >
                 <option value="">Any confidence</option>
                 <option value="75">75% or lower</option>
@@ -135,8 +185,14 @@ function submit(): void {
             Missing field
             <select
                 data-testid="taxonomy-missing-field"
-                v-model="missingField"
+                :value="modelValue.missingField"
                 class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                @change="
+                    patch({
+                        missingField: ($event.target as HTMLSelectElement)
+                            .value as CanonicalFilterKey | '',
+                    })
+                "
             >
                 <option value="">Any completeness</option>
                 <option
@@ -152,8 +208,16 @@ function submit(): void {
             Archive state
             <select
                 data-testid="taxonomy-archived"
-                v-model="archived"
+                :value="modelValue.archived"
                 class="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2"
+                @change="
+                    patch({
+                        archived: ($event.target as HTMLSelectElement).value as
+                            | 'active'
+                            | 'all'
+                            | 'archived',
+                    })
+                "
             >
                 <option value="all">Active and archived</option>
                 <option value="active">Active only</option>
@@ -163,19 +227,22 @@ function submit(): void {
         <label class="flex items-center gap-2 self-end pb-2 text-sm font-medium text-slate-700">
             <input
                 data-testid="taxonomy-differences-only"
-                v-model="differencesOnly"
+                :checked="modelValue.differencesOnly"
                 type="checkbox"
                 class="size-4 rounded border-slate-300"
+                @change="
+                    patch({
+                        differencesOnly: ($event.target as HTMLInputElement).checked,
+                    })
+                "
             />
             Differences only
         </label>
-        <button
-            data-testid="taxonomy-filter-submit"
-            type="button"
-            class="self-end rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-            @click="submit"
-        >
-            Apply filters
-        </button>
+        <p class="col-span-full text-xs text-slate-500">
+            Dropdowns reload immediately. Search applies after you pause typing or press
+            <strong>Enter</strong>. Loaded status:
+            <strong>{{ statusLabel(modelValue.status) }}</strong
+            >.
+        </p>
     </form>
 </template>

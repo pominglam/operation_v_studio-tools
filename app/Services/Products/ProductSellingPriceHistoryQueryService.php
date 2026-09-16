@@ -32,13 +32,28 @@ final class ProductSellingPriceHistoryQueryService
     {
         $po = $this->purchaseOrders->findByUuidOrFail($purchaseOrderUuid);
         $limit = max(1, min(500, $limit));
+        $collapsed = $this->collapseToNetChangePerProduct(
+            $this->historyRowsForPurchaseOrder((int) $po->id),
+        );
+        $visible = array_values(array_filter(
+            $collapsed,
+            fn (array $row): bool => $this->isVisiblePoChange($row),
+        ));
+        $this->sortNewestFirst($visible);
 
+        return array_slice($visible, 0, $limit);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function historyRowsForPurchaseOrder(int $purchaseOrderId): array
+    {
         $rows = DB::table('product_selling_price_history as h')
             ->join('products as p', 'p.id', '=', 'h.product_id')
-            ->where('h.purchase_order_id', '=', (int) $po->id)
-            ->orderByDesc('h.created_at')
-            ->orderByDesc('h.id')
-            ->limit($limit)
+            ->where('h.purchase_order_id', '=', $purchaseOrderId)
+            ->orderBy('h.created_at')
+            ->orderBy('h.id')
             ->get([
                 'h.id',
                 'h.product_uuid',
@@ -52,6 +67,68 @@ final class ProductSellingPriceHistoryQueryService
             ]);
 
         return $rows->map(fn (object $row): array => $this->mapRow($row))->all();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function collapseToNetChangePerProduct(array $rows): array
+    {
+        $byProduct = [];
+
+        foreach ($rows as $row) {
+            $productUuid = (string) $row['product_uuid'];
+            if (! isset($byProduct[$productUuid])) {
+                $byProduct[$productUuid] = $row;
+
+                continue;
+            }
+
+            $byProduct[$productUuid]['new_price'] = $row['new_price'];
+            $byProduct[$productUuid]['currency'] = $row['currency'];
+            $byProduct[$productUuid]['source'] = $row['source'];
+            $byProduct[$productUuid]['created_at'] = $row['created_at'];
+            $byProduct[$productUuid]['id'] = $row['id'];
+        }
+
+        return array_values($byProduct);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $rows
+     */
+    private function sortNewestFirst(array &$rows): void
+    {
+        usort(
+            $rows,
+            static function (array $left, array $right): int {
+                $timeCmp = strcmp((string) $right['created_at'], (string) $left['created_at']);
+                if ($timeCmp !== 0) {
+                    return $timeCmp;
+                }
+
+                return ((int) $right['id']) <=> ((int) $left['id']);
+            },
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     */
+    private function isVisiblePoChange(array $row): bool
+    {
+        $previous = is_string($row['previous_price'] ?? null) ? $row['previous_price'] : null;
+        $next = is_string($row['new_price'] ?? null) ? $row['new_price'] : null;
+        if ($next === null) {
+            return false;
+        }
+
+        if ($previous === null) {
+            return true;
+        }
+
+        return abs((int) round((float) $previous * 100) - (int) round((float) $next * 100)) > 100;
     }
 
     /**

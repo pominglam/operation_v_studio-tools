@@ -71,6 +71,8 @@ Employees also pass through API allow-lists enforced in `ExternalAccessPasswordM
 | `/price-research/reports`       | Quote issue reports                                                     | Admin    |
 | `/price-research/runs/:id/logs` | Run logs for a research batch                                           | Admin    |
 | `/sync-progress`                | Laravel job-batch progress (`/api/v1/job-batches/...`)                  | Admin    |
+| `/store-events`                 | In-store community event CRUD                                           | Admin    |
+| `/marketing-notes`              | Marketing notes (sheet Other column)                                    | Admin    |
 | `/tcg-events`                   | TCG event listing + refresh trigger                                     | Admin    |
 | `/maintenance`                  | Notes, backups, tunnel, external-access settings, refresh costs…        | Admin    |
 
@@ -135,7 +137,11 @@ Below, **verbs** reflect Laravel router methods. **`{id}` on products** uses **U
 | GET    | `/products`                | Paginated/filtered product listing (supports search, PDP completeness filters—see Products UI/specs). |
 | POST   | `/products`                | Create product.                                                                                       |
 | PATCH  | `/products/{id}`           | Partial update (`ProductsController::update`).                                                        |
-| GET    | `/products/filter-options` | Facets for filters (types, vendors, etc.).                                                            |
+| GET    | `/products/filter-options` | Facets for the Products grid: distinct taxonomy/vendor values, `empty_fields`, all POs for the PO dropdown, and labeled enum options (`missing_info`, flags, shipment, ready, archived, published, `po_novelty`). |
+| GET    | `/products/saved-views` | Shared Products list views (filters, sort, visible columns). |
+| POST   | `/products/saved-views` | Create or overwrite a shared view by name (`name`, `snapshot`, `visible_columns`). **201** when created, **200** when updated. |
+| PUT    | `/products/saved-views/{id}` | Update a shared view. **404** if missing; **422** if the name is already used. |
+| DELETE | `/products/saved-views/{id}` | Delete a shared view. **204**. **404** if missing. |
 
 `GET /products` exposes computed **`not_arrived`** and **`reorder`** fields and accepts `not_arrived`, `not_arrived_min`, `not_arrived_include_draft_orders`, and `sort_by=not_arrived`. `ProductNotArrivedQtyService` / `ProductInboundOpenPoQtySql` define **Not arrived** as the sum of positive PO-line `qty_ordered` until the parent PO has `fully_on_shelves_date`; received-but-not-shelved quantities remain included. Products/report/replenishment defaults include draft POs, while PO-detail metrics and PLAMOD restock exclude drafts.
 
@@ -150,7 +156,8 @@ Below, **verbs** reflect Laravel router methods. **`{id}` on products** uses **U
 | POST   | `/products/taxonomy/verifications/bulk-approve` | Confirm, then apply matching high-confidence proposals. Skips test SKUs and kits without a manufacturer.                                    |
 | POST   | `/products/taxonomy/verifications/bulk-update`  | Confirm, then override selected proposed rows with operator-supplied canonical values. Skips test SKUs.                                     |
 | GET    | `/products/taxonomy/export`                     | Confirmation CSV of the current review filter set.                                                                                          |
-| POST   | `/products/taxonomy/research`                   | Queue all-record canonical taxonomy research.                                                                                               |
+| POST   | `/products/taxonomy/research`                   | Queue all-record canonical taxonomy research (CLI/jobs; not exposed in taxonomy review UI).                                                 |
+| POST   | `/products/taxonomy/verifications/research`   | Re-derive taxonomy for selected verification rows; optional `fields[]` (default all); sets status to proposed without ERP write.           |
 | GET    | `/products/taxonomy/research/{id}`              | Research-run progress and counts.                                                                                                           |
 
 Canonical fields are additive to legacy `main_type`, `type`, and `brand`. Existing Shopify tags,
@@ -168,11 +175,12 @@ collections, and navigation remain on the legacy compatibility path until an exp
 | PATCH  | `/products/{id}/ready`                                     | Readiness workflow flag.                                                                                                                                                                |
 | PATCH  | `/products/{id}/latest-arrival`                            | Latest arrival bookkeeping for PO/receiving workflows.                                                                                                                                  |
 | PATCH  | `/products/{id}/critical`                                  | Critical product flag (`is_critical`, default false).                                                                                                                                   |
+| PATCH  | `/products/{id}/urgent`                                    | Urgent product flag (`is_urgent`, default false).                                                                                                                                       |
 | PATCH  | `/products/{id}/discontinue`                               | Discontinue product flag (`is_discontinued`, default false).                                                                                                                            |
 | PATCH  | `/products/{id}/hazardous-shipment`                        | Hazardous shipment flag (`is_hazardous_shipment`, default false).                                                                                                                       |
 | PATCH  | `/products/{id}/shipment-method`                           | Shipment method (`shipment_method`: `air`, `sea`, or null).                                                                                                                             |
 | POST   | `/purchase-orders/{id}/workflow-actions/prepare-inventory` | Validates PO **qty received**; skips Shopify if mirror fresh (default 1h). If stale, returns confirmation payload unless body **`pull_shopify: true`** (PO-SKU inventory refresh only). |
-| GET    | `/products`                                                | List supports `product_flags[]`: `critical`, `discontinued`, `hazardous_shipment` (multi-select OR); `shipment_methods[]`: `air`, `sea` (multi-select OR).                              |
+| GET    | `/products`                                                | List supports `product_flags[]`: `urgent`, `critical`, `discontinued`, `hazardous_shipment` (multi-select OR); `shipment_methods[]`: `air`, `sea` (multi-select OR); `sort_by=is_urgent`. |
 | PUT    | `/products/{id}/selling-price`                             | Upsert **`product_selling_prices`** row (Shopify variant price drives exports); appends **`product_selling_price_history`** with **`source: manual`** when price changes.               |
 | GET    | `/products/{id}/selling-price-history`                     | Append-only selling price change log for the product (optional **`purchase_order_uuid`** when change came from PO Set/review).                                                          |
 
@@ -201,14 +209,15 @@ Two **different orchestrations** deliberately exist:
 | ------ | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | PUT    | `/products/{id}/plamod/assets/order`  | Re-order **Plamod-sourced** image assets (`sort_order`).                                                                         |
 | PUT    | `/products/{id}/assets/order`         | Re-order **all** relevant image assets (includes manual uploads / mixed ordering—see UI).                                        |
-| POST   | `/products/{id}/assets/manual-upload` | Multipart upload of **`manual_upload`** assets; persists file + checksum + Shopify-enabled default per product rules in service. |
+| POST   | `/products/{id}/assets/manual-upload` | Multipart upload of **`manual_upload`** assets; persists file + checksum + Shopify-enabled default. Response `data` includes **`created`**, **`asset_ids`**, and full **`assets`** payloads (so the Info drawer can append without `GET /product-info`). |
+| PATCH  | `/products/{id}/assets/shopify-enabled` | Bulk toggle Shopify export for **`ids`** on that product (`shopify_enabled` + `ids: int[]`). Used by hide-source and exact-duplicate disable. |
 
 | Method | Path                                   | Purpose                                                                                                                                                                                                                      |
 | ------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/product-assets/{id}/download`        | Attachment download (numeric **`id`**).                                                                                                                                                                                      |
 | GET    | `/product-assets/{id}/view`            | Inline view (numeric **`id`**).                                                                                                                                                                                              |
 | GET    | `/product-assets/{id}/thumb`           | Inline thumbnail (max width **320px** JPEG, generated on first request and cached under `product-external-assets/thumbs/{id}.jpg`; falls back to full file when GD unavailable). **`Cache-Control: public, max-age=86400`**. |
-| PATCH  | `/product-assets/{id}/shopify-enabled` | Toggle whether asset participates in Shopify image export (**`shopifyImageAssets`** relationship).                                                                                                                           |
+| PATCH  | `/product-assets/{id}/shopify-enabled` | Toggle whether asset participates in Shopify image export (**`shopifyImageAssets`** relationship). Info drawer On/Off is optimistic and does not wait for the follow-up **`PUT /products/{id}/assets/order`**.                                                                                                                           |
 | DELETE | `/product-assets/{id}`                 | **Only** **`source === manual_upload`**: deletes DB row + underlying storage file (`ProductManualImageDeleteService`). Other sources → **`ManualUploadDeletionDeniedException`** / mapped HTTP error (see tests).            |
 
 ### Bulk PDP sync via job batches
@@ -249,8 +258,8 @@ Two **different orchestrations** deliberately exist:
 
 | Method | Path                                  | Purpose                                                                                                                                                            |
 | ------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| POST   | `/products/recrawl/selected`          | Queues `RecrawlSelectedProductJob` subset for PDP/seller rescrape flows.                                                                                           |
-| POST   | `/products/shopify-push/preview`      | Preview bulk ERP → Shopify push for selected product UUIDs + `push_options` field matrix (`ProductsBulkPushShopifyPreviewService`).                                |
+| POST   | `/products/recrawl/selected`          | Queues `RecrawlSelectedProductJob` for selected image sources and/or individual price-research site keys (`config/price_research.php`). Legacy `competitor_price_research` still crawls every price site. |
+| POST   | `/products/shopify-push/preview`      | Preview bulk ERP → Shopify push for selected product UUIDs + `push_options` field matrix (`ProductsBulkPushShopifyPreviewService`). Local ERP + Shopify mirror only — no live Admin SKU search. |
 | POST   | `/products/shopify-push/selected`     | Queues `PushSelectedProductToShopifyJob` batch (`push_selected_products_shopify`); **202** + `batch_id`.                                                           |
 | POST   | `/products/backfill-types`            | Backfills **type** derivation gaps using `ProductTypeBackfill`/related orchestration.                                                                              |
 | POST   | `/products/recompute-types`           | Runs smarter/type rules across catalog (`ProductTypeRecomputeService`).                                                                                            |
@@ -290,7 +299,7 @@ Two **different orchestrations** deliberately exist:
 | Method | Path                                         | Purpose                                                                                                                                                                                                                                                                                                                                                             |
 | ------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | POST   | `/purchase-orders/import/preview`            | Parses upload without DB write; returns HKD/CAD line preview for Dspiae/Stedi/Other/multi PM broker invoices (`PurchaseOrderImportService::preview`).                                                                                                                                                                                                               |
-| POST   | `/purchase-orders/import`                    | Parses vendor-specific PDF/HTML/CSV/XLSX blobs into PO + lines (`PurchaseOrderImportService`—heavy edge-case coverage in `tests/Feature/Api/V1/PurchaseOrder*`). Supports append/re-import behaviors per tests.                                                                                                                                                     |
+| POST   | `/purchase-orders/import`                    | Parses vendor-specific PDF/HTML/CSV/XLSX blobs into PO + lines (`PurchaseOrderImportService`—heavy edge-case coverage in `tests/Feature/Api/V1/PurchaseOrder*`). Supports append/re-import behaviors per tests. New **Plamod** POs default **`shipment_method=air`** when unset.                                                                                                                                                     |
 | POST   | `/purchase-orders/combined-payments/preview` | Validates two or more same-currency foreign POs and previews one CAD payment allocated across their vendor product totals and, optionally, vendor freight totals. Accepts optional combined `product_paid_cad` + `shipping_paid_cad` pools or exact per-PO CAD `allocations[]`; all amounts must reconcile to `total_paid_cad`.                                     |
 | POST   | `/purchase-orders/combined-payments`         | Persists the combined-payment header and per-PO snapshots, updates each PO's suggested or exact CAD product/shipping allocation, and converts line CAD unit costs using each PO's product FX without changing original vendor-currency values.                                                                                                                      |
 | GET    | `/purchase-orders`                           | Indexed list. Filters: `vendors[]`, `statuses[]`. Sort: `sort_by` (`id`, `status`, `shipment`, `created`, `ordered`, `estimated_arrival`, `received`, `on_shelves`, `vendor`, `items`, `product_total`, `shipping_total`, `surcharge_total`, `total`, plus internal `filter`) and `sort_dir` (`asc`\|`desc`). Default `ordered desc`.                               |
@@ -315,7 +324,7 @@ Two **different orchestrations** deliberately exist:
 
 | Applicators | Behavior summary |
 | ----------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST | `/purchase-orders/{id}/apply-received-to-available` | Requires **`qty_received > 0` on every line** and **`qty_damaged <= qty_received`**; sums **`max(0, qty_received - qty_damaged)`** per distinct **`product_id`**, then increments **`products.available_qty`** transactionally (`PurchaseOrderApplyReceivedToAvailableService`). |
+| POST | `/purchase-orders/{id}/apply-received-to-available` | Requires **`qty_received` entered on every line** (`0` is valid; **`null`** is not) and **`qty_damaged <= qty_received`**; sums **`max(0, qty_received - qty_damaged)`** per distinct **`product_id`**, then increments **`products.available_qty`** transactionally (`PurchaseOrderApplyReceivedToAvailableService`). |
 | POST | `/purchase-orders/{id}/apply-inventory-check` | **Destructive-ish reset**: deletes inventory movements/lots linked to PO line ids, clears **`qty_received`**, aggregates inventory-check rows by SKU, overwrites **`qty_received`**, then **`ProductLatestCostCacheService::recomputeForSkus`** for affected SKU set (`PurchaseOrderApplyInventoryCheckService`). Returns warnings like SKUs appearing on check lines but not PO. |
 
 | Checklist store | Meaning |
@@ -359,10 +368,12 @@ Two **different orchestrations** deliberately exist:
 | ------ | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/maintenance/notes`                                       | Freeform maintenance bulletin text.                                                                                  |
 | PUT    | `/maintenance/notes`                                       | Upserts maintenance note markdown/plain text blob.                                                                   |
-| GET    | `/maintenance/custom-asia-order-customer-message-template` | Custom Asia order DM template (`maintenance_notes` key `custom_asia_customer_message`).                              |
-| PUT    | `/maintenance/custom-asia-order-customer-message-template` | Save template `{ body }` or reset `{ reset: true }`. Placeholders: `{product_name}`, `{price}`, `{deposit_percent}`. |
-| GET    | `/maintenance/custom-asia-order-pricing-caps` | Custom Asia order pricing caps (`maintenance_notes` key `custom_asia_pricing_caps`). Defaults: $50 merchandiser commission, $150 OPV margin. |
-| PUT    | `/maintenance/custom-asia-order-pricing-caps` | Save caps `{ merchandiser_commission_cap_cad, opv_margin_cap_cad }` or reset `{ reset: true }`. |
+| GET    | `/maintenance/special-order-customer-message-template` | Special order DM template (`maintenance_notes` key `special_order_customer_message`).                              |
+| PUT    | `/maintenance/special-order-customer-message-template` | Save template `{ body }` or reset `{ reset: true }`. Placeholders: `{product_name}`, `{price}`, `{deposit_percent}`. |
+| GET    | `/maintenance/special-order-pricing-caps` | Special order pricing caps (`maintenance_notes` key `special_order_pricing_caps`). Defaults: $50 merchandiser commission, $150 OPV margin. |
+| PUT    | `/maintenance/special-order-pricing-caps` | Save caps `{ merchandiser_commission_cap_cad, opv_margin_cap_cad }` or reset `{ reset: true }`. |
+| GET    | `/maintenance/opv-catalog-pricing` | OPV catalog margin + default store-preorder deposit (`maintenance_notes` key `opv_catalog_pricing`). Defaults: 1.50×, 20%. |
+| PUT    | `/maintenance/opv-catalog-pricing` | Save `{ price_multiplier, default_deposit_percent }` or reset `{ reset: true }`. |
 
 | Database backups (`docs/requirements/maintenance-db-backups.md`) | Purpose |
 | ---------------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -373,11 +384,12 @@ Two **different orchestrations** deliberately exist:
 | Ops toggles | Purpose |
 | ----------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | POST | `/maintenance/refresh-latest-costs` | Recomputes **`latest_unit_cost`** + **`latest_landed_unit_cost`** for entire catalog via **`ProductLatestCostCacheService::recomputeAll`** (joins newest PO lines by SKU with shipping/surcharge proration logic). |
+| POST | `/maintenance/model-kit-collection-filter-manifest` | Regenerates model-kit storefront filter manifest files via **`ModelKitCollectionFilterManifestGeneratorService`** (requires **`OVS_SHOPIFY_THEME_PATH`**). |
 | POST | `/maintenance/clear-stale-latest-arrival` | Clears **`latest_arrival`** on products linked to POs older than 4 weeks; Shopify **`tagsRemove`** for **`latest arrival`** tag only (`ShopifyLatestArrivalTagRemoverService`). |
 | POST | `/purchase-orders/{id}/workflow-actions/clear-stale-latest-arrival` | Same clear-stale action (PO workflow shortcut). |
-| GET | `/purchase-orders/{id}/workflow-actions/set-prices/preview` | Previews prices from PO-line landed cost × 1.5 (ceil to next X.99, then one X.99 tier lower only when formula price is > 1.55× and lower tier is still ≥ 1.45×), including a warning when shipping is not entered; groups new/update/unchanged/missing-cost rows. |
+| GET | `/purchase-orders/{id}/workflow-actions/set-prices/preview` | Previews prices from PO-line landed cost × 1.5 using the closest X.99 (ties go up). Existing prices are not suggested for update when the difference is $1.00 or less, or when current is already higher; includes a warning when shipping is not entered; groups new/update/unchanged/missing-cost rows. |
 | POST | `/purchase-orders/{id}/workflow-actions/set-prices` | Applies formula rows and optional manual `overrides[]` (`product_uuid`, `price`) for PO products, then re-verifies workflow state; logs **`product_selling_price_history`** rows with **`source: po_workflow`** and **`purchase_order_id`** when prices change. |
-| GET | `/purchase-orders/{id}/selling-price-history` | Lists selling price changes recorded from this PO’s Set/review apply (SKU, product, previous → new, timestamp). |
+| GET | `/purchase-orders/{id}/selling-price-history` | Lists selling price changes recorded from this PO’s Set/review apply, **one row per product** (price before this PO → last price set on this PO). Omits net changes of $1.00 or less; first-time prices still appear. |
 | GET | `/purchase-orders/{id}/workflow-actions/export-shopify-content/preview` | PO products without handles eligible for Shopify content create (`PurchaseOrderWorkflowExportShopifyContentService`). |
 | POST | `/purchase-orders/{id}/workflow-actions/export-shopify-content/push` | Queues PO content export batch (`PurchaseOrderWorkflowExportShopifyContentQueueService` → **`PushSelectedProductToShopifyJob`** per SKU); **202** + `batch_id`. Finalize job runs workflow verify when batch completes. |
 | GET | `/purchase-orders/{id}/workflow-actions/export-shopify-content/status` | Poll export progress by `batch_id` — phases: `pushing`, `finalizing`, `complete`, `failed`. |
@@ -419,15 +431,51 @@ Two **different orchestrations** deliberately exist:
 | GET/POST | `/price-research/reports` | List/create “quote issue” reports surfaced in UI workflow. |
 | PATCH | `/price-research/reports/{id}/handled` | Numeric id resolution + handled flag bookkeeping. |
 | GET | `/reports/staff-orders` | Monthly POS staff / channel order counts (`month=YYYY-MM`). |
-| GET | `/reports/inventory-by-main-type` | On-hand inventory stats grouped by `products.main_type`. |
+| GET | `/reports/inventory-by-main-type` | On-hand inventory stats grouped by department / product line / workshop shelf / grade / subline; SPA tree follows the storefront mega menu. |
+| GET | `/reports/customer-retention` | Identified people + New/Repeat/Loyal + RFM + AOV + store-rhythm cadence + own-pace 2×-gap + month-by-month New vs returning (`CustomerRetentionReportService`). |
+| GET | `/reports/customer-retention/{personId}` | One merged person plus eligible order refs. |
 
 ### Staff orders report (`app/Services/Shopify/Admin/Orders`)
 
 | Method | Path                                                  | Purpose                                                                                                                                                  |
 | ------ | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/reports/staff-orders`                               | `ShopifyStaffOrdersMonthlyReportService` — aggregates **`shopify_orders`** mirror (`source_name`, `channel_name`, `pos_user_id`) for one calendar month. |
-| GET    | `/reports/inventory-by-main-type`                     | `InventoryByMainTypeReportService` — on-hand `available_qty` stats grouped by `products.main_type`.                                                      |
+| GET    | `/shopify/orders`                                     | `ShopifyOrderQueryService` — paginated **`shopify_orders`** list for the Orders page (date/channel/status/`preorder=all\|only`/search). Includes **`has_store_preorder`**, **`customer_email`**, **`customer_phone`**, processed-by / sales-channel labels, and **`store_event_*`**. Store-preorder lines tag the Shopify order **`preorder`** on upsert. |
+| POST   | `/shopify/orders/store-event`                         | Batch set or clear `store_event_id` on mirrored orders. |
+| GET    | `/shopify/orders/{id}`                                | Same service — one mirrored order plus line items (`is_store_preorder`, description with `(PO)` suffix when applicable). **404** if missing. |
+| GET    | `/reports/staff-orders`                               | `ShopifyStaffOrdersMonthlyReportService` — aggregates **`shopify_orders`** mirror (`source_name`, `channel_name`, `pos_user_id`, tags, `payment_gateway_names`) for one calendar month. Extra buckets include **Special order** (draft invoices / special-order tags), **Cash sale** (Shopify Cash gateway or `cash` tag), and **NT sales** (`nt` / `nt-sale` tags), then Quick Sale / Online Store / Shop / POS (other). |
+| GET    | `/reports/inventory-by-main-type`                     | `InventoryByMainTypeReportService` — on-hand `available_qty` stats grouped by department / product line / workshop shelf / grade / subline. SPA tree matches the storefront mega menu. |
+| GET    | `/reports/customer-retention`                         | `CustomerRetentionReportService` — merge R1–R3, score RFM/AOV/store rhythm/own-pace, paginate; `summary.months` is Eastern Time (Montreal) New vs returning buyers and spend.            |
+| GET    | `/reports/customer-retention/{personId}`              | Same snapshot — one person plus order refs (no email/phone).                                                                                             |
+| CLI    | `shopify:customer-retention-crosscheck {--live}`      | ERP invariants + API summary; `--live` pages Shopify Admin and compares identity fields and people counts.                                               |
 | CLI    | `shopify:orders-backfill-staff-attribution {YYYY-MM}` | Backfill staff attribution columns on existing mirror rows for one month.                                                                                |
+| CLI    | `shopify:store-preorders-collection`                  | Upsert smart collection `/collections/pre-orders` (tag `sp:store-preorder`, manual sort). Theme nav **Preorders** (before Miscellaneous) is Liquid on live Rise. |
+| CLI    | `shopify:store-preorders-collection-reorder`          | Reorder `/collections/pre-orders` by close date (open first). Queued on the `shopify` queue after open/close/push/shelf-sync. |
+| CLI    | `shopify:store-preorders-shelf-sync`                  | Keep tagged Shopify products that still have an ERP store-preorder offer (open or closed). Retag ERP offers missing `sp:store-preorder`. Untag leftovers when the ERP offer is gone but the product/order remains. Delete the Shopify product when ERP is gone and there is no order. |
+| CLI    | `store-preorders:close-expired`                       | Close open offers whose `window_ends_on` is before today (America/Toronto) via `StorePreorderCloseService`. Pushes Shopify first (qty 0 while still tagged). Scheduled daily 00:15 America/Toronto. |
+| CLI    | `store-preorders:refresh-missing-photos`              | Attach real Plamod pick-list images for open **and closed** store-preorder products missing real photos (rejects Plamod “No image” placeholders), queue a Shopify images-only push (no tag rewrite), and recrawl the Plamod PDP for leftovers. Scheduled daily 07:00 America/Toronto. |
+| CLI    | `store-preorders:sync-plamod-descriptions`            | Scrape Plamod retailer PDP **full description** onto store-preorder products (`product_external_contents.source=plamod`, preferred unless Manual/`other`). `--push` writes listing info to Shopify. Skips `OVS-*` manual offers. |
+| CLI    | `store-preorders:keep-plamod-images`                  | Delete HLJ assets from store-preorder products; queue Shopify **images-only** push. Recrawl / Get product info / Plamod ZIP sync skip HLJ, Bandai, Gundam Planet, Newtype, and Gundam Hangar image attach on store-preorder products. |
+| CLI    | `plamod:instock-sync`                                 | Queue `SyncPlamodInstockJob` (same as **Refresh from PLAMOD**). Scheduled daily 05:00 America/Toronto; skips if a refresh is already queued or running. |
+| CLI    | `storefront:model-kit-index-rebuild`                  | Recreate Shopify theme JSON cache `snippets/ovs-model-kit-index-cache.liquid` from published ERP model kits (`ModelKitStorefrontIndexRebuildService`). Successful Shopify upserts of model-kit products poke unique delayed job `RebuildModelKitStorefrontIndexJob` on the `shopify` queue. ERP-only saves and T&S upserts do not poke. Scheduled daily 03:45 America/Toronto. |
+
+### Store events (`app/Services/StoreEvents`)
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| GET | `/store-events` | Calendar list: event summary + one day per date + that day’s eligible orders (`search` optional). |
+| POST | `/store-events` | Create (`name`, `starts_on`, `ends_on`, `notes`, `cancelled`). |
+| POST | `/store-events/{uuid}/orders` | Tag/untag orders (`order_ids`, `included`). |
+| PATCH | `/store-events/{uuid}` | Update. **404** if missing. |
+| DELETE | `/store-events/{uuid}` | Delete. **204**. **404** if missing. Clears `shopify_orders.store_event_id`. |
+
+### Marketing notes (`app/Services/StoreMarketing`)
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| GET | `/store-marketing-notes` | List dated marketing notes (`search` optional). |
+| POST | `/store-marketing-notes` | Create (`name`, `happened_on`, `notes`). |
+| PATCH | `/store-marketing-notes/{uuid}` | Update. **404** if missing. |
+| DELETE | `/store-marketing-notes/{uuid}` | Delete. **204**. **404** if missing. |
 
 ### TCG events (`app/Services/TcgEvents`)
 
@@ -436,49 +484,77 @@ Two **different orchestrations** deliberately exist:
 | GET    | `/tcg/events`         | Cached JSON feed for UI consumption.                                                                                                 |
 | POST   | `/tcg/events/refresh` | Hits Bandai TCG Plus HTTP client (`HttpBandaiTcgPlusApi`) and refreshes storage (see controller + refresh service tests if present). |
 
-### Custom Asia orders (admin only)
+### Special orders (admin only)
 
 | Method           | Path                                                     | Notes                                                                                                  |
 | ---------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| GET              | `/custom-asia-orders/filter-options`                     | Media, currency, quote/pricing/lifecycle dropdowns.                                                               |
-| GET              | `/custom-asia-orders/product-name-suggestions`           | Fast kit-name autocomplete (`q`) — Gundam Hangar API + Hobby Sense/Argama Shopify suggest.                         |
-| GET              | `/custom-asia-orders`                                    | Paginated list (`search`, `contact_media[]`, `quote_status`, `pricing_status`, `lifecycle_status`, `sort_by`, `sort_dir`; default active). |
-| POST             | `/custom-asia-orders`                                    | Create customer request.                                                                               |
-| GET/PATCH/DELETE | `/custom-asia-orders/{uuid}`                             | Show, update, delete.                                                                                  |
-| POST             | `/custom-asia-orders/{uuid}/competitor-prices/refresh`   | Queue async parallel competitor crawl (`scope`: `fast` \| `full`); **202**; `competitor_prices_refresh_status` on order; job crawls sites concurrently via `Concurrency::run`.                         |
-| POST             | `/custom-asia-orders/{uuid}/reject`                        | Soft reject (`rejected_at`).                                                                           |
-| POST             | `/custom-asia-orders/{uuid}/revive`                        | Clear `rejected_at`.                                                                                   |
-| POST             | `/custom-asia-orders/{uuid}/customer-visual`             | Multipart customer image.                                                                              |
-| POST             | `/custom-asia-orders/{uuid}/product-visual`              | Multipart product image.                                                                               |
-| GET              | `/custom-asia-orders/{uuid}/visuals/{customer\|product}` | Inline image view.                                                                                     |
-| DELETE           | `/custom-asia-orders/{uuid}/visuals/{customer\|product}` | Remove uploaded image; clears DB columns and deletes file from disk.                                   |
+| GET              | `/special-orders/filter-options`                     | Media, currency, quote/pricing/lifecycle dropdowns.                                                               |
+| GET              | `/special-orders/product-name-suggestions`           | Fast kit-name autocomplete (`q`) — Gundam Hangar API + Hobby Sense/Argama Shopify suggest.                         |
+| GET              | `/special-orders`                                    | Paginated list (`search`, `contact_media[]`, `workflow_status[]`, …). Response includes top-level **`workflow_status_counts`** (per-step totals for search/media, ignoring timeline filter). |
+| POST             | `/special-orders`                                    | Create customer request.                                                                               |
+| GET/PATCH/DELETE | `/special-orders/{uuid}`                             | Show, update, delete.                                                                                  |
+| POST             | `/special-orders/{uuid}/competitor-prices/refresh`   | Queue async parallel competitor crawl (`scope`: `fast` \| `full`); **202**; `competitor_prices_refresh_status` on order; job crawls sites concurrently via `Concurrency::run`.                         |
+| POST             | `/special-orders/{uuid}/reject`                        | Soft reject (`rejected_at`).                                                                           |
+| POST             | `/special-orders/{uuid}/revive`                        | Clear `rejected_at`.                                                                                   |
+| POST             | `/special-orders/{uuid}/mark-customer-considering`     | Customer thinking about quote (`customer_considering_at`).                                             |
+| POST             | `/special-orders/{uuid}/clear-customer-considering`    | Clear customer thinking flag.                                                                          |
+| POST             | `/special-orders/{uuid}/deposit-received`              | Mark deposit paid (`deposit_received_at`).                                                            |
+| POST             | `/special-orders/{uuid}/balance-received`              | Mark balance paid (`balance_received_at`).                                                             |
+| POST             | `/special-orders/{uuid}/cash-received`                 | Record cash received `{ cash_received_cad }`; syncs deposit/balance milestones.                          |
+| POST             | `/special-orders/{uuid}/shopify-deposit-invoice`       | Create + send Shopify deposit draft invoice.                                                           |
+| DELETE           | `/special-orders/{uuid}/shopify-deposit-invoice`       | Clear ERP deposit invoice record (Shopify unchanged).                                                  |
+| POST             | `/special-orders/{uuid}/shopify-balance-invoice`       | Create + send Shopify balance draft invoice.                                                           |
+| DELETE           | `/special-orders/{uuid}/shopify-balance-invoice`       | Clear ERP balance invoice record (Shopify unchanged).                                                  |
+| POST             | `/special-orders/{uuid}/customer-visual`             | Multipart customer image.                                                                              |
+| POST             | `/special-orders/{uuid}/product-visual`              | Multipart product image.                                                                               |
+| GET              | `/special-orders/{uuid}/visuals/{customer\|product}` | Inline image view.                                                                                     |
+| DELETE           | `/special-orders/{uuid}/visuals/{customer\|product}` | Remove uploaded image; clears DB columns and deletes file from disk.                                   |
 
-See [screens/custom-asia-orders.md](../screens/custom-asia-orders.md).
+See [screens/special-orders.md](../screens/special-orders.md).
 
 ### Plamod preorders (`app/Services/Plamod`)
 
 | Method | Path                                       | Purpose                                                                                                                                                                      |
 | ------ | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/preorders`                               | Paginated active preorder rows; `new_only`, `search`; excludes `plamod_preorder.excluded_categories` runtime setting.                                                        |
-| POST   | `/preorders/sync`                          | Queues `SyncPlamodPreordersJob`, which starts a **serial** `Bus::chain` on `plamod_sync` (hub CSV → per included series → recovery → merge/import; image jobs on `default`). |
-| GET    | `/preorders/sync-status`                   | Latest `plamod_preorder_sync_logs` snapshot for UI polling.                                                                                                                  |
+| GET    | `/preorders`                               | Paginated active preorder rows; `new_only` (SKU not in non-archived catalog), `future_releases_only` (release date today or later), `search`, `store_offer`, `interest` (`interested` default / `not_interested` / `all`), `sort` (`name` / `release` / `category` / `stock` / `sell` / `qty` / `closing` / `eta` / `eta_months`), `sort_dir` (`asc` / `desc`), optional `include_closed`, optional `categories[]`. Default pick list requires a Plamod preorder price, excludes in-stock SKUs, past `po_due_date`, and kits marked not interested. Meta includes `category_facets` (name + count). |
+| POST   | `/preorders/sync`                          | Queues `SyncPlamodPreordersJob`, which starts a **serial** `Bus::chain` on `plamod_sync` (hub Plastic Model Kits + Figures CSV/JSON/cards → merge/import/offers; image jobs on `default`). |
+| GET    | `/preorders/sync-status`                   | Latest `plamod_preorder_sync_logs` snapshot; while running, merges `plamod/preorder_export_progress.json`.                                                                      |
 | GET    | `/preorders/settings`                      | Read excluded category list.                                                                                                                                                 |
 | PUT    | `/preorders/settings`                      | Persist excluded categories to `app_runtime_settings`.                                                                                                                       |
+| POST   | `/preorders/interest`                      | Mark Plamod pick-list SKUs not interested (`not_interested: true`) or interested again. Body: `skus[]`, `not_interested`. Survives snapshot refresh (`not_interested_at`). Opening a store offer clears the mark. |
 | GET    | `/preorders/manufacturer-filters`          | Bandai manufacturer series/category-line catalog grouped by decision (`undecided` / `include` / `exclude`).                                                                  |
 | POST   | `/preorders/manufacturer-filters/discover` | Queue discover job (no body) or poll status (`job_id`); job scrapes Plamod sidebar and upserts `plamod_preorder_manufacturer_filters`.                                       |
 | PUT    | `/preorders/manufacturer-filters`          | Batch update filter decisions (`updates: [{ id, decision }]`).                                                                                                               |
 | POST   | `/preorders/search-lines`                  | Multi-line match; optional `phase` (`snapshot` \| `live` \| `all`). Live fallback returns `plamod_only`.                                                                     |
 | GET    | `/preorders/{sku}/image`                   | Serve cached image from `storage/app/private/plamod/preorder-images/`.                                                                                                       |
 
+### Store preorders (`app/Services/StorePreorders`)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/store-preorders` | Paginated store preorder offers; `status` (`open` / `closed` / `all`), `closes_on` (`Y-m-d`), `has_units` (boolean: only kits with eligible Shopify preorder units), `search`, `sort_by` (`closing` / `opened` / `name`). Each row includes live Plamod `eta_date` when known, plus `order_count` / `unit_qty` for eligible Shopify preorder lines. Response also has `preorder_orders` (`order_count`, `unit_qty`) and `closing_dates` (distinct `window_ends_on` for the current status). |
+| POST | `/store-preorders` | Open offers from Plamod pick-list SKUs. Creates an ERP product when the SKU is new. Attaches the pick-list photo when that file is already on disk, then queues Shopify publish with images (`shopify_queued`). Kits still missing a photo get a listing-only push plus a Plamod PDP crawl (`photos_queued`). Body: `items[]` (`sku`, `deposit_percent`, optional `cap_qty`, optional `window_ends_on`, optional `selling_price`). Missing closing defaults to Plamod due minus 1 day. |
+| POST | `/store-preorders/listing-preview` | Crawl a product URL for **Add offer**. Body: `url`. 200: title, `suggested_sku`, description HTML, ETA, retailer price note, staged `images[]`. 422 `no_crawler` when the host is not registered; 422 `crawl_failed` on fetch/parse errors. |
+| POST | `/store-preorders/listing-photos` | Stage manual uploads for Add offer (`files[]`). Returns the same image shape as listing-preview. |
+| GET | `/store-preorders/listing-photos/{id}` | Preview a staged Add-offer photo. |
+| POST | `/store-preorders/manual` | Open one non-Plamod offer. Body: `sku`, `product_name`, `selling_price`, `deposit_percent`, optional `description_html`, `cap_qty`, `window_ends_on`, `eta_date`, `photo_ids[]`. Unique SKU check on save. Creates the ERP product, attaches staged photos, queues Shopify. |
+| POST | `/store-preorders/bulk-update` | Apply the same open-offer fields to many rows. Body: `ids[]`, `changes` (`cap_qty`, `deposit_percent`, `selling_price`, `window_ends_on` — only present keys are applied). Closed rows are skipped. Sell $ is snapped to closest X.99 and written to the ERP product selling price. Already-mirrored SKUs are pushed to Shopify after the save. |
+| POST | `/store-preorders/bulk-delete` | Delete many offers. Same product-delete rule as a single delete. Body: `ids[]`. |
+| POST | `/store-preorders/push-shopify` | Push open offers to Shopify (deposit price, `sp:store-preorder` tag, Online Store). Body optional `ids[]`; empty = all open. |
+| POST | `/store-preorders/{id}/close` | Close an open offer (confirm in UI). Sets remaining cap to 0 and `products.available_qty` to 0. Does not delete the product. |
+| PATCH | `/store-preorders/{id}/cap` | Update `cap_qty` on an open offer (`null` = no cap). If the SKU is already on Shopify, inventory is updated (no cap = untracked / continue selling). |
+| DELETE | `/store-preorders/{id}` | Delete the offer. Also deletes the ERP product when it has no purchase-order or inventory history. Then untag Shopify (`sp:store-preorder`) if the ERP product remains, or delete the Shopify product if ERP is gone and the SKU has no Shopify order. |
+
 ### PLAMOD restock (in-stock proposal)
 
 | Method | Path                                      | Purpose                                                                                                                                                                                                                                          |
 | ------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GET    | `/plamod/restock/proposal`                | Existing ERP ∩ in-stock snapshot + new SKUs; existing rows include canonical ERP `products.type`; query `hide_dismissed`, `only_included_new`; response includes persistent series/product-name exclusion rules.                                 |
+| GET    | `/plamod/restock/proposal`                | Existing ERP ∩ in-stock snapshot + new SKUs; existing rows include canonical ERP `products.type`; query `section=all\|existing\|new` (skip the other section’s heavy work), `hide_dismissed`, `only_included_new`; response includes persistent series/product-name exclusion rules. |
 | GET    | `/plamod/restock/settings`                | Read persisted shipping estimate percent and automatic new-product exclusion rules.                                                                                                                                                              |
 | PUT    | `/plamod/restock/settings`                | Save shipping estimate percent plus optional `excluded_series` and `excluded_product_terms` arrays; omitted arrays preserve their current values.                                                                                                |
-| POST   | `/plamod/restock/sync`                    | Queue `SyncPlamodInstockJob` (manufacturer In-Stock CSV → `plamod_instock_items`).                                                                                                                                                               |
-| GET    | `/plamod/restock/sync-status`             | Latest `plamod_instock_sync_logs` snapshot.                                                                                                                                                                                                      |
+| POST   | `/plamod/restock/sync`                    | Queue `SyncPlamodInstockJob` (manufacturer In-Stock CSV → `plamod_instock_items`). Same path as scheduled `plamod:instock-sync` (daily 05:00 America/Toronto; skips if a refresh is already queued/running).                                                                 |
+| POST   | `/plamod/restock/sync-retry`              | Queue a merge-only retry of selected failed brand filters from the last completed refresh (`filters[]` with `name`, `tab`, `category_id`, `expected`). Refuses when a sync is already queued/running.                                              |
+| GET    | `/plamod/restock/sync-status`             | Latest `plamod_instock_sync_logs` snapshot; while queued/running, merges `plamod/instock_export_progress.json` from shared storage (no scraper HTTP). Exposes `failed_filters` for the restock retry card.                                         |
 | PUT    | `/plamod/restock/decisions/{sku}`         | Dismiss or include new SKU (`order_qty`, `planned_maintain_qty` when included).                                                                                                                                                                  |
 | POST   | `/plamod/restock/decisions/bulk`          | Bulk dismiss or include new SKUs (`skus[]`, `status`, optional qtys when included).                                                                                                                                                              |
 | PUT    | `/plamod/restock/reorder-overrides/{sku}` | Persist or clear existing-SKU order qty override (`reorder_qty`, nullable to reset).                                                                                                                                                             |
@@ -491,7 +567,7 @@ See [screens/custom-asia-orders.md](../screens/custom-asia-orders.md).
 
 Cart dispatch health requires scraper routes `POST /restock-add-to-cart`, `POST /restock-verify-cart`, and `GET /restock-cart-progress`. The queue job marks its run failed through `failed()` if the worker times out or terminates with an exception, preventing permanently active run state.
 
-Scheduled: `plamod:preorders-sync` daily 06:00 America/Toronto — **temporarily disabled** in `routes/console.php` (2026-06-18); manual `POST /preorders/sync` only.
+Scheduled: `plamod:preorders-sync` daily 06:00 America/Toronto (same as **Refresh from Plamod**; skips if a refresh is already queued/running). Finalize also runs `PlamodPreorderOfferEnrichService` (PDP offer fill + persist Plamod full description when the product exists, cap 400 SKUs) after the manufacturer sidecar import.
 
 ---
 
@@ -501,7 +577,7 @@ Requirements doc `handle-and-shopify-content-export.md` states a simple cascade 
 
 **Actual `ShopifyContentExportService::resolveBodyHtml`**:
 
-1. If **`preferred_description_source`** non-empty **and** resolves to usable HTML (`hlj` row, `plamod` row, or **`product_external_contents.source` match** ignoring empties)—return that HTML.
+1. If **`preferred_description_source`** non-empty **and** resolves to usable HTML (`hlj` row, `plamod` row, or **`product_external_contents.source` match** ignoring empties)—return that HTML. Store-preorder Plamod opens set preferred to **`plamod`** when the retailer PDP has a full description (Manual/`other` stays).
 2. Else HLJ `description_html`.
 3. Else among **`product_external_contents` excluding explicit `hlj` + `plamod` competitor rows**, choose **maximum `updated_at` timestamp**.
 4. Else Plamod `description_html`.
@@ -541,8 +617,8 @@ Uses relationship **`shopifyImageAssets`**:
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `SyncProductInfoJob`              | **`POST /products/{id}/product-info/sync`** only (direct `dispatch`, **not** enqueued inside `sync-missing-info` batches). Implements `Batchable` + `SkipIfBatchCancelled` but **usual path has no Laravel batch parent** (`$this->batch()` null) unless tests/mocks attach one—`JobBatchItemService` mutations then no-op guarded by batch id checks. |
 | `RunPriceResearchJob`             | `/price-research/run` asynchronous mode                                                                                                                                                                                                                                                                                                                |
-| `RecrawlSelectedProductJob`       | `/products/recrawl/selected`                                                                                                                                                                                                                                                                                                                           |
-| `PushSelectedProductToShopifyJob` | `/products/shopify-push/selected`                                                                                                                                                                                                                                                                                                                      |
+| `RecrawlSelectedProductJob`       | `/products/recrawl/selected`, store-preorder leftovers, and daily `store-preorders:refresh-missing-photos` leftovers (no real pick-list photo). After a Plamod source run, store-preorder products are queued for a Shopify image update (or images-only clear when the PDP is still a “No image” graphic). |
+| `PushSelectedProductToShopifyJob` | `/products/shopify-push/selected`, store-preorder open (`store_preorder_shopify_push`), and store-preorder image follow-up after pick-list attach or Plamod crawl |
 | `SyncPlamodAssetsJob`             | **`POST /products/{id}/plamod/sync`** (immediate dispatch) **and** bulk **`POST /products/sync-missing-info`** batches. Wraps **`PlamodAssetSyncService`**, logs **`plamod.sync.completed`** with **`backup_created`**, **`assets_count`**.                                                                                                            |
 | `RenameSelectedProductAssetsJob`  | `/products/bulk/plamod-assets/rename`                                                                                                                                                                                                                                                                                                                  |
 

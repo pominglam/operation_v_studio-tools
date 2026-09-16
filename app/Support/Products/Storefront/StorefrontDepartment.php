@@ -36,6 +36,8 @@ final class StorefrontDepartment
 
     public const string WEATHERING = 'weathering';
 
+    public const string CUTTING_MATS = 'cutting-mats';
+
     /** @deprecated Use tool-family department constants instead. */
     public const string TOOLS = 'tools';
 }

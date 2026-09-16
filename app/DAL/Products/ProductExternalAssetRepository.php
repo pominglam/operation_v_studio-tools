@@ -43,6 +43,11 @@ interface ProductExternalAssetRepository
 
     public function setShopifyEnabled(int $id, bool $enabled): void;
 
+    /**
+     * @param  array<int, int>  $ids
+     */
+    public function setShopifyEnabledForProductIds(int $productId, array $ids, bool $enabled): int;
+
     public function deleteById(int $id): void;
 
     /**

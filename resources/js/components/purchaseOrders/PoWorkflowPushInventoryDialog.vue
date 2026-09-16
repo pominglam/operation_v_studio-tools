@@ -60,14 +60,20 @@ const props = defineProps<{
     pushSummary: PoPushInventorySummary | null;
     error: string | null;
     receivedDate: string | null;
+    fullyOnShelvesDate?: string | null;
+    excludeFromLatestArrivalsOrdering?: boolean;
     progressPercent?: number;
     phaseLabel?: string;
 }>();
 
 const hasReceivedDate = computed(() => (props.receivedDate?.trim() ?? '') !== '');
+const hasOnShelvesDate = computed(() => (props.fullyOnShelvesDate?.trim() ?? '') !== '');
+const isExcludedFromLatestArrivals = computed(
+    () => props.excludeFromLatestArrivalsOrdering === true,
+);
 
 const canConfirmPush = computed(() => {
-    if (!hasReceivedDate.value || !props.preview) {
+    if (!hasReceivedDate.value || !hasOnShelvesDate.value || !props.preview) {
         return false;
     }
 
@@ -139,9 +145,7 @@ async function copyProductNames(): Promise<void> {
             aria-modal="true"
             @click.self="emit('cancel')"
         >
-            <div
-                class="flex max-h-[85vh] w-full max-w-7xl flex-col rounded-lg bg-white shadow-xl"
-            >
+            <div class="flex max-h-[85vh] w-full max-w-7xl flex-col rounded-lg bg-white shadow-xl">
                 <div class="border-b border-slate-200 px-4 py-3">
                     <div class="text-sm font-semibold text-slate-900">
                         Push to Shopify — Latest Arrivals order
@@ -152,12 +156,11 @@ async function copyProductNames(): Promise<void> {
                         Mechanics → RG → HGUC → HG → SD/BB →
                         <span class="font-semibold text-slate-900"
                             >30MM → 30MF → 30MS → Entry Grade → Pokemon → Figure-rise</span
-                        >, newest within each grade). The storefront collection groups by PO
-                        (newest first; multi-PO products use their newest PO), then the same grade
-                        order within each received PO (unreceived POs are ignored on the
-                        storefront). Syncs title, description, images, tags, price,
-                        status, sales channels (all publications when published), and available
-                        inventory for
+                        >, newest within each grade). The storefront collection groups by PO (newest
+                        first; multi-PO products use their newest PO), then the same grade order
+                        within each received PO (unreceived POs are ignored on the storefront).
+                        Syncs title, description, images, tags, price, status, sales channels (all
+                        publications when published), and available inventory for
                         <span class="font-semibold text-slate-900">{{ preview.push_count }}</span>
                         product(s) at
                         <span class="font-semibold text-slate-900">{{
@@ -180,6 +183,31 @@ async function copyProductNames(): Promise<void> {
                         Latest Arrivals — unreceived POs are ignored for storefront ordering.
                     </p>
 
+                    <p
+                        v-if="preview && hasReceivedDate && !hasOnShelvesDate"
+                        class="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"
+                        data-testid="push-inventory-missing-on-shelves-date"
+                    >
+                        Set <span class="font-semibold">On shelves</span> on this PO before pushing.
+                        Latest Arrivals should run after kits are on the shelf — otherwise you will
+                        have to push again.
+                    </p>
+
+                    <p
+                        v-if="preview && isExcludedFromLatestArrivals"
+                        class="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"
+                        data-testid="push-inventory-excluded-latest-arrivals"
+                    >
+                        This PO is
+                        <span class="font-semibold">excluded from Latest Arrivals ordering</span>.
+                        Push still updates Shopify products and tags, but this invoice will not bump
+                        kits to the top of the homepage collection. Uncheck
+                        <span class="font-semibold"
+                            >Exclude from Latest Arrivals storefront ordering</span
+                        >
+                        on Edit, save, then push again.
+                    </p>
+
                     <div
                         v-if="busy && !pushSummary && (phaseLabel || (progressPercent ?? 0) > 0)"
                         class="mb-3"
@@ -191,7 +219,9 @@ async function copyProductNames(): Promise<void> {
                         <div class="h-2 overflow-hidden rounded-full bg-slate-200">
                             <div
                                 class="h-full rounded-full bg-slate-900 transition-all duration-300"
-                                :style="{ width: `${Math.max(0, Math.min(100, progressPercent ?? 0))}%` }"
+                                :style="{
+                                    width: `${Math.max(0, Math.min(100, progressPercent ?? 0))}%`,
+                                }"
                             />
                         </div>
                     </div>
@@ -208,10 +238,7 @@ async function copyProductNames(): Promise<void> {
                         <span v-if="pushSummary.failed > 0">
                             {{ pushSummary.failed }} failed.
                         </span>
-                        <span
-                            v-if="pushSummary.collection_reorder?.attempted"
-                            class="mt-1 block"
-                        >
+                        <span v-if="pushSummary.collection_reorder?.attempted" class="mt-1 block">
                             Latest Arrivals collection reorder queued ({{
                                 pushSummary.collection_reorder.moves_sent
                             }}
@@ -255,8 +282,8 @@ async function copyProductNames(): Promise<void> {
                             v-else-if="!preview.images_enabled"
                             class="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"
                         >
-                            Image tunnel is off — it will be started automatically for this push
-                            and restored afterward.
+                            Image tunnel is off — it will be started automatically for this push and
+                            restored afterward.
                         </p>
 
                         <div class="mb-2 flex items-center justify-end">
@@ -291,17 +318,16 @@ async function copyProductNames(): Promise<void> {
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-slate-100 bg-white text-slate-800">
-                                    <tr
-                                        v-for="row in preview.products"
-                                        :key="row.product_uuid"
-                                    >
+                                    <tr v-for="row in preview.products" :key="row.product_uuid">
                                         <td class="px-3 py-2 align-top font-mono">{{ row.sku }}</td>
                                         <td
                                             class="px-3 py-2 align-top whitespace-normal break-words leading-snug"
                                         >
                                             {{ row.description }}
                                         </td>
-                                        <td class="px-3 py-2 align-top">{{ row.selling_price ?? '—' }}</td>
+                                        <td class="px-3 py-2 align-top">
+                                            {{ row.selling_price ?? '—' }}
+                                        </td>
                                         <td class="px-3 py-2 align-top">
                                             {{ formatQty(row.erp_available_qty) }}
                                         </td>
@@ -347,12 +373,14 @@ async function copyProductNames(): Promise<void> {
                         :title="
                             !hasReceivedDate
                                 ? 'Set Received date on this PO before pushing to Shopify'
-                                : undefined
+                                : !hasOnShelvesDate
+                                  ? 'Set On shelves date on this PO before pushing to Shopify'
+                                  : undefined
                         "
                         data-testid="push-inventory-confirm"
                         @click="emit('confirm')"
                     >
-                        {{ busy ? (phaseLabel || 'Pushing…') : 'Push to Shopify' }}
+                        {{ busy ? phaseLabel || 'Pushing…' : 'Push to Shopify' }}
                     </button>
                 </div>
             </div>

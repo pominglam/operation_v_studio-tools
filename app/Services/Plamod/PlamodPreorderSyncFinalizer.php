@@ -15,6 +15,8 @@ final class PlamodPreorderSyncFinalizer
         private readonly PlamodPreorderCsvMergeService $merger,
         private readonly PlamodPreorderImageService $images,
         private readonly PlamodPreorderMissingImageEnrichService $missingImageEnrich,
+        private readonly PlamodPreorderOfferSidecarImportService $offerSidecar,
+        private readonly PlamodPreorderOfferEnrichService $offerEnrich,
         private readonly PlamodPreorderSyncLogger $logger,
     ) {}
 
@@ -44,6 +46,15 @@ final class PlamodPreorderSyncFinalizer
         $csvPath = $this->merger->mergeStoragePaths($csvPaths, 'plamod/preorder_exports/'.$mergedFilename);
 
         $import = $this->importer->importFromStoragePath($csvPath);
+        $offersImport = $this->offerSidecar->importFromStoragePath(
+            isset($counts['checkpoint_offers_path']) && is_string($counts['checkpoint_offers_path'])
+                ? $counts['checkpoint_offers_path']
+                : null,
+        );
+        $log = $this->logger->updateCounts($log, ['phase' => 'pdp_enrich']);
+        $offerEnrich = ($offersImport['skus'] ?? 0) > 0
+            ? ['attempted' => 0, 'skus' => 0, 'failed' => 0]
+            : $this->offerEnrich->enrichActiveRowsMissingOffers();
         $imagesDeleted = $this->images->cleanupStaleUnlinkedImages();
         $imageEnrich = $this->missingImageEnrich->enrichActiveRowsMissingImageUrl();
 
@@ -73,6 +84,11 @@ final class PlamodPreorderSyncFinalizer
             'images_url_enrich_attempted' => $imageEnrich['attempted'],
             'images_url_enrich_enriched' => $imageEnrich['enriched'],
             'images_url_enrich_failed' => $imageEnrich['failed'],
+            'offers_imported' => $offersImport['skus'] + $offerEnrich['skus'],
+            'offers_sidecar_skus' => $offersImport['skus'],
+            'offers_pdp_attempted' => $offerEnrich['attempted'],
+            'offers_pdp_skus' => $offerEnrich['skus'],
+            'offers_pdp_failed' => $offerEnrich['failed'],
             'images_total' => count($pendingSkus),
             'images_completed' => 0,
             'images_failed' => 0,

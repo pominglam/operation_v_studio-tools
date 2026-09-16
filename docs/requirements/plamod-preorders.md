@@ -7,7 +7,7 @@ Browse Plamod **new preorders** inside the pricing tool: import the retailer CSV
 ## Data source
 
 - Plamod retailer portal: `GET /retailer/preorders` → **CSV export** (Playwright via `plamod-scraper`).
-- Full snapshot merge each sync from hub CSV (both preorder tabs) + included Bandai manufacturer series exports.
+- Full snapshot merge each sync from the retailer **Preorders** hub, filtered to **Plastic Model Kits** and **Figures**: New Preorders + Offer Sheets (CSV, then JSON, then offer cards). Hub sidecar fills `plamod_preorder_offers` (offer id / PO price / dates).
 - Rows missing from the merged CSV are marked `dropped_at` only after **3+ days** without `last_seen_at` (grace for incomplete exports).
 - Live multi-line search upserts PDP-enriched `plamod_only` hits into the snapshot until the next refresh.
 
@@ -18,7 +18,7 @@ Browse Plamod **new preorders** inside the pricing tool: import the retailer CSV
 
 ## Selling price
 
-- `unit_selling_price = CharmPricingCalculator::sellingPriceX99FromCost(price_preorder ?? price_stock, 1.5)` — charm-priced **X.99** (PO cost preferred).
+- `unit_selling_price = OpvStandardCatalogPrice::fromCost(price_preorder ?? price_stock, OPV catalog margin)` — same as PO set-prices: closest **X.99** (ties go up). Multiplier default **1.5**, set on Maintenance.
 
 ## Images
 
@@ -31,7 +31,8 @@ Browse Plamod **new preorders** inside the pricing tool: import the retailer CSV
 ## UI (`/preorders`)
 
 - Table columns: image, new badge, SKU, barcode, product name, series, release date, manufacturer, category, stock/preorder/backorder costs, unit selling price, preorder qty, PO due date, ETA, Plamod PDP link.
-- Filters: excluded categories (settings), **New only** (in Plamod, not in our catalog).
+- Filters: excluded categories (settings), **Category** multi-select, **Next / Previous category** walk, **New only** (in Plamod, not in our catalog), **Future releases only** (release date today or later), **Interest** (hide kits marked not interested by default).
+- Per-SKU **Not interested** mark (`plamod_preorders.not_interested_at`) so kits you will not open drop off the default pick list; undo from the Not interested filter. Survives snapshot refresh. Opening a store offer clears the mark.
 - Multi-line search paste → **`rows`** populate the main grid (imported + live PDP-enriched); only **not found** lines stay in the paste panel.
 - **Refresh from Plamod** button; auto-refresh table while sync job runs.
 - Last sync status panel.
@@ -44,7 +45,8 @@ Browse Plamod **new preorders** inside the pricing tool: import the retailer CSV
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/v1/preorders` | Paginated list |
+| GET | `/api/v1/preorders` | Paginated list (`interest`: `interested` default / `not_interested` / `all`) |
+| POST | `/api/v1/preorders/interest` | Mark SKUs not interested or interested again |
 | POST | `/api/v1/preorders/sync` | Queue refresh |
 | GET | `/api/v1/preorders/sync-status` | Poll job + image progress |
 | GET | `/api/v1/preorders/settings` | Excluded categories |

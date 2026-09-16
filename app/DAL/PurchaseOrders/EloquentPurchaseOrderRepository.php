@@ -285,6 +285,17 @@ final class EloquentPurchaseOrderRepository implements PurchaseOrderRepository
     }
 
     /**
+     * @return Collection<int, PurchaseOrder>
+     */
+    public function listForProductFilter(): Collection
+    {
+        $q = PurchaseOrder::query()->withCount('items');
+        $this->applyPurchaseOrderFilterListSort($q);
+
+        return $q->get();
+    }
+
+    /**
      * @return array<int, string>
      */
     public function distinctVendors(): array

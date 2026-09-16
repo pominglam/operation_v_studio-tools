@@ -168,6 +168,7 @@ it('queues PO push inventory batch and completes via status poll', function (): 
         'vendor' => 'Plamod',
         'vendor_currency_code' => 'CAD',
         'received_date' => '2026-07-20',
+        'fully_on_shelves_date' => '2026-07-21',
     ]);
 
     $product = Product::query()->create([
@@ -301,6 +302,7 @@ it('pushes full product via productSet for PO products', function (): void {
         'vendor' => 'Plamod',
         'vendor_currency_code' => 'CAD',
         'received_date' => '2026-07-20',
+        'fully_on_shelves_date' => '2026-07-21',
     ]);
 
     $product = Product::query()->create([

@@ -58,6 +58,14 @@ final class StorefrontTag
 
     public const string DEPT_WEATHERING = 'ts:dept:weathering';
 
+    public const string DEPT_CUTTING_MATS = 'ts:dept:cutting-mats';
+
+    public const string MAT_SERIES_PREFIX = 'ts:mat:series:';
+
+    public const string MAT_SIZE_PREFIX = 'ts:mat:size:';
+
+    public const string MAT_COLOR_PREFIX = 'ts:mat:color:';
+
     public const string BRUSH_TYPE_PREFIX = 'ts:brush:type:';
 
     public const string DRILL_TYPE_PREFIX = 'ts:drill:type:';
@@ -69,6 +77,10 @@ final class StorefrontTag
     public const string SCRIBING_TYPE_PREFIX = 'ts:scribing:type:';
 
     public const string ADHESIVE_TYPE_PREFIX = 'ts:adhesive:type:';
+
+    public const string ADHESIVE_FLOW_PREFIX = 'ts:adhesive:flow:';
+
+    public const string ADHESIVE_THICKNESS_PREFIX = 'ts:adhesive:thickness:';
 
     public const string AIRBRUSH_ROLE_PREFIX = 'ts:airbrush:role:';
 
@@ -95,6 +107,8 @@ final class StorefrontTag
     public const string SAND_GRIT_FINE = 'ts:sand:grit:fine';
 
     public const string SAND_GRIT_POLISH = 'ts:sand:grit:polish';
+
+    public const string STORE_PREORDER = 'sp:store-preorder';
 
     public const string MK_DEPT_MODEL_KITS = 'mk:dept:model-kits';
 
@@ -124,6 +138,19 @@ final class StorefrontTag
     public const string MK_LINE_PLAMAX = 'mk:line:plamax';
 
     public const string MK_LINE_EVANGELION = 'mk:line:evangelion';
+
+    public const string MK_LINE_ACTION_BASE = 'mk:line:action_base';
+
+    /** Gunpla option/detail parts (OPTION PARTS SET GUNPLA, MS HAND, MS SIGHT, etc.). */
+    public const string MK_LINE_GUNPLA_OPTION_PARTS = 'mk:line:gunpla_option_parts';
+
+    public const string MISC_DEPT = 'misc:dept:miscellaneous';
+
+    public const string MISC_LINE_KEYCHAIN = 'misc:line:keychain';
+
+    public const string MISC_LINE_CCS_TOYS = 'misc:line:ccs_toys';
+
+    public const string MISC_LINE_OTHER = 'misc:line:other';
 
     public const string MK_SERIES_PREFIX = 'mk:series:';
 
@@ -263,9 +290,34 @@ final class StorefrontTag
         return self::ADHESIVE_TYPE_PREFIX.$type;
     }
 
+    public static function adhesiveFlow(string $flow): string
+    {
+        return self::ADHESIVE_FLOW_PREFIX.$flow;
+    }
+
+    public static function adhesiveThickness(string $thickness): string
+    {
+        return self::ADHESIVE_THICKNESS_PREFIX.$thickness;
+    }
+
     public static function airbrushRole(string $role): string
     {
         return self::AIRBRUSH_ROLE_PREFIX.$role;
+    }
+
+    public static function matSeries(string $series): string
+    {
+        return self::MAT_SERIES_PREFIX.$series;
+    }
+
+    public static function matSize(string $size): string
+    {
+        return self::MAT_SIZE_PREFIX.$size;
+    }
+
+    public static function matColor(string $color): string
+    {
+        return self::MAT_COLOR_PREFIX.$color;
     }
 
     public static function deptTagForDepartment(string $department): ?string
@@ -286,6 +338,7 @@ final class StorefrontTag
             StorefrontDepartment::WORKSHOP_MISC => self::DEPT_WORKSHOP_MISC,
             StorefrontDepartment::AIRBRUSH => self::DEPT_AIRBRUSH,
             StorefrontDepartment::WEATHERING => self::DEPT_WEATHERING,
+            StorefrontDepartment::CUTTING_MATS => self::DEPT_CUTTING_MATS,
             default => null,
         };
     }
@@ -301,6 +354,7 @@ final class StorefrontTag
             ['handle' => 'adhesives', 'title' => 'Adhesives', 'footer' => false],
             ['handle' => 'airbrush', 'title' => 'Airbrush', 'footer' => false],
             ['handle' => 'brushes', 'title' => 'Brushes', 'footer' => false],
+            ['handle' => 'cutting-mats', 'title' => 'Cutting mats', 'footer' => false],
             ['handle' => 'decals', 'title' => 'Decals', 'footer' => false],
             ['handle' => 'drills', 'title' => 'Drills & bits', 'footer' => false],
             ['handle' => 'markers', 'title' => 'Markers', 'footer' => false],

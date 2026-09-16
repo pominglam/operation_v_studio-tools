@@ -81,3 +81,12 @@ This document describes how each competitor “crawler” (provider) works:
 - **PDP detection**: `/products/…` links from `suggest.json` results.
 - **Extraction**: PDP HTML + JSON-LD (when present), scoped to the product form area to avoid picking unrelated prices (recommended products).
 
+### Cool Dragon Hobby (`cool_dragon_hobby`)
+
+- **Approach**: Shopify search → PDP scrape (same pattern as Panda Hobby / Argama).
+- **Search**: Shopify predictive search JSON (`/search/suggest.json`) first; HTML `/search?q=...` fallback.
+- **PDP detection**: `/products/…` links.
+- **Extraction**: PDP HTML + JSON-LD (when present).
+- **Images**: optional bulk recrawl source `cool_dragon` (`CoolDragonContentSyncService`) downloads Shopify CDN product images.
+- **Notes**: Canadian retailer used mainly for SNAA / Infinity Nova kits. Search prefers the product title because ERP SKUs are not Cool Dragon handles.
+

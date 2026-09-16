@@ -32,7 +32,7 @@ All taxonomy fields are nullable unless noted.
 ### Department notes
 
 - **`figures`** — pre-assembled, non-kit collectibles (e.g. CCS Toys). No grade/subline; optional franchise and scale.
-- **`misc` + `product_line: Keychains`** — rubber mascot / keychain merchandise under storefront **Miscellaneous** (not model kits).
+- **`misc` + `product_line: Keychains`** — rubber mascot / keychain merchandise under storefront **Miscellaneous** (not model kits). Includes CHARZAKU-KUN / GUNPLA-KUN / ZAKUPLA-KUN **3D rubber mascot keychains**. The buildable **1/1 …-KUN DX SET** kits stay `model kits` / Gunpla-kun.
 - **`accessories`** — buildable model kit add-ons (action bases, option parts, detail parts). Distinct from figures and T&S supplies.
 
 `vendor` remains the supplier and is not taxonomy.
@@ -43,6 +43,7 @@ All taxonomy fields are nullable unless noted.
 - Series is universal, not Gundam-only.
 - Precise sub-lines are stored even when the storefront groups low-volume values under a presentation-only label such as “Other HG lines.”
 - Pokémon is presented as one customer-facing product line. Official sub-lines may be stored but remain hidden from navigation and filters until explicitly enabled.
+- **Pokémon Plamo is not Entry Grade.** Bandai’s official line is **Pokémon PLAMO / Plamo Collection** (Quick!!, standard kits, Select Series, etc.) — a separate beginner-friendly line from Gunpla **Entry Grade (EG)**. ERP keeps `grade` null; storefront shelf uses synthetic tag `mk:grade:pokemon` from `ModelKitStorefrontTagResolver` (see [model-kit-taxonomy-audit.md](./model-kit-taxonomy-audit.md)).
 - Scale and product format are distinct, but no new format field is introduced in this rollout. Product line plus department covers current requirements.
 - Gundam Artifact is a miniature model-kit product line, not No Grade Gunpla.
 

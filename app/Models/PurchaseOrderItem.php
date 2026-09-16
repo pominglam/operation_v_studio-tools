@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string $vendor
  * @property string|null $unit_cost
  * @property string|null $vendor_unit_cost
+ * @property string|null $shipping_per_unit
  * @property int|null $qty_ordered
  * @property int|null $qty_shipped
  * @property int|null $qty_received
@@ -35,6 +36,7 @@ final class PurchaseOrderItem extends Model
         'vendor',
         'unit_cost',
         'vendor_unit_cost',
+        'shipping_per_unit',
         'qty_ordered',
         'qty_shipped',
         'qty_received',
@@ -45,6 +47,7 @@ final class PurchaseOrderItem extends Model
     protected $casts = [
         'unit_cost' => 'decimal:2',
         'vendor_unit_cost' => 'decimal:4',
+        'shipping_per_unit' => 'decimal:6',
         'qty_ordered' => 'integer',
         'qty_shipped' => 'integer',
         'qty_received' => 'integer',

@@ -40,6 +40,7 @@ use Illuminate\Support\Str;
  * @property bool $is_ready
  * @property bool $latest_arrival
  * @property bool $is_critical
+ * @property bool $is_urgent
  * @property bool $is_discontinued
  * @property bool $is_hazardous_shipment
  * @property string|null $shipment_method
@@ -85,6 +86,7 @@ final class Product extends Model
         'is_ready',
         'latest_arrival',
         'is_critical',
+        'is_urgent',
         'is_discontinued',
         'is_hazardous_shipment',
         'shipment_method',
@@ -112,6 +114,7 @@ final class Product extends Model
         'is_ready' => 'boolean',
         'latest_arrival' => 'boolean',
         'is_critical' => 'boolean',
+        'is_urgent' => 'boolean',
         'is_discontinued' => 'boolean',
         'is_hazardous_shipment' => 'boolean',
         'extended' => 'decimal:2',

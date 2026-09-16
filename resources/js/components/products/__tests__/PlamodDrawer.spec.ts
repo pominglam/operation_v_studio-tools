@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { mount } from '@vue/test-utils';
+import { mount, type VueWrapper } from '@vue/test-utils';
+
+async function flushUi(wrapper: VueWrapper): Promise<void> {
+    await Promise.resolve();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+    await Promise.resolve();
+    await wrapper.vm.$nextTick();
+}
 
 // Mock the shared axios instance used by the drawer.
 vi.mock('../../../lib/api', () => {
@@ -19,7 +27,7 @@ import PlamodDrawer from '../PlamodDrawer.vue';
 
 describe('PlamodDrawer', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
+        vi.resetAllMocks();
         window.localStorage.clear();
     });
 
@@ -67,8 +75,7 @@ describe('PlamodDrawer', () => {
             },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         const textarea = wrapper.find('[data-testid="description-editor-manual"]');
         expect(textarea.exists()).toBe(true);
@@ -178,16 +185,14 @@ describe('PlamodDrawer', () => {
             },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         const btn = wrapper
             .findAll('button')
             .find((b) => b.text().includes('Sort exporting by source')) as any;
         expect(btn).toBeTruthy();
         await btn.trigger('click');
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         expect(api.put).toHaveBeenCalledWith('/api/v1/products/p-sort-1/assets/order', {
             asset_ids: [3, 2, 4, 1, 5],
@@ -250,8 +255,7 @@ describe('PlamodDrawer', () => {
             },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         const hero = wrapper.find('[data-testid="photo-hero-image"]');
         expect(hero.attributes('src')).toBe('https://example.com/view/hlj-hero.jpg');
@@ -318,8 +322,7 @@ describe('PlamodDrawer', () => {
             },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         // Persisted hidden sources should start empty in this test.
         window.localStorage.clear();
@@ -336,6 +339,8 @@ describe('PlamodDrawer', () => {
         expect(hljChip).toBeTruthy();
         await hljChip.trigger('click');
         await wrapper.vm.$nextTick();
+        await Promise.resolve();
+        await Promise.resolve();
 
         const preview2 = wrapper.find('img.object-contain');
         expect(preview2.attributes('src')).toContain('/view/gp-1.jpg');
@@ -344,8 +349,9 @@ describe('PlamodDrawer', () => {
         expect(window.localStorage.getItem('plamod_drawer:hidden_image_sources:p-1')).toContain(
             'hlj',
         );
-        expect(api.patch).toHaveBeenCalledWith('/api/v1/product-assets/1/shopify-enabled', {
+        expect(api.patch).toHaveBeenCalledWith('/api/v1/products/p-1/assets/shopify-enabled', {
             shopify_enabled: false,
+            ids: [1],
         });
 
         // Show all -> HLJ image becomes visible again (count shown/total should reset).
@@ -415,16 +421,11 @@ describe('PlamodDrawer', () => {
             },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
-        // HLJ should start hidden -> only 1 shown.
+        // HLJ should start hidden -> only 1 shown. Open does not PATCH-disable.
         expect(wrapper.text()).toContain('1 shown · 2 total');
-
-        // Hidden sources should be disabled for Shopify export as well.
-        expect(api.patch).toHaveBeenCalledWith('/api/v1/product-assets/21/shopify-enabled', {
-            shopify_enabled: false,
-        });
+        expect(api.patch).not.toHaveBeenCalled();
     });
 
     it('disables exact duplicates by checksum and persists changes', async () => {
@@ -499,8 +500,7 @@ describe('PlamodDrawer', () => {
             },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         const btn = wrapper
             .findAll('button')
@@ -508,11 +508,12 @@ describe('PlamodDrawer', () => {
         expect(btn).toBeTruthy();
         await btn.trigger('click');
         await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
-        // Should disable the second image in the checksum group (id 11).
-        expect(api.patch).toHaveBeenCalledWith('/api/v1/product-assets/11/shopify-enabled', {
+        // Should disable the second image in the checksum group (id 11) in one bulk PATCH.
+        expect(api.patch).toHaveBeenCalledWith('/api/v1/products/p-1/assets/shopify-enabled', {
             shopify_enabled: false,
+            ids: [11],
         });
         // Should persist image order afterward.
         expect(api.put).toHaveBeenCalled();
@@ -576,8 +577,7 @@ describe('PlamodDrawer', () => {
             },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         const thumb = wrapper.findAll('button[draggable="true"]')[0];
         expect(thumb.exists()).toBe(true);
@@ -649,17 +649,16 @@ describe('PlamodDrawer', () => {
             },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         const deleteButton = wrapper.find('[data-testid="delete-manual-photo"]');
         expect(deleteButton.exists()).toBe(true);
         await deleteButton.trigger('click');
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         expect(confirmSpy).toHaveBeenCalled();
         expect(api.delete).toHaveBeenCalledWith('/api/v1/product-assets/201');
+        expect(wrapper.text()).toContain('0 shown · 0 total');
         expect(wrapper.text()).toContain('Deleted manual upload image.');
 
         confirmSpy.mockRestore();
@@ -707,8 +706,7 @@ describe('PlamodDrawer', () => {
             },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         await wrapper.find('[data-testid="delete-manual-photo"]').trigger('click');
 
@@ -763,16 +761,14 @@ describe('PlamodDrawer', () => {
             },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         const toggle = wrapper.find('[data-testid="active-shopify-export-toggle"]');
         expect(toggle.exists()).toBe(true);
         expect(toggle.text()).toBe('Off');
 
         await toggle.trigger('click');
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         expect(api.patch).toHaveBeenCalledWith('/api/v1/product-assets/203/shopify-enabled', {
             shopify_enabled: true,
@@ -854,8 +850,7 @@ describe('PlamodDrawer', () => {
             },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         const textareaA = wrapper.find('[data-testid="description-editor-manual"]');
         expect((textareaA.element as HTMLTextAreaElement).value).toContain('Desc A');
@@ -867,8 +862,7 @@ describe('PlamodDrawer', () => {
             productName: 'Product B',
         });
         await Promise.resolve();
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
         await wrapper.vm.$nextTick();
 
         const textareaB = wrapper.find('[data-testid="description-editor-manual"]');
@@ -880,8 +874,7 @@ describe('PlamodDrawer', () => {
             productName: 'Product A',
         });
         await Promise.resolve();
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
         await wrapper.vm.$nextTick();
 
         const textareaAReturn = wrapper.find('[data-testid="description-editor-manual"]');
@@ -926,8 +919,7 @@ describe('PlamodDrawer', () => {
             },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         expect(wrapper.text()).toContain('MG 1/100 Delta Plus');
     });
@@ -971,18 +963,18 @@ describe('PlamodDrawer', () => {
             },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         const textarea = wrapper.find('[data-testid="description-editor-manual"]');
         await textarea.setValue('Line 1\nLine 2');
 
-        const useButtons = wrapper.findAll('button').filter((b) => b.text().includes('Use this'));
+        const useButtons = wrapper
+            .findAll('button')
+            .filter((b) => b.text().includes('Use this') || b.text().includes('Save & use'));
         const manualUseBtn = useButtons.at(-1);
         expect(manualUseBtn).toBeTruthy();
         await manualUseBtn!.trigger('click');
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         expect(api.patch).toHaveBeenCalledWith(
             '/api/v1/products/p-manual-persist/preferred-description-source',
@@ -1029,12 +1021,11 @@ describe('PlamodDrawer', () => {
             global: { stubs: { Teleport: true } },
         });
 
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
         expect(wrapper.text()).toContain('3 shown · 3 total');
 
         await wrapper.setProps({ open: false });
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         (api.get as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
             data: {
@@ -1047,8 +1038,7 @@ describe('PlamodDrawer', () => {
         });
 
         await wrapper.setProps({ open: true, productId: 'p-clear-b', productSku: 'SKU-B' });
-        await Promise.resolve();
-        await wrapper.vm.$nextTick();
+        await flushUi(wrapper);
 
         expect(wrapper.text()).toContain('1 shown · 1 total');
         expect(wrapper.text()).not.toContain('3 shown · 3 total');

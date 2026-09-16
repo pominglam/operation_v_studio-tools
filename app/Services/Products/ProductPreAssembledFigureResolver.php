@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Products;
 
 use App\Models\Product;
+use App\Support\Products\ModelKitSeriesCatalog;
 
 final class ProductPreAssembledFigureResolver
 {
@@ -53,7 +54,7 @@ final class ProductPreAssembledFigureResolver
     private function franchise(string $text): ?string
     {
         return match (true) {
-            str_contains($text, 'EVANGELION') => 'Evangelion',
+            ModelKitSeriesCatalog::textLooksLikeEvangelion($text) => 'Evangelion',
             str_contains($text, 'GETTER') => 'Getter Robo',
             default => null,
         };

@@ -13,8 +13,9 @@ An item is an **existing product** whenever its SKU already exists in the active
 
 - PLAMOD retailer manufacturer export: **Bandai (`manufacturer_id=1`) · category Plastic Model Kits · tab In-Stock**
 - Playwright via `plamod-scraper` → CSV → `plamod_instock_items` (DB snapshot)
-- Manual refresh only (no scheduler): **Maintenance** card + **Refresh from PLAMOD** on this page
-- Export discovers **BRAND** sidebar filters on the In-Stock tab (without pre-selecting Plastic Model Kits — that collapses the filter list), runs the same per-filter export path as single-series exports (PMK skipped when a sub-filter is set; **BRAND** tab filters use brand selection directly), re-authenticates before each chunk, merges rows by SKU, then imports when ≥85% of the In-Stock tab badge count
+- Daily auto-refresh at **05:00 America/Toronto** (`plamod:instock-sync` via the scheduler container) plus manual **Maintenance** card + **Refresh from PLAMOD** on this page. A scheduled run skips if a refresh is already queued or running.
+- Export discovers **BRAND** sidebar filters on the In-Stock tab (without pre-selecting Plastic Model Kits — that collapses the filter list), runs the same per-filter export path as single-series exports (PMK skipped when a sub-filter is set; **BRAND** tab filters use brand selection directly), re-authenticates before each chunk, merges rows by SKU, **retries weak/failed filters once** (select errors, 0 rows, or well below the filter’s expected count), then **PDP-enriches rows missing price, photo, or a real title** (name still equal to SKU), and imports when ≥85% of the In-Stock tab badge count
+- After a completed refresh, the page lists **failed brand filters** (select error, skipped, or 0 rows — not short-but-partial slices). Checkboxes default on; uncheck any you do not care about, then **Retry selected**. That scrape upserts only those filters and **does not delete** the rest of the snapshot.
 - Last successful sync shown in page header (`plamod_instock_sync_logs`); green banner after refresh shows **imported vs expected** (e.g. `708 of ~709 SKUs (99.9%)`)
 
 ---
@@ -27,7 +28,7 @@ An item is an **existing product** whenever its SKU already exists in the active
 - Section summary shows how many **unique visible products** have a positive system suggestion and the sum of their **Suggested** quantities; it uses `reorder_qty` (not operator-overridden order qty) and follows search/type filters
 - **Suggested** column shows the formula result; **Order qty** is an editable override (persisted in `plamod_restock_reorder_overrides`, highlighted when overridden, **Reset** clears override). Default order qty matches suggested (zero when no reorder need).
 - Draft PO creation still **skips existing lines with order qty 0**; restock totals include only lines with qty &gt; 0
-- **Maintain** is editable inline (`PATCH /api/v1/products/{uuid}/maintain`); saves on change and reloads proposal
+- **Maintain** is editable inline (`PATCH /api/v1/products/{uuid}/maintain`); saves on change and reloads the **existing** proposal section only
 - Column headers use **ⓘ help buttons** (click to open tooltip popover) for Available, Maintain, Not arrived, Preorders, Suggested, Order qty, New cost
 - **Not arrived** = sum of `qty_ordered` on PO lines until the PO is fully on shelves (`fully_on_shelves_date` null); received-but-not-shelved quantities remain included; **draft POs excluded** (must have ordered or shipped date)
 - **Preorders** = qty already committed on your PLAMOD account (`plamod_preorders` / `plamod_preorder_offers`); hover or click the cell to see per-offer ETA breakdown (distinct from Not arrived)
@@ -63,14 +64,15 @@ An item is an **existing product** whenever its SKU already exists in the active
 - **Exclude** on included rows → **dismissed** (clears qtys; hidden when hide dismissed is on)
 - **Include from dismissed or later** — same Include flow (no separate undismiss)
 - Planned maintain is stored in **`plamod_restock_planned_maintain`** (not on draft PO lines); applied to `products.maintain_qty` when the SKU is first created during **PO import**
-- **New-section filters**: hide dismissed (default on), multi-select statuses (**undecided**, **later**, **dismissed**, **included**), recent releases, series dropdown
+- **New-section filters**: hide dismissed (default on), multi-select statuses (**undecided**, **later**, **dismissed**, **included**), recent releases, series dropdown (**All**, **No series** when any loaded SKU has a blank series, then named series) — all **client-side** on the loaded new-SKU list (no proposal refetch)
 - Selected statuses use union/OR matching while recent release, series, and search continue to narrow with AND matching. Selecting **dismissed** explicitly includes dismissed rows even if **Hide dismissed** remains checked.
-- **Included** alone reloads the proposal with `only_included_new`; combining it with another status reloads the complete proposal so all selected statuses can appear (the filters do not affect the existing-products table)
-- **Bulk include / bulk later / bulk dismiss** via the visibly labeled **Bulk** checkbox column + action bar
+- **Include / Later / Dismiss / Exclude** (and bulk) apply the decision response to that SKU in the browser and recompute totals/meta. They do **not** refetch the proposal. Later/Dismiss/Exclude show a per-row **Saving…** busy state.
+- New-products table is **paged** (50 rows). Select-all still targets **all filtered rows** across pages.
+- **Bulk include / bulk later / bulk dismiss** via the visibly labeled **Bulk** checkbox column + action bar. Hold **Shift**, click the first Bulk box, then the last — every row between them in the current filtered sort is selected. Release Shift anytime after. Same range-select works on **Cart** checkboxes.
 - **Always hide future products** persists exact, case-insensitive series rules and case-insensitive product-name contains rules. Matching catalog-less SKUs are treated as dismissed automatically, including SKUs discovered by later PLAMOD refreshes. Removing a rule requires confirmation; an explicit per-SKU **Later** or **Include** decision overrides the automatic rule.
 - **Sortable columns** (client-side); default sort **release date descending** (recent first)
 - Sticky table header; **pageState** key `plamod_restock_page_state` persists the active tab, search, hide dismissed, new-section filters (including included only), and sort for both tables
-- Columns: image thumbnail (click → lightbox overlay), SKU + barcode, product (PLAMOD PDP link when URL known), series, category, release, status, order qty, planned maintain, new cost, line total, actions
+- Columns: image thumbnail (~96×96, click → lightbox overlay), SKU + barcode, product (PLAMOD PDP link when URL known), series, category, release, status, order qty, planned maintain, new cost, line total, actions
 - **Included** rows: inline edit order qty + planned maintain (saves on change). Order qty `0` is valid and keeps the product included for tracking while excluding it from totals, normal cart selection, and draft PO lines. Full-order verification still sends it as an explicit zero target, so a remaining PLAMOD cart quantity is shown as **over-added** and **Fix mismatches** can remove it.
 - Column **ⓘ help** on status, order qty, planned maintain, new cost
 - Missing PLAMOD price: amber highlight on new cost + section warning (`meta.new_missing_price_count`) — treat as sync/scraper gap; refresh from PLAMOD
@@ -83,10 +85,11 @@ An item is an **existing product** whenever its SKU already exists in the active
 
 | Action                         | API                                                                                                                                                                                                                  |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Load proposal                  | `GET /api/v1/plamod/restock/proposal`                                                                                                                                                                                |
+| Load proposal                  | `GET /api/v1/plamod/restock/proposal` query `section=all\|existing\|new` (SPA first-loads `existing` + `new` in parallel and merges; hide/included filters stay client-side). `hide_dismissed` / `only_included_new` still apply when a section includes new SKUs. |
 | Save restock settings          | `PUT /api/v1/plamod/restock/settings` body `{ shipping_percent, excluded_series?, excluded_product_terms? }`; omitted exclusion arrays preserve current rules                                                        |
-| Refresh snapshot               | `POST /api/v1/plamod/restock/sync`                                                                                                                                                                                   |
-| Poll sync                      | `GET /api/v1/plamod/restock/sync-status` — while running, includes scraper progress (`phase`, `filters_processed` / `filters_total`, current filter name, PDP enrich counts)                                         |
+| Refresh snapshot               | `POST /api/v1/plamod/restock/sync` queues `SyncPlamodInstockJob` on `plamod_sync` (does not wait for the export). The SPA uses a 15s queue timeout; the export itself usually takes several minutes.                 |
+| Retry failed filters           | `POST /api/v1/plamod/restock/sync-retry` body `{ filters: [{ name, tab, category_id, expected }] }` — only filters that failed on the last completed refresh; merge-only import (no snapshot delete). Refuses if a refresh is already queued/running. |
+| Poll sync                      | `GET /api/v1/plamod/restock/sync-status` — while running, merges progress from the shared file `storage/app/private/plamod/instock_export_progress.json` (`phase`, `filters_processed` / `filters_total`, current filter). Includes `failed_filters` from the latest (or previous completed) `filter_chunks`. Status does **not** HTTP-call the scraper, so the single-process local PHP server stays responsive while Playwright is busy. |
 | Dismiss / later / include SKU  | `PUT /api/v1/plamod/restock/decisions/{sku}` body `{ status: dismissed \| later \| included, ... }`                                                                                                                  |
 | Bulk dismiss / later / include | `POST /api/v1/plamod/restock/decisions/bulk` body `{ skus[], status, order_qty?, planned_maintain_qty? }`                                                                                                            |
 | Override existing order qty    | `PUT /api/v1/plamod/restock/reorder-overrides/{sku}` body `{ reorder_qty: number \| null }`                                                                                                                          |
@@ -104,7 +107,7 @@ Draft PO feedback includes counts for existing lines added, new catalog-less lin
 After reviewing the proposal, select rows with the visibly labeled **Cart** checkboxes (first column on existing products; second column on new products when included with qty &gt; 0). **Set selected in PLAMOD cart** in the header opens a confirm dialog, then queues a background job on `plamod_sync`:
 
 1. Builds the same line list as draft PO creation (`PlamodRestockCartLineBuilder`).
-2. `plamod-scraper` snapshots cart **before** and skips exact already-satisfied lines. Missing lines are opened in a fresh PDP tab (separate from the baseline cart tab), then the PACK `+` action creates the cart line. Existing partial or over-added lines are changed with that SKU row's cart `−`/`+` controls; the scraper re-finds the virtualized row and re-reads its quantity after every click.
+2. `plamod-scraper` snapshots cart **before** and skips exact already-satisfied lines. Missing lines are opened in a **fresh PDP tab per SKU** (separate from the baseline cart tab and from the previous product). Requested qty is **pieces**, never cartons: the scraper uses only the last (piece) `+`/`−` stepper. It never opens the PACK/carton combobox and never clicks the carton stepper. Each click must change piece TOTAL by exactly 1; a jump of carton size (20, 72, …) is treated as a failure. Cart reads use piece TOTAL (`145 TOTAL`), not the carton combobox (`2`). PDP navigation retries when Plamod aborts the first goto and leaves the previous product URL; if the URL still does not match, it opens the in-stock search result for that SKU. Existing partial or over-added lines are changed with that SKU row's **piece** cart `−`/`+` controls (last stepper, not the carton pair); the scraper re-finds the virtualized row and re-reads its piece quantity after every click.
 3. **Does not clear the cart**. An existing line is stepped to its requested total rather than using the PDP add control, so retries cannot double-add and over-added quantities can be lowered.
 4. Performs one cart quantity pass and one final reload/snapshot after all PDP updates instead of a cart round-trip per SKU. Baseline reads retry with a fresh cart tab when PLAMOD transiently renders an empty cart document. Recheck always reloads PLAMOD and never falls back to the previous tab snapshot. A refreshed cart with rows (even when requested SKUs are absent) or an explicit empty-cart screen is authoritative; an unexplained blank render returns an inconclusive error instead of cached or fabricated quantities.
 5. Persists run + report in `plamod_restock_cart_runs` (`counts_json.report`).
@@ -128,7 +131,7 @@ Progress while running: phase, `items_processed` / `items_total`, current SKU (f
 
 **Retry remaining** (report panel, visible when any line is `missing`, `add_failed`, `partial`, or `over_added`) queues another cart run for those SKUs only. It snapshots current cart totals and sets each existing line to the exact requested final quantity with PLAMOD's cart-row quantity steppers: partial lines are increased and over-added lines are lowered.
 
-When PLAMOD rejects or cannot offer the requested quantity, the line displays **PLAMOD message:** followed by the retailer response or constraint (for example, its MOQ). Rechecking preserves that message while the mismatch remains and clears it once the line verifies.
+When PLAMOD rejects or cannot offer the requested quantity, the line displays **PLAMOD message:** followed by the retailer response. If the discrete **MOQ** text node is higher than the requested qty, the add is raised to that MOQ. Plamod often returns HTTP 200 for a below-MOQ plus click without putting the line in the cart. Rechecking preserves that message while the mismatch remains and clears it once the line verifies.
 
 **Dismiss** hides the latest completed report and headline in that browser until a newer run exists. Reloading during a queued/running job resumes polling automatically. Refresh-from-PLAMOD is disabled while cart automation owns the scraper session.
 
@@ -157,7 +160,7 @@ Last report persists in `app_runtime_settings` key `plamod_restock.order_verify_
 
 Blocked while a cart automation job is queued/running or when the scraper is unavailable. The scraper scrolls PLAMOD’s virtualized cart list before reading quantities (large carts are not fully present in the DOM on first paint). IN-STOCK cart quantities are read from the structured quantity control / `TOTAL` value. PREORDER ARRIVED quantities are read from the numeric value immediately before the `ORDERED` label, and only from a container whose product links all resolve to that one SKU (preventing a neighboring row’s preorder from bleeding into the result). Flattened row text is not used because adjacent controls can concatenate `2` and `0` into a false `20`.
 
-**Performance and safety:** cart operations are serialized and use a dedicated persistent-profile directory for authentication, but the Playwright browser context itself is newly launched and closed for every add/recheck. Shopping-cart DOM/state is never reused between operations. Fresh-tab sign-in detection is bounded (it never waits Playwright's 30-second default for an optional heading), the flow avoids cart-page round trips between SKUs, and it verifies once per run. `PLAMOD_RESTOCK_CART_PROFILE_DIR` defaults to `.pw-user-data-cart` and is configured as `/app/.pw-user-data-cart` in Compose, preventing cart automation from locking the general scraper profile. Other optional env: `PLAMOD_RESTOCK_CART_ACTION_TIMEOUT_MS` (default 8,000), `PLAMOD_RESTOCK_CART_CART_SETTLE_MS` (default 150).
+**Performance and safety:** cart operations are serialized and use a dedicated persistent-profile directory for authentication, but the Playwright browser context itself is newly launched and closed for every add/recheck. Shopping-cart DOM/state is never reused between operations. Fresh-tab sign-in detection is bounded (it never waits Playwright's 30-second default for an optional heading), the flow avoids cart-page round trips between SKUs, and it verifies once per run. `PLAMOD_RESTOCK_CART_PROFILE_DIR` defaults to `.pw-user-data-cart` and is configured as `/app/.pw-user-data-cart` in Compose, preventing cart automation from locking the general scraper profile. Other optional env: `PLAMOD_RESTOCK_CART_ACTION_TIMEOUT_MS` (default 20,000; plus-click retries 3 times), `PLAMOD_RESTOCK_CART_CART_SETTLE_MS` (default 150).
 
 ---
 
@@ -176,12 +179,16 @@ Blocked while a cart automation job is queued/running or when the scraper is una
 
 ### Scraper performance (instock merged export)
 
+- Progress is written to the Laravel-shared file `plamod/instock_export_progress.json` so the restock page can poll without opening another HTTP request into the busy Playwright process.
 - Reuses one Playwright session from filter discovery through export (no mid-run browser restart).
 - Sidebar filter list is cached on disk when the in-stock tab badge total is unchanged (`PLAMOD_INSTOCK_FILTER_CACHE`, default on; TTL `PLAMOD_INSTOCK_FILTER_CACHE_TTL_MS`, default 24h).
 - Filter slices with `manufacturerCategoryId` navigate directly (skip listing-page reset between chunks).
+- After the first pass, filters that errored, returned 0 rows, or came in well below their expected count are retried once (progress phase `retry`).
 - Per-slice listing price retry runs only when ≥50% of rows in the slice lack `price_stock`; sparse gaps defer to the global PDP enrich pass.
 - Listing cards with **IN-STOCK + OFFER CLOSED + PRICE** (common on 30MF lines) parse `price_stock` from the full product card, not the SKU column only.
 - PDP enrich reacquires the browser session after Playwright crashes instead of skipping the remaining SKUs.
+- In-stock enrich also runs when the listing image is missing or the product name is blank / equal to the SKU (priced cards still need a PDP pass for photo + title). Title falls back from headings, `og:title`, document title, then product image `alt` when `h1` is empty.
+- CSV import keeps an existing PDP title / photo / series / category / barcode when the listing row is still SKU-named or blank, so a later Refresh does not wipe a completed enrich.
 
 ---
 

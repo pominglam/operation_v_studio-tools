@@ -65,6 +65,7 @@ final class ProductsExportSelectedRequest extends FormRequest
                     'po_total_cost',
                     'updated_at',
                     'created_at',
+                    'is_urgent',
                 ]),
             ],
             'sort_dir' => ['sometimes', 'string', Rule::in(['asc', 'desc'])],

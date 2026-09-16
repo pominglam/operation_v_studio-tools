@@ -28,6 +28,7 @@ return [
         'workshop-misc',
         'airbrush',
         'weathering',
+        'cutting-mats',
     ],
 
     /*

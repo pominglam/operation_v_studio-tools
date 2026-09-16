@@ -47,6 +47,7 @@ final class PlamodRestockDraftPurchaseOrderService
         $po->vendor_currency_code = 'CAD';
         $po->notes = 'Created from PLAMOD restock proposal.';
         $po->is_done = false;
+        $po->shipment_method = $this->shipmentMethods->defaultForVendor(self::VENDOR);
         $po = $this->purchaseOrders->create($po);
         $po->load('items');
 

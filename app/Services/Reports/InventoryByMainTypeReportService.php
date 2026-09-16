@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Reports;
 
 use App\Services\Products\ProductNotArrivedQtyService;
+use App\Support\Products\Storefront\ModelKitSdSublineResolver;
 use Illuminate\Support\Facades\DB;
 
 final class InventoryByMainTypeReportService
 {
     public function __construct(
         private readonly ProductNotArrivedQtyService $notArrivedQty,
+        private readonly ModelKitSdSublineResolver $sdSubline,
     ) {}
 
     /**
@@ -24,6 +26,8 @@ final class InventoryByMainTypeReportService
      *         main_type: string,
      *         department: string,
      *         product_line: string,
+     *         workshop_shelf: string,
+     *         grade: string,
      *         subline: string,
      *         catalog_skus: int,
      *         skus_on_hand: int,
@@ -56,12 +60,15 @@ final class InventoryByMainTypeReportService
         $notArrivedExpr = $this->notArrivedQty->sqlExpressionForProductsGrid();
         $includesDraftPos = $this->notArrivedQty->productsGridIncludesDraftPurchaseOrders();
         $receivedQtyExpr = $this->totalReceivedQtyExpression();
+        $sublineExpr = $this->sdSubline->sqlExpression();
 
         /** @var list<object{
          *     type: string,
          *     main_type: string,
          *     department: string,
          *     product_line: string,
+         *     workshop_shelf: string,
+         *     grade: string,
          *     subline: string,
          *     catalog_skus: int|string,
          *     skus_on_hand: int|string,
@@ -76,20 +83,13 @@ final class InventoryByMainTypeReportService
          * }> $rawRows */
         $rawRows = DB::table('products')
             ->whereNull('archived_at')
-            ->selectRaw(
-                "COALESCE(NULLIF(TRIM(subline), ''), NULLIF(TRIM(product_line), ''), "
-                ."NULLIF(TRIM(type), ''), '') as type",
-            )
-            ->selectRaw(
-                "COALESCE(NULLIF(TRIM(department), ''), NULLIF(TRIM(main_type), ''), '') as main_type",
-            )
-            ->selectRaw(
-                "COALESCE(NULLIF(TRIM(department), ''), NULLIF(TRIM(main_type), ''), '') as department",
-            )
-            ->selectRaw(
-                "COALESCE(NULLIF(TRIM(product_line), ''), NULLIF(TRIM(type), ''), '') as product_line",
-            )
-            ->selectRaw("COALESCE(NULLIF(TRIM(subline), ''), '') as subline")
+            ->selectRaw("COALESCE(NULLIF(TRIM(type), ''), '') as type")
+            ->selectRaw("COALESCE(NULLIF(TRIM(department), ''), '') as main_type")
+            ->selectRaw("COALESCE(NULLIF(TRIM(department), ''), '') as department")
+            ->selectRaw("COALESCE(NULLIF(TRIM(product_line), ''), '') as product_line")
+            ->selectRaw("COALESCE(NULLIF(TRIM(workshop_shelf), ''), '') as workshop_shelf")
+            ->selectRaw("COALESCE(NULLIF(TRIM(grade), ''), '') as grade")
+            ->selectRaw($sublineExpr.' as subline')
             ->selectRaw('COUNT(*) as catalog_skus')
             ->selectRaw('SUM(CASE WHEN available_qty > 0 THEN 1 ELSE 0 END) as skus_on_hand')
             ->selectRaw('SUM(CASE WHEN available_qty > 0 THEN available_qty ELSE 0 END) as quantity_on_hand')
@@ -111,7 +111,8 @@ final class InventoryByMainTypeReportService
             ->selectRaw(
                 "SUM(({$receivedQtyExpr}) - coalesce(products.available_qty, 0)) as units_sold",
             )
-            ->groupBy('type', 'main_type', 'department', 'product_line', 'subline')
+            ->groupBy('type', 'main_type', 'department', 'product_line', 'workshop_shelf', 'grade')
+            ->groupBy(DB::raw($sublineExpr))
             ->orderByDesc('quantity_on_hand')
             ->orderBy('type')
             ->orderBy('main_type')
@@ -140,6 +141,8 @@ final class InventoryByMainTypeReportService
             $mainType = (string) $rawRow->main_type;
             $department = (string) $rawRow->department;
             $productLine = (string) $rawRow->product_line;
+            $workshopShelf = (string) $rawRow->workshop_shelf;
+            $grade = (string) $rawRow->grade;
             $subline = (string) $rawRow->subline;
             $catalogSkus = (int) $rawRow->catalog_skus;
             $skusOnHand = (int) $rawRow->skus_on_hand;
@@ -158,6 +161,8 @@ final class InventoryByMainTypeReportService
                 'main_type' => $mainType,
                 'department' => $department,
                 'product_line' => $productLine,
+                'workshop_shelf' => $workshopShelf,
+                'grade' => $grade,
                 'subline' => $subline,
                 'catalog_skus' => $catalogSkus,
                 'skus_on_hand' => $skusOnHand,

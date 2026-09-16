@@ -95,7 +95,7 @@ function timingMs(name, fallback) {
 }
 
 const CART_SETTLE_MS = timingMs('PLAMOD_RESTOCK_CART_CART_SETTLE_MS', 150);
-const CART_ACTION_TIMEOUT_MS = timingMs('PLAMOD_RESTOCK_CART_ACTION_TIMEOUT_MS', 8000);
+const CART_ACTION_TIMEOUT_MS = timingMs('PLAMOD_RESTOCK_CART_ACTION_TIMEOUT_MS', 20000);
 
 /** @type {Promise<void>} */
 let cartSessionChain = Promise.resolve();
@@ -138,6 +138,34 @@ async function replaceCartWriteSession(deps, baseUrl, currentContext) {
         .catch(() => undefined);
     await deps.ensureLoggedInQuick(session.page, baseUrl, session.context);
     return session;
+}
+
+function parseCartonSize(text) {
+    const match = String(text || '').match(/CARTON:\s*(\d+)/i);
+    const size = match ? Number.parseInt(match[1], 10) : 0;
+    return Number.isFinite(size) && size > 1 ? size : 0;
+}
+
+/** Piece TOTAL before PRICE — never the carton combobox or money TOTAL:. */
+function parseInStockPieceTotal(text) {
+    const normalized = String(text || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const labeled = [...normalized.matchAll(/(\d+)\s+TOTAL(?=\s|$|PRICE)/gi)];
+    if (labeled.length > 0) {
+        return Number.parseInt(labeled[labeled.length - 1][1], 10);
+    }
+    const glued = normalized.match(/TOTAL0*(\d+)/i);
+    if (glued) {
+        return Number.parseInt(glued[1], 10);
+    }
+
+    return null;
+}
+
+function inStockQuantityPlan(targetPieces, _cartonSize) {
+    const target = Math.max(0, Number.parseInt(String(targetPieces), 10) || 0);
+    return { packQty: 0, pieceQty: target, pieceTotal: target };
 }
 
 function parseMoqFromBlockText(text, comboQty = 0) {
@@ -295,31 +323,74 @@ async function isPlusButton(button) {
     return paths.includes('M5 12h14') && paths.includes('M12 5v14');
 }
 
-async function findPackPlusButton(block) {
+async function findStepperPlusButtons(block) {
+    const pluses = [];
     const buttons = block.locator('button:not([disabled])');
-    for (let index = (await buttons.count()) - 1; index >= 0; index -= 1) {
+    for (let index = 0; index < (await buttons.count()); index += 1) {
         const button = buttons.nth(index);
         if ((await button.getAttribute('role')) !== 'combobox' && (await isPlusButton(button))) {
-            return button;
+            pluses.push(button);
         }
     }
-    return null;
+    return pluses;
 }
 
-async function clickPackPlusAndWaitForAdd(page, plus) {
-    const quantityUpdate = page.waitForResponse(
-        (response) => {
-            const request = response.request();
-            const body = String(request.postData() || '');
-            return (
-                request.method() === 'POST' &&
-                body.includes('"productId"') &&
-                body.includes('"quantity"')
-            );
-        },
-        { timeout: CART_ACTION_TIMEOUT_MS },
+async function findStepperMinusButtons(block) {
+    const minuses = [];
+    const buttons = block.locator('button:not([disabled])');
+    for (let index = 0; index < (await buttons.count()); index += 1) {
+        const button = buttons.nth(index);
+        if ((await button.getAttribute('role')) === 'combobox') {
+            continue;
+        }
+        const paths = await button
+            .locator('svg path')
+            .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('d') || ''));
+        if (paths.includes('M5 12h14') && !paths.includes('M12 5v14')) {
+            minuses.push(button);
+        }
+    }
+    return minuses;
+}
+
+async function findPieceStepperButton(block, direction) {
+    const lucide = block.locator(cartLineStepperSelector(direction));
+    if ((await lucide.count()) > 0) {
+        return lucide.last();
+    }
+    if (direction === 'plus') {
+        const pluses = await findStepperPlusButtons(block);
+        return pluses.at(-1) ?? null;
+    }
+    const minuses = await findStepperMinusButtons(block);
+    return minuses.at(-1) ?? null;
+}
+
+function isAnyCartQuantityPost(response) {
+    const request = response.request();
+    const body = String(request.postData() || '');
+    return (
+        request.method() === 'POST' &&
+        body.includes('"productId"') &&
+        body.includes('"quantity"')
     );
-    await plus.click();
+}
+
+async function readPdpPieceTotal(page) {
+    await markInStockBlock(page);
+    const state = await readInStockBlockState(getInStockBlock(page));
+    const labeled = parseInStockPieceTotal(state.text);
+    if (labeled !== null) {
+        return labeled;
+    }
+    return parseCartRowQty(state.text, String(state.comboQty || ''));
+}
+
+async function clickPieceStepperAndWait(page, control, expectedPieceTotal, readTotal) {
+    const quantityUpdate = page.waitForResponse(isAnyCartQuantityPost, {
+        timeout: CART_ACTION_TIMEOUT_MS,
+    });
+    await control.click();
     const response = await quantityUpdate;
     const responseBody = await response.text().catch(() => '');
     const responseError = responseBody.match(/"code":"ERROR","message":"([^"]+)"/i);
@@ -330,40 +401,67 @@ async function clickPackPlusAndWaitForAdd(page, plus) {
         );
     }
     await page.waitForTimeout(1500);
-}
-
-async function selectExactPackQty(page, block, quantity) {
-    const combo = block.locator('button[role="combobox"]').first();
-    await combo.click();
-    const option = page.getByRole('option', { name: String(quantity), exact: true });
-    if ((await option.count()) === 0) {
-        throw new Error(`PLAMOD does not offer exact PACK qty ${quantity}.`);
-    }
-
-    await option.first().click();
-    await page.waitForTimeout(500);
-    const selected = Number.parseInt(String((await combo.textContent()) || '0').trim(), 10);
-    if (selected !== quantity) {
-        throw new Error(`PLAMOD PACK selector remained at ${selected}; expected ${quantity}.`);
+    const after = await readTotal();
+    if (after !== expectedPieceTotal) {
+        throw new Error(
+            `PLAMOD piece total became ${after}, expected ${expectedPieceTotal}. Carton/pack steppers are forbidden.`,
+        );
     }
 }
 
-async function setCartQuantityViaPackStepper(page, block, targetQty, currentCartQty) {
-    // The PDP plus control increments the selected PACK value and writes that
-    // incremented total to the cart. Select one below the desired final total.
-    await selectExactPackQty(page, block, Math.max(0, targetQty - 1));
-    const plus = await findPackPlusButton(block);
-    if (!plus) {
-        throw new Error('PLAMOD PACK quantity control was not found on the IN-STOCK block.');
+async function setCartQuantityViaPackStepper(page, block, targetQty, _currentCartQty) {
+    const piecePlus = await findPieceStepperButton(block, 'plus');
+    if (!piecePlus) {
+        throw new Error('PLAMOD piece quantity control was not found on the IN-STOCK block.');
     }
 
-    await clickPackPlusAndWaitForAdd(page, plus);
+    let total = await readPdpPieceTotal(page);
+    const target = Math.max(0, Number.parseInt(String(targetQty), 10) || 0);
+    if (total === target) {
+        return;
+    }
+
+    if (total > target) {
+        const pieceMinus = await findPieceStepperButton(getInStockBlock(page), 'minus');
+        if (!pieceMinus) {
+            throw new Error('PLAMOD piece quantity minus control was not found on the IN-STOCK block.');
+        }
+        while (total > target) {
+            await clickPieceStepperAndWait(page, pieceMinus, total - 1, () => readPdpPieceTotal(page));
+            total -= 1;
+        }
+        return;
+    }
+
+    while (total < target) {
+        await clickPieceStepperAndWait(page, piecePlus, total + 1, () => readPdpPieceTotal(page));
+        total += 1;
+    }
 }
 
 function parseCartRowQty(text, comboText, comboTextParts = [], totalTextParts = []) {
     const normalized = String(text || '')
         .replace(/\s+/g, ' ')
         .trim();
+    const cartonSize = parseCartonSize(normalized);
+    if (cartonSize > 1) {
+        const fromParts = [...totalTextParts]
+            .map((part) => Number.parseInt(String(part).trim(), 10))
+            .find((qty) => Number.isFinite(qty) && qty > 0);
+        if (fromParts !== undefined) {
+            return fromParts;
+        }
+        const pieceTotal = parseInStockPieceTotal(normalized);
+        if (pieceTotal !== null && pieceTotal > 0) {
+            return pieceTotal;
+        }
+        const packQty = Number.parseInt(String(comboText || '').trim(), 10);
+        if (Number.isFinite(packQty) && packQty >= 0) {
+            return cartonSize * packQty;
+        }
+        return 0;
+    }
+
     const structuralQty = [...totalTextParts, ...comboTextParts]
         .map((part) => Number.parseInt(String(part).trim(), 10))
         .find((qty) => Number.isFinite(qty) && qty > 0);
@@ -679,7 +777,13 @@ function cartLineStepperSelector(direction) {
 }
 
 async function scrapeRetailerCartQuantities(page) {
-    return page.evaluate(() => {
+    return page.evaluate((sources) => {
+        const parseCartonSize = eval(`(${sources.carton})`);
+        const parseInStockPieceTotal = eval(`(${sources.piece})`);
+        const parseCartRowQty = eval(`(${sources.qty})`);
+        if (typeof parseCartonSize !== 'function' || typeof parseInStockPieceTotal !== 'function') {
+            throw new Error('PLAMOD cart qty helpers failed to load.');
+        }
         const norm = (v) =>
             String(v || '')
                 .replace(/\s+/g, ' ')
@@ -716,29 +820,6 @@ async function scrapeRetailerCartQuantities(page) {
             }
             return values;
         };
-        const parseQty = (text, comboText, comboTextParts, totalTextParts) => {
-            const normalized = norm(text);
-            const structuralQty = [...totalTextParts, ...comboTextParts]
-                .map((part) => Number.parseInt(part, 10))
-                .find((qty) => Number.isFinite(qty) && qty > 0);
-            if (structuralQty !== undefined) {
-                return structuralQty;
-            }
-
-            const comboQty = Number.parseInt(norm(comboText), 10);
-            if (Number.isFinite(comboQty) && comboQty > 0) {
-                return comboQty;
-            }
-
-            const totalMatch = normalized.match(/TOTAL0*(\d+)/i);
-            const totalQty = totalMatch ? Number.parseInt(totalMatch[1], 10) : Number.NaN;
-            if (Number.isFinite(totalQty)) {
-                return totalQty;
-            }
-
-            return Number.isFinite(comboQty) ? comboQty : 0;
-        };
-
         const skuPatternFor = (sku) => new RegExp(`SKU\\s*:\\s*${sku}(?:\\D|$)`, 'i');
 
         /** @type {Record<string, number>} */
@@ -769,7 +850,7 @@ async function scrapeRetailerCartQuantities(page) {
                     continue;
                 }
 
-                const qty = parseQty(
+                const qty = parseCartRowQty(
                     text,
                     comboText,
                     numericTextParts(combo),
@@ -786,6 +867,10 @@ async function scrapeRetailerCartQuantities(page) {
         }
 
         return map;
+    }, {
+        carton: parseCartonSize.toString(),
+        piece: parseInStockPieceTotal.toString(),
+        qty: parseCartRowQty.toString(),
     });
 }
 
@@ -919,7 +1004,7 @@ async function setCartRowQuantity(page, sku, targetQty) {
             throw new Error(`PLAMOD cart row disappeared for SKU ${sku}.`);
         }
         const row = page.locator(`[data-ovs-cart-row="${sku}"]`);
-        const control = row.locator(cartLineStepperSelector(plan.direction)).first();
+        const control = row.locator(cartLineStepperSelector(plan.direction)).last();
         if ((await control.count()) === 0 || !(await control.isVisible())) {
             throw new Error(`PLAMOD cart ${plan.direction} control was not found for SKU ${sku}.`);
         }
@@ -945,7 +1030,14 @@ async function setCartRowQuantity(page, sku, targetQty) {
             );
         }
         await page.waitForTimeout(750);
-        current = Number((await scrapeRetailerCartQuantities(page))[sku] || 0);
+        const next = Number((await scrapeRetailerCartQuantities(page))[sku] || 0);
+        const delta = Math.abs(next - current);
+        if (delta !== 1) {
+            throw new Error(
+                `PLAMOD cart qty jumped by ${delta} for SKU ${sku} (carton/pack steppers are forbidden).`,
+            );
+        }
+        current = next;
     }
 
     if (current !== targetQty) {
@@ -1091,24 +1183,18 @@ async function selectInStockQty(page, targetQty, currentCartQty = 0) {
     await waitForInStockBlock(page);
     const block = getInStockBlock(page);
     const initialState = await readInStockBlockState(block);
-    const moq =
-        initialState.moqQty > 0
-            ? initialState.moqQty
-            : parseMoqFromBlockText(initialState.text, initialState.comboQty);
+    const moqFromNodes = initialState.moqQty > 0;
+    const moq = moqFromNodes
+        ? initialState.moqQty
+        : parseMoqFromBlockText(initialState.text, initialState.comboQty);
+    // Plamod often returns 200 for below-MOQ plus clicks without adding the line.
+    // Trust the discrete MOQ text node (not concatenated TOTAL glue) and raise.
+    const addQty = moqFromNodes && moq > targetQty ? moq : targetQty;
 
-    if (targetQty < moq) {
-        return {
-            selected_qty: 0,
-            max_available: null,
-            moq,
-            error_message: `Requested ${targetQty} but PLAMOD MOQ is ${moq}.`,
-        };
-    }
-
-    await setCartQuantityViaPackStepper(page, block, targetQty, currentCartQty);
+    await setCartQuantityViaPackStepper(page, block, addQty, currentCartQty);
 
     return {
-        selected_qty: targetQty,
+        selected_qty: addQty,
         max_available: null,
         moq,
         error_message: null,
@@ -1241,7 +1327,10 @@ function buildVerificationReport(baseUrl, lineResults, cartBefore, cartAfter, ex
         return {
             ...line,
             error_message:
-                verificationStatus === 'verified' || verificationStatus === 'already_satisfied'
+                verificationStatus === 'verified' ||
+                verificationStatus === 'already_satisfied' ||
+                verificationStatus === 'over_added' ||
+                verificationStatus === 'partial'
                     ? null
                     : (line.error_message ?? null),
             cart_qty_before: beforeQty,
@@ -1426,6 +1515,9 @@ async function restockAddLinesToCartUnlocked(deps, payload) {
 
                 const mutationSurface = cartLineMutationSurface(action);
                 if (mutationSurface === 'pdp') {
+                    const stalePage = page;
+                    page = await context.newPage();
+                    await stalePage.close().catch(() => undefined);
                     await deps.ensureOnRetailerPdp(page, baseUrl, item.sku, context);
                     const selection = await selectInStockQty(
                         page,
@@ -1691,6 +1783,9 @@ module.exports = {
     parseRetailerCartItemBadgeCount,
     readRetailerCartItemBadgeCount,
     snapshotRetailerCart,
+    parseCartonSize,
+    parseInStockPieceTotal,
+    inStockQuantityPlan,
     parseCartRowQty,
     parsePreorderArrivedQty,
     isPreorderArrivedContainerText,

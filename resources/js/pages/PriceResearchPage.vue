@@ -180,6 +180,7 @@ const allSites = [
     { key: 'meeplemart', name: 'Meeplemart' },
     { key: 'hobby_sense', name: 'Hobby Sense' },
     { key: 'gundam_hangar', name: 'Gundam Hangar' },
+    { key: 'cool_dragon_hobby', name: 'Cool Dragon Hobby' },
 ];
 
 const disabledSiteKeys = ref<string[]>([]);

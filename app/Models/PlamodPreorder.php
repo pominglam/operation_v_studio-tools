@@ -27,6 +27,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $image_download_status
  * @property \Illuminate\Support\Carbon|null $image_downloaded_at
  * @property \Illuminate\Support\Carbon|null $dropped_at
+ * @property \Illuminate\Support\Carbon|null $not_interested_at
  * @property \Illuminate\Support\Carbon|null $last_seen_at
  */
 final class PlamodPreorder extends Model
@@ -57,6 +58,7 @@ final class PlamodPreorder extends Model
         'image_download_status',
         'image_downloaded_at',
         'dropped_at',
+        'not_interested_at',
         'last_seen_at',
     ];
 
@@ -69,6 +71,7 @@ final class PlamodPreorder extends Model
             'eta_date' => 'date',
             'image_downloaded_at' => 'datetime',
             'dropped_at' => 'datetime',
+            'not_interested_at' => 'datetime',
             'last_seen_at' => 'datetime',
         ];
     }

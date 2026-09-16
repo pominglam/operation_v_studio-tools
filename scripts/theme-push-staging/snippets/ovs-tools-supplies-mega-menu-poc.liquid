@@ -1,0 +1,508 @@
+{% comment %}
+
+  Tools & Supplies mega menu POC — Building / Detailing / Painting / Customization.
+
+
+
+  Accepts:
+
+  - variant: 'desktop' or 'mobile'
+
+  - root_link: Shopify navigation link for Tools & Supplies
+
+  - index: parent navigation loop index (mobile IDs)
+
+{% endcomment %}
+
+
+
+{%- capture hub_url -%}/collections/tools-and-supplies{%- endcapture -%}
+
+{%- capture nippers_url -%}/collections/nippers-and-knives?ovs_cut_category=nipper{%- endcapture -%}
+{%- capture nipper_starter_url -%}/collections/nippers-and-knives?ovs_cut_category=nipper&ovs_nipper_tier=starter{%- endcapture -%}
+{%- capture nipper_enthusiast_url -%}/collections/nippers-and-knives?ovs_cut_category=nipper&ovs_nipper_tier=enthusiast{%- endcapture -%}
+{%- capture nipper_advanced_url -%}/collections/nippers-and-knives?ovs_cut_category=nipper&ovs_nipper_tier=advanced{%- endcapture -%}
+
+{%- capture knives_url -%}/collections/nippers-and-knives?ovs_cut_category=knife,blade{%- endcapture -%}
+{%- capture hobby_knives_url -%}/collections/nippers-and-knives?ovs_cut_category=knife{%- endcapture -%}
+{%- capture knife_blades_url -%}/collections/nippers-and-knives?ovs_cut_category=blade{%- endcapture -%}
+
+{%- capture sanding_url -%}/collections/sanding{%- endcapture -%}
+{%- capture sanding_boards_url -%}/collections/sanding?ovs_sand_type=board-plate{%- endcapture -%}
+{%- capture sanding_glass_files_url -%}/collections/sanding?ovs_sand_type=glass-file{%- endcapture -%}
+{%- capture sanding_sheets_url -%}/collections/sanding?ovs_sand_type=sheet{%- endcapture -%}
+{%- capture sanding_sticks_url -%}/collections/sanding?ovs_sand_type=stick{%- endcapture -%}
+{%- capture sanding_sponges_url -%}/collections/sanding?ovs_sand_type=sponge{%- endcapture -%}
+
+{%- capture tweezers_url -%}/collections/tweezers{%- endcapture -%}
+{%- capture tweezers_ultra_url -%}/collections/tweezers?ovs_tweezer_line=ultra-precision{%- endcapture -%}
+{%- capture tweezers_thick_url -%}/collections/tweezers?ovs_tweezer_line=thick-wall{%- endcapture -%}
+
+{%- capture adhesives_url -%}/collections/adhesives{%- endcapture -%}
+
+{%- capture panel_liners_url -%}/collections/panel-liners{%- endcapture -%}
+{%- capture panel_liner_tools_url -%}/collections/panel-liners?ovs_panel_liner_kind=tool{%- endcapture -%}
+
+{%- capture panel_liner_normal_url -%}/collections/panel-liners?ovs_panel_liner_kind=paint&ovs_panel_liner_type=normal{%- endcapture -%}
+
+{%- capture panel_liner_fluorescent_url -%}/collections/panel-liners?ovs_panel_liner_kind=paint&ovs_panel_liner_type=fluorescent{%- endcapture -%}
+
+{%- capture markers_url -%}/collections/markers{%- endcapture -%}
+{%- capture marker_solid_url -%}/collections/markers?ovs_marker_type=solid{%- endcapture -%}
+{%- capture marker_metallic_url -%}/collections/markers?ovs_marker_type=metallic{%- endcapture -%}
+{%- capture marker_fluorescent_url -%}/collections/markers?ovs_marker_type=fluorescent{%- endcapture -%}
+
+{%- capture decals_url -%}/collections/decals{%- endcapture -%}
+{%- capture decal_tools_url -%}/collections/decals?ovs_decal_product=softener{%- endcapture -%}
+{%- capture decal_water_url -%}/collections/decals?ovs_decal_product=sheet{%- endcapture -%}
+
+{%- capture masking_tape_url -%}/collections/tapes?ovs_type=masking{%- endcapture -%}
+
+{%- capture weathering_url -%}/collections/weathering{%- endcapture -%}
+{%- capture paints_url -%}/collections/paints{%- endcapture -%}
+{%- capture hand_paint_url -%}/collections/paints?ovs_paint_product=paint&ovs_paint_app=hand{%- endcapture -%}
+
+{%- capture prethinned_airbrush_url -%}/collections/paints?ovs_paint_product=paint&ovs_paint_app=pre-thinned-airbrush{%- endcapture -%}
+
+{%- capture surfacer_url -%}/collections/paints?ovs_paint_product=surfacer{%- endcapture -%}
+
+{%- capture spray_can_url -%}/collections/paints?ovs_paint_app=spray-can{%- endcapture -%}
+{%- capture top_coat_url -%}/collections/paints?ovs_paint_product=top-coat{%- endcapture -%}
+
+{%- capture brushes_url -%}/collections/brushes{%- endcapture -%}
+
+{%- capture airbrush_url -%}/collections/airbrush{%- endcapture -%}
+
+{%- capture scribing_url -%}/collections/scribing-tools{%- endcapture -%}
+{%- capture scribing_handles_url -%}/collections/scribing-tools?ovs_scribing_type=handle{%- endcapture -%}
+{%- capture scribing_scribers_url -%}/collections/scribing-tools?ovs_scribing_type=scriber-pusher{%- endcapture -%}
+
+{%- capture drilling_url -%}/collections/drills{%- endcapture -%}
+{%- capture drilling_handles_url -%}/collections/drills?ovs_drill_type=hand-drill{%- endcapture -%}
+{%- capture drilling_bits_url -%}/collections/drills?ovs_drill_type=bit,bit-set{%- endcapture -%}
+
+{%- capture scribing_tape_url -%}/collections/tapes?ovs_type=scribing{%- endcapture -%}
+
+{%- capture other_url -%}/collections/workshop-misc{%- endcapture -%}
+
+
+
+{%- if variant == 'desktop' -%}
+
+  <div class="ovs-model-mega ovs-ts-mega page-width">
+
+    <div class="ovs-model-mega__topline">
+
+      <div>
+
+        <p class="ovs-model-mega__eyebrow">Tools &amp; supplies</p>
+
+        <p class="ovs-model-mega__intro">Shop by what you are doing — build, detail, paint, or customize.</p>
+
+      </div>
+
+    </div>
+
+
+
+    <div class="ovs-model-mega__grid ovs-ts-mega__grid">
+
+      <div class="ovs-model-mega__feature">
+
+        <p class="ovs-model-mega__eyebrow">Start here</p>
+
+        <p class="ovs-model-mega__feature-title">Stock your workshop</p>
+
+        <p class="ovs-model-mega__feature-copy">
+
+          Browse the full catalog or jump straight to the tool most builders buy first.
+
+        </p>
+
+        <div class="ovs-model-mega__feature-actions">
+
+          <a class="ovs-model-mega__button ovs-model-mega__button--primary" href="{{ hub_url }}">
+
+            All tools &amp; supplies
+
+          </a>
+
+          <a class="ovs-model-mega__button" href="{{ nippers_url }}">Nippers</a>
+
+        </div>
+
+      </div>
+
+
+
+      <div class="ovs-model-mega__group">
+
+        <p class="ovs-model-mega__heading">Building</p>
+
+        <ul class="ovs-model-mega__links list-unstyled" role="list">
+
+          <li class="ovs-model-mega__grade-parent">
+            <a href="{{ nippers_url }}">Nippers</a>
+            <ul class="ovs-model-mega__sublinks list-unstyled" role="list">
+              <li><a href="{{ nipper_starter_url }}">Starters</a></li>
+              <li><a href="{{ nipper_enthusiast_url }}">Enthusiasts</a></li>
+              <li><a href="{{ nipper_advanced_url }}">Advanced</a></li>
+            </ul>
+          </li>
+
+          <li class="ovs-model-mega__grade-parent">
+            <a href="{{ knives_url }}">Knives</a>
+            <ul class="ovs-model-mega__sublinks list-unstyled" role="list">
+              <li><a href="{{ hobby_knives_url }}">Hobby knives</a></li>
+              <li><a href="{{ knife_blades_url }}">Blades &amp; refills</a></li>
+            </ul>
+          </li>
+
+          <li class="ovs-model-mega__grade-parent">
+            <a href="{{ sanding_url }}">Sanding</a>
+            <ul class="ovs-model-mega__sublinks list-unstyled" role="list">
+              <li><a href="{{ sanding_boards_url }}">Sanding boards</a></li>
+              <li><a href="{{ sanding_sheets_url }}">Adhesive sheets</a></li>
+              <li><a href="{{ sanding_sticks_url }}">Sticks</a></li>
+              <li><a href="{{ sanding_sponges_url }}">Sponges</a></li>
+              <li><a href="{{ sanding_glass_files_url }}">Glass files</a></li>
+            </ul>
+          </li>
+
+          <li class="ovs-model-mega__grade-parent">
+            <a href="{{ tweezers_url }}">Tweezers</a>
+            <ul class="ovs-model-mega__sublinks list-unstyled" role="list">
+              <li><a href="{{ tweezers_ultra_url }}">Ultra-precision</a></li>
+              <li><a href="{{ tweezers_thick_url }}">Thick-wall</a></li>
+            </ul>
+          </li>
+
+          <li><a href="{{ adhesives_url }}">Adhesives</a></li>
+
+          <li><a href="{{ other_url }}">Others</a></li>
+
+        </ul>
+
+      </div>
+
+
+
+      <div class="ovs-model-mega__group">
+
+        <p class="ovs-model-mega__heading">Detailing</p>
+
+        <ul class="ovs-model-mega__links list-unstyled" role="list">
+
+          <li class="ovs-model-mega__grade-parent">
+            <a href="{{ panel_liners_url }}">Panel liners</a>
+            <ul class="ovs-model-mega__sublinks list-unstyled" role="list">
+              <li><a href="{{ panel_liner_tools_url }}">Tools</a></li>
+              <li><a href="{{ panel_liner_normal_url }}">Normal colors</a></li>
+              <li><a href="{{ panel_liner_fluorescent_url }}">Fluorescent colors</a></li>
+            </ul>
+          </li>
+          <li class="ovs-model-mega__grade-parent">
+            <a href="{{ markers_url }}">Markers</a>
+            <ul class="ovs-model-mega__sublinks list-unstyled" role="list">
+              <li><a href="{{ marker_solid_url }}">Solid colors</a></li>
+              <li><a href="{{ marker_metallic_url }}">Metallics</a></li>
+              <li><a href="{{ marker_fluorescent_url }}">Fluorescents</a></li>
+            </ul>
+          </li>
+          <li class="ovs-model-mega__grade-parent">
+            <a href="{{ decals_url }}">Decals</a>
+            <ul class="ovs-model-mega__sublinks list-unstyled" role="list">
+              <li><a href="{{ decal_tools_url }}">Tools</a></li>
+              <li><a href="{{ decal_water_url }}">Water decals</a></li>
+            </ul>
+          </li>
+          <li><a href="{{ weathering_url }}">Weathering</a></li>
+        </ul>
+      </div>
+
+      <div class="ovs-model-mega__group">
+        <p class="ovs-model-mega__heading">Painting</p>
+        <ul class="ovs-model-mega__links list-unstyled" role="list">
+          <li><a href="{{ brushes_url }}">Brushes</a></li>
+          <li><a href="{{ airbrush_url }}">Airbrushes</a></li>
+          <li><a href="{{ masking_tape_url }}">Masking tapes</a></li>
+          <li class="ovs-model-mega__grade-parent">
+            <a href="{{ paints_url }}">Paints</a>
+            <ul class="ovs-model-mega__sublinks list-unstyled" role="list">
+              <li><a href="{{ hand_paint_url }}">Hand paints</a></li>
+              <li><a href="{{ prethinned_airbrush_url }}">Pre-thinned airbrush paints</a></li>
+              <li><a href="{{ surfacer_url }}">Surfacers</a></li>
+              <li><a href="{{ spray_can_url }}">Spray cans</a></li>
+              <li><a href="{{ top_coat_url }}">Top coats</a></li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+
+      <div class="ovs-model-mega__group">
+        <p class="ovs-model-mega__heading">Customization</p>
+        <ul class="ovs-model-mega__links list-unstyled" role="list">
+          <li class="ovs-model-mega__grade-parent">
+            <a href="{{ scribing_url }}">Scribing tools</a>
+            <ul class="ovs-model-mega__sublinks list-unstyled" role="list">
+              <li><a href="{{ scribing_handles_url }}">Handles</a></li>
+              <li><a href="{{ scribing_scribers_url }}">Scribers &amp; pushers</a></li>
+              <li><a href="{{ scribing_tape_url }}">Tapes</a></li>
+            </ul>
+          </li>
+          <li class="ovs-model-mega__grade-parent">
+            <a href="{{ drilling_url }}">Drills</a>
+            <ul class="ovs-model-mega__sublinks list-unstyled" role="list">
+              <li><a href="{{ drilling_handles_url }}">Handles</a></li>
+              <li><a href="{{ drilling_bits_url }}">Bits</a></li>
+            </ul>
+          </li>
+        </ul>
+
+      </div>
+
+    </div>
+
+  </div>
+
+{%- elsif variant == 'mobile' -%}
+  <li>
+    <details id="Details-menu-drawer-menu-item-{{ index }}">
+      <summary
+        id="HeaderDrawer-{{ root_link.handle }}"
+        class="menu-drawer__menu-item list-menu__item link link--text focus-inset"
+      >
+        {{ root_link.title | escape }}
+        <span class="svg-wrapper">
+          {{- 'icon-arrow.svg' | inline_asset_content -}}
+        </span>
+        <span class="svg-wrapper">
+          {{- 'icon-caret.svg' | inline_asset_content -}}
+        </span>
+      </summary>
+
+      <div
+        id="link-{{ root_link.handle | escape }}"
+        class="menu-drawer__submenu has-submenu gradient motion-reduce"
+        tabindex="-1"
+      >
+        <div class="menu-drawer__inner-submenu">
+          <button class="menu-drawer__close-button link link--text focus-inset" aria-expanded="true">
+            <span class="svg-wrapper">
+              {{- 'icon-arrow.svg' | inline_asset_content -}}
+            </span>
+            Main menu
+          </button>
+
+          <div
+            class="ovs-mobile-nav"
+            data-ovs-titles='{"hub":"Tools & Supplies","building":"Building","detailing":"Detailing","painting":"Painting","customization":"Customization"}'
+          >
+            <div class="ovs-mobile-nav__chrome">
+              <button type="button" class="ovs-mobile-nav__back" data-ovs-nav-back aria-label="Back">‹</button>
+              <p class="ovs-mobile-nav__title" data-ovs-nav-title>Tools &amp; Supplies</p>
+              <button type="button" class="ovs-mobile-nav__close" data-ovs-nav-close aria-label="Close menu">×</button>
+            </div>
+
+            <div class="ovs-mobile-nav__scroll">
+              <div class="ovs-mobile-nav__panel" data-ovs-panel="hub">
+                <div class="ovs-mobile-nav__start">
+                  <p class="ovs-model-mega__eyebrow">Start here</p>
+                  <p class="ovs-mobile-nav__start-title">Stock your workshop</p>
+                  <div class="ovs-mobile-nav__start-actions">
+                    <a class="ovs-model-mega__button ovs-model-mega__button--primary" href="{{ hub_url }}">
+                      All tools &amp; supplies
+                    </a>
+                    <a class="ovs-model-mega__button" href="{{ nippers_url }}">Nippers</a>
+                  </div>
+                </div>
+
+                <p class="ovs-mobile-nav__section-label">Shop</p>
+                <ul class="ovs-mobile-nav__list" role="list">
+                  <li>
+                    <a class="ovs-mobile-nav__row" href="{{ hub_url }}">All tools &amp; supplies</a>
+                  </li>
+                  <li>
+                    <button type="button" class="ovs-mobile-nav__row-btn" data-ovs-go="building">
+                      Building
+                      <span class="ovs-mobile-nav__chevron" aria-hidden="true">›</span>
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" class="ovs-mobile-nav__row-btn" data-ovs-go="detailing">
+                      Detailing
+                      <span class="ovs-mobile-nav__chevron" aria-hidden="true">›</span>
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" class="ovs-mobile-nav__row-btn" data-ovs-go="painting">
+                      Painting
+                      <span class="ovs-mobile-nav__chevron" aria-hidden="true">›</span>
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" class="ovs-mobile-nav__row-btn" data-ovs-go="customization">
+                      Customization
+                      <span class="ovs-mobile-nav__chevron" aria-hidden="true">›</span>
+                    </button>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="ovs-mobile-nav__panel" data-ovs-panel="building" hidden>
+                <p class="ovs-mobile-nav__panel-heading">Building</p>
+                <ul class="ovs-mobile-nav__list" role="list">
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ nippers_url }}" class="ovs-model-mega__details-link">Nippers</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ nipper_starter_url }}">Starters</a></li>
+                        <li><a href="{{ nipper_enthusiast_url }}">Enthusiasts</a></li>
+                        <li><a href="{{ nipper_advanced_url }}">Advanced</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ knives_url }}" class="ovs-model-mega__details-link">Knives</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ hobby_knives_url }}">Hobby knives</a></li>
+                        <li><a href="{{ knife_blades_url }}">Blades &amp; refills</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ sanding_url }}" class="ovs-model-mega__details-link">Sanding</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ sanding_boards_url }}">Sanding boards</a></li>
+                        <li><a href="{{ sanding_sheets_url }}">Adhesive sheets</a></li>
+                        <li><a href="{{ sanding_sticks_url }}">Sticks</a></li>
+                        <li><a href="{{ sanding_sponges_url }}">Sponges</a></li>
+                        <li><a href="{{ sanding_glass_files_url }}">Glass files</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ tweezers_url }}" class="ovs-model-mega__details-link">Tweezers</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ tweezers_ultra_url }}">Ultra-precision</a></li>
+                        <li><a href="{{ tweezers_thick_url }}">Thick-wall</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ adhesives_url }}">Adhesives</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ other_url }}">Others</a></li>
+                </ul>
+              </div>
+
+              <div class="ovs-mobile-nav__panel" data-ovs-panel="detailing" hidden>
+                <p class="ovs-mobile-nav__panel-heading">Detailing</p>
+                <ul class="ovs-mobile-nav__list" role="list">
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ panel_liners_url }}" class="ovs-model-mega__details-link">Panel liners</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ panel_liner_tools_url }}">Tools</a></li>
+                        <li><a href="{{ panel_liner_normal_url }}">Normal colors</a></li>
+                        <li><a href="{{ panel_liner_fluorescent_url }}">Fluorescent colors</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ markers_url }}" class="ovs-model-mega__details-link">Markers</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ marker_solid_url }}">Solid colors</a></li>
+                        <li><a href="{{ marker_metallic_url }}">Metallics</a></li>
+                        <li><a href="{{ marker_fluorescent_url }}">Fluorescents</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ decals_url }}" class="ovs-model-mega__details-link">Decals</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ decal_tools_url }}">Tools</a></li>
+                        <li><a href="{{ decal_water_url }}">Water decals</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ weathering_url }}">Weathering</a></li>
+                </ul>
+              </div>
+
+              <div class="ovs-mobile-nav__panel" data-ovs-panel="painting" hidden>
+                <p class="ovs-mobile-nav__panel-heading">Painting</p>
+                <ul class="ovs-mobile-nav__list" role="list">
+                  <li><a class="ovs-mobile-nav__row" href="{{ brushes_url }}">Brushes</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ airbrush_url }}">Airbrushes</a></li>
+                  <li><a class="ovs-mobile-nav__row" href="{{ masking_tape_url }}">Masking tapes</a></li>
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ paints_url }}" class="ovs-model-mega__details-link">Paints</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ hand_paint_url }}">Hand paints</a></li>
+                        <li><a href="{{ prethinned_airbrush_url }}">Pre-thinned airbrush paints</a></li>
+                        <li><a href="{{ surfacer_url }}">Surfacers</a></li>
+                        <li><a href="{{ spray_can_url }}">Spray cans</a></li>
+                        <li><a href="{{ top_coat_url }}">Top coats</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="ovs-mobile-nav__panel" data-ovs-panel="customization" hidden>
+                <p class="ovs-mobile-nav__panel-heading">Customization</p>
+                <ul class="ovs-mobile-nav__list" role="list">
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ scribing_url }}" class="ovs-model-mega__details-link">Scribing tools</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ scribing_handles_url }}">Handles</a></li>
+                        <li><a href="{{ scribing_scribers_url }}">Scribers &amp; pushers</a></li>
+                        <li><a href="{{ scribing_tape_url }}">Tapes</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                  <li>
+                    <details class="ovs-model-mega__details">
+                      <summary class="ovs-model-mega__details-summary">
+                        <a href="{{ drilling_url }}" class="ovs-model-mega__details-link">Drills</a>
+                      </summary>
+                      <ul class="ovs-model-mega__sublinks ovs-model-mega__sublinks--nested list-unstyled" role="list">
+                        <li><a href="{{ drilling_handles_url }}">Handles</a></li>
+                        <li><a href="{{ drilling_bits_url }}">Bits</a></li>
+                      </ul>
+                    </details>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+  </li>
+{%- endif -%}
+

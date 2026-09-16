@@ -129,6 +129,7 @@ final class ProductsFilteredExportController extends Controller
                 $missingLandedCost,
                 $hasLandedCost,
                 $request->canonicalTaxonomyFilters(),
+                $request->storePreorderFilter(),
             );
 
             $tmp = fopen('php://temp', 'w+b');

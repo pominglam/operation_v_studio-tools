@@ -54,12 +54,12 @@ final class PlamodPreorderCsvImportService
 
                     $seenSkus[] = $sku;
                     $attributes = [
-                        'barcode' => $this->nullableCell($row, $map, 'Barcode'),
-                        'product_name' => $this->cell($row, $map, 'Product Name') ?: $sku,
-                        'series' => $this->nullableCell($row, $map, 'Series'),
+                        'barcode' => $this->clip($this->nullableCell($row, $map, 'Barcode'), 64),
+                        'product_name' => $this->clip($this->cell($row, $map, 'Product Name') ?: $sku, 255) ?? $sku,
+                        'series' => $this->clip($this->nullableCell($row, $map, 'Series'), 255),
                         'release_date' => $this->parseDate($this->cell($row, $map, 'Release Date')),
-                        'manufacturer' => $this->nullableCell($row, $map, 'Manufacturer'),
-                        'category' => $this->nullableCell($row, $map, 'Category'),
+                        'manufacturer' => $this->clip($this->nullableCell($row, $map, 'Manufacturer'), 128),
+                        'category' => $this->clip($this->nullableCell($row, $map, 'Category'), 128),
                         'price_stock' => $this->parseMoney($this->cell($row, $map, 'Price Stock')),
                         'price_preorder' => $this->parseMoney($this->cell($row, $map, 'Price Preorder')),
                         'price_backorder' => $this->parseMoney($this->cell($row, $map, 'Price Backorder')),
@@ -75,6 +75,9 @@ final class PlamodPreorderCsvImportService
                     $existing = PlamodPreorder::query()->where('sku', '=', $sku)->first();
                     if ($existing !== null) {
                         foreach ($attributes as $key => $value) {
+                            if ($key === 'dropped_at') {
+                                continue;
+                            }
                             if ($value === null && $existing->getAttribute($key) !== null) {
                                 unset($attributes[$key]);
                             }
@@ -220,5 +223,18 @@ final class PlamodPreorderCsvImportService
         }
 
         return (int) $value;
+    }
+
+    private function clip(?string $value, int $max): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+
+        return mb_strlen($value) > $max ? mb_substr($value, 0, $max) : $value;
     }
 }

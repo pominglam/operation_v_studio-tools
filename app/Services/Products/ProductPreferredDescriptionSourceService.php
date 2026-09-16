@@ -26,7 +26,7 @@ final class ProductPreferredDescriptionSourceService
             $this->contents->upsertForProduct(
                 productId: (int) $product->id,
                 source: 'other',
-                title: $existing?->title,
+                title: $existing?->title ?? ($manualDescriptionHtml === '' ? 'Manual' : null),
                 descriptionHtml: $manualDescriptionHtml,
                 attributes: is_array($existing?->attributes_json) ? $existing->attributes_json : null,
                 sourceUrl: $existing?->source_url,

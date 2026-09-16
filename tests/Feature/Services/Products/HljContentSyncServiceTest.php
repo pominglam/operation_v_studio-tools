@@ -278,3 +278,30 @@ HTML;
 
     expect(ProductExternalAsset::query()->where('product_id', $product->id)->where('source', 'hlj')->count())->toBe(0);
 });
+
+it('does not attach HLJ images to a store-preorder product', function (): void {
+    Storage::fake('local');
+
+    $product = Product::query()->create([
+        'sku' => 'HLJ-PO-1',
+        'barcode' => null,
+        'description' => 'Store preorder HLJ skip',
+        'vendor' => 'Plamod',
+    ]);
+    App\Models\StorePreorder::query()->create([
+        'product_id' => $product->id,
+        'plamod_sku' => 'HLJ-PO-1',
+        'status' => 'open',
+        'deposit_percent' => '20.00',
+        'opened_at' => now(),
+    ]);
+
+    Http::fake([
+        '*' => Http::response('should-not-hit', 500),
+    ]);
+
+    app(HljContentSyncService::class)->syncForProduct($product);
+
+    expect(ProductExternalAsset::query()->where('product_id', $product->id)->where('source', 'hlj')->count())->toBe(0);
+    expect(ProductExternalContent::query()->where('product_id', $product->id)->where('source', 'hlj')->count())->toBe(0);
+});

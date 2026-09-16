@@ -74,6 +74,34 @@ final class ShopifyWriteScopeGuard
         return $this->hasScope('read_online_store_navigation');
     }
 
+    public function assertWriteDraftOrdersScope(): void
+    {
+        if (! $this->hasWriteDraftOrdersScope()) {
+            throw new ShopifyAdminConfigurationException(
+                'Shopify OAuth token is missing write_draft_orders scope. Re-install the app with write_draft_orders in SHOPIFY_OAUTH_SCOPES, then complete OAuth again.',
+            );
+        }
+    }
+
+    public function hasWriteDraftOrdersScope(): bool
+    {
+        return $this->hasScope('write_draft_orders');
+    }
+
+    public function assertWriteCustomersScope(): void
+    {
+        if (! $this->hasWriteCustomersScope()) {
+            throw new ShopifyAdminConfigurationException(
+                'Shopify OAuth token is missing write_customers scope. Re-install the app with write_customers in SHOPIFY_OAUTH_SCOPES, then complete OAuth again.',
+            );
+        }
+    }
+
+    public function hasWriteCustomersScope(): bool
+    {
+        return $this->hasScope('write_customers');
+    }
+
     private function hasScope(string $scope): bool
     {
         /** @var string|null $scopesRaw */

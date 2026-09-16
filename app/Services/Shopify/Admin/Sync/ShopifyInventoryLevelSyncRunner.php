@@ -13,8 +13,11 @@ use App\Services\Shopify\Admin\Support\ShopifyGraphQlNodeParser;
 
 final class ShopifyInventoryLevelSyncRunner implements ShopifySyncRunnerInterface
 {
+    private const int LEVELS_PAGE_SIZE = 10;
+
     public function __construct(
         private readonly int $pageSize,
+        private readonly int $itemBatchSize = 200,
     ) {}
 
     public function key(): string
@@ -40,57 +43,106 @@ final class ShopifyInventoryLevelSyncRunner implements ShopifySyncRunnerInterfac
         array $inventoryItemGids,
         ShopifySyncMetrics $metrics,
     ): void {
+        $gids = [];
         foreach ($inventoryItemGids as $itemGid) {
-            if (! is_string($itemGid) || $itemGid === '') {
-                continue;
+            if (is_string($itemGid) && $itemGid !== '') {
+                $gids[] = $itemGid;
             }
-            $this->syncOneInventoryItem($client, $itemGid, $metrics);
+        }
+
+        foreach (array_chunk(array_values(array_unique($gids)), $this->resolvedItemBatchSize()) as $chunk) {
+            $this->syncInventoryItemBatch($client, $chunk, $metrics);
         }
     }
 
-    private function syncOneInventoryItem(
+    /**
+     * @param  list<string>  $itemGids
+     */
+    private function syncInventoryItemBatch(
         ShopifyAdminGraphQlClientInterface $client,
-        string $itemGid,
+        array $itemGids,
         ShopifySyncMetrics $metrics,
     ): void {
-        $cursor = null;
+        $resp = $client->query(ShopifyAdminGraphQlQueries::INVENTORY_ITEMS_BY_IDS, [
+            'ids' => $itemGids,
+            'levelsFirst' => $this->levelsPageSize(),
+        ]);
+        $nodes = $resp['data']['nodes'] ?? null;
+        if (! is_array($nodes)) {
+            throw new ShopifyGraphQlException('Shopify inventory items batch response missing data.nodes.');
+        }
+        foreach ($nodes as $node) {
+            $this->ingestInventoryItemNode($client, $node, $metrics);
+        }
+    }
+
+    private function ingestInventoryItemNode(
+        ShopifyAdminGraphQlClientInterface $client,
+        mixed $node,
+        ShopifySyncMetrics $metrics,
+    ): void {
+        if (! is_array($node)) {
+            return;
+        }
+        $itemGid = isset($node['id']) && is_string($node['id']) ? $node['id'] : '';
+        if ($itemGid === '') {
+            $metrics->recordFailure();
+
+            return;
+        }
+        $cursor = $this->ingestLevelsConnection($itemGid, $node['inventoryLevels'] ?? null, $metrics);
+        if ($cursor !== null) {
+            $this->paginateRemainingLevels($client, $itemGid, $cursor, $metrics);
+        }
+    }
+
+    private function paginateRemainingLevels(
+        ShopifyAdminGraphQlClientInterface $client,
+        string $itemGid,
+        string $after,
+        ShopifySyncMetrics $metrics,
+    ): void {
+        $cursor = $after;
         while (true) {
             $resp = $client->query(ShopifyAdminGraphQlQueries::INVENTORY_ITEM_LEVELS, [
                 'id' => $itemGid,
-                'first' => $this->pageSize,
+                'first' => $this->levelsPageSize(),
                 'after' => $cursor,
             ]);
             $root = $resp['data']['inventoryItem'] ?? null;
-            if ($root === null) {
-                break;
-            }
             if (! is_array($root)) {
-                throw new ShopifyGraphQlException('Shopify inventoryItem response malformed.');
-            }
-            $levels = $root['inventoryLevels'] ?? null;
-            if (! is_array($levels)) {
                 break;
             }
-            $nodes = $levels['nodes'] ?? [];
-            if (! is_array($nodes)) {
-                throw new ShopifyGraphQlException('Shopify inventory levels missing nodes.');
-            }
-            foreach ($nodes as $lvl) {
-                if (! is_array($lvl)) {
-                    $metrics->recordFailure();
-
-                    continue;
-                }
-                $this->upsertLevel($itemGid, $lvl, $metrics);
-            }
-            if (! ($levels['pageInfo']['hasNextPage'] ?? false)) {
-                break;
-            }
-            $cursor = $levels['pageInfo']['endCursor'] ?? null;
-            if (! is_string($cursor) || $cursor === '') {
+            $cursor = $this->ingestLevelsConnection($itemGid, $root['inventoryLevels'] ?? null, $metrics);
+            if ($cursor === null) {
                 break;
             }
         }
+    }
+
+    private function ingestLevelsConnection(string $itemGid, mixed $levels, ShopifySyncMetrics $metrics): ?string
+    {
+        if (! is_array($levels)) {
+            return null;
+        }
+        $nodes = $levels['nodes'] ?? [];
+        if (! is_array($nodes)) {
+            throw new ShopifyGraphQlException('Shopify inventory levels missing nodes.');
+        }
+        foreach ($nodes as $lvl) {
+            if (! is_array($lvl)) {
+                $metrics->recordFailure();
+
+                continue;
+            }
+            $this->upsertLevel($itemGid, $lvl, $metrics);
+        }
+        if (! ($levels['pageInfo']['hasNextPage'] ?? false)) {
+            return null;
+        }
+        $cursor = $levels['pageInfo']['endCursor'] ?? null;
+
+        return is_string($cursor) && $cursor !== '' ? $cursor : null;
     }
 
     /**
@@ -144,5 +196,15 @@ final class ShopifyInventoryLevelSyncRunner implements ShopifySyncRunnerInterfac
         }
 
         return null;
+    }
+
+    private function resolvedItemBatchSize(): int
+    {
+        return max(1, min(250, $this->itemBatchSize));
+    }
+
+    private function levelsPageSize(): int
+    {
+        return max(1, min(self::LEVELS_PAGE_SIZE, $this->pageSize));
     }
 }

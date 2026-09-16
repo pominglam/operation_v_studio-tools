@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Support\Products\Storefront;
 
 use App\Models\Product;
+use App\Support\Products\ModelKitAccessoryKind;
+use App\Support\Products\ModelKitSeriesCatalog;
 
 final class ModelKitStorefrontTagResolver
 {
@@ -15,6 +17,35 @@ final class ModelKitStorefrontTagResolver
      */
     public function tagsForProduct(Product $product): array
     {
+        if ($this->isWorkshopToolNotKit($product)) {
+            return [];
+        }
+
+        if ($this->isGunplaActionBase($product)) {
+            return [
+                StorefrontTag::MK_DEPT_MODEL_KITS,
+                StorefrontTag::MK_LINE_GUNPLA,
+                StorefrontTag::MK_LINE_ACTION_BASE,
+            ];
+        }
+
+        if ($this->isGunplaOptionPart($product)) {
+            return [
+                StorefrontTag::MK_DEPT_MODEL_KITS,
+                StorefrontTag::MK_LINE_GUNPLA,
+                StorefrontTag::MK_LINE_GUNPLA_OPTION_PARTS,
+            ];
+        }
+
+        if ($this->isGunplaKun($product)) {
+            return [
+                StorefrontTag::MK_DEPT_MODEL_KITS,
+                StorefrontTag::MK_LINE_GUNPLA,
+                StorefrontTag::mkGrade('sd'),
+                StorefrontTag::mkSubline('gunpla_kun'),
+            ];
+        }
+
         if (mb_strtolower(trim((string) $product->main_type)) !== 'model kit') {
             return [];
         }
@@ -26,6 +57,10 @@ final class ModelKitStorefrontTagResolver
 
         if ($grade === null && $typeSlug !== null) {
             $grade = $typeSlug;
+        }
+
+        if ($grade === null && $this->isPokemonPlamo($product)) {
+            $grade = 'pokemon';
         }
 
         if ($grade !== null) {
@@ -132,15 +167,21 @@ final class ModelKitStorefrontTagResolver
             return false;
         }
 
-        if (! str_contains($description, 'OPTION')) {
-            return false;
+        $accessoryMarkers = [
+            'EXTENDED ARMAMENT VEHICLE',
+            'ARMAMENT VEHICLE',
+            'CUSTOMIZE WEAPONS',
+            'CUSTOMIZE EFFECT',
+            'OPTION',
+        ];
+
+        foreach ($accessoryMarkers as $marker) {
+            if (str_contains($description, $marker)) {
+                return true;
+            }
         }
 
-        if (str_starts_with($description, 'CUSTOMIZE ')) {
-            return false;
-        }
-
-        return true;
+        return false;
     }
 
     private function isSnaa(string $productLine, string $description, string $sku): bool
@@ -176,8 +217,7 @@ final class ModelKitStorefrontTagResolver
             return true;
         }
 
-        return str_contains($description, 'EVANGELION')
-            || preg_match('/\bEVA[\s-]?0?\d/', $description) === 1;
+        return ModelKitSeriesCatalog::textLooksLikeEvangelion($description);
     }
 
     private function isCcsToys(?string $grade, string $type, string $productLine): bool
@@ -189,28 +229,12 @@ final class ModelKitStorefrontTagResolver
 
     private function resolveSdSublineFromDescription(Product $product): ?string
     {
-        $description = mb_strtoupper(trim((string) $product->description));
-        if ($description === '') {
-            return null;
-        }
-
-        if (str_contains($description, 'CROSS SILHOUETTE')) {
-            return 'cross_silhouette';
-        }
-
-        if (str_contains($description, 'BB SENSHI')) {
-            return 'bb_senshi';
-        }
-
-        if (str_contains($description, 'G GENERATION') || str_contains($description, 'G-GENERATION')) {
-            return 'g_generation';
-        }
-
-        if (str_contains($description, 'EX-STANDARD') || str_contains($description, 'EX STANDARD')) {
-            return 'ex_standard';
-        }
-
-        return null;
+        return (new ModelKitSdSublineResolver)->resolveSlug(
+            is_string($product->subline) ? $product->subline : null,
+            is_string($product->type) ? $product->type : null,
+            is_string($product->description) ? $product->description : null,
+            is_string($product->product_line) ? $product->product_line : null,
+        );
     }
 
     private function isGunplaGrade(?string $grade): bool
@@ -230,5 +254,137 @@ final class ModelKitStorefrontTagResolver
             'ng',
             'g',
         ], true);
+    }
+
+    private function isGunplaKun(Product $product): bool
+    {
+        $type = mb_strtoupper(trim((string) ($product->type ?? '')));
+        $productLine = StorefrontTag::slugify(is_string($product->product_line) ? $product->product_line : null);
+        $description = mb_strtoupper(trim((string) $product->description));
+        if ($type === 'KEYCHAIN'
+            || $productLine === 'keychains'
+            || preg_match('/\b(?:KEYCHAIN|RUBBER MASCOT|MASCOT KEYCHAIN)\b/', $description) === 1
+        ) {
+            return false;
+        }
+
+        if ($type === 'KUN DX') {
+            return true;
+        }
+
+        $subline = StorefrontTag::slugify(is_string($product->subline) ? $product->subline : null);
+        if ($subline === 'gunpla_kun') {
+            return true;
+        }
+
+        return preg_match('/\b(?:GUNPLA|ZAKUPLA|CHARZAKU)-KUN(?:\s+DX)?\b/', $description) === 1;
+    }
+
+    private function isWorkshopToolNotKit(Product $product): bool
+    {
+        $department = StorefrontTag::slugify(is_string($product->department) ? $product->department : null);
+        if (in_array($department, ['tools', 'paints', 'supplies'], true)) {
+            return true;
+        }
+
+        $shelf = mb_strtolower(trim((string) ($product->workshop_shelf ?? '')));
+        if ($shelf === 'cutting mats') {
+            return true;
+        }
+
+        return preg_match('/\bCUTTING MAT\b/', mb_strtoupper(trim((string) $product->description))) === 1;
+    }
+
+    private function isGunplaActionBase(Product $product): bool
+    {
+        $type = mb_strtoupper(trim((string) ($product->type ?? '')));
+        $productLine = mb_strtolower(trim((string) ($product->product_line ?? '')));
+        $description = mb_strtoupper(trim((string) $product->description));
+        $accessoryKind = trim((string) ($product->accessory_kind ?? ''));
+
+        if (in_array($productLine, ['30 minutes missions', '30 minutes sisters', '30 minutes fantasy'], true)) {
+            return false;
+        }
+
+        if ($this->isThirtyMinutesLabelAccessory($productLine, $type, $description)) {
+            return false;
+        }
+
+        if ($type === 'ACTION BASE') {
+            return true;
+        }
+
+        if (
+            ($type === 'SYSTEM BASE' || preg_match('/\bSYSTEM BASE\b/', $description) === 1)
+            && in_array($productLine, ['action base', 'gunpla'], true)
+        ) {
+            return true;
+        }
+
+        if (
+            preg_match('/\bBUILDERS PARTS SYSTEM BASE\b/', $description) === 1
+            && $productLine === 'action base'
+        ) {
+            return true;
+        }
+
+        return $accessoryKind === ModelKitAccessoryKind::DISPLAY_STAND
+            && $productLine === 'action base';
+    }
+
+    private function isGunplaOptionPart(Product $product): bool
+    {
+        $accessoryKind = trim((string) ($product->accessory_kind ?? ''));
+        $productLine = mb_strtolower(trim((string) ($product->product_line ?? '')));
+        $type = mb_strtoupper(trim((string) ($product->type ?? '')));
+        $description = mb_strtoupper(trim((string) $product->description));
+        $sku = mb_strtoupper(trim((string) $product->sku));
+
+        if ($accessoryKind === ModelKitAccessoryKind::OPTION_PARTS && $productLine === 'gunpla') {
+            return true;
+        }
+
+        if ($accessoryKind === ModelKitAccessoryKind::OPTION_PARTS && $productLine === 'option system') {
+            return true;
+        }
+
+        if (preg_match('/^OP-\d/', $sku) === 1 || str_starts_with($sku, 'WAVOP-')) {
+            return true;
+        }
+
+        if (preg_match('/\bOPTION SYSTEM\b/', $description) === 1) {
+            return true;
+        }
+
+        if ($accessoryKind === ModelKitAccessoryKind::DETAIL_PARTS && $productLine === 'builders parts hd') {
+            return true;
+        }
+
+        if (($type === 'OPTION PARTS SET' || $type === 'OPTION PARTS') && $productLine === 'gunpla') {
+            return true;
+        }
+
+        if (preg_match('/\bOPTION PARTS SET GUNPLA\b/', $description) === 1) {
+            return true;
+        }
+
+        if (preg_match('/\b(?:MS HAND|MS SIGHT|SIGHT LENS)\b/', $description) === 1
+            && (str_starts_with($sku, 'BPHD-') || $productLine === 'builders parts hd')
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function isPokemonPlamo(Product $product): bool
+    {
+        $productLine = mb_strtolower(trim((string) ($product->product_line ?? '')));
+        $franchise = mb_strtolower(trim((string) ($product->franchise ?? '')));
+
+        return $productLine === 'pokémon plamo collection'
+            || str_contains($productLine, 'pokemon')
+            || $franchise === 'pokémon'
+            || $franchise === 'pokemon';
     }
 }

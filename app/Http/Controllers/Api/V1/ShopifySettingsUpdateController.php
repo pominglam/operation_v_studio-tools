@@ -13,8 +13,12 @@ final class ShopifySettingsUpdateController extends Controller
 {
     public function __invoke(ShopifySettingsUpdateRequest $request, ShopifySettingsService $service): JsonResponse
     {
-        $hours = (int) $request->validated('order_reconcile_interval_hours');
-        $service->setOrderReconcileIntervalHours($hours);
+        $validated = $request->validated();
+        if (isset($validated['order_reconcile_interval_minutes'])) {
+            $service->setOrderReconcileIntervalMinutes((int) $validated['order_reconcile_interval_minutes']);
+        } else {
+            $service->setOrderReconcileIntervalHours((int) $validated['order_reconcile_interval_hours']);
+        }
 
         return response()->json(['data' => $service->snapshot()]);
     }

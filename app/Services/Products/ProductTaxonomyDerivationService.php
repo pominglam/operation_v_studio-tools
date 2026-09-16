@@ -6,6 +6,7 @@ namespace App\Services\Products;
 
 use App\DTOs\Products\ProductTaxonomyProposalDTO;
 use App\Models\Product;
+use App\Support\Products\ModelKitSeriesCatalog;
 use App\Support\Products\ProductGradeResolver;
 use App\Support\Products\ProductGunplaMgClassificationResolver;
 use App\Support\Products\ProductModelKitSeriesResolver;
@@ -92,11 +93,23 @@ final class ProductTaxonomyDerivationService
         private readonly ProductDspiaePaintAccessoryResolver $dspiaePaintAccessoryResolver,
         private readonly ProductGunplaMgClassificationResolver $mgClassification,
         private readonly ProductModelKitSeriesResolver $seriesResolver,
+        private readonly ProductGunplaKunTaxonomyResolver $gunplaKunResolver,
     ) {}
 
     public function derive(Product $product): ProductTaxonomyProposalDTO
     {
         $text = $this->searchableText($product);
+
+        $merchandise = $this->merchandiseResolver->resolve($product, $text);
+        if ($merchandise['is_merchandise']) {
+            return $this->deriveMerchandise($product, $merchandise);
+        }
+
+        $gunplaKun = $this->gunplaKunResolver->resolve($product, $text);
+        if ($gunplaKun['is_gunpla_kun']) {
+            return $this->deriveGunplaKun($product, $gunplaKun);
+        }
+
         $accessory = $this->accessoryResolver->resolve($product, $text);
         if ($accessory['accessory_kind'] !== null) {
             return $this->deriveAccessory($product, $text, $accessory);
@@ -112,17 +125,13 @@ final class ProductTaxonomyDerivationService
             return $this->deriveDspiaePaintAccessory($product, $paintAccessory);
         }
 
-        $merchandise = $this->merchandiseResolver->resolve($product, $text);
-        if ($merchandise['is_merchandise']) {
-            return $this->deriveMerchandise($product, $merchandise);
-        }
-
         $productLine = $this->productLine($product, $text);
         $department = $this->department($product, $text, $productLine);
         $kitTaxonomy = $department === 'model kits';
         if (! $kitTaxonomy && ! in_array($productLine, [
             'Mr. Color',
             'Stedi Model Color',
+            'Stedi Panel Liners',
             'Stedi Markers',
             'Dspiae Markers',
             'Water Decals',
@@ -145,9 +154,7 @@ final class ProductTaxonomyDerivationService
         $grade = $kitTaxonomy && $productLine === 'Gunpla'
             ? $this->gradeResolver->resolveFromProduct($product)
             : null;
-        $series = $kitTaxonomy
-            ? ($this->nullableTrim($product->series) ?? $this->seriesResolver->resolve($product, $text))
-            : null;
+        $series = $kitTaxonomy ? $this->seriesResolver->resolve($product, $text) : null;
         $scale = $kitTaxonomy ? $this->scale($product, $text, $productLine) : null;
         $confidence = $this->confidence($product, $department, $productLine, $manufacturer);
         $values = compact(
@@ -182,6 +189,38 @@ final class ProductTaxonomyDerivationService
             evidence: $this->evidence($values, $confidence, $product),
             overallConfidence: $confidence,
             notes: $this->notes($product, $department, $productLine),
+        );
+    }
+
+    /**
+     * @param  array{
+     *     is_gunpla_kun: bool,
+     *     manufacturer: string|null,
+     *     franchise: string|null,
+     *     scale: string|null
+     * } $gunplaKun
+     */
+    private function deriveGunplaKun(Product $product, array $gunplaKun): ProductTaxonomyProposalDTO
+    {
+        $values = [
+            'department' => 'model kits',
+            'manufacturer' => $gunplaKun['manufacturer'],
+            'franchise' => $gunplaKun['franchise'],
+            'product_line' => 'Gunpla-kun',
+            'subline' => 'Gunpla-kun',
+            'grade' => 'SD',
+            'series' => null,
+            'scale' => $gunplaKun['scale'],
+            'workshop_shelf' => null,
+            'workshop_facets' => [],
+            'accessory_kind' => null,
+        ];
+
+        return new ProductTaxonomyProposalDTO(
+            values: $values,
+            evidence: $this->evidence($values, 92, $product),
+            overallConfidence: 92,
+            notes: ['Gunpla-kun / Zakupla-kun SD mascot kits — storefront shelf sd-gunpla-kun (mk:subline:gunpla_kun).'],
         );
     }
 
@@ -356,9 +395,26 @@ final class ProductTaxonomyDerivationService
         ], static fn (mixed $value): bool => is_string($value) && trim($value) !== '')));
     }
 
+    private function isPanelLinerProduct(Product $product, string $text): bool
+    {
+        if ($this->paintResolver->resolveProduct($product) === 'panel-line') {
+            return true;
+        }
+
+        $type = mb_strtoupper(trim((string) $product->type));
+        if ($type === 'PANEL LINER') {
+            return true;
+        }
+
+        return str_contains($text, 'PANEL LINER')
+            || preg_match('/\bMP-(?:1\d|2\d)\b/', $text) === 1;
+    }
+
     private function department(Product $product, string $text, ?string $productLine): ?string
     {
         if ($this->paintResolver->belongsToPaintsDepartment($product)
+            || $productLine === 'Stedi Panel Liners'
+            || $this->isPanelLinerProduct($product, $text)
             || preg_match('/\b(SUPER CLEAR|SURFACER|MR COLOR|MR\. COLOR)\b/', $text) === 1
         ) {
             return 'paints';
@@ -370,7 +426,8 @@ final class ProductTaxonomyDerivationService
             || $productLine === 'Stedi Markers'
             || $productLine === 'Dspiae Markers'
             || preg_match('/\bDMM-\d/', $text) === 1
-            || preg_match('/\b(?:MK|MKF|MKM|MA|MS)-/', $text) === 1
+            || preg_match('/\b(?:MK|MKF|MKM)-\d/', $text) === 1
+            || preg_match('/\b(?:MA|MS)-\d/', $text) === 1
             || mb_strtoupper(trim((string) $product->type)) === 'MARKERS'
             || preg_match('/\bMARKERS?\b/', $text) === 1
         ) {
@@ -406,6 +463,10 @@ final class ProductTaxonomyDerivationService
 
     private function productLine(Product $product, string $text): ?string
     {
+        if ($this->isPanelLinerProduct($product, $text)) {
+            return 'Stedi Panel Liners';
+        }
+
         if ($this->markerResolver->belongsToMarkersDepartment($product)) {
             return match ($this->markerResolver->resolveMarkerBrand($product)) {
                 'stedi' => 'Stedi Markers',
@@ -438,10 +499,11 @@ final class ProductTaxonomyDerivationService
             str_contains($text, 'SWORD OF RAGE'), str_contains($text, 'FROZEN METAL') => 'Frozen Metal',
             str_contains($text, 'MR COLOR'), str_contains($text, 'MR. COLOR') => 'Mr. Color',
             preg_match('/\bDMM-\d/', $text) === 1 => 'Stedi Markers',
-            preg_match('/\b(?:MK|MKF|MKM)-/', $text) === 1 => 'Dspiae Markers',
-            preg_match('/\b(?:MA|MS)-/', $text) === 1 => 'Stedi Markers',
+            preg_match('/\b(?:MK|MKF|MKM)-\d/', $text) === 1 => 'Dspiae Markers',
+            preg_match('/\b(?:MA|MS)-\d/', $text) === 1 => 'Stedi Markers',
             preg_match('/\bETC-0[34]\b/', $text) === 1 => 'Decal Softeners',
             preg_match('/\bWD-/', $text) === 1, str_contains($text, 'WATER DECAL') => 'Water Decals',
+            str_contains($text, 'EUREKA SEVEN') => 'Eureka Seven',
             $this->isGunpla($text) => 'Gunpla',
             default => null,
         };
@@ -453,8 +515,8 @@ final class ProductTaxonomyDerivationService
             $productLine === 'Gunpla', str_contains($text, 'GUNDAM') => 'Gundam',
             $productLine === 'Pokémon Plamo Collection' => 'Pokémon',
             str_contains($text, 'ARMORED CORE') => 'Armored Core',
+            ModelKitSeriesCatalog::textLooksLikeEvangelion($text) => 'Evangelion',
             str_contains($text, 'VOTOMS') => 'Armored Trooper Votoms',
-            str_contains($text, 'EVANGELION') => 'Evangelion',
             str_contains($text, 'EUREKA SEVEN') => 'Eureka Seven',
             default => null,
         };
@@ -515,6 +577,7 @@ final class ProductTaxonomyDerivationService
             'SNAA' => 'SNAA',
             'Frozen Metal' => 'Cold Steel Power',
             'Stedi Markers' => 'Stedi',
+            'Stedi Panel Liners' => 'Stedi',
             'Dspiae Markers' => 'Dspiae',
             'Stedi Model Color' => 'Stedi',
             'Decal Softeners' => 'Dspiae',
@@ -698,7 +761,12 @@ final class ProductTaxonomyDerivationService
     private function isGunpla(string $text): bool
     {
         return str_contains($text, 'GUNDAM')
-            || preg_match('/\b(?:HGUC|HGCE|HGAC|HGAW|HGFC|HGBF|HGBD|HGIBO|MGEX|MGSD)\b/', $text) === 1;
+            || preg_match('/\b(?:HGUC|HGCE|HGAC|HGAW|HGFC|HGBF|HGBD|HGIBO|MGEX|MGSD|SDW|SDBF|UCHG)\b/', $text) === 1
+            || preg_match('/\b(?:HG|MG|RG|PG|EG|FM|RE|SD)\s+(?:1\s*\/\s*\d+|[#0-9])/', $text) === 1
+            || preg_match('/\b(?:HG|MG|RG|PG|EG|FM|RE|SD)\b/', $text) === 1
+            || preg_match('/\bBB\d+\b/', $text) === 1
+            || preg_match('/\bEX-STANDARD\b/', $text) === 1
+            || preg_match('/\b(?:LEGEND BB|PG UNLEASHED)\b/', $text) === 1;
     }
 
     private function isModelKitLegacyType(?string $mainType): bool
@@ -722,6 +790,7 @@ final class ProductTaxonomyDerivationService
             'MechatroWeGo',
             'SNAA',
             'Frozen Metal',
+            'Eureka Seven',
         ], true);
     }
 

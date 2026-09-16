@@ -25,7 +25,7 @@ DAL should encapsulate persistence details and avoid business rules.
 - **Require**: Transactions for multi-write operations
 - **Use**: Eloquent scopes for queries
 - **Type hint**: Relationships
-- **Migrations**: Must be reversible
+- **Migrations**: Must be reversible; follow **`migration-data-safety.mdc`** for drop/rename/data-copy rules
 - **Index**: Foreign keys
 - **Use**: Typed properties (PHP 8.4)
 

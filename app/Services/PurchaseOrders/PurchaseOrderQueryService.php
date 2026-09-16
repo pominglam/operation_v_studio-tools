@@ -8,6 +8,7 @@ use App\DAL\PurchaseOrders\PurchaseOrderRepository;
 use App\Models\PurchaseOrder;
 use App\Services\Products\LatestArrivalPushProductSortService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 final class PurchaseOrderQueryService
 {
@@ -32,6 +33,14 @@ final class PurchaseOrderQueryService
     public function distinctVendors(): array
     {
         return $this->purchaseOrders->distinctVendors();
+    }
+
+    /**
+     * @return Collection<int, PurchaseOrder>
+     */
+    public function listForProductFilter(): Collection
+    {
+        return $this->purchaseOrders->listForProductFilter();
     }
 
     public function findByUuidOrFail(string $uuid): PurchaseOrder

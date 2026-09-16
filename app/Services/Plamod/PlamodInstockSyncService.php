@@ -19,10 +19,20 @@ final class PlamodInstockSyncService
 
         private readonly PlamodInstockSyncLogger $logger,
 
+        private readonly PlamodInstockRetrySyncService $retry,
+
     ) {}
 
-    public function run(int $syncLogId): void
+    /**
+     * @param  array<int, array{name: string, tab: string, category_id: string|null, expected: int}>  $retryFilters
+     */
+    public function run(int $syncLogId, array $retryFilters = []): void
     {
+        if ($retryFilters !== []) {
+            $this->retry->run($syncLogId, $retryFilters);
+
+            return;
+        }
 
         /** @var PlamodInstockSyncLog|null $log */
         $log = PlamodInstockSyncLog::query()->find($syncLogId);

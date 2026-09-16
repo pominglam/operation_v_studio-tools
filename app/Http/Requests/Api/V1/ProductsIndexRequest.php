@@ -28,12 +28,13 @@ final class ProductsIndexRequest extends FormRequest
             'po_product_novelty' => ['sometimes', 'string', Rule::in(['all', 'new', 'existing'])],
             'include_archived' => ['sometimes', 'boolean'],
             'archived' => ['sometimes', 'string', Rule::in(['active', 'all', 'archived'])],
+            'store_preorder' => ['sometimes', 'string', Rule::in(['exclude', 'open', 'all'])],
             'ready' => ['sometimes', 'string', Rule::in(['all', 'ready', 'not_ready'])],
             'published' => ['sometimes', 'string', Rule::in(['all', 'published', 'not_published'])],
             'product_flags' => ['sometimes', 'array'],
             'product_flags.*' => [
                 'string',
-                Rule::in(['critical', 'discontinued', 'hazardous_shipment']),
+                Rule::in(['urgent', 'critical', 'discontinued', 'hazardous_shipment']),
             ],
             'shipment_methods' => ['sometimes', 'array'],
             'shipment_methods.*' => ['string', Rule::in(['air', 'sea'])],
@@ -87,6 +88,7 @@ final class ProductsIndexRequest extends FormRequest
                     'po_total_cost',
                     'updated_at',
                     'created_at',
+                    'is_urgent',
                 ]),
             ],
             'sort_dir' => ['sometimes', 'string', Rule::in(['asc', 'desc'])],
@@ -104,6 +106,8 @@ final class ProductsIndexRequest extends FormRequest
             'franchises.*' => ['string', 'max:128'],
             'product_lines' => ['sometimes', 'array'],
             'product_lines.*' => ['string', 'max:128'],
+            'workshop_shelves' => ['sometimes', 'array'],
+            'workshop_shelves.*' => ['string', 'max:128'],
             'sublines' => ['sometimes', 'array'],
             'sublines.*' => ['string', 'max:128'],
             'grades' => ['sometimes', 'array'],
@@ -126,6 +130,7 @@ final class ProductsIndexRequest extends FormRequest
             'manufacturers',
             'franchises',
             'product_lines',
+            'workshop_shelves',
             'sublines',
             'grades',
             'series_values',
@@ -151,5 +156,15 @@ final class ProductsIndexRequest extends FormRequest
         }
 
         return 'active';
+    }
+
+    public function storePreorderFilter(): string
+    {
+        $value = $this->validated('store_preorder');
+        if (is_string($value) && in_array($value, ['open', 'all'], true)) {
+            return $value;
+        }
+
+        return 'exclude';
     }
 }

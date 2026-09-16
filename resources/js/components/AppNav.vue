@@ -1,35 +1,44 @@
 <script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import logoUrl from '../assets/operation-v-logo.svg?url';
 import { currentAccessRole } from '../lib/accessRole';
 import { employeeInventoryScanNotFoundBg } from '../lib/employeeInventoryScanUi';
+import { ADMIN_NAV_ENTRIES, navRouteContext } from '../lib/navCatalog';
+import AppNavDropdown from './AppNavDropdown.vue';
 
 const route = useRoute();
 const isEmployee = currentAccessRole() === 'employee';
+const headerEl = ref<HTMLElement | null>(null);
 
-function isActive(name: string): boolean {
-    if (name === 'inventory-check') {
-        return route.path.startsWith('/inventory-check');
+const routeContext = computed(() => navRouteContext(route.path, route.name));
+
+function setNavHeight(): void {
+    const el = headerEl.value;
+    if (!(el instanceof HTMLElement)) {
+        return;
     }
-    if (name === 'purchase-orders') {
-        return route.path.startsWith('/purchase-orders');
-    }
-    if (name === 'custom-asia-orders') {
-        return route.path.startsWith('/custom-orders/asia');
-    }
-    if (name === 'reports') {
-        return route.path.startsWith('/reports');
-    }
-    if (name === 'plamod-restock') {
-        return route.path.startsWith('/restocking/plamod');
-    }
-    return route.name === name;
+    document.documentElement.style.setProperty('--app-nav-height', `${el.offsetHeight}px`);
+}
+
+onMounted(() => {
+    setNavHeight();
+    window.addEventListener('resize', setNavHeight);
+});
+
+onUnmounted(() => {
+    window.removeEventListener('resize', setNavHeight);
+});
+
+function linkClass(active: boolean): string {
+    return active ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100';
 }
 </script>
 
 <template>
     <header
-        class="border-b transition-[background-color,border-color] duration-300 ease-out"
+        ref="headerEl"
+        class="sticky top-0 z-40 border-b transition-[background-color,border-color] duration-300 ease-out"
         :class="
             isEmployee && employeeInventoryScanNotFoundBg
                 ? 'border-red-700 bg-red-500'
@@ -46,7 +55,7 @@ function isActive(name: string): boolean {
                 />
             </div>
 
-            <nav class="flex items-center gap-2 text-sm">
+            <nav class="flex flex-wrap items-center justify-end gap-2 text-sm">
                 <RouterLink
                     v-if="isEmployee"
                     to="/employee/inventory-count"
@@ -59,138 +68,26 @@ function isActive(name: string): boolean {
                 >
                     Inventory Count
                 </RouterLink>
-                <RouterLink
-                    v-if="!isEmployee"
-                    to="/products"
-                    class="rounded-md px-3 py-1.5 transition"
-                    :class="
-                        isActive('products')
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-100'
-                    "
-                >
-                    Products
-                </RouterLink>
-                <RouterLink
-                    v-if="!isEmployee"
-                    to="/products/taxonomy"
-                    class="rounded-md px-3 py-1.5 transition"
-                    :class="
-                        isActive('product-taxonomy')
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-100'
-                    "
-                >
-                    Taxonomy
-                </RouterLink>
-                <RouterLink
-                    v-if="!isEmployee"
-                    to="/inventory-check"
-                    class="rounded-md px-3 py-1.5 transition"
-                    :class="
-                        isActive('inventory-check')
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-100'
-                    "
-                >
-                    Inventory Check
-                </RouterLink>
-                <RouterLink
-                    v-if="!isEmployee"
-                    to="/purchase-orders"
-                    class="rounded-md px-3 py-1.5 transition"
-                    :class="
-                        isActive('purchase-orders')
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-100'
-                    "
-                >
-                    Purchase Orders
-                </RouterLink>
-                <RouterLink
-                    v-if="!isEmployee"
-                    to="/custom-orders/asia"
-                    class="rounded-md px-3 py-1.5 transition"
-                    :class="
-                        isActive('custom-asia-orders')
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-100'
-                    "
-                >
-                    Custom Orders
-                </RouterLink>
-                <RouterLink
-                    v-if="!isEmployee"
-                    to="/price-research"
-                    class="rounded-md px-3 py-1.5 transition"
-                    :class="
-                        isActive('price-research')
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-100'
-                    "
-                >
-                    Pricing
-                </RouterLink>
-                <RouterLink
-                    v-if="!isEmployee"
-                    to="/preorders"
-                    class="rounded-md px-3 py-1.5 transition"
-                    :class="
-                        isActive('preorders')
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-100'
-                    "
-                >
-                    Preorders
-                </RouterLink>
-                <RouterLink
-                    v-if="!isEmployee"
-                    to="/restocking/plamod"
-                    class="rounded-md px-3 py-1.5 transition"
-                    :class="
-                        isActive('plamod-restock')
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-100'
-                    "
-                >
-                    Restock
-                </RouterLink>
-                <RouterLink
-                    v-if="!isEmployee"
-                    to="/tcg-events"
-                    class="rounded-md px-3 py-1.5 transition"
-                    :class="
-                        isActive('tcg-events')
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-100'
-                    "
-                >
-                    TCG Events
-                </RouterLink>
-                <RouterLink
-                    v-if="!isEmployee"
-                    to="/reports/staff-orders"
-                    class="rounded-md px-3 py-1.5 transition"
-                    :class="
-                        isActive('reports')
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-100'
-                    "
-                >
-                    Reports
-                </RouterLink>
-                <RouterLink
-                    v-if="!isEmployee"
-                    to="/maintenance"
-                    class="rounded-md px-3 py-1.5 transition"
-                    :class="
-                        isActive('maintenance')
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-100'
-                    "
-                >
-                    Maintenance
-                </RouterLink>
+
+                <template v-if="!isEmployee">
+                    <template v-for="entry in ADMIN_NAV_ENTRIES" :key="entry.id">
+                        <AppNavDropdown
+                            v-if="entry.kind === 'group'"
+                            :label="entry.label"
+                            :active="entry.isActive(routeContext)"
+                            :children="entry.children"
+                            :route-context="routeContext"
+                        />
+                        <RouterLink
+                            v-else
+                            :to="entry.path"
+                            class="rounded-md px-3 py-1.5 transition"
+                            :class="linkClass(entry.isActive(routeContext))"
+                        >
+                            {{ entry.label }}
+                        </RouterLink>
+                    </template>
+                </template>
             </nav>
         </div>
     </header>

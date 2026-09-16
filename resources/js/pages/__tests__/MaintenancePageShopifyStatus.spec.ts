@@ -16,7 +16,8 @@ import { api } from '../../lib/api';
 
 const runningSnapshot = {
     data: {
-        order_reconcile_interval_hours: 12,
+        order_reconcile_interval_minutes: 30,
+        order_reconcile_interval_hours: 1,
         tasks: [
             {
                 key: 'inventory_pull',

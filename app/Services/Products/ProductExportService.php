@@ -433,6 +433,12 @@ final class ProductExportService
     {
         $preferred = is_string($product->preferred_description_source) ? trim($product->preferred_description_source) : '';
         if ($preferred !== '') {
+            if ($preferred === 'other') {
+                $manual = $this->preferredOtherBodyHtml($product);
+                if ($manual !== null) {
+                    return $this->normalizeBodyHtmlForShopify($manual);
+                }
+            }
             if ($preferred === 'hlj') {
                 $hlj = $product->hljExternalContent?->description_html;
                 if (is_string($hlj) && trim($hlj) !== '') {
@@ -507,6 +513,26 @@ final class ProductExportService
         }
 
         return '<p>'.e($fallback).'</p>';
+    }
+
+    /**
+     * Exact source=other row, including an intentional blank Manual override.
+     */
+    private function preferredOtherBodyHtml(Product $product): ?string
+    {
+        $contents = $product->externalContents?->all() ?? [];
+        foreach ($contents as $c) {
+            if (! $c instanceof ProductExternalContent) {
+                continue;
+            }
+            if (strtolower(trim((string) $c->source)) !== 'other') {
+                continue;
+            }
+
+            return is_string($c->description_html) ? (string) $c->description_html : '';
+        }
+
+        return null;
     }
 
     private function normalizeBodyHtmlForShopify(string $html): string

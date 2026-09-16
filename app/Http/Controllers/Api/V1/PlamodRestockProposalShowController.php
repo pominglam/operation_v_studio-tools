@@ -20,7 +20,7 @@ final class PlamodRestockProposalShowController extends Controller
 
         return response()->json([
             'ok' => true,
-            'data' => $proposal->build($hideDismissed, $onlyIncludedNew),
+            'data' => $proposal->build($hideDismissed, $onlyIncludedNew, $request->section()),
         ]);
     }
 }

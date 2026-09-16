@@ -30,7 +30,7 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
      *   reachable_error:string|null
      * }
      */
-    public function status(): array
+    public function status(bool $verifyReachability = true): array
     {
         if (! file_exists(self::DOCKER_SOCKET)) {
             return [
@@ -79,6 +79,18 @@ final class CloudflaredTunnelService implements CloudflaredTunnel
         $reachableHttpStatus = null;
         $reachableCheckedAt = null;
         $reachableError = null;
+        if (! $verifyReachability) {
+            return [
+                'running' => $running,
+                'tunnel_url' => $url,
+                'container_id' => $id !== '' ? $id : null,
+                'error' => null,
+                'reachable' => null,
+                'reachable_http_status' => null,
+                'reachable_checked_at' => null,
+                'reachable_error' => null,
+            ];
+        }
         if ($running && is_string($url) && trim($url) !== '') {
             $check = $this->verifier->verify($url);
             $reachable = is_bool($check['reachable'] ?? null) ? $check['reachable'] : null;

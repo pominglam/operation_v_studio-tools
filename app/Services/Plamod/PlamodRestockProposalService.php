@@ -44,77 +44,29 @@ final class PlamodRestockProposalService
      *   meta: array<string, int>
      * }
      */
-    public function build(bool $hideDismissed = true, bool $onlyIncludedNew = false): array
+    public function build(bool $hideDismissed = true, bool $onlyIncludedNew = false, string $section = 'all'): array
     {
         $settings = $this->settings->get();
         $shippingPercent = $settings['shipping_percent'];
         $instockBySku = PlamodInstockItem::query()->get()->keyBy('sku');
         $decisionsBySku = PlamodRestockSkuDecision::query()->get()->keyBy('sku');
-        $reorderOverrideBySku = $this->reorderOverrides->bySku();
         $plannedMaintainBySku = $this->plannedMaintain->pendingBySku();
         $latestLog = PlamodInstockSyncLog::query()
             ->where('status', '=', 'completed')
             ->orderByDesc('finished_at')
             ->first();
 
-        $inboundExpr = ProductInboundOpenPoQtySql::expression(false);
-        $reorderExpr = "case when (coalesce(products.maintain_qty, 0) - coalesce(products.available_qty, 0) - ({$inboundExpr})) > 0"
-            ." then (coalesce(products.maintain_qty, 0) - coalesce(products.available_qty, 0) - ({$inboundExpr})) else 0 end";
-
-        /** @var Collection<int, object> $productRows */
-        $productRows = Product::query()
-            ->whereNull('archived_at')
-            ->whereIn('sku', $instockBySku->keys()->all())
-            ->select([
-                'products.id',
-                'products.uuid',
-                'products.sku',
-                'products.description',
-                'products.barcode',
-                'products.type',
-                DB::raw('coalesce(products.available_qty, 0) as available_qty'),
-                DB::raw('coalesce(products.maintain_qty, 0) as maintain_qty'),
-                DB::raw("{$inboundExpr} as not_arrived_qty"),
-                DB::raw("{$reorderExpr} as reorder_qty"),
-                'products.latest_unit_cost',
-                'products.latest_landed_unit_cost',
-            ])
-            ->get();
-
-        $existingSkus = [];
-        $existingProductSkus = [];
-        foreach ($productRows as $row) {
-            $sku = (string) $row->sku;
-            /** @var PlamodInstockItem|null $instock */
-            $instock = $instockBySku->get($sku);
-            if ($instock === null) {
-                continue;
-            }
-
-            $existingProductSkus[] = $sku;
-        }
-
-        $preorderBySku = $this->preorderOffers->bySkus($existingProductSkus);
-
         $existing = [];
-        foreach ($productRows as $row) {
-            $sku = (string) $row->sku;
-            $overrideQty = $reorderOverrideBySku[$sku] ?? null;
-
-            /** @var PlamodInstockItem|null $instock */
-            $instock = $instockBySku->get($sku);
-            if ($instock === null) {
-                continue;
-            }
-
-            $existingSkus[$sku] = true;
-            $existing[] = $this->mapExistingRow(
-                $row,
-                $instock,
+        $existingSkus = [];
+        if ($section !== 'new') {
+            [$existing, $existingSkus] = $this->buildExistingRows(
+                $instockBySku,
                 $shippingPercent,
-                $preorderBySku[$sku] ?? ['committed_qty' => 0, 'shipments' => []],
-                $overrideQty,
             );
+        } else {
+            foreach ($this->catalogSkusInInstock($instockBySku) as $sku) {
+                $existingSkus[$sku] = true;
+            }
         }
 
         $newProducts = [];
@@ -124,73 +76,75 @@ final class PlamodRestockProposalService
         $laterCount = 0;
         $newMissingPriceCount = 0;
 
-        foreach ($instockBySku as $sku => $instock) {
-            if (isset($existingSkus[$sku])) {
-                continue;
-            }
-
-            if ($instock->price_stock === null) {
-                $newMissingPriceCount++;
-            }
-
-            /** @var PlamodRestockSkuDecision|null $decision */
-            $decision = $decisionsBySku->get($sku);
-            $status = $decision?->status?->value ?? 'undecided';
-            if ($decision === null && $this->settings->matchesExclusion(
-                $instock->product_name,
-                $instock->series,
-                $settings,
-            )) {
-                $status = PlamodRestockSkuDecisionStatus::Dismissed->value;
-            }
-
-            if ($status === PlamodRestockSkuDecisionStatus::Dismissed->value) {
-                $dismissedCount++;
-                if ($hideDismissed) {
+        if ($section !== 'existing') {
+            foreach ($instockBySku as $sku => $instock) {
+                if (isset($existingSkus[$sku])) {
                     continue;
                 }
-            } elseif ($status === PlamodRestockSkuDecisionStatus::Included->value) {
-                $includedCount++;
-            } elseif ($status === PlamodRestockSkuDecisionStatus::Later->value) {
-                $laterCount++;
-                if ($onlyIncludedNew) {
+
+                if ($instock->price_stock === null) {
+                    $newMissingPriceCount++;
+                }
+
+                /** @var PlamodRestockSkuDecision|null $decision */
+                $decision = $decisionsBySku->get($sku);
+                $status = $decision?->status?->value ?? 'undecided';
+                if ($decision === null && $this->settings->matchesExclusion(
+                    $instock->product_name,
+                    $instock->series,
+                    $settings,
+                )) {
+                    $status = PlamodRestockSkuDecisionStatus::Dismissed->value;
+                }
+
+                if ($status === PlamodRestockSkuDecisionStatus::Dismissed->value) {
+                    $dismissedCount++;
+                    if ($hideDismissed) {
+                        continue;
+                    }
+                } elseif ($status === PlamodRestockSkuDecisionStatus::Included->value) {
+                    $includedCount++;
+                } elseif ($status === PlamodRestockSkuDecisionStatus::Later->value) {
+                    $laterCount++;
+                    if ($onlyIncludedNew) {
+                        continue;
+                    }
+                } elseif ($status === 'undecided') {
+                    $undecidedCount++;
+                    if ($onlyIncludedNew) {
+                        continue;
+                    }
+                }
+
+                if ($onlyIncludedNew && $status !== PlamodRestockSkuDecisionStatus::Included->value) {
                     continue;
                 }
-            } elseif ($status === 'undecided') {
-                $undecidedCount++;
-                if ($onlyIncludedNew) {
-                    continue;
+
+                $newProducts[] = $this->mapNewRow(
+                    $instock,
+                    $decision,
+                    $shippingPercent,
+                    $status,
+                    $plannedMaintainBySku[$instock->sku] ?? null,
+                );
+            }
+
+            usort($newProducts, static function (array $a, array $b): int {
+                $aDate = $a['release_date'] ?? '';
+                $bDate = $b['release_date'] ?? '';
+                if ($aDate === $bDate) {
+                    return strcmp((string) $a['sku'], (string) $b['sku']);
                 }
-            }
+                if ($aDate === '') {
+                    return 1;
+                }
+                if ($bDate === '') {
+                    return -1;
+                }
 
-            if ($onlyIncludedNew && $status !== PlamodRestockSkuDecisionStatus::Included->value) {
-                continue;
-            }
-
-            $newProducts[] = $this->mapNewRow(
-                $instock,
-                $decision,
-                $shippingPercent,
-                $status,
-                $plannedMaintainBySku[$instock->sku] ?? null,
-            );
+                return strcmp((string) $bDate, (string) $aDate);
+            });
         }
-
-        usort($newProducts, static function (array $a, array $b): int {
-            $aDate = $a['release_date'] ?? '';
-            $bDate = $b['release_date'] ?? '';
-            if ($aDate === $bDate) {
-                return strcmp((string) $a['sku'], (string) $b['sku']);
-            }
-            if ($aDate === '') {
-                return 1;
-            }
-            if ($bDate === '') {
-                return -1;
-            }
-
-            return strcmp((string) $bDate, (string) $aDate);
-        });
 
         return [
             'snapshot' => [
@@ -219,8 +173,87 @@ final class PlamodRestockProposalService
     }
 
     /**
-     * @return array<string, mixed>
+     * @param  Collection<string, PlamodInstockItem>  $instockBySku
+     * @return array{0: list<array<string, mixed>>, 1: array<string, true>}
      */
+    private function buildExistingRows(Collection $instockBySku, float $shippingPercent): array
+    {
+        $reorderOverrideBySku = $this->reorderOverrides->bySku();
+        $inboundExpr = ProductInboundOpenPoQtySql::expression(false);
+        $reorderExpr = "case when (coalesce(products.maintain_qty, 0) - coalesce(products.available_qty, 0) - ({$inboundExpr})) > 0"
+            ." then (coalesce(products.maintain_qty, 0) - coalesce(products.available_qty, 0) - ({$inboundExpr})) else 0 end";
+
+        /** @var Collection<int, object> $productRows */
+        $productRows = Product::query()
+            ->whereNull('archived_at')
+            ->whereIn('sku', $instockBySku->keys()->all())
+            ->select([
+                'products.id',
+                'products.uuid',
+                'products.sku',
+                'products.description',
+                'products.barcode',
+                'products.type',
+                DB::raw('coalesce(products.available_qty, 0) as available_qty'),
+                DB::raw('coalesce(products.maintain_qty, 0) as maintain_qty'),
+                DB::raw("{$inboundExpr} as not_arrived_qty"),
+                DB::raw("{$reorderExpr} as reorder_qty"),
+                'products.latest_unit_cost',
+                'products.latest_landed_unit_cost',
+            ])
+            ->get();
+
+        $existingProductSkus = [];
+        foreach ($productRows as $row) {
+            $sku = (string) $row->sku;
+            if ($instockBySku->get($sku) === null) {
+                continue;
+            }
+            $existingProductSkus[] = $sku;
+        }
+
+        $preorderBySku = $this->preorderOffers->bySkus($existingProductSkus);
+        $existing = [];
+        $existingSkus = [];
+        foreach ($productRows as $row) {
+            $sku = (string) $row->sku;
+            /** @var PlamodInstockItem|null $instock */
+            $instock = $instockBySku->get($sku);
+            if ($instock === null) {
+                continue;
+            }
+
+            $existingSkus[$sku] = true;
+            $existing[] = $this->mapExistingRow(
+                $row,
+                $instock,
+                $shippingPercent,
+                $preorderBySku[$sku] ?? ['committed_qty' => 0, 'shipments' => []],
+                $reorderOverrideBySku[$sku] ?? null,
+            );
+        }
+
+        return [$existing, $existingSkus];
+    }
+
+    /**
+     * @param  Collection<string, PlamodInstockItem>  $instockBySku
+     * @return list<string>
+     */
+    private function catalogSkusInInstock(Collection $instockBySku): array
+    {
+        if ($instockBySku->isEmpty()) {
+            return [];
+        }
+
+        return Product::query()
+            ->whereNull('archived_at')
+            ->whereIn('sku', $instockBySku->keys()->all())
+            ->pluck('sku')
+            ->map(static fn (mixed $sku): string => (string) $sku)
+            ->all();
+    }
+
     /**
      * @param  array{committed_qty: int, shipments: array<int, array{offer_id: string|null, quantity: int, eta_date: string|null, eta_label: string|null, po_due_date: string|null}>}  $preorder
      */

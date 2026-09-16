@@ -65,16 +65,20 @@ final class FakeShopifyAdminGraphQlClient implements ShopifyAdminGraphQlClientIn
             return [
                 'data' => [
                     'inventoryItem' => null,
+                    'nodes' => [null],
                 ],
             ];
         }
 
+        $item = [
+            'id' => $itemId,
+            'inventoryLevels' => $inventoryLevelsConn,
+        ];
+
         return [
             'data' => [
-                'inventoryItem' => [
-                    'id' => $itemId,
-                    'inventoryLevels' => $inventoryLevelsConn,
-                ],
+                'inventoryItem' => $item,
+                'nodes' => [$item],
             ],
         ];
     }

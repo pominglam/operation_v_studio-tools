@@ -64,6 +64,7 @@ final class ProductPoLinesQueryService
                 'poi.qty_shipped as qty_shipped',
                 'poi.qty_received as qty_received',
                 'poi.unit_cost as unit_cost',
+                'poi.shipping_per_unit as shipping_per_unit',
             ]);
 
         if ($rows->isEmpty()) {
@@ -82,7 +83,10 @@ final class ProductPoLinesQueryService
             $units = PurchaseOrderAllocation::unitsFromTotals($sumReceived, $sumOrdered, $receivedEntriesCount);
 
             $unitCents = $this->moneyToCentsOrNull($r->unit_cost);
-            $shipPerUnit = $this->perUnitOrZero($r->shipping_total, $units);
+            $lineShip = $this->moneyToCentsOrNull($r->shipping_per_unit ?? null);
+            $shipPerUnit = $lineShip !== null
+                ? $this->centsToMoney($lineShip)
+                : $this->perUnitOrZero($r->shipping_total, $units);
             $surchargePerUnit = $this->perUnitOrZero($r->surcharge_total, $units);
 
             $unitCost = $unitCents !== null ? $this->centsToMoney($unitCents) : null;

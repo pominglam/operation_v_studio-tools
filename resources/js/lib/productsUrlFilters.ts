@@ -3,10 +3,20 @@ import type { LocationQuery } from 'vue-router';
 export const PRODUCTS_FILTERS_FROM_URL = 'url';
 export const PRODUCTS_FILTER_EMPTY_MAIN_TYPE = '__empty__';
 export const PRODUCTS_FILTER_EMPTY_TYPE = '__empty__';
+export const PRODUCTS_FILTER_EMPTY_DEPARTMENT = '__empty__';
+export const PRODUCTS_FILTER_EMPTY_PRODUCT_LINE = '__empty__';
+export const PRODUCTS_FILTER_EMPTY_WORKSHOP_SHELF = '__empty__';
+export const PRODUCTS_FILTER_EMPTY_GRADE = '__empty__';
+export const PRODUCTS_FILTER_EMPTY_SUBLINE = '__empty__';
 
 export type ProductsUrlFilterState = {
     mainTypes: string[];
     types: string[];
+    departments?: string[];
+    productLines?: string[];
+    workshopShelves?: string[];
+    grades?: string[];
+    sublines?: string[];
     archived: 'active' | 'all' | 'archived';
     availableMin: string;
     availableMax: string;
@@ -24,7 +34,10 @@ export function isProductsFiltersFromUrl(query: LocationQuery): boolean {
 function parseRouteQueryStringArray(query: LocationQuery, key: string): string[] {
     const raw = query[key];
     if (Array.isArray(raw)) {
-        return raw.map(String).map((value) => value.trim()).filter(Boolean);
+        return raw
+            .map(String)
+            .map((value) => value.trim())
+            .filter(Boolean);
     }
     if (typeof raw === 'string' && raw.trim() !== '') {
         return [raw.trim()];
@@ -44,6 +57,41 @@ export function parseRouteQueryTypes(query: LocationQuery): string[] {
     return [
         ...parseRouteQueryStringArray(query, 'types'),
         ...parseRouteQueryStringArray(query, 'types[]'),
+    ];
+}
+
+export function parseRouteQueryDepartments(query: LocationQuery): string[] {
+    return [
+        ...parseRouteQueryStringArray(query, 'departments'),
+        ...parseRouteQueryStringArray(query, 'departments[]'),
+    ];
+}
+
+export function parseRouteQueryProductLines(query: LocationQuery): string[] {
+    return [
+        ...parseRouteQueryStringArray(query, 'product_lines'),
+        ...parseRouteQueryStringArray(query, 'product_lines[]'),
+    ];
+}
+
+export function parseRouteQueryWorkshopShelves(query: LocationQuery): string[] {
+    return [
+        ...parseRouteQueryStringArray(query, 'workshop_shelves'),
+        ...parseRouteQueryStringArray(query, 'workshop_shelves[]'),
+    ];
+}
+
+export function parseRouteQueryGrades(query: LocationQuery): string[] {
+    return [
+        ...parseRouteQueryStringArray(query, 'grades'),
+        ...parseRouteQueryStringArray(query, 'grades[]'),
+    ];
+}
+
+export function parseRouteQuerySublines(query: LocationQuery): string[] {
+    return [
+        ...parseRouteQueryStringArray(query, 'sublines'),
+        ...parseRouteQueryStringArray(query, 'sublines[]'),
     ];
 }
 
@@ -90,15 +138,29 @@ export function parseProductsUrlFilterState(query: LocationQuery): ProductsUrlFi
         return null;
     }
 
+    const departments = parseRouteQueryDepartments(query);
+    const productLines = parseRouteQueryProductLines(query);
+    const workshopShelves = parseRouteQueryWorkshopShelves(query);
+    const grades = parseRouteQueryGrades(query);
+    const sublines = parseRouteQuerySublines(query);
+
     return {
         mainTypes: parseRouteQueryMainTypes(query),
         types: parseRouteQueryTypes(query),
+        ...(departments.length > 0 ? { departments } : {}),
+        ...(productLines.length > 0 ? { productLines } : {}),
+        ...(workshopShelves.length > 0 ? { workshopShelves } : {}),
+        ...(grades.length > 0 ? { grades } : {}),
+        ...(sublines.length > 0 ? { sublines } : {}),
         archived: parseArchivedFilter(query),
         availableMin: parseRouteQueryString(query, 'available_min'),
         availableMax: parseRouteQueryString(query, 'available_max'),
         notArrived: parseRouteQueryString(query, 'not_arrived'),
         notArrivedMin: parseRouteQueryString(query, 'not_arrived_min'),
-        notArrivedIncludeDraftOrders: parseRouteQueryFlag(query, 'not_arrived_include_draft_orders'),
+        notArrivedIncludeDraftOrders: parseRouteQueryFlag(
+            query,
+            'not_arrived_include_draft_orders',
+        ),
         missingLandedCost: parseRouteQueryFlag(query, 'missing_landed_cost'),
         hasLandedCost: parseRouteQueryFlag(query, 'has_landed_cost'),
     };

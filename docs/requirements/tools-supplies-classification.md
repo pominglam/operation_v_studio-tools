@@ -61,6 +61,7 @@ Named shelves (A–Z): Adhesives, Airbrush, Brushes, Decals, Drills & bits, Mark
 | **Decals**                | `decals`               | Decal softeners now; sheets later                 | ~2 now; growing                 |
 | **Airbrush**              | `airbrush`             | Airbrush units, needles, airbrush-only supplies   | Small today                     |
 | **Weathering**            | `weathering`           | `type` WEATHERING (Stedi MP-5x weathering liquids) | 4 (Stedi pilot)                |
+| **Cutting mats**          | `cutting-mats`         | Title contains “cutting mat”; `workshop_shelf` Cutting mats. Never `mk:*` / model-kits (SKU `OP-…` is not Gunpla option parts). | ~8 now                    |
 | **Other tools & supplies**| `workshop-misc`        | Orphans, mis-tags, unclassified workshop SKUs     | Very small (grows slowly)       |
 
 
@@ -157,12 +158,21 @@ Collection: `scribing-tools`. Scriber handles, pushers, guides, scribing **consu
 
 Collection: `adhesives`. Cements and assembly glues with a clear product type.
 
-| Filter        | Values *(TBD at QA)*                    |
-| ------------- | --------------------------------------- |
-| **Type**      | Cement · Reinforcement · Putty / filler |
-| **Brand**     | Optional                                |
+| Filter        | Values                         |
+| ------------- | ------------------------------ |
+| **Flow**      | Low · High                     |
+| **Thickness** | Extra thin · Regular           |
 
-**Tag examples:** `ts:dept:adhesives`, `ts:adhesive:type:cement`
+**Tag examples:** `ts:dept:adhesives`, `ts:adhesive:type:cement`, `ts:adhesive:flow:low`, `ts:adhesive:thickness:extra-thin`
+
+**Storefront filter URL:** `?ovs_adhesive_flow=low,high` and `?ovs_adhesive_thickness=extra-thin,regular` (comma-separated multiselect; groups AND).
+
+| SKU | Flow | Thickness |
+| --- | --- | --- |
+| `MG-01` | Low | Regular |
+| `MG-02` | High | Regular |
+| `ETC-01` | High | Extra thin |
+| `ETC-02` | Low | Regular |
 
 ---
 
@@ -280,7 +290,7 @@ Dedicated shelf for panel-lining workflow — pens, wipers, and liquid panel-lin
 | **Product** | Tools · Panel liner paints      |
 | **Type**    | Normal · Fluorescent            |
 
-**Tools:** seepage line wiper pens (`MP-02*`, `MP-03*`). **Panel liner paints:** accent pens (`MP-01*`) and liquid panel-liner bottles (`MP-10+`, `type` Panel liner).
+**Tools:** seepage line wiper pens (`MP-02*`, `MP-03*`). **Panel liner paints:** accent pens (`MP-01*`) and liquid panel-liner bottles (`MP-10+`, `type` Panel liner, ERP product line **Stedi Panel Liners** — not Markers).
 
 **Tag examples:** `ts:dept:panel-liners`, `ts:panel-liner:kind:tool`, `ts:panel-liner:kind:paint`, `ts:panel-liner:type:normal`, `ts:panel-liner:type:fluorescent`, `ts:paint:product:panel-line` (liquids on Paints dept)
 
@@ -319,6 +329,24 @@ Airbrush **paint** also appears on **Paints** with `Application: Airbrush`; dual
 
 ---
 
+### 3.16 Cutting mats
+
+
+| Filter     | Values                                                                 |
+| ---------- | ---------------------------------------------------------------------- |
+| **Series** | No series · AT-Field · Operation V                                     |
+| **Size**   | A3 · A4                                                                |
+| **Color**  | Purple · Green · Pink · Blue · Gray |
+
+
+Unbranded self-healing mats use **No series** (`ts:mat:series:no-series`). AT-Field and Operation V have no color in the title — they stay visible unless a color is selected.
+
+**Tag examples:** `ts:dept:cutting-mats`, `ts:mat:series:no-series`, `ts:mat:series:at-field`, `ts:mat:series:opv`, `ts:mat:size:a3`, `ts:mat:color:green`
+
+**Storefront filter URLs:** `?ovs_mat_series=no-series,at-field,opv`, `?ovs_mat_size=a3,a4`, `?ovs_mat_color=purple,green` (comma-separated multiselect; AND across groups). Color slugs are simple (`purple`, `green`, `pink`, `blue`, `gray`); Matcha and Mint both map to **green**.
+
+---
+
 ## 4. Classification rules (decided — implement later)
 
 ### 4.1 ERP → storefront mapping (target)
@@ -346,6 +374,7 @@ One `ts:dept:*` per product. Tool families use **separate department tags** (not
 | `ts:dept:adhesives`       | `adhesives`            | Cement, glue, reinforcement (e.g. ETC-01/02, MG-01/02)        |
 | `ts:dept:workshop-misc`   | `workshop-misc`        | Orphans / mis-tags / unclassified workshop (see §4.7)         |
 | `ts:dept:cutting`         | `nippers-and-knives`   | Nippers, knives, blades                                       |
+| `ts:dept:cutting-mats`    | `cutting-mats`         | Self-healing / hobby cutting mats (not nippers)               |
 | `ts:dept:sanding`         | `sanding`              | All SANDING rows (tool + consumable)                          |
 | `ts:dept:tapes`           | `tapes`                | Masking and scribing **tape**                                 |
 | `ts:dept:markers`         | `markers`              | MARKERS (excl. MS-58)                                         |
@@ -804,7 +833,7 @@ Phases 2–8 can be **one phase per deploy** or batched (e.g. 2+3 together) if p
 - [x] Phase 6: theme Brand + Type + Tip multiselect filters (`?ovs_marker_brand=` / `?ovs_marker_type=` / `?ovs_marker_tip=`)
 - [x] Phase 6: **MS-58** excluded from markers → **`workshop-misc`** in Phase 7 (§4.7)
 - [x] Phase 7: tool-family classifiers + `workshop-misc` + `airbrush` + unlisted collections (§2, §3.2–3.7, §3.14)
-- [x] Phase 7: theme filters on brushes / drills / tweezers / scribing-tools / airbrush; misc + adhesives availability-only
+- [x] Phase 7: theme filters on brushes / drills / tweezers / scribing-tools / airbrush / adhesives (flow + thickness); misc availability-only
 - [x] Phase 8: `tools-and-supplies` hub (department sidebar links + availability per §3.1; shelf breadcrumbs under title)
 - [x] Phase 9 nav cutover + rollback snapshot tested (2026-06-20: `main-menu-20260620_115924.json`)
 - [ ] Phase 10 Getting started (separate task — see task tracker `storefront_getting_started_nav`)

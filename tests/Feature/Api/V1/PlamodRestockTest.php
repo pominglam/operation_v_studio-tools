@@ -15,6 +15,7 @@ use App\Services\Products\Http\PlamodScraper;
 use App\Support\Plamod\PlamodRestockCostCalculator;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 it('calculates new landed cost breakdown with shipping percent', function (): void {
@@ -550,16 +551,14 @@ it('reports instock sync status with scraper progress while running', function (
         'counts_json' => [],
     ]);
 
-    Http::fake([
-        'http://plamod_scraper:3001/instock-export-progress' => Http::response([
-            'ok' => true,
-            'active' => true,
-            'phase' => 'export',
-            'filters_total' => 49,
-            'filters_processed' => 12,
-            'current_filter' => '30 Minutes Label',
-        ], 200),
-    ]);
+    Storage::disk('local')->put('plamod/instock_export_progress.json', json_encode([
+        'ok' => true,
+        'active' => true,
+        'phase' => 'export',
+        'filters_total' => 49,
+        'filters_processed' => 12,
+        'current_filter' => '30 Minutes Label',
+    ]));
 
     $this->getJson('/api/v1/plamod/restock/sync-status')
         ->assertOk()

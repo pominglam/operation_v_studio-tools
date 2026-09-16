@@ -61,6 +61,7 @@ const availableQty = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const maintainQty = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const extended = ref<BulkFieldState<string>>({ apply: false, value: '' });
 const isCritical = ref<BulkFieldState<'true' | 'false'>>({ apply: false, value: 'false' });
+const isUrgent = ref<BulkFieldState<'true' | 'false'>>({ apply: false, value: 'false' });
 const isDiscontinued = ref<BulkFieldState<'true' | 'false'>>({ apply: false, value: 'false' });
 const isHazardousShipment = ref<BulkFieldState<'true' | 'false'>>({ apply: false, value: 'false' });
 const shipmentMethod = ref<BulkFieldState<'' | 'air' | 'sea'>>({ apply: false, value: '' });
@@ -115,6 +116,7 @@ const hasAnyApply = computed<boolean>(() => {
         maintainQty.value.apply ||
         extended.value.apply ||
         isCritical.value.apply ||
+        isUrgent.value.apply ||
         isDiscontinued.value.apply ||
         isHazardousShipment.value.apply ||
         shipmentMethod.value.apply ||
@@ -145,6 +147,7 @@ function reset(): void {
     maintainQty.value = { apply: false, value: '' };
     extended.value = { apply: false, value: '' };
     isCritical.value = { apply: false, value: 'false' };
+    isUrgent.value = { apply: false, value: 'false' };
     isDiscontinued.value = { apply: false, value: 'false' };
     isHazardousShipment.value = { apply: false, value: 'false' };
     shipmentMethod.value = { apply: false, value: '' };
@@ -181,6 +184,7 @@ watch(
         maintainQty,
         extended,
         isCritical,
+        isUrgent,
         isDiscontinued,
         isHazardousShipment,
         shipmentMethod,
@@ -336,6 +340,10 @@ function onConfirm(): void {
 
     if (isCritical.value.apply) {
         changes.is_critical = isCritical.value.value === 'true';
+    }
+
+    if (isUrgent.value.apply) {
+        changes.is_urgent = isUrgent.value.value === 'true';
     }
 
     if (isDiscontinued.value.apply) {
@@ -786,6 +794,27 @@ function onConfirm(): void {
                             inputmode="decimal"
                             :disabled="!extended.apply || busy"
                         />
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                                v-model="isUrgent.apply"
+                                type="checkbox"
+                                class="h-4 w-4 rounded"
+                                data-testid="bulk-urgent-apply"
+                            />
+                            Urgent
+                        </label>
+                        <select
+                            v-model="isUrgent.value"
+                            class="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                            :disabled="!isUrgent.apply || busy"
+                            data-testid="bulk-urgent-value"
+                        >
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
                     </div>
 
                     <div class="md:col-span-2">

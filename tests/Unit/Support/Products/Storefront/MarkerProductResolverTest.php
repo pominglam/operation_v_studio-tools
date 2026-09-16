@@ -24,7 +24,9 @@ it('classifies marker department SKUs and excludes joint reinforcement', functio
 
     expect($resolver->belongsToMarkersDepartment(markerTestProduct(['sku' => 'MK-01', 'type' => 'MARKERS', 'description' => 'Soft tipped pure black'])))->toBeTrue()
         ->and($resolver->belongsToMarkersDepartment(markerTestProduct(['sku' => 'MS-58', 'type' => 'MARKERS', 'description' => 'Joint reinforcement'])))->toBeFalse()
-        ->and($resolver->belongsToMarkersDepartment(markerTestProduct(['sku' => 'MS-70', 'type' => 'MARKERS', 'description' => 'Metallic space aluminum'])))->toBeTrue();
+        ->and($resolver->belongsToMarkersDepartment(markerTestProduct(['sku' => 'MS-70', 'type' => 'MARKERS', 'description' => 'Metallic space aluminum'])))->toBeTrue()
+        ->and($resolver->belongsToMarkersDepartment(markerTestProduct(['sku' => 'MP-11', 'type' => 'Panel liner', 'description' => 'Stedi Panel Liner MP-11 Dark Grey'])))->toBeFalse()
+        ->and($resolver->belongsToMarkersDepartment(markerTestProduct(['sku' => 'MP-23', 'type' => 'MARKERS', 'description' => 'Stedi Panel Liner MP-23 Fluorescent Green'])))->toBeFalse();
 });
 
 it('classifies marker type and tip tags', function (): void {

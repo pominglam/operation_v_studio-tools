@@ -1,7 +1,7 @@
 # Storefront content hierarchy — Operation V Studio
 
 **Status:** Approved direction · **mega menus stay shop-first until pages exist**  
-**Last updated:** 2026-08-25  
+**Last updated:** 2026-09-14  
 **Shop:** operationvstudio.com · **Theme:** `ovs-shopify-theme` (dev POC: Rise – AI Dev `#196218716241`)  
 **Related:** [shopify-nav-taxonomy-plan.md](./shopify-nav-taxonomy-plan.md) · [static-content-pages-workflow-and-about-us.md](../shopify-theme/static-content-pages-workflow-and-about-us.md) · [tools-supplies-classification.md](./tools-supplies-classification.md)
 
@@ -100,6 +100,10 @@ Stable handles (Shopify Page). Use **`page.<handle>.json`** templates where poss
 | --- | --- | --- | --- | --- | --- |
 | `about-operation-v-studio` | `/pages/about-operation-v-studio` | About Operation V Studio | Studio story, Montréal visit, community | **Draft template** (`page.about-us-2.json` on dev theme); Admin page TBD | `page.about-us-2` → rename to `page.about-operation-v-studio` when stabilized |
 | `contact` | `/pages/contact` | Contact | Hours, form, directions fallback | **Theme template exists** | `page.contact` |
+| `preorders` | `/pages/preorders` | Preorders | How store preorders work: deposit, balance, cancellations, supplier limits, split shipments, ETA | **Live**; footer Helpful Info | `page.preorders` |
+| `special-orders` | `/pages/special-orders` | Special Orders | Source from Asia, 5-step process, deposit, 90-day balance, pickup or shipping | **Live**; footer Helpful Info | `page.info` |
+| `pickup-and-shipping` | `/pages/pickup-and-shipping` | Pickup & Shipping | In-store pickup, Canada shipping, tracking, preorder shipments | **Live**; footer Helpful Info | `page.info` |
+| `returns-and-refunds` | `/pages/returns-and-refunds` | Returns & Refunds | Final sale, try-before-you-buy, damage/shipping, consumer rights | **Live**; footer Helpful Info | `page.info` |
 | `new-to-the-shop` | `/pages/new-to-the-shop` | New to Operation V Studio | Ordering, shipping, pickup, account basics | **Not created** | TBD (`page.new-to-the-shop`) |
 | `new-to-gunpla` | `/pages/new-to-gunpla` | New to Gunpla? | Grades (HG-first for adults), tools you need, curated kit links — **not** “Entry Grade for everyone” | **Not created** (404); linked from About draft | TBD |
 | `new-to-airbrushing` | `/pages/new-to-airbrushing` | New to airbrushing? | First purchases, link to airbrush + paints shelves | **Not created** | TBD |
@@ -181,7 +185,24 @@ Shop columns (2–5) unchanged: grades, series, 30 Minutes Label, other franchis
 
 No content CTA tile yet. When added, prefer **one** link: **New to airbrushing?** → `/pages/new-to-airbrushing`. Shelves remain the main dropdown body.
 
-### 6.3 Getting started top-level menu (future)
+### 6.3 Miscellaneous mega menu (dev POC)
+
+Dev theme file: `ovs-shopify-theme/snippets/ovs-miscellaneous-mega-menu-poc.liquid`
+
+| Column / area | Links |
+| --- | --- |
+| **Start here** card | Keychains · CCS Toys |
+| **Collectibles** | `/collections/keychain` · `/collections/ccs-toys` |
+
+**Not in customer nav:** `/collections/other-products` — empty catch-all shelf (`misc:line:other`) kept in ERP for unclassified misc SKUs only; assign a real shelf before merchandising.
+
+**Not in Miscellaneous nav:** action bases, Gunpla option parts, and Gunpla-kun **kits** (model kits mega menu — `/collections/action-base`, `/collections/gunpla-option-parts`, `/collections/sd-gunpla-kun`). CHARZAKU-KUN / GUNPLA-KUN rubber **keychains** stay on `/collections/keychain`. 30MM/30MS option parts stay under **30 Minutes Label** (`30-minutes-accessories`).
+
+Misc shelves: `MiscShelfCatalog` · `php artisan products:misc-shelf-collections` · `php artisan products:push-misc-tags`.
+
+**ERP intent (§4.5 tools-supplies-classification):** site **Miscellaneous** = keychains, collectibles, oddments — **not** workshop-misc (`/collections/workshop-misc` lives under Tools & Supplies).
+
+### 6.4 Getting started top-level menu (future)
 
 | Menu label | URL |
 | --- | --- |
@@ -246,6 +267,12 @@ When **`/collections/model-kits`** is created (ERP `main_type = model kit` smart
 | **E — Collections** | `model-kits` smart collection; **`beginner-kits`** (price `< $35` + model kit); fix About “Browse model kits” URL | “Browse all model kits” / “Beginner kits” CTAs use real collections |
 
 ---
+
+## 8.1 Listing card CTAs (shop grids)
+
+Product cards on **collection listings**, **search**, and **PDP related products** show Dawn quick-add under the price: **Add to cart**, **Sold out**, **Pre-order**, or **Preorder closed**. Full rules: [model-kit-collection-filters.md § Listing CTAs](./model-kit-collection-filters.md#listing-ctas).
+
+**Homepage exception:** Featured Products and Latest Arrivals on `/` are browse-only (photo + title + price). No listing CTA buttons. `templates/index.json` sets featured-collection `quick_add` to `none`.
 
 ## 9. Explicitly out of scope (here)
 

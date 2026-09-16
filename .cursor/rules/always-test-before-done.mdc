@@ -29,7 +29,7 @@ A task is **not complete** until behavior is verified the way a real user/system
 | Service/business logic | `tests/Feature/Services/...` or unit test |
 | Vue page / interaction | `resources/js/pages/__tests__/...` (Vitest) |
 | External client (HTTP) | Fake HTTP + assert error mapping |
-| Reported bug | Reproduction test in the same PR/change set |
+| Reported bug | Regression test in the same change set — **`bug-fix-regression-tests.mdc`** |
 
 ## Commands (pricing-tool)
 
@@ -50,9 +50,9 @@ A task is **not complete** until behavior is verified the way a real user/system
 
 ## Final reply must include
 
-- Which tests were run and whether they passed.
-- A **QA matrix** (URL, actions, pass/fail evidence) per **`rigorous-qa-before-handoff.mdc`** when user-visible behavior changed.
-- If UI was tested: URL, actions performed, and pass/fail vs customer expectation (see `verify-ui-before-done.mdc`).
+- Which tests/commands were run and whether they passed (when relevant).
+- A brief **Verified** note for user-visible changes (URL + key outcome) — see **`definition_of_done.mdc`**. Full QA tables only on failure, blocked, or user request.
+- If UI was tested: enough detail to trust the handoff (e.g. “Rejected → 4 rows, all Rejected”), not necessarily a full matrix.
 - If something could not be run, why and what unblocks it.
 
 Do **not** mark a feature “done” after only writing code or only running unrelated tests.

@@ -36,4 +36,16 @@ final class EloquentDatabaseBackupRepository implements DatabaseBackupRepository
             ->limit($limit)
             ->get();
     }
+
+    public function listAllOrderedByNewest(): Collection
+    {
+        return DatabaseBackup::query()
+            ->orderByDesc('created_at')
+            ->get();
+    }
+
+    public function deleteByUuid(string $uuid): void
+    {
+        DatabaseBackup::query()->where('uuid', '=', $uuid)->delete();
+    }
 }

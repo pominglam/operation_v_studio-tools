@@ -42,10 +42,9 @@ final class PurchaseOrderLandedUnitCostResolver
         }
 
         $units = PurchaseOrderAllocation::unitsFromTotals($sumReceived, $sumOrdered, $receivedEntriesCount);
-        $shipPerUnit = $this->perUnitOrZero($po->shipping_total, $units);
         $surchargePerUnit = $this->perUnitOrZero($po->surcharge_total, $units);
-        $shipCents = $this->moneyToCentsOrNull($shipPerUnit) ?? 0;
         $surchargeCents = $this->moneyToCentsOrNull($surchargePerUnit) ?? 0;
+        $shipByItemId = $this->shipCentsByItemId($po, $itemList, $units);
 
         $out = [];
         foreach ($itemList as $item) {
@@ -59,8 +58,25 @@ final class PurchaseOrderLandedUnitCostResolver
                 continue;
             }
 
+            $shipCents = $shipByItemId[(int) $item->id] ?? 0;
             $landedCents = $unitCents + $shipCents + $surchargeCents;
             $out[$productId] = $this->money2FromCents($landedCents);
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  array<int, PurchaseOrderItem>  $itemList
+     * @return array<int, int> item id => shipping cents
+     */
+    private function shipCentsByItemId(PurchaseOrder $po, array $itemList, int $units): array
+    {
+        $defaultCents = $this->moneyToCentsOrNull($this->perUnitOrZero($po->shipping_total, $units)) ?? 0;
+        $out = [];
+        foreach ($itemList as $item) {
+            $override = $this->moneyToCentsOrNull($item->shipping_per_unit);
+            $out[(int) $item->id] = $override ?? $defaultCents;
         }
 
         return $out;

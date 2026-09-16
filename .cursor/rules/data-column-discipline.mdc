@@ -21,6 +21,7 @@ Wrong column = wrong math for the entire feature. Treat column/source mix-ups as
 | **This PO line unit (CAD)** | `PurchaseOrderItemCadUnitCostResolver` → same as `PurchaseOrderItemResource.unit_cost` | Raw DB `unit_cost` on foreign-currency POs; `vendor_unit_cost` without FX |
 | **Historical latest landed (catalog cache)** | `products.latest_landed_unit_cost` from **`ProductLatestArrivedLandedUnitCostResolver`** / maintenance refresh — latest PO with entered shipping | PO with shipping still `NULL`; PO `created_at` ordering |
 | **PLAMOD restock new cost** | `plamod_instock_items.price_stock` | ERP `latest_unit_cost` unless spec says otherwise |
+| **PO product / unit / shipping $** | Pre-tax vendor amounts (`unit_cost`, `product_total`, `shipping_total`) | Invoice **grand total**, Plamod **Line Total (After Tax)**, or tax-inclusive “Total” |
 
 ## Workflow-specific rules
 

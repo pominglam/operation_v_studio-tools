@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/MultiSelectFilter.vue';
 import ConfirmDialog from '../components/ui/ConfirmDialog.vue';
+import PoHistoryRow from '../components/purchaseOrders/PoHistoryRow.vue';
 import PoImportPreviewDialog, {
     type PoImportPreview,
 } from '../components/purchaseOrders/PoImportPreviewDialog.vue';
@@ -10,61 +11,10 @@ import PoCombinedPaymentDialog, {
     type PoCombinedPaymentValues,
 } from '../components/purchaseOrders/PoCombinedPaymentDialog.vue';
 import { api } from '../lib/api';
-import { formatTorontoDate } from '../lib/datetime';
-import { formatMoney2OrEmpty, parseMoney } from '../lib/money';
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
 import { isPmBrokerVendor } from '../composables/purchaseOrders/pmBrokerVendor';
 import { useShipmentTrackingResolution } from '../composables/useShipmentTrackingResolution';
-
-type PurchaseOrderListRow = {
-    id: string;
-    status: 'draft' | 'ordered' | 'shipped' | 'received' | 'on_shelves';
-    shipment_method: 'air' | 'sea' | null;
-    shipment_tracking_numbers: string[];
-    vendor: string;
-    supplier_order_id: string | null;
-    vendor_currency_code: string;
-    vendor_product_total: string | null;
-    vendor_shipping_total: string | null;
-    fx_rate_to_cad: string | null;
-    ordered_date: string | null;
-    shipped_date: string | null;
-    estimated_arrival_date: string | null;
-    received_date: string | null;
-    fully_on_shelves_date: string | null;
-    shipping_total: string | null;
-    surcharge_total: string | null;
-    product_total: string | null;
-    notes: string | null;
-    counts: { items: number };
-    created_at: string | null;
-};
-
-function poStatusLabel(status: PurchaseOrderListRow['status']): string {
-    switch (status) {
-        case 'on_shelves':
-            return 'On shelves';
-        case 'received':
-            return 'Received';
-        case 'shipped':
-            return 'Shipped';
-        case 'ordered':
-            return 'Ordered';
-        default:
-            return 'Draft';
-    }
-}
-
-function poShipmentMethodLabel(method: PurchaseOrderListRow['shipment_method']): string {
-    switch (method) {
-        case 'air':
-            return 'Air';
-        case 'sea':
-            return 'Sea';
-        default:
-            return '—';
-    }
-}
+import type { PurchaseOrderListRow } from '../types/purchaseOrderList';
 
 type Paginated<T> = {
     data: T[];
@@ -109,6 +59,8 @@ const DEFAULT_SELECTED_STATUSES: PurchaseOrderListRow['status'][] = [
     'received',
 ];
 const STATE_KEY = 'purchase-orders:history-filters:v2';
+type PurchaseOrderListTab = 'history' | 'import';
+const activeTab = ref<PurchaseOrderListTab>('history');
 
 const loading = ref(false);
 const error = ref<string | null>(null);
@@ -212,6 +164,12 @@ const surchargeTotal = ref<string>('');
 const notes = ref<string>('');
 const shipmentMethod = ref<'' | 'air' | 'sea'>('');
 
+watch(vendor, (next) => {
+    if (isPlamodVendor(next) && shipmentMethod.value === '') {
+        shipmentMethod.value = 'air';
+    }
+});
+
 const hasImportResult = computed(() => importResult.value !== null);
 
 const vendorFilterOptions = computed<MultiSelectOption[]>(() =>
@@ -242,16 +200,33 @@ watch(
     { deep: true },
 );
 watch(
-    [selectedVendors, selectedStatuses],
+    [selectedVendors, selectedStatuses, activeTab],
     () => {
         if (hydrating.value) return;
-        savePageState(STATE_KEY, {
-            selectedVendors: selectedVendors.value,
-            selectedStatuses: selectedStatuses.value,
-        });
+        persistListPageState();
     },
     { deep: true },
 );
+
+function persistListPageState(): void {
+    savePageState(STATE_KEY, {
+        selectedVendors: selectedVendors.value,
+        selectedStatuses: selectedStatuses.value,
+        activeTab: activeTab.value,
+    });
+}
+
+function setActiveTab(tab: PurchaseOrderListTab): void {
+    activeTab.value = tab;
+}
+
+function tabButtonClass(tab: PurchaseOrderListTab): string {
+    const base =
+        'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors';
+    return activeTab.value === tab
+        ? `${base} bg-white text-slate-900 shadow-sm`
+        : `${base} text-slate-600 hover:bg-white/60 hover:text-slate-900`;
+}
 
 function mergeVendorOptions(next: string[]): void {
     const normalized = new Map<string, string>();
@@ -294,11 +269,16 @@ async function loadVendors(): Promise<void> {
     }
 }
 
+function isPlamodVendor(value: string): boolean {
+    return value.trim().toLowerCase() === 'plamod';
+}
+
 async function sniffVendorFromCsv(f: File): Promise<string | null> {
     try {
         const head = (await f.slice(0, 4096).text()).toUpperCase();
         if (head.includes('DSPIAE')) return 'Dspiae';
         if (head.includes('STEDI') || /\bMS-[A-Z0-9]+\b/.test(head)) return 'Stedi';
+        if (head.includes('QTY FILLED') && head.includes('ORDER ID')) return 'Plamod';
         return null;
     } catch {
         return null;
@@ -398,13 +378,8 @@ function historySortHeaderClass(column: HistorySortColumn): string {
     return column.align === 'right' ? 'px-2 py-2 text-right' : 'px-2 py-2';
 }
 
-function poTotal(po: PurchaseOrderListRow): string | null {
-    const p = parseMoney(po.product_total);
-    const s = parseMoney(po.shipping_total);
-    const sur = parseMoney(po.surcharge_total);
-    if (p === null && s === null && sur === null) return null;
-    const total = (p ?? 0) + (s ?? 0) + (sur ?? 0);
-    return total.toFixed(2);
+function applyUpdatedPo(updated: PurchaseOrderListRow): void {
+    pos.value = pos.value.map((po) => (po.id === updated.id ? updated : po));
 }
 
 function onFileChange(e: Event): void {
@@ -509,6 +484,7 @@ function resetHistoryFilters(): void {
     selectedStatuses.value = [...DEFAULT_SELECTED_STATUSES];
     sortBy.value = 'ordered';
     sortDir.value = 'desc';
+    persistListPageState();
     void loadHistory();
 }
 
@@ -651,10 +627,14 @@ onMounted(() => {
     const saved = loadPageState<{
         selectedVendors?: string[];
         selectedStatuses?: PurchaseOrderListRow['status'][];
+        activeTab?: PurchaseOrderListTab;
     }>(STATE_KEY);
     if (saved) {
         if (Array.isArray(saved.selectedVendors)) selectedVendors.value = saved.selectedVendors;
         if (Array.isArray(saved.selectedStatuses)) selectedStatuses.value = saved.selectedStatuses;
+        if (saved.activeTab === 'history' || saved.activeTab === 'import') {
+            activeTab.value = saved.activeTab;
+        }
     }
 
     hydrating.value = false;
@@ -674,7 +654,46 @@ onMounted(() => {
             </p>
         </div>
 
-        <section class="rounded-lg border border-slate-200 bg-white p-4">
+        <nav
+            class="mb-4 flex gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1"
+            role="tablist"
+            aria-label="Purchase order views"
+            data-testid="po-list-tabs"
+        >
+            <button
+                id="po-tab-history"
+                type="button"
+                role="tab"
+                :aria-selected="activeTab === 'history'"
+                aria-controls="po-panel-history"
+                :class="tabButtonClass('history')"
+                data-testid="po-tab-history"
+                @click="setActiveTab('history')"
+            >
+                List
+            </button>
+            <button
+                id="po-tab-import"
+                type="button"
+                role="tab"
+                :aria-selected="activeTab === 'import'"
+                aria-controls="po-panel-import"
+                :class="tabButtonClass('import')"
+                data-testid="po-tab-import"
+                @click="setActiveTab('import')"
+            >
+                Create / Import
+            </button>
+        </nav>
+
+        <section
+            v-show="activeTab === 'import'"
+            id="po-panel-import"
+            class="rounded-lg border border-slate-200 bg-white p-4"
+            role="tabpanel"
+            aria-labelledby="po-tab-import"
+            data-testid="po-panel-import"
+        >
             <h2 class="text-sm font-semibold text-slate-900">Create / Import</h2>
 
             <div class="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-6">
@@ -877,9 +896,15 @@ onMounted(() => {
             </div>
         </section>
 
-        <section class="mt-6 rounded-lg border border-slate-200 bg-white p-4">
-            <div class="flex items-center justify-between">
-                <h2 class="text-sm font-semibold text-slate-900">History</h2>
+        <section
+            v-show="activeTab === 'history'"
+            id="po-panel-history"
+            class="rounded-lg border border-slate-200 bg-white p-4"
+            role="tabpanel"
+            aria-labelledby="po-tab-history"
+            data-testid="po-panel-history"
+        >
+            <div class="flex items-center justify-end">
                 <div class="flex items-center gap-2">
                     <button
                         type="button"
@@ -987,129 +1012,18 @@ onMounted(() => {
                         </tr>
                     </thead>
                     <tbody class="text-slate-800">
-                        <tr
+                        <PoHistoryRow
                             v-for="po in pos"
                             :key="po.id"
-                            class="border-t border-slate-200 hover:bg-slate-50"
-                        >
-                            <td class="px-2 py-2">
-                                <input
-                                    type="checkbox"
-                                    data-testid="po-history-select"
-                                    :aria-label="`Select purchase order ${po.id}`"
-                                    :checked="selectedPoIds.has(po.id)"
-                                    @change="togglePoSelection(po.id)"
-                                />
-                            </td>
-                            <td class="px-2 py-2">
-                                <a
-                                    class="underline underline-offset-2"
-                                    :href="`/purchase-orders/${po.id}`"
-                                    >{{ po.id }}</a
-                                >
-                                <div class="mt-0.5 text-[11px] text-slate-500">
-                                    Supplier order ID: {{ po.supplier_order_id ?? '—' }}
-                                </div>
-                                <div
-                                    v-if="po.notes && po.notes.trim() !== ''"
-                                    class="mt-0.5 text-[11px] text-slate-500"
-                                >
-                                    Note: {{ po.notes }}
-                                </div>
-                            </td>
-                            <td class="px-2 py-2">{{ poStatusLabel(po.status) }}</td>
-                            <td class="px-2 py-2">
-                                <div>{{ poShipmentMethodLabel(po.shipment_method) }}</div>
-                                <div
-                                    v-for="(trackingNumber, index) in po.shipment_tracking_numbers"
-                                    :key="trackingNumber"
-                                    class="mt-0.5 flex max-w-36 items-center gap-1 text-xs"
-                                    :data-testid="`po-history-tracking-${po.id}-${index}`"
-                                >
-                                    <a
-                                        v-if="
-                                            resolutionFor(trackingNumber)?.status === 'resolved' &&
-                                            resolutionFor(trackingNumber)?.tracking_url
-                                        "
-                                        :href="
-                                            resolutionFor(trackingNumber)?.tracking_url ?? undefined
-                                        "
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        class="truncate text-indigo-700 underline underline-offset-2"
-                                        :title="`Open in ${resolutionFor(trackingNumber)?.provider ?? 'tracking provider'}`"
-                                    >
-                                        {{ trackingNumber }}
-                                    </a>
-                                    <span
-                                        v-else
-                                        class="truncate text-slate-600"
-                                        :title="
-                                            isTrackingPending(trackingNumber)
-                                                ? 'Finding a tracking provider…'
-                                                : 'No tracking provider found yet'
-                                        "
-                                    >
-                                        {{ trackingNumber }}
-                                    </span>
-                                    <svg
-                                        v-if="isTrackingPending(trackingNumber)"
-                                        data-testid="tracking-resolution-spinner"
-                                        class="h-3 w-3 shrink-0 animate-spin text-slate-400"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        aria-label="Finding tracking provider"
-                                    >
-                                        <circle
-                                            class="opacity-25"
-                                            cx="12"
-                                            cy="12"
-                                            r="9"
-                                            stroke="currentColor"
-                                            stroke-width="3"
-                                        />
-                                        <path
-                                            class="opacity-75"
-                                            fill="currentColor"
-                                            d="M12 3a9 9 0 0 1 9 9h-3a6 6 0 0 0-6-6V3Z"
-                                        />
-                                    </svg>
-                                </div>
-                            </td>
-                            <td class="px-2 py-2 text-slate-600">
-                                {{ formatTorontoDate(po.created_at) }}
-                            </td>
-                            <td class="px-2 py-2">{{ po.ordered_date ?? '—' }}</td>
-                            <td class="px-2 py-2">{{ po.estimated_arrival_date ?? '—' }}</td>
-                            <td class="px-2 py-2">{{ po.received_date ?? '—' }}</td>
-                            <td class="px-2 py-2">{{ po.fully_on_shelves_date ?? '—' }}</td>
-                            <td class="px-2 py-2">{{ po.vendor }}</td>
-                            <td class="px-2 py-2 text-right">{{ po.counts.items }}</td>
-                            <td class="px-2 py-2 text-right">
-                                {{ formatMoney2OrEmpty(po.product_total) }}
-                            </td>
-                            <td class="px-2 py-2 text-right">
-                                {{ formatMoney2OrEmpty(po.shipping_total) }}
-                            </td>
-                            <td class="px-2 py-2 text-right">
-                                {{ formatMoney2OrEmpty(po.surcharge_total) }}
-                            </td>
-                            <td class="px-2 py-2 text-right">
-                                {{ formatMoney2OrEmpty(poTotal(po)) }}
-                            </td>
-                            <td class="px-2 py-2 text-right">
-                                <button
-                                    type="button"
-                                    class="rounded px-2 py-1 text-xs font-medium text-slate-600 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
-                                    data-testid="po-history-delete"
-                                    :aria-label="`Delete purchase order ${po.id}`"
-                                    :disabled="deletingId === po.id"
-                                    @click="openDeleteDialog(po)"
-                                >
-                                    {{ deletingId === po.id ? 'Deleting…' : 'Delete' }}
-                                </button>
-                            </td>
-                        </tr>
+                            :po="po"
+                            :selected="selectedPoIds.has(po.id)"
+                            :deleting="deletingId === po.id"
+                            :resolution-for="resolutionFor"
+                            :is-tracking-pending="isTrackingPending"
+                            @toggle-select="togglePoSelection(po.id)"
+                            @delete="openDeleteDialog(po)"
+                            @updated="applyUpdatedPo"
+                        />
                     </tbody>
                 </table>
 

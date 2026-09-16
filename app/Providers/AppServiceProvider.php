@@ -3,8 +3,8 @@
 namespace App\Providers;
 
 use App\Contracts\ShipmentTracking\TrackingBrowser;
-use App\DAL\CustomOrders\CustomAsiaOrderRepository;
-use App\DAL\CustomOrders\EloquentCustomAsiaOrderRepository;
+use App\DAL\Customers\EloquentShopifyOrderIdentityRepository;
+use App\DAL\Customers\ShopifyOrderIdentityRepository;
 use App\DAL\Inventory\EloquentInventoryRepository;
 use App\DAL\Inventory\InventoryRepository;
 use App\DAL\InventoryChecks\EloquentInventoryCheckRepository;
@@ -28,11 +28,13 @@ use App\DAL\PriceResearch\ProductPriceQuoteRepository;
 use App\DAL\Products\EloquentProductExternalAssetRepository;
 use App\DAL\Products\EloquentProductExternalContentRepository;
 use App\DAL\Products\EloquentProductRepository;
+use App\DAL\Products\EloquentProductSavedViewRepository;
 use App\DAL\Products\EloquentProductSellingPriceRepository;
 use App\DAL\Products\EloquentProductTaxonomyRepository;
 use App\DAL\Products\ProductExternalAssetRepository;
 use App\DAL\Products\ProductExternalContentRepository;
 use App\DAL\Products\ProductRepository;
+use App\DAL\Products\ProductSavedViewRepository;
 use App\DAL\Products\ProductSellingPriceRepository;
 use App\DAL\Products\ProductTaxonomyRepository;
 use App\DAL\PurchaseOrders\EloquentPurchaseOrderRepository;
@@ -41,9 +43,18 @@ use App\DAL\RuntimeSettings\EloquentRuntimeSettingRepository;
 use App\DAL\RuntimeSettings\RuntimeSettingRepository;
 use App\DAL\ShipmentTracking\EloquentShipmentTrackingResolutionRepository;
 use App\DAL\ShipmentTracking\ShipmentTrackingResolutionRepository;
+use App\DAL\SpecialOrders\EloquentSpecialOrderRepository;
+use App\DAL\SpecialOrders\SpecialOrderRepository;
+use App\DAL\StoreEvents\EloquentStoreEventOrderRepository;
+use App\DAL\StoreEvents\EloquentStoreEventRepository;
+use App\DAL\StoreEvents\StoreEventOrderRepository;
+use App\DAL\StoreEvents\StoreEventRepository;
+use App\DAL\StoreMarketing\EloquentStoreMarketingNoteRepository;
+use App\DAL\StoreMarketing\StoreMarketingNoteRepository;
+use App\DAL\StorePreorders\EloquentStorePreorderRepository;
+use App\DAL\StorePreorders\StorePreorderRepository;
 use App\DAL\TcgEvents\EloquentTcgEventRepository;
 use App\DAL\TcgEvents\TcgEventRepository;
-use App\Services\CustomOrders\CustomAsiaOrderCompetitorPriceLookupService;
 use App\Services\Maintenance\CloudflareQuickTunnelVerifier as MaintenanceQuickTunnelVerifier;
 use App\Services\Maintenance\DatabaseBackupManager;
 use App\Services\Maintenance\DatabaseBackupManagerService;
@@ -58,6 +69,7 @@ use App\Services\PriceResearch\Providers\ArgamaHobbyProvider;
 use App\Services\PriceResearch\Providers\CanadaComputersProvider;
 use App\Services\PriceResearch\Providers\CanadianGundamProvider;
 use App\Services\PriceResearch\Providers\CompetitorPriceProvider;
+use App\Services\PriceResearch\Providers\CoolDragonHobbyProvider;
 use App\Services\PriceResearch\Providers\GundamHangarProvider;
 use App\Services\PriceResearch\Providers\HobbyBeeProvider;
 use App\Services\PriceResearch\Providers\HobbySenseProvider;
@@ -72,6 +84,9 @@ use App\Services\ShipmentTracking\HttpTrackingBrowserClient;
 use App\Services\Shopify\CloudflaredTunnel;
 use App\Services\Shopify\CloudflaredTunnelService;
 use App\Services\Shopify\CloudflareQuickTunnelVerifier;
+use App\Services\SpecialOrders\SpecialOrderCompetitorPriceLookupService;
+use App\Services\StorePreorders\Listing\StorePreorderListingCrawlerRegistry;
+use App\Services\StorePreorders\Listing\StorePreorderShopifyListingCrawler;
 use App\Services\TcgEvents\Providers\BandaiTcgPlusApi;
 use App\Services\TcgEvents\Providers\HttpBandaiTcgPlusApi;
 use Illuminate\Support\ServiceProvider;
@@ -93,13 +108,24 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(ProductExternalContentRepository::class, EloquentProductExternalContentRepository::class);
         $this->app->bind(ProductExternalAssetRepository::class, EloquentProductExternalAssetRepository::class);
         $this->app->bind(ProductTaxonomyRepository::class, EloquentProductTaxonomyRepository::class);
+        $this->app->bind(ProductSavedViewRepository::class, EloquentProductSavedViewRepository::class);
         $this->app->bind(JobBatchItemRepository::class, EloquentJobBatchItemRepository::class);
         $this->app->bind(RuntimeSettingRepository::class, EloquentRuntimeSettingRepository::class);
         $this->app->bind(InventoryCheckRepository::class, EloquentInventoryCheckRepository::class);
         $this->app->bind(PurchaseOrderRepository::class, EloquentPurchaseOrderRepository::class);
         $this->app->bind(InventoryRepository::class, EloquentInventoryRepository::class);
         $this->app->bind(TcgEventRepository::class, EloquentTcgEventRepository::class);
-        $this->app->bind(CustomAsiaOrderRepository::class, EloquentCustomAsiaOrderRepository::class);
+        $this->app->bind(SpecialOrderRepository::class, EloquentSpecialOrderRepository::class);
+        $this->app->bind(StorePreorderRepository::class, EloquentStorePreorderRepository::class);
+        $this->app->singleton(StorePreorderListingCrawlerRegistry::class, function ($app): StorePreorderListingCrawlerRegistry {
+            return new StorePreorderListingCrawlerRegistry([
+                $app->make(StorePreorderShopifyListingCrawler::class),
+            ]);
+        });
+        $this->app->bind(StoreEventRepository::class, EloquentStoreEventRepository::class);
+        $this->app->bind(StoreEventOrderRepository::class, EloquentStoreEventOrderRepository::class);
+        $this->app->bind(StoreMarketingNoteRepository::class, EloquentStoreMarketingNoteRepository::class);
+        $this->app->bind(ShopifyOrderIdentityRepository::class, EloquentShopifyOrderIdentityRepository::class);
         $this->app->bind(
             ShipmentTrackingResolutionRepository::class,
             EloquentShipmentTrackingResolutionRepository::class,
@@ -152,6 +178,7 @@ class AppServiceProvider extends ServiceProvider
             MeeplemartProvider::class,
             HobbySenseProvider::class,
             ArgamaHobbyProvider::class,
+            CoolDragonHobbyProvider::class,
         ], CompetitorPriceProvider::class);
 
         $this->app->bind(PriceResearchService::class, function ($app): PriceResearchService {
@@ -164,8 +191,8 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
-        $this->app->bind(CustomAsiaOrderCompetitorPriceLookupService::class, function ($app): CustomAsiaOrderCompetitorPriceLookupService {
-            return new CustomAsiaOrderCompetitorPriceLookupService(
+        $this->app->bind(SpecialOrderCompetitorPriceLookupService::class, function ($app): SpecialOrderCompetitorPriceLookupService {
+            return new SpecialOrderCompetitorPriceLookupService(
                 $app->tagged(CompetitorPriceProvider::class),
             );
         });
@@ -174,8 +201,5 @@ class AppServiceProvider extends ServiceProvider
     /**
      * Bootstrap any application services.
      */
-    public function boot(): void
-    {
-        //
-    }
+    public function boot(): void {}
 }

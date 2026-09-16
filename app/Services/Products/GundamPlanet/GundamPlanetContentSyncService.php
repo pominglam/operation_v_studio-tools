@@ -8,6 +8,7 @@ use App\DAL\Products\ProductExternalAssetRepository;
 use App\Models\Product;
 use App\Services\PriceResearch\Http\ExternalHtmlClient;
 use App\Services\Products\ProductPdpSearchTermsService;
+use App\Services\StorePreorders\StorePreorderUsesPlamodImagesOnly;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
@@ -22,6 +23,7 @@ final class GundamPlanetContentSyncService
         private readonly GundamPlanetHtmlParser $parser,
         private readonly ProductExternalAssetRepository $assets,
         private readonly ProductPdpSearchTermsService $terms,
+        private readonly StorePreorderUsesPlamodImagesOnly $storePreorderPlamodImagesOnly,
     ) {}
 
     /**
@@ -29,6 +31,12 @@ final class GundamPlanetContentSyncService
      */
     public function syncForProduct(Product $product, ?string $syncUuid = null, ?callable $trace = null): void
     {
+        if ($this->storePreorderPlamodImagesOnly->appliesToProduct($product)) {
+            $this->trace($trace, 'summary', ['result' => 'skipped_store_preorder']);
+
+            return;
+        }
+
         $barcode = is_string($product->barcode) ? trim($product->barcode) : '';
         $sku = is_string($product->sku) ? trim($product->sku) : '';
         $name = is_string($product->description) ? trim($product->description) : '';

@@ -5,10 +5,9 @@ declare(strict_types=1);
 use App\Enums\PlamodPreorderManufacturerFilterDecision;
 use App\Enums\PlamodPreorderManufacturerFilterType;
 use App\Jobs\Plamod\DownloadPlamodPreorderImageJob;
-use App\Jobs\Plamod\ExportPlamodManufacturerFilterJob;
+use App\Jobs\Plamod\ExportPlamodManufacturerPreorderMergedJob;
 use App\Jobs\Plamod\ExportPlamodPreorderHubCsvJob;
 use App\Jobs\Plamod\FinalizePlamodPreorderSyncJob;
-use App\Jobs\Plamod\RecoverFailedPlamodManufacturerFiltersJob;
 use App\Models\PlamodPreorder;
 use App\Models\PlamodPreorderManufacturerFilter;
 use App\Models\PlamodPreorderSyncLog;
@@ -67,12 +66,14 @@ CSV;
         'ok' => true,
         'csv_storage_path' => 'plamod/preorder_exports/test.csv',
     ]);
-    $scraper->shouldReceive('exportManufacturerPreordersCsv')->once()->with(1, 'Mobile Suit Gundam', null)->andReturn([
+    $scraper->shouldReceive('exportManufacturerPreorderMerged')->once()->with(1)->andReturn([
         'ok' => true,
         'csv_storage_path' => 'plamod/manufacturer_preorder_exports/bandai.csv',
+        'offers_storage_path' => '',
         'row_count' => 1,
-        'has_vigna_sku' => true,
-        'has_vigna_name' => true,
+        'expected_row_count' => 1,
+        'filter_mode' => 'SERIES',
+        'filter_chunks' => [],
     ]);
     app()->instance(PlamodScraper::class, $scraper);
 
@@ -91,65 +92,13 @@ CSV;
     expect($log->counts_json['merged_csv_sources'] ?? null)->toBe(2);
     expect($log->counts_json['manufacturer_pull_count'] ?? null)->toBe(1);
     expect($log->counts_json['manufacturer_row_count'] ?? null)->toBe(1);
+    expect($log->counts_json['expected_row_count'] ?? null)->toBe(1);
     expect(Storage::disk('local')->exists($stalePath))->toBeFalse();
 
     Queue::assertPushed(DownloadPlamodPreorderImageJob::class);
 });
 
-it('still exports included manufacturer filters when plamod preorder count is zero', function (): void {
-    config(['queue.default' => 'sync']);
-    Queue::fake([DownloadPlamodPreorderImageJob::class]);
-
-    $csv = <<<'CSV'
-SKU,Barcode,Product Name,Series,Release Date,Manufacturer,Category,Price Stock,Price Preorder,Price Backorder,Quantity Preorder,PO Due Date,ETA Date,Image URL
-LOT001,111,HGUC Loto Twin Set,Gundam,2026-07-01,BANDAI,Gunpla,10.00,9.00,11.00,5,2026-06-10,2026-09-01,https://example.com/loto.png
-CSV;
-    Storage::disk('local')->put('plamod/preorder_exports/test.csv', $csv);
-    Storage::disk('local')->put('plamod/manufacturer_preorder_exports/zero-count.csv', $csv);
-
-    PlamodPreorderManufacturerFilter::query()->create([
-        'manufacturer_id' => 1,
-        'filter_type' => PlamodPreorderManufacturerFilterType::Series,
-        'name' => 'Mobile Suit Gundam',
-        'plamod_preorder_count' => 0,
-        'decision' => PlamodPreorderManufacturerFilterDecision::Include,
-    ]);
-
-    $scraper = Mockery::mock(PlamodScraper::class);
-    $scraper->shouldReceive('listManufacturerPreorderFilters')->once()->with(1)->andReturn([
-        'ok' => true,
-        'series' => [['name' => 'Mobile Suit Gundam', 'preorder_count' => 0, 'other_count' => 0]],
-        'category_lines' => [],
-    ]);
-    $scraper->shouldReceive('resetScraperSessions')->zeroOrMoreTimes()->andReturn(['ok' => true]);
-    $scraper->shouldReceive('enrichPreorderPdpFields')->zeroOrMoreTimes()->andReturn([
-        'ok' => true,
-        'results' => [],
-    ]);
-    $scraper->shouldReceive('exportPreordersCsv')->once()->andReturn([
-        'ok' => true,
-        'csv_storage_path' => 'plamod/preorder_exports/test.csv',
-    ]);
-    $scraper->shouldReceive('exportManufacturerPreordersCsv')->once()->with(1, 'Mobile Suit Gundam', null)->andReturn([
-        'ok' => true,
-        'csv_storage_path' => 'plamod/manufacturer_preorder_exports/zero-count.csv',
-        'row_count' => 1,
-    ]);
-    app()->instance(PlamodScraper::class, $scraper);
-
-    $log = PlamodPreorderSyncLog::query()->create([
-        'status' => 'queued',
-        'started_at' => now(),
-        'counts_json' => [],
-    ]);
-
-    app(PlamodPreorderSyncOrchestrator::class)->start((int) $log->id);
-
-    $log->refresh();
-    expect($log->counts_json['manufacturer_row_count'] ?? null)->toBe(1);
-});
-
-it('dispatches a serial per-series job chain on the plamod_sync queue', function (): void {
+it('dispatches hub then merged manufacturer export on the plamod_sync queue', function (): void {
     Bus::fake();
 
     PlamodPreorderManufacturerFilter::query()->create([
@@ -178,8 +127,7 @@ it('dispatches a serial per-series job chain on the plamod_sync queue', function
 
     Bus::assertChained([
         ExportPlamodPreorderHubCsvJob::class,
-        ExportPlamodManufacturerFilterJob::class,
-        RecoverFailedPlamodManufacturerFiltersJob::class,
+        ExportPlamodManufacturerPreorderMergedJob::class,
         FinalizePlamodPreorderSyncJob::class,
     ]);
 });

@@ -7,7 +7,7 @@ alwaysApply: true
 
 **The user is not your QA.** Do not hand off work for them to discover broken filters, empty columns, wrong counts, or half-finished flows. Test the system as if your life depended on it — then prove it in your final reply.
 
-Complements **`always-test-before-done.mdc`**, **`verify-ui-before-done.mdc`**, **`bug-check-before-return.mdc`**, and **`definition_of_done.mdc`**.
+Complements **`intent-and-data-verification.mdc`**, **`always-test-before-done.mdc`**, **`verify-ui-before-done.mdc`**, **`bug-check-before-return.mdc`**, and **`definition_of_done.mdc`**.
 
 ## Non‑negotiable mindset
 
@@ -19,6 +19,8 @@ Complements **`always-test-before-done.mdc`**, **`verify-ui-before-done.mdc`**, 
 ## Minimum bar for user-visible features
 
 Before saying **done**, **fixed**, **verified**, or **ready for review**:
+
+0. **Layout gate (UI only)** — final reply **must** include the literal heading **`### Layout verification`** per **`layout-visual-gate-before-handoff.mdc`**. Mobile + desktop screenshots when layout changed. **No completion words without that heading.**
 
 1. **Automated regression** — run **existing** tests when useful; **do not add or modify test files** unless the user asked (see **`agent-test-cleanup.mdc`**). Browser/manual QA is the default bar.
 2. **Real browser** — open the actual route/URL the user uses (see **`verify-ui-before-done.mdc`**). Hard refresh after bundle changes.
@@ -36,15 +38,13 @@ When the user **does** ask for e2e, cover filters/sort/search, bulk actions, dia
 ## Forbidden handoffs
 
 - "I verified in the browser" without listing **URL + actions + outcomes**
+- **Completion words** (`done`, `fixed`, `verified`, `ready for review`, etc.) on UI work **without** **`### Layout verification`** (see **`layout-visual-gate-before-handoff.mdc`**)
 - Passing only unrelated tests
 - **Leaving new or modified test files** the user did not ask for (see **`agent-test-cleanup.mdc`**)
 - Leaving the user to find missing prices, wrong counts, or broken filter combos
 
 If blocked (auth, service down, no seed data), state **exactly** what was not verified and what unblocks it — do not imply quality you did not check.
 
-## Final reply must include a QA matrix
+## What to tell the user
 
-| Area | Command / URL | Actions | Result |
-| --- | --- | --- | --- |
-
-List each significant flow tested (filters, actions, API), commands run, and **pass/fail with evidence** (counts, SKU, field value). The user should not need to re-run your QA to trust the handoff.
+**Run full QA internally** (see **`definition_of_done.mdc`**). Default reply: a short **Verified** line with URL/command + key outcomes — not a full matrix. Expand only on failure, blocked, user request, or high-risk changes.

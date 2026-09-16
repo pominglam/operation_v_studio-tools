@@ -1,0 +1,46 @@
+---
+description: Storefront mega menu and nav links must use ERP-classified smart collections — never search URLs
+globs:
+  - "**/ovs-*-mega-menu*.liquid"
+  - "**/header-mega-menu.liquid"
+  - "**/header-drawer.liquid"
+  - "**/ModelKitShelfCatalog.php"
+  - "**/MiscShelfCatalog.php"
+  - "**/*StorefrontTagResolver.php"
+  - "**/storefront-content-hierarchy.md"
+  - "**/model-kit-storefront-shelves.md"
+alwaysApply: true
+---
+
+# Storefront nav — absolute collection links only
+
+Mega menus, top nav, and Getting started hand-offs must **never** use Shopify **search** URLs (`/search?q=…`) or fuzzy title matching for product shelves.
+
+## Required pattern
+
+| Layer | Responsibility |
+| --- | --- |
+| **ERP** | Canonical taxonomy (`department`, `grade`, `subline`, `product_line`, `type`, …) |
+| **Tag resolver** | Absolute storefront tags (`mk:*`, `misc:*`, `ts:*`) from ERP columns — not description keyword search in Liquid |
+| **Shopify Admin** | Smart collection: product tag **equals** each shelf tag (OR when catalog says so) |
+| **Theme / nav** | **`/collections/{handle}`** only, or T&S pre-filter URLs documented in `tools-supplies-classification.md` (`/collections/paints?ovs_paint_app=…`) |
+
+## Forbidden in nav Liquid
+
+- `/search?q=…`
+- `/collections/all?…` as a shelf substitute
+- Guessing handles that are not in a shelf catalog (`ModelKitShelfCatalog`, `MiscShelfCatalog`, `WorkshopShelfCatalog`)
+
+## Adding a new mega menu link
+
+1. Classify SKUs in ERP (taxonomy derivation / verification).
+2. Add tag + shelf row to the appropriate catalog PHP class.
+3. Run shelf provisioning artisan command + tag push to Shopify.
+4. Wire `/collections/{handle}` in the mega menu snippet.
+5. Browser QA: collection count matches ERP expectation — not “search looks close enough”.
+
+## Related docs
+
+- `docs/requirements/model-kit-storefront-shelves.md`
+- `docs/requirements/storefront-content-hierarchy.md` §7.1
+- `docs/requirements/tools-supplies-classification.md` §7 (T&S pre-filtered URLs are allowed)

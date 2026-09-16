@@ -7,13 +7,16 @@ import MultiSelectFilter, { type MultiSelectOption } from '../components/ui/Mult
 import { clearPageState, loadPageState, savePageState } from '../lib/pageState';
 import { formatLocalDateTime } from '../lib/datetime';
 import {
-    CUSTOM_ASIA_ORDER_CUSTOMER_MESSAGE_PLACEHOLDERS,
-    previewCustomAsiaOrderCustomerMessage,
-} from '../lib/customAsiaOrderCustomerMessage';
+    SPECIAL_ORDER_CUSTOMER_MESSAGE_PLACEHOLDERS,
+    previewSpecialOrderCustomerMessage,
+} from '../lib/specialOrderCustomerMessage';
 import {
     DEFAULT_MERCHANDISER_COMMISSION_CAP_CAD,
     DEFAULT_OPV_MARGIN_CAP_CAD,
-} from '../lib/customAsiaOrderPricingCaps';
+    DEFAULT_SHIPPING_COST_AMOUNT,
+    DEFAULT_SHIPPING_COST_CURRENCY,
+    DEFAULT_SHIPPING_COST_PER_KG_CNY,
+} from '../lib/specialOrderPricingCaps';
 
 type DbBackupRow = {
     uuid: string;
@@ -58,32 +61,63 @@ const refreshLatestCostsError = ref<string | null>(null);
 const refreshingPlamodInstock = ref(false);
 const refreshPlamodInstockMessage = ref<string | null>(null);
 const refreshPlamodInstockError = ref<string | null>(null);
+const regeneratingMkFilterManifest = ref(false);
+const regenerateMkFilterManifestMessage = ref<string | null>(null);
+const regenerateMkFilterManifestError = ref<string | null>(null);
 const notesMessage = ref<string | null>(null);
 const notesError = ref<string | null>(null);
 const notesBody = ref<string>('');
-const customAsiaMessageTemplateLoading = ref(false);
-const customAsiaMessageTemplateSaving = ref(false);
-const customAsiaMessageTemplateBody = ref('');
-const customAsiaMessageTemplateDefaultBody = ref('');
-const customAsiaMessageTemplateMessage = ref<string | null>(null);
-const customAsiaMessageTemplateError = ref<string | null>(null);
-const customAsiaMessageTemplatePreview = computed(() =>
-    previewCustomAsiaOrderCustomerMessage(customAsiaMessageTemplateBody.value),
+const specialOrderMessageTemplateLoading = ref(false);
+const specialOrderMessageTemplateSaving = ref(false);
+const specialOrderMessageTemplateBody = ref('');
+const specialOrderMessageTemplateDefaultBody = ref('');
+const specialOrderMessageTemplateMessage = ref<string | null>(null);
+const specialOrderMessageTemplateError = ref<string | null>(null);
+const specialOrderMessageTemplatePreview = computed(() =>
+    previewSpecialOrderCustomerMessage(specialOrderMessageTemplateBody.value),
 );
-const customAsiaPricingCapsLoading = ref(false);
-const customAsiaPricingCapsSaving = ref(false);
-const customAsiaMerchandiserCommissionCapCad = ref(DEFAULT_MERCHANDISER_COMMISSION_CAP_CAD);
-const customAsiaOpvMarginCapCad = ref(DEFAULT_OPV_MARGIN_CAP_CAD);
-const customAsiaDefaultMerchandiserCommissionCapCad = ref(DEFAULT_MERCHANDISER_COMMISSION_CAP_CAD);
-const customAsiaDefaultOpvMarginCapCad = ref(DEFAULT_OPV_MARGIN_CAP_CAD);
-const customAsiaPricingCapsMessage = ref<string | null>(null);
-const customAsiaPricingCapsError = ref<string | null>(null);
-const customAsiaPricingCapsIsDefault = ref(true);
-const customAsiaPricingCapsAtDefaults = computed(
+const specialOrderPricingCapsLoading = ref(false);
+const specialOrderPricingCapsSaving = ref(false);
+const specialOrderMerchandiserCommissionCapCad = ref(DEFAULT_MERCHANDISER_COMMISSION_CAP_CAD);
+const specialOrderOpvMarginCapCad = ref(DEFAULT_OPV_MARGIN_CAP_CAD);
+const specialOrderDefaultMerchandiserCommissionCapCad = ref(
+    DEFAULT_MERCHANDISER_COMMISSION_CAP_CAD,
+);
+const specialOrderDefaultOpvMarginCapCad = ref(DEFAULT_OPV_MARGIN_CAP_CAD);
+const specialOrderDefaultShippingCostAmountStored = ref(DEFAULT_SHIPPING_COST_AMOUNT);
+const specialOrderDefaultShippingCostCurrencyStored = ref(DEFAULT_SHIPPING_COST_CURRENCY);
+const specialOrderShippingCostAmount = ref(DEFAULT_SHIPPING_COST_AMOUNT);
+const specialOrderShippingCostCurrency = ref(DEFAULT_SHIPPING_COST_CURRENCY);
+const specialOrderShippingCostPerKgCny = ref(DEFAULT_SHIPPING_COST_PER_KG_CNY);
+const specialOrderDefaultShippingCostPerKgCnyStored = ref(DEFAULT_SHIPPING_COST_PER_KG_CNY);
+const specialOrderPricingCapsMessage = ref<string | null>(null);
+const specialOrderPricingCapsError = ref<string | null>(null);
+const specialOrderPricingCapsIsDefault = ref(true);
+const opvCatalogPricingLoading = ref(false);
+const opvCatalogPricingSaving = ref(false);
+const opvCatalogPriceMultiplier = ref('1.50');
+const opvCatalogDefaultDepositPercent = ref('20.00');
+const opvCatalogDefaultPriceMultiplier = ref('1.50');
+const opvCatalogDefaultDefaultDepositPercent = ref('20.00');
+const opvCatalogPricingIsDefault = ref(true);
+const opvCatalogPricingMessage = ref<string | null>(null);
+const opvCatalogPricingError = ref<string | null>(null);
+const opvCatalogPricingAtDefaults = computed(
     () =>
-        customAsiaMerchandiserCommissionCapCad.value ===
-            customAsiaDefaultMerchandiserCommissionCapCad.value &&
-        customAsiaOpvMarginCapCad.value === customAsiaDefaultOpvMarginCapCad.value,
+        opvCatalogPriceMultiplier.value === opvCatalogDefaultPriceMultiplier.value &&
+        opvCatalogDefaultDepositPercent.value === opvCatalogDefaultDefaultDepositPercent.value,
+);
+const specialOrderPricingCapsAtDefaults = computed(
+    () =>
+        specialOrderMerchandiserCommissionCapCad.value ===
+            specialOrderDefaultMerchandiserCommissionCapCad.value &&
+        specialOrderOpvMarginCapCad.value === specialOrderDefaultOpvMarginCapCad.value &&
+        specialOrderShippingCostAmount.value ===
+            specialOrderDefaultShippingCostAmountStored.value &&
+        specialOrderShippingCostCurrency.value ===
+            specialOrderDefaultShippingCostCurrencyStored.value &&
+        specialOrderShippingCostPerKgCny.value ===
+            specialOrderDefaultShippingCostPerKgCnyStored.value,
 );
 const externalHitsLoading = ref(false);
 const externalHitsSaving = ref(false);
@@ -138,7 +172,7 @@ const dbRestoreError = ref<string | null>(null);
 
 const shopifySettingsLoading = ref(false);
 const shopifySettingsSaving = ref(false);
-const shopifyIntervalHours = ref(12);
+const shopifyIntervalMinutes = ref(30);
 type ShopifyTaskStatus = {
     key: string;
     label: string;
@@ -153,6 +187,7 @@ type ShopifyTaskStatus = {
     counts_json: Record<string, unknown> | null;
 };
 type ShopifyHealthSnapshot = {
+    order_reconcile_interval_minutes?: number;
     order_reconcile_interval_hours?: number;
     orders_last_success_at?: string | null;
     orders_high_water_updated_at?: string | null;
@@ -562,6 +597,36 @@ async function refreshPlamodInstockCatalog(): Promise<void> {
     }
 }
 
+async function regenerateModelKitFilterManifest(): Promise<void> {
+    regeneratingMkFilterManifest.value = true;
+    regenerateMkFilterManifestMessage.value = null;
+    regenerateMkFilterManifestError.value = null;
+
+    try {
+        const res = await api.post<{
+            handle_count: number;
+            duration_ms: number;
+            theme_root: string;
+            written_paths: string[];
+        }>('/api/v1/maintenance/model-kit-collection-filter-manifest');
+        regenerateMkFilterManifestMessage.value = `Regenerated ${res.data.handle_count} collection handle(s) in ${res.data.duration_ms} ms. Theme: ${res.data.theme_root}. Push theme files to AI Dev when ready.`;
+    } catch (error: unknown) {
+        const message =
+            typeof error === 'object' &&
+            error !== null &&
+            'response' in error &&
+            typeof (error as { response?: { data?: { message?: string } } }).response?.data
+                ?.message === 'string'
+                ? (error as { response: { data: { message: string } } }).response.data.message
+                : null;
+        regenerateMkFilterManifestError.value =
+            message ??
+            'Failed to regenerate model-kit filter manifest. Check OVS_SHOPIFY_THEME_PATH is set.';
+    } finally {
+        regeneratingMkFilterManifest.value = false;
+    }
+}
+
 function cancelConfirm(): void {
     confirm.value = null;
 }
@@ -820,9 +885,9 @@ async function loadShopifySettings(silent = false): Promise<void> {
     try {
         const res = await api.get<{ data: ShopifyHealthSnapshot }>('/api/v1/shopify/settings');
         shopifyHealth.value = res.data.data;
-        const hours = Number(res.data.data.order_reconcile_interval_hours);
+        const minutes = Number(res.data.data.order_reconcile_interval_minutes);
         if (!silent) {
-            shopifyIntervalHours.value = Number.isFinite(hours) && hours > 0 ? hours : 12;
+            shopifyIntervalMinutes.value = Number.isFinite(minutes) && minutes >= 15 ? minutes : 30;
         }
         shopifyError.value = null;
     } catch {
@@ -863,7 +928,7 @@ async function saveShopifyInterval(): Promise<void> {
     shopifyMessage.value = null;
     try {
         const res = await api.put<{ data: ShopifyHealthSnapshot }>('/api/v1/shopify/settings', {
-            order_reconcile_interval_hours: shopifyIntervalHours.value,
+            order_reconcile_interval_minutes: shopifyIntervalMinutes.value,
         });
         shopifyHealth.value = res.data.data;
         shopifyMessage.value = 'Shopify settings saved.';
@@ -1087,135 +1152,270 @@ async function saveMaintenanceNotes(): Promise<void> {
     }
 }
 
-async function loadCustomAsiaMessageTemplate(): Promise<void> {
-    customAsiaMessageTemplateLoading.value = true;
-    customAsiaMessageTemplateError.value = null;
+async function loadSpecialOrderMessageTemplate(): Promise<void> {
+    specialOrderMessageTemplateLoading.value = true;
+    specialOrderMessageTemplateError.value = null;
     try {
         const res = await api.get<{
             data: { body: string; default_body: string };
-        }>('/api/v1/maintenance/custom-asia-order-customer-message-template', {
+        }>('/api/v1/maintenance/special-order-customer-message-template', {
             validateStatus: () => true,
         });
         if (res.status !== 200) {
-            customAsiaMessageTemplateError.value = 'Failed to load custom order message template.';
+            specialOrderMessageTemplateError.value =
+                'Failed to load special order message template.';
             return;
         }
-        customAsiaMessageTemplateBody.value = res.data.data.body ?? '';
-        customAsiaMessageTemplateDefaultBody.value = res.data.data.default_body ?? '';
+        specialOrderMessageTemplateBody.value = res.data.data.body ?? '';
+        specialOrderMessageTemplateDefaultBody.value = res.data.data.default_body ?? '';
     } catch {
-        customAsiaMessageTemplateError.value = 'Failed to load custom order message template.';
+        specialOrderMessageTemplateError.value = 'Failed to load special order message template.';
     } finally {
-        customAsiaMessageTemplateLoading.value = false;
+        specialOrderMessageTemplateLoading.value = false;
     }
 }
 
-async function saveCustomAsiaMessageTemplate(): Promise<void> {
-    customAsiaMessageTemplateSaving.value = true;
-    customAsiaMessageTemplateMessage.value = null;
-    customAsiaMessageTemplateError.value = null;
+async function saveSpecialOrderMessageTemplate(): Promise<void> {
+    specialOrderMessageTemplateSaving.value = true;
+    specialOrderMessageTemplateMessage.value = null;
+    specialOrderMessageTemplateError.value = null;
 
     try {
         const res = await api.put<{ data: { body: string } }>(
-            '/api/v1/maintenance/custom-asia-order-customer-message-template',
-            { body: customAsiaMessageTemplateBody.value },
+            '/api/v1/maintenance/special-order-customer-message-template',
+            { body: specialOrderMessageTemplateBody.value },
             { validateStatus: () => true },
         );
         if (res.status !== 200) {
             const anyData = res.data as { message?: string; errors?: { body?: string[] } };
-            customAsiaMessageTemplateError.value =
+            specialOrderMessageTemplateError.value =
                 anyData?.errors?.body?.[0] ??
                 anyData?.message ??
-                'Failed to save custom order message template.';
+                'Failed to save special order message template.';
             return;
         }
 
-        customAsiaMessageTemplateBody.value = res.data.data.body;
-        customAsiaMessageTemplateMessage.value = 'Template saved.';
+        specialOrderMessageTemplateBody.value = res.data.data.body;
+        specialOrderMessageTemplateMessage.value = 'Template saved.';
     } catch {
-        customAsiaMessageTemplateError.value = 'Failed to save custom order message template.';
+        specialOrderMessageTemplateError.value = 'Failed to save special order message template.';
     } finally {
-        customAsiaMessageTemplateSaving.value = false;
+        specialOrderMessageTemplateSaving.value = false;
     }
 }
 
-async function resetCustomAsiaMessageTemplate(): Promise<void> {
-    customAsiaMessageTemplateSaving.value = true;
-    customAsiaMessageTemplateMessage.value = null;
-    customAsiaMessageTemplateError.value = null;
+async function resetSpecialOrderMessageTemplate(): Promise<void> {
+    specialOrderMessageTemplateSaving.value = true;
+    specialOrderMessageTemplateMessage.value = null;
+    specialOrderMessageTemplateError.value = null;
 
     try {
         const res = await api.put<{ data: { body: string } }>(
-            '/api/v1/maintenance/custom-asia-order-customer-message-template',
+            '/api/v1/maintenance/special-order-customer-message-template',
             { reset: true },
             { validateStatus: () => true },
         );
         if (res.status !== 200) {
-            customAsiaMessageTemplateError.value = 'Failed to reset template.';
+            specialOrderMessageTemplateError.value = 'Failed to reset template.';
             return;
         }
 
-        customAsiaMessageTemplateBody.value = res.data.data.body;
-        customAsiaMessageTemplateMessage.value = 'Template reset to default.';
+        specialOrderMessageTemplateBody.value = res.data.data.body;
+        specialOrderMessageTemplateMessage.value = 'Template reset to default.';
     } catch {
-        customAsiaMessageTemplateError.value = 'Failed to reset template.';
+        specialOrderMessageTemplateError.value = 'Failed to reset template.';
     } finally {
-        customAsiaMessageTemplateSaving.value = false;
+        specialOrderMessageTemplateSaving.value = false;
     }
 }
 
-async function loadCustomAsiaPricingCaps(): Promise<void> {
-    customAsiaPricingCapsLoading.value = true;
-    customAsiaPricingCapsError.value = null;
+async function applyOpvCatalogPricing(data: {
+    price_multiplier: string;
+    default_deposit_percent: string;
+    default_price_multiplier?: string;
+    default_default_deposit_percent?: string;
+    is_default?: boolean;
+}): Promise<void> {
+    opvCatalogPriceMultiplier.value = data.price_multiplier;
+    opvCatalogDefaultDepositPercent.value = data.default_deposit_percent;
+    if (data.default_price_multiplier) {
+        opvCatalogDefaultPriceMultiplier.value = data.default_price_multiplier;
+    }
+    if (data.default_default_deposit_percent) {
+        opvCatalogDefaultDefaultDepositPercent.value = data.default_default_deposit_percent;
+    }
+    opvCatalogPricingIsDefault.value = data.is_default ?? true;
+}
+
+async function loadOpvCatalogPricing(): Promise<void> {
+    opvCatalogPricingLoading.value = true;
+    opvCatalogPricingError.value = null;
+    try {
+        const res = await api.get<{
+            data: {
+                price_multiplier: string;
+                default_deposit_percent: string;
+                default_price_multiplier: string;
+                default_default_deposit_percent: string;
+                is_default: boolean;
+            };
+        }>('/api/v1/maintenance/opv-catalog-pricing', { validateStatus: () => true });
+        if (res.status !== 200) {
+            opvCatalogPricingError.value = 'Failed to load OPV catalog margin.';
+            return;
+        }
+        await applyOpvCatalogPricing(res.data.data);
+    } catch {
+        opvCatalogPricingError.value = 'Failed to load OPV catalog margin.';
+    } finally {
+        opvCatalogPricingLoading.value = false;
+    }
+}
+
+async function saveOpvCatalogPricing(): Promise<void> {
+    opvCatalogPricingSaving.value = true;
+    opvCatalogPricingMessage.value = null;
+    opvCatalogPricingError.value = null;
+    try {
+        const res = await api.put<{
+            data: {
+                price_multiplier: string;
+                default_deposit_percent: string;
+                is_default: boolean;
+            };
+        }>(
+            '/api/v1/maintenance/opv-catalog-pricing',
+            {
+                price_multiplier: opvCatalogPriceMultiplier.value,
+                default_deposit_percent: opvCatalogDefaultDepositPercent.value,
+            },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            const anyData = res.data as { message?: string; errors?: Record<string, string[]> };
+            opvCatalogPricingError.value =
+                anyData?.errors?.price_multiplier?.[0] ??
+                anyData?.message ??
+                'Failed to save OPV catalog margin.';
+            return;
+        }
+        await applyOpvCatalogPricing(res.data.data);
+        opvCatalogPricingMessage.value = 'OPV catalog margin saved.';
+    } catch {
+        opvCatalogPricingError.value = 'Failed to save OPV catalog margin.';
+    } finally {
+        opvCatalogPricingSaving.value = false;
+    }
+}
+
+async function resetOpvCatalogPricing(): Promise<void> {
+    opvCatalogPricingSaving.value = true;
+    opvCatalogPricingMessage.value = null;
+    opvCatalogPricingError.value = null;
+    try {
+        const res = await api.put<{
+            data: {
+                price_multiplier: string;
+                default_deposit_percent: string;
+                is_default: boolean;
+            };
+        }>(
+            '/api/v1/maintenance/opv-catalog-pricing',
+            { reset: true },
+            { validateStatus: () => true },
+        );
+        if (res.status !== 200) {
+            opvCatalogPricingError.value = 'Failed to reset OPV catalog margin.';
+            return;
+        }
+        await applyOpvCatalogPricing(res.data.data);
+        opvCatalogPricingMessage.value = 'OPV catalog margin reset to defaults.';
+    } catch {
+        opvCatalogPricingError.value = 'Failed to reset OPV catalog margin.';
+    } finally {
+        opvCatalogPricingSaving.value = false;
+    }
+}
+
+async function loadSpecialOrderPricingCaps(): Promise<void> {
+    specialOrderPricingCapsLoading.value = true;
+    specialOrderPricingCapsError.value = null;
     try {
         const res = await api.get<{
             data: {
                 merchandiser_commission_cap_cad: string;
                 opv_margin_cap_cad: string;
+                default_shipping_cost_amount: string;
+                default_shipping_cost_currency: string;
+                default_shipping_cost_per_kg_cny: string;
                 default_merchandiser_commission_cap_cad: string;
                 default_opv_margin_cap_cad: string;
+                default_default_shipping_cost_amount: string;
+                default_default_shipping_cost_currency: string;
+                default_default_shipping_cost_per_kg_cny: string;
                 is_default: boolean;
             };
-        }>('/api/v1/maintenance/custom-asia-order-pricing-caps', {
+        }>('/api/v1/maintenance/special-order-pricing-caps', {
             validateStatus: () => true,
         });
         if (res.status !== 200) {
-            customAsiaPricingCapsError.value = 'Failed to load custom order pricing caps.';
+            specialOrderPricingCapsError.value = 'Failed to load special order pricing caps.';
             return;
         }
-        customAsiaMerchandiserCommissionCapCad.value =
-            res.data.data.merchandiser_commission_cap_cad ?? DEFAULT_MERCHANDISER_COMMISSION_CAP_CAD;
-        customAsiaOpvMarginCapCad.value =
+        specialOrderMerchandiserCommissionCapCad.value =
+            res.data.data.merchandiser_commission_cap_cad ??
+            DEFAULT_MERCHANDISER_COMMISSION_CAP_CAD;
+        specialOrderOpvMarginCapCad.value =
             res.data.data.opv_margin_cap_cad ?? DEFAULT_OPV_MARGIN_CAP_CAD;
-        customAsiaDefaultMerchandiserCommissionCapCad.value =
+        specialOrderDefaultMerchandiserCommissionCapCad.value =
             res.data.data.default_merchandiser_commission_cap_cad ??
             DEFAULT_MERCHANDISER_COMMISSION_CAP_CAD;
-        customAsiaDefaultOpvMarginCapCad.value =
+        specialOrderDefaultOpvMarginCapCad.value =
             res.data.data.default_opv_margin_cap_cad ?? DEFAULT_OPV_MARGIN_CAP_CAD;
-        customAsiaPricingCapsIsDefault.value = res.data.data.is_default ?? true;
+        specialOrderShippingCostAmount.value =
+            res.data.data.default_shipping_cost_amount ?? DEFAULT_SHIPPING_COST_AMOUNT;
+        specialOrderShippingCostCurrency.value =
+            res.data.data.default_shipping_cost_currency ?? DEFAULT_SHIPPING_COST_CURRENCY;
+        specialOrderDefaultShippingCostAmountStored.value =
+            res.data.data.default_default_shipping_cost_amount ?? DEFAULT_SHIPPING_COST_AMOUNT;
+        specialOrderDefaultShippingCostCurrencyStored.value =
+            res.data.data.default_default_shipping_cost_currency ?? DEFAULT_SHIPPING_COST_CURRENCY;
+        specialOrderShippingCostPerKgCny.value =
+            res.data.data.default_shipping_cost_per_kg_cny ?? DEFAULT_SHIPPING_COST_PER_KG_CNY;
+        specialOrderDefaultShippingCostPerKgCnyStored.value =
+            res.data.data.default_default_shipping_cost_per_kg_cny ??
+            DEFAULT_SHIPPING_COST_PER_KG_CNY;
+        specialOrderPricingCapsIsDefault.value = res.data.data.is_default ?? true;
     } catch {
-        customAsiaPricingCapsError.value = 'Failed to load custom order pricing caps.';
+        specialOrderPricingCapsError.value = 'Failed to load special order pricing caps.';
     } finally {
-        customAsiaPricingCapsLoading.value = false;
+        specialOrderPricingCapsLoading.value = false;
     }
 }
 
-async function saveCustomAsiaPricingCaps(): Promise<void> {
-    customAsiaPricingCapsSaving.value = true;
-    customAsiaPricingCapsMessage.value = null;
-    customAsiaPricingCapsError.value = null;
+async function saveSpecialOrderPricingCaps(): Promise<void> {
+    specialOrderPricingCapsSaving.value = true;
+    specialOrderPricingCapsMessage.value = null;
+    specialOrderPricingCapsError.value = null;
 
     try {
         const res = await api.put<{
             data: {
                 merchandiser_commission_cap_cad: string;
                 opv_margin_cap_cad: string;
+                default_shipping_cost_amount: string;
+                default_shipping_cost_currency: string;
+                default_shipping_cost_per_kg_cny: string;
                 is_default: boolean;
             };
         }>(
-            '/api/v1/maintenance/custom-asia-order-pricing-caps',
+            '/api/v1/maintenance/special-order-pricing-caps',
             {
-                merchandiser_commission_cap_cad: customAsiaMerchandiserCommissionCapCad.value,
-                opv_margin_cap_cad: customAsiaOpvMarginCapCad.value,
+                merchandiser_commission_cap_cad: specialOrderMerchandiserCommissionCapCad.value,
+                opv_margin_cap_cad: specialOrderOpvMarginCapCad.value,
+                default_shipping_cost_amount: specialOrderShippingCostAmount.value,
+                default_shipping_cost_currency: specialOrderShippingCostCurrency.value,
+                default_shipping_cost_per_kg_cny: specialOrderShippingCostPerKgCny.value,
             },
             { validateStatus: () => true },
         );
@@ -1224,29 +1424,33 @@ async function saveCustomAsiaPricingCaps(): Promise<void> {
                 message?: string;
                 errors?: Record<string, string[]>;
             };
-            customAsiaPricingCapsError.value =
+            specialOrderPricingCapsError.value =
                 anyData?.errors?.merchandiser_commission_cap_cad?.[0] ??
                 anyData?.errors?.opv_margin_cap_cad?.[0] ??
                 anyData?.message ??
-                'Failed to save custom order pricing caps.';
+                'Failed to save special order pricing caps.';
             return;
         }
 
-        customAsiaMerchandiserCommissionCapCad.value = res.data.data.merchandiser_commission_cap_cad;
-        customAsiaOpvMarginCapCad.value = res.data.data.opv_margin_cap_cad;
-        customAsiaPricingCapsIsDefault.value = res.data.data.is_default;
-        customAsiaPricingCapsMessage.value = 'Pricing caps saved.';
+        specialOrderMerchandiserCommissionCapCad.value =
+            res.data.data.merchandiser_commission_cap_cad;
+        specialOrderOpvMarginCapCad.value = res.data.data.opv_margin_cap_cad;
+        specialOrderShippingCostAmount.value = res.data.data.default_shipping_cost_amount;
+        specialOrderShippingCostCurrency.value = res.data.data.default_shipping_cost_currency;
+        specialOrderShippingCostPerKgCny.value = res.data.data.default_shipping_cost_per_kg_cny;
+        specialOrderPricingCapsIsDefault.value = res.data.data.is_default;
+        specialOrderPricingCapsMessage.value = 'Pricing caps saved.';
     } catch {
-        customAsiaPricingCapsError.value = 'Failed to save custom order pricing caps.';
+        specialOrderPricingCapsError.value = 'Failed to save special order pricing caps.';
     } finally {
-        customAsiaPricingCapsSaving.value = false;
+        specialOrderPricingCapsSaving.value = false;
     }
 }
 
-async function resetCustomAsiaPricingCaps(): Promise<void> {
-    customAsiaPricingCapsSaving.value = true;
-    customAsiaPricingCapsMessage.value = null;
-    customAsiaPricingCapsError.value = null;
+async function resetSpecialOrderPricingCaps(): Promise<void> {
+    specialOrderPricingCapsSaving.value = true;
+    specialOrderPricingCapsMessage.value = null;
+    specialOrderPricingCapsError.value = null;
 
     try {
         const res = await api.put<{
@@ -1256,23 +1460,27 @@ async function resetCustomAsiaPricingCaps(): Promise<void> {
                 is_default: boolean;
             };
         }>(
-            '/api/v1/maintenance/custom-asia-order-pricing-caps',
+            '/api/v1/maintenance/special-order-pricing-caps',
             { reset: true },
             { validateStatus: () => true },
         );
         if (res.status !== 200) {
-            customAsiaPricingCapsError.value = 'Failed to reset pricing caps.';
+            specialOrderPricingCapsError.value = 'Failed to reset pricing caps.';
             return;
         }
 
-        customAsiaMerchandiserCommissionCapCad.value = res.data.data.merchandiser_commission_cap_cad;
-        customAsiaOpvMarginCapCad.value = res.data.data.opv_margin_cap_cad;
-        customAsiaPricingCapsIsDefault.value = res.data.data.is_default;
-        customAsiaPricingCapsMessage.value = 'Pricing caps reset to defaults.';
+        specialOrderMerchandiserCommissionCapCad.value =
+            res.data.data.merchandiser_commission_cap_cad;
+        specialOrderOpvMarginCapCad.value = res.data.data.opv_margin_cap_cad;
+        specialOrderShippingCostAmount.value = res.data.data.default_shipping_cost_amount;
+        specialOrderShippingCostCurrency.value = res.data.data.default_shipping_cost_currency;
+        specialOrderShippingCostPerKgCny.value = res.data.data.default_shipping_cost_per_kg_cny;
+        specialOrderPricingCapsIsDefault.value = res.data.data.is_default;
+        specialOrderPricingCapsMessage.value = 'Pricing caps reset to defaults.';
     } catch {
-        customAsiaPricingCapsError.value = 'Failed to reset pricing caps.';
+        specialOrderPricingCapsError.value = 'Failed to reset pricing caps.';
     } finally {
-        customAsiaPricingCapsSaving.value = false;
+        specialOrderPricingCapsSaving.value = false;
     }
 }
 
@@ -1407,8 +1615,9 @@ onMounted(() => {
     void loadPriceResearchSites();
     void loadProductFilterOptions();
     void loadMaintenanceNotes();
-    void loadCustomAsiaMessageTemplate();
-    void loadCustomAsiaPricingCaps();
+    void loadSpecialOrderMessageTemplate();
+    void loadSpecialOrderPricingCaps();
+    void loadOpvCatalogPricing();
     void loadDbBackups();
     void loadExternalRateLimit();
     void loadExternalAccess();
@@ -1479,14 +1688,17 @@ watch(
 
             <div class="mt-3 flex flex-wrap items-end gap-4">
                 <label class="text-sm">
-                    <span class="text-slate-600">Order reconcile interval (hours)</span>
+                    <span class="text-slate-600">Order reconcile interval (minutes)</span>
                     <input
-                        v-model.number="shopifyIntervalHours"
+                        v-model.number="shopifyIntervalMinutes"
                         class="mt-1 block w-28 rounded-md border border-slate-200 px-2 py-1"
                         type="number"
-                        min="1"
-                        max="168"
+                        min="15"
+                        max="10080"
                     />
+                    <span class="mt-1 block text-xs text-slate-500">
+                        Incremental pull of new/updated orders. 30 minutes is light for this store.
+                    </span>
                 </label>
             </div>
 
@@ -1611,6 +1823,52 @@ watch(
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                    <div class="text-sm font-medium text-slate-900">
+                        Model kit collection filter manifest
+                    </div>
+                    <div class="mt-1 text-sm text-slate-600">
+                        Regenerates handle → profile maps and theme snippets from
+                        <span class="font-mono text-xs">ModelKitShelfCatalog</span> (84 shelves).
+                        Usually completes in under one second. Requires
+                        <span class="font-mono text-xs">OVS_SHOPIFY_THEME_PATH</span> pointing at
+                        the sibling theme checkout. Does not push to Shopify — run theme push
+                        separately after reviewing git diff.
+                    </div>
+                </div>
+
+                <button
+                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    data-testid="maintenance-regenerate-mk-filter-manifest"
+                    :disabled="regeneratingMkFilterManifest"
+                    @click="regenerateModelKitFilterManifest"
+                >
+                    {{
+                        regeneratingMkFilterManifest
+                            ? 'Regenerating…'
+                            : 'Regenerate filter manifest'
+                    }}
+                </button>
+            </div>
+
+            <div
+                v-if="regenerateMkFilterManifestError"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
+                {{ regenerateMkFilterManifestError }}
+            </div>
+
+            <div
+                v-if="regenerateMkFilterManifestMessage"
+                class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+                {{ regenerateMkFilterManifestMessage }}
             </div>
         </div>
 
@@ -1780,12 +2038,13 @@ watch(
                         Custom Asia order — customer message template
                     </div>
                     <div class="mt-1 text-sm text-slate-600">
-                        DM template for custom orders. Placeholders:
+                        DM template for special orders. Placeholders:
                         <span
-                            v-for="placeholder in CUSTOM_ASIA_ORDER_CUSTOMER_MESSAGE_PLACEHOLDERS"
+                            v-for="placeholder in SPECIAL_ORDER_CUSTOMER_MESSAGE_PLACEHOLDERS"
                             :key="placeholder"
                             class="ml-1 font-mono text-xs text-slate-700"
-                        >{{ placeholder }}</span>
+                            >{{ placeholder }}</span
+                        >
                     </div>
                 </div>
 
@@ -1794,21 +2053,24 @@ watch(
                         class="inline-flex items-center justify-center rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                         type="button"
                         :disabled="
-                            customAsiaMessageTemplateSaving ||
-                            customAsiaMessageTemplateLoading ||
-                            customAsiaMessageTemplateBody === customAsiaMessageTemplateDefaultBody
+                            specialOrderMessageTemplateSaving ||
+                            specialOrderMessageTemplateLoading ||
+                            specialOrderMessageTemplateBody ===
+                                specialOrderMessageTemplateDefaultBody
                         "
-                        @click="resetCustomAsiaMessageTemplate"
+                        @click="resetSpecialOrderMessageTemplate"
                     >
                         Reset to default
                     </button>
                     <button
                         class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                         type="button"
-                        :disabled="customAsiaMessageTemplateSaving || customAsiaMessageTemplateLoading"
-                        @click="saveCustomAsiaMessageTemplate"
+                        :disabled="
+                            specialOrderMessageTemplateSaving || specialOrderMessageTemplateLoading
+                        "
+                        @click="saveSpecialOrderMessageTemplate"
                     >
-                        {{ customAsiaMessageTemplateSaving ? 'Saving…' : 'Save template' }}
+                        {{ specialOrderMessageTemplateSaving ? 'Saving…' : 'Save template' }}
                     </button>
                 </div>
             </div>
@@ -1816,9 +2078,9 @@ watch(
             <div class="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <div>
                     <textarea
-                        v-model="customAsiaMessageTemplateBody"
+                        v-model="specialOrderMessageTemplateBody"
                         class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 font-mono text-sm text-slate-900"
-                        :disabled="customAsiaMessageTemplateLoading"
+                        :disabled="specialOrderMessageTemplateLoading"
                         rows="14"
                     />
                 </div>
@@ -1828,22 +2090,100 @@ watch(
                     </div>
                     <pre
                         class="mt-2 max-h-[320px] overflow-auto rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm whitespace-pre-wrap text-slate-800"
-                    >{{ customAsiaMessageTemplatePreview }}</pre>
+                        >{{ specialOrderMessageTemplatePreview }}</pre>
                 </div>
             </div>
 
             <div
-                v-if="customAsiaMessageTemplateError"
+                v-if="specialOrderMessageTemplateError"
                 class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
             >
-                {{ customAsiaMessageTemplateError }}
+                {{ specialOrderMessageTemplateError }}
             </div>
 
             <div
-                v-if="customAsiaMessageTemplateMessage"
+                v-if="specialOrderMessageTemplateMessage"
                 class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
             >
-                {{ customAsiaMessageTemplateMessage }}
+                {{ specialOrderMessageTemplateMessage }}
+            </div>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-white p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div class="flex-1">
+                    <div class="text-sm font-medium text-slate-900">OPV catalog margin</div>
+                    <div class="mt-1 text-sm text-slate-600">
+                        Multiplier on Plamod PO cost for pick-list and store preorder suggested
+                        prices. Same catalog rule as PO set-prices: closest X.99 (ties go up).
+                        Default deposit when opening a store preorder.
+                    </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button
+                        class="inline-flex items-center justify-center rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        type="button"
+                        :disabled="
+                            opvCatalogPricingSaving ||
+                            opvCatalogPricingLoading ||
+                            opvCatalogPricingAtDefaults
+                        "
+                        @click="resetOpvCatalogPricing"
+                    >
+                        Reset to defaults
+                    </button>
+                    <button
+                        class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        type="button"
+                        :disabled="opvCatalogPricingSaving || opvCatalogPricingLoading"
+                        data-testid="maintenance-opv-catalog-pricing-save"
+                        @click="saveOpvCatalogPricing"
+                    >
+                        {{ opvCatalogPricingSaving ? 'Saving…' : 'Save' }}
+                    </button>
+                </div>
+            </div>
+            <div class="mt-4 grid max-w-xl grid-cols-1 gap-4 sm:grid-cols-2">
+                <label class="block text-sm text-slate-700">
+                    <span class="font-medium text-slate-900">Price multiplier (× cost)</span>
+                    <input
+                        v-model="opvCatalogPriceMultiplier"
+                        class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                        :disabled="opvCatalogPricingLoading"
+                        inputmode="decimal"
+                        type="text"
+                        data-testid="maintenance-opv-price-multiplier"
+                    />
+                    <span class="mt-1 block text-xs text-slate-500">
+                        Default: {{ opvCatalogDefaultPriceMultiplier }}
+                    </span>
+                </label>
+                <label class="block text-sm text-slate-700">
+                    <span class="font-medium text-slate-900">Default deposit %</span>
+                    <input
+                        v-model="opvCatalogDefaultDepositPercent"
+                        class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                        :disabled="opvCatalogPricingLoading"
+                        inputmode="decimal"
+                        type="text"
+                        data-testid="maintenance-opv-default-deposit"
+                    />
+                    <span class="mt-1 block text-xs text-slate-500">
+                        Default: {{ opvCatalogDefaultDefaultDepositPercent }}
+                    </span>
+                </label>
+            </div>
+            <div
+                v-if="opvCatalogPricingError"
+                class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
+            >
+                {{ opvCatalogPricingError }}
+            </div>
+            <div
+                v-if="opvCatalogPricingMessage"
+                class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+            >
+                {{ opvCatalogPricingMessage }}
             </div>
         </div>
 
@@ -1854,9 +2194,8 @@ watch(
                         Custom Asia order — pricing caps
                     </div>
                     <div class="mt-1 text-sm text-slate-600">
-                        Maximum CAD amounts applied to formula-derived merchandiser commission and OPV
-                        margin on custom order detail. Explicit CAD overrides on an order bypass these
-                        caps.
+                        Maximum CAD amounts for formula-derived commission and OPV margin, plus
+                        default merchandiser shipping on new special orders.
                     </div>
                 </div>
 
@@ -1865,70 +2204,116 @@ watch(
                         class="inline-flex items-center justify-center rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                         type="button"
                         :disabled="
-                            customAsiaPricingCapsSaving ||
-                            customAsiaPricingCapsLoading ||
-                            customAsiaPricingCapsAtDefaults
+                            specialOrderPricingCapsSaving ||
+                            specialOrderPricingCapsLoading ||
+                            specialOrderPricingCapsAtDefaults
                         "
-                        @click="resetCustomAsiaPricingCaps"
+                        @click="resetSpecialOrderPricingCaps"
                     >
                         Reset to defaults
                     </button>
                     <button
                         class="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                         type="button"
-                        :disabled="customAsiaPricingCapsSaving || customAsiaPricingCapsLoading"
-                        @click="saveCustomAsiaPricingCaps"
+                        :disabled="specialOrderPricingCapsSaving || specialOrderPricingCapsLoading"
+                        @click="saveSpecialOrderPricingCaps"
                     >
-                        {{ customAsiaPricingCapsSaving ? 'Saving…' : 'Save caps' }}
+                        {{ specialOrderPricingCapsSaving ? 'Saving…' : 'Save caps' }}
                     </button>
                 </div>
             </div>
 
             <div class="mt-4 grid max-w-xl grid-cols-1 gap-4 sm:grid-cols-2">
                 <label class="block text-sm text-slate-700">
-                    <span class="font-medium text-slate-900">Merchandiser commission cap (CAD)</span>
+                    <span class="font-medium text-slate-900"
+                        >Merchandiser commission cap (CAD)</span
+                    >
                     <input
-                        v-model="customAsiaMerchandiserCommissionCapCad"
+                        v-model="specialOrderMerchandiserCommissionCapCad"
                         class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        :disabled="customAsiaPricingCapsLoading"
+                        :disabled="specialOrderPricingCapsLoading"
                         inputmode="decimal"
                         type="text"
                     />
                     <span class="mt-1 block text-xs text-slate-500">
-                        Default: {{ customAsiaDefaultMerchandiserCommissionCapCad }}
+                        Default: {{ specialOrderDefaultMerchandiserCommissionCapCad }}
                     </span>
                 </label>
                 <label class="block text-sm text-slate-700">
                     <span class="font-medium text-slate-900">OPV margin cap (CAD)</span>
                     <input
-                        v-model="customAsiaOpvMarginCapCad"
+                        v-model="specialOrderOpvMarginCapCad"
                         class="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-                        :disabled="customAsiaPricingCapsLoading"
+                        :disabled="specialOrderPricingCapsLoading"
                         inputmode="decimal"
                         type="text"
                     />
                     <span class="mt-1 block text-xs text-slate-500">
-                        Default: {{ customAsiaDefaultOpvMarginCapCad }}
+                        Default: {{ specialOrderDefaultOpvMarginCapCad }}
+                    </span>
+                </label>
+                <label class="block text-sm text-slate-700 sm:col-span-2">
+                    <span class="font-medium text-slate-900">Default shipping (new orders)</span>
+                    <div class="mt-1 flex max-w-xs gap-2">
+                        <input
+                            v-model="specialOrderShippingCostAmount"
+                            class="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                            :disabled="specialOrderPricingCapsLoading"
+                            inputmode="decimal"
+                            type="text"
+                        />
+                        <select
+                            v-model="specialOrderShippingCostCurrency"
+                            class="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                            :disabled="specialOrderPricingCapsLoading"
+                        >
+                            <option value="CNY">RMB</option>
+                            <option value="CAD">CAD</option>
+                            <option value="HKD">HKD</option>
+                            <option value="JPY">JPY</option>
+                        </select>
+                    </div>
+                    <span class="mt-1 block text-xs text-slate-500">
+                        Default: {{ specialOrderDefaultShippingCostAmountStored }}
+                        {{
+                            specialOrderDefaultShippingCostCurrencyStored === 'CNY'
+                                ? 'RMB'
+                                : specialOrderDefaultShippingCostCurrencyStored
+                        }}
+                    </span>
+                </label>
+                <label class="block text-sm text-slate-700 sm:col-span-2">
+                    <span class="font-medium text-slate-900">Shipping rate (RMB/kg)</span>
+                    <input
+                        v-model="specialOrderShippingCostPerKgCny"
+                        class="mt-1 w-full max-w-xs rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+                        :disabled="specialOrderPricingCapsLoading"
+                        inputmode="decimal"
+                        type="text"
+                    />
+                    <span class="mt-1 block text-xs text-slate-500">
+                        Default: {{ specialOrderDefaultShippingCostPerKgCnyStored }} RMB/kg — used
+                        when shipping is entered by weight on special orders.
                     </span>
                 </label>
             </div>
 
-            <div v-if="!customAsiaPricingCapsIsDefault" class="mt-3 text-xs text-slate-600">
+            <div v-if="!specialOrderPricingCapsIsDefault" class="mt-3 text-xs text-slate-600">
                 Custom caps are in effect (stored in maintenance notes).
             </div>
 
             <div
-                v-if="customAsiaPricingCapsError"
+                v-if="specialOrderPricingCapsError"
                 class="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
             >
-                {{ customAsiaPricingCapsError }}
+                {{ specialOrderPricingCapsError }}
             </div>
 
             <div
-                v-if="customAsiaPricingCapsMessage"
+                v-if="specialOrderPricingCapsMessage"
                 class="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
             >
-                {{ customAsiaPricingCapsMessage }}
+                {{ specialOrderPricingCapsMessage }}
             </div>
         </div>
 

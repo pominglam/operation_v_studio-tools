@@ -6,6 +6,7 @@ namespace App\Services\Products;
 
 use App\Models\Product;
 use App\Support\Products\ModelKitAccessoryKind;
+use App\Support\Products\ModelKitSeriesCatalog;
 
 final class ProductModelKitAccessoryResolver
 {
@@ -28,7 +29,7 @@ final class ProductModelKitAccessoryResolver
             'manufacturer' => null,
         ];
 
-        if ($this->isMerchandise($searchableText)) {
+        if ($this->isMerchandise($searchableText) || $this->isCuttingMat($searchableText)) {
             return $empty;
         }
 
@@ -54,6 +55,11 @@ final class ProductModelKitAccessoryResolver
         return preg_match('/\b(?:KEYCHAIN|RUBBER MASCOT|MASCOT KEYCHAIN)\b/', $text) === 1;
     }
 
+    private function isCuttingMat(string $text): bool
+    {
+        return preg_match('/\bCUTTING MAT\b/', $text) === 1;
+    }
+
     private function accessoryKind(string $text, string $legacyType, string $sku): ?string
     {
         if ($legacyType === 'ACTION BASE'
@@ -72,7 +78,7 @@ final class ProductModelKitAccessoryResolver
             || preg_match('/\bOPTION (?:PARTS SET|ARMOR|BODY PARTS|HAND PARTS)\b/', $text) === 1
             || preg_match('/\b(?:W-2[89]|OPTION WEAPON)\b/', $text) === 1
             || preg_match('/\bOPTION SYSTEM\b/', $text) === 1
-            || str_starts_with($sku, 'OP-')
+            || preg_match('/^OP-\d/', $sku) === 1
             || str_starts_with($sku, 'WAVOP-')
         ) {
             return ModelKitAccessoryKind::OPTION_PARTS;
@@ -91,10 +97,10 @@ final class ProductModelKitAccessoryResolver
     private function productLine(string $text, string $kind, string $sku): ?string
     {
         return match (true) {
-            $kind === ModelKitAccessoryKind::DISPLAY_STAND => 'Action Base',
             preg_match('/\b(?:30MS|30 MINUTES SISTERS)\b/', $text) === 1 => '30 Minutes Sisters',
             preg_match('/\b(?:30MM|30 MINUTES MISSIONS)\b/', $text) === 1 => '30 Minutes Missions',
             preg_match('/\b30 MINUTES FANTASY\b/', $text) === 1 => '30 Minutes Fantasy',
+            $kind === ModelKitAccessoryKind::DISPLAY_STAND => 'Action Base',
             $kind === ModelKitAccessoryKind::DETAIL_PARTS => 'Builders Parts HD',
             preg_match('/\bOPTION SYSTEM\b/', $text) === 1, str_starts_with($sku, 'OP-'), str_starts_with($sku, 'WAVOP-') => 'Option System',
             preg_match('/\bOPTION PARTS SET\b/', $text) === 1 && str_contains($text, 'GUNDAM') => 'Gunpla',
@@ -119,7 +125,7 @@ final class ProductModelKitAccessoryResolver
     {
         return match (true) {
             str_contains($text, 'GUNDAM') => 'Gundam',
-            str_contains($text, 'EVANGELION') => 'Evangelion',
+            ModelKitSeriesCatalog::textLooksLikeEvangelion($text) => 'Evangelion',
             default => null,
         };
     }

@@ -125,10 +125,10 @@ final class PurchaseOrderWorkflowPrepareInventoryService
         foreach ($items as $item) {
             $sku = trim((string) $item->sku);
             $qtyReceived = $item->qty_received;
-            if ($qtyReceived === null || (int) $qtyReceived <= 0) {
+            if ($qtyReceived === null) {
                 $issues[] = [
                     'sku' => $sku !== '' ? $sku : '(unknown)',
-                    'reason' => 'missing_or_zero_qty_received',
+                    'reason' => 'missing_qty_received',
                 ];
             }
             if ((int) ($item->qty_damaged ?? 0) > (int) ($qtyReceived ?? 0)) {
